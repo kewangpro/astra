@@ -34,7 +34,7 @@ make run
 # or: uvicorn backend.main:app --reload
 ```
 
-API docs available at `http://localhost:8000/docs` once running.
+API docs available at `http://localhost:8200/docs` once running.
 
 ## Project Structure
 

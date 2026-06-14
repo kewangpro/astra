@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     data_path: str = "./data"
     recipes_path: str = "./recipes"
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 8200
     log_level: str = "INFO"
     autonomy_mode: Literal["guided", "supervised", "full_autonomy"] = "supervised"
 
