@@ -1,0 +1,31 @@
+name: snake_ppo_v1
+task_type: RL
+domain: Snake
+description: "Optimized PPO recipe for Snake with curriculum learning and distance-based rewards."
+
+hyperparameters:
+  learning_rate: 0.0003
+  gamma: 0.99
+  batch_size: 64
+  clip_range: 0.2
+  entropy_coef: 0.02
+  total_timesteps: 300000
+
+curriculum:
+  phases:
+    - name: phase_1_small
+      env_config: { grid_size: [16, 12] }
+      success_threshold: { mean_reward: 20 }
+    - name: phase_2_medium
+      env_config: { grid_size: [24, 18] }
+      success_threshold: { mean_reward: 50 }
+    - name: phase_3_large
+      env_config: { grid_size: [32, 24] }
+      success_threshold: { mean_reward: 100 }
+
+reward_shaping:
+  food_reward: 25.0
+  collision_penalty: -15.0
+  closer_to_food: 0.5
+  away_from_food: -0.2
+  survival_bonus: 0.01

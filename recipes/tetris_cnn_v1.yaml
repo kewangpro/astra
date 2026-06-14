@@ -1,0 +1,24 @@
+name: tetris_cnn_v1
+task_type: RL
+domain: Tetris
+description: "High-fidelity PPO recipe using CNN for spatial board awareness."
+
+architecture:
+  type: CNN
+  layers:
+    - conv2d: { out_channels: 16, kernel_size: 3 }
+    - conv2d: { out_channels: 32, kernel_size: 3 }
+    - adaptive_pool: [1, 1]
+    - dropout: 0.2
+
+hyperparameters:
+  learning_rate: 0.0001
+  clip_ratio: 0.3
+  entropy: 0.05
+  batch_size: 64
+
+reward_shaping:
+  line_clear_multiplier: 10
+  hole_penalty: -2.0
+  bumpiness_penalty: -0.5
+  piece_placement: 1.0
