@@ -42,8 +42,10 @@ This document outlines the phased implementation strategy for `astra`.
 *Goal: Implement the planning, self-healing, and iteration logic.*
 
 - [ ] **Step 3.1: Lead Agent (The Orchestrator)**
-    - Integrate LLM (OpenAI/Gemini/Ollama) for goal decomposition.
-    - Implement the "Planner" that converts goals to DAGs.
+    - Integrate LLM providers: Ollama/MLX (local) and OpenAI/Gemini (cloud).
+    - Implement the "Planner" using models optimized for 24GB RAM (e.g., Llama-3.1-8B Q8 or Mistral-Nemo-12B Q4/Q5).
+    - Implement a **Resource Watcher**: monitor unified memory usage to ensure LLM footprint leaves 8-12GB free for training sandboxes.
+    - Setup system prompts for strategic goal decomposition.
 - [ ] **Step 3.2: Code Generator & Self-Healer**
     - Create prompt templates for generating training scripts.
     - Implement the "Error Analyzer" that fixes code based on stack traces.

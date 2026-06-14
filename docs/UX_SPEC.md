@@ -18,6 +18,7 @@
 
 ### 2.2. Live Training HUD (The "Loop" View)
 - **The Metric Gap**: A massive visual indicator showing the distance between `current_best` and `user_target`.
+- **Resource Monitor**: A real-time gauge showing **Unified Memory (24GB)** allocation between the Lead Agent, Specialist Trainer, and System.
 - **Streamed Logs**: Real-time telemetry from the sandbox, filtered by LLM-identified "critical events."
 - **Strategic Pivot Timeline**: A vertical timeline showing the Lead Agent's decisions (e.g., "09:41 - Plateau detected; Retrying with Phase 2 curriculum").
 - **Approval Queue**: Real-time "Pause" state with side-by-side code diffs for user sign-off.

@@ -78,7 +78,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 5.1. The "Goal-First" Interface
 The user provides a high-level goal and a success threshold.
-- **Example**: `{"task": "SFT", "base_model": "Llama-3-8B", "dataset": "customer_logs.jsonl", "target_metric": {"eval_loss": 0.05}}`
+- **Example**: `{"task": "SFT", "base_model": "Llama-3.1-8B", "dataset": "customer_logs.jsonl", "target_metric": {"eval_loss": 0.05}}`
 - **Example**: `{"task": "RL", "env": "Snake-v0", "target_metric": {"mean_reward": 150}}`
 
 ### 5.2. Fully Autonomous Execution

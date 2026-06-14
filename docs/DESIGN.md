@@ -40,10 +40,11 @@ astra is designed as a modular system where a **Lead Agent** orchestrates severa
 ## 2. Components
 
 ### 2.1. LLM-Driven Orchestrator (Lead Agent)
-The "Brain" of astra. It uses a Large Language Model (e.g., Llama-3, Gemma-3) to:
-- **Plan**: Decompose the training goal into a strategic DAG (Directed Acyclic Graph).
-- **Pivot**: Analyze logs and metrics to decide if a training run should be aborted or modified.
-- **Refine**: Propose new hyperparameters or reward weights for the next iteration.
+The "Brain" of astra. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon via **MLX** or **Ollama**. On **24GB RAM (M4)**, we prioritize models that leave at least 8-12GB free for training sandboxes. Recommended models:
+- **Lead Agent (Planning/Reasoning)**: Llama-3.1-8B (Instruct, Q8_0) or Mistral-Nemo-12B (Q4_K_M).
+- **Specialist Generator (Coding)**: DeepSeek-Coder-V2-Lite (MoE) or CodeLlama-13B (Q4_K_M).
+
+*Hardware Note:* The 24GB unified memory must be shared between the LLM and the active training runs. Using 4-bit or 8-bit quantization is required to maintain a low memory footprint.
 
 ### 2.2. Autonomous Training Loop
 The execution engine that manages the state machine of training:
