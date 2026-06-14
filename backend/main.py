@@ -6,7 +6,7 @@ from backend.config import settings
 from backend.logging_config import configure_logging, get_logger
 from backend.database import init_db
 from backend.services.state_recovery import recover_interrupted_missions
-from backend.routers import health, registry, recipes, missions
+from backend.routers import health, registry, recipes, missions, telemetry
 
 configure_logging()
 logger = get_logger(__name__)
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     recovered = await recover_interrupted_missions()
     if recovered:
-        logger.warning("Recovered %d interrupted mission(s) on startup.", recovered)
+        logger.info("State recovery: acted on %d mission(s).", recovered)
     yield
     logger.info("astra backend shutting down.")
 
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="astra API",
     description="Autonomous Strategic Training Agent — backend orchestration layer",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -41,8 +41,9 @@ app.include_router(health.router)
 app.include_router(registry.router)
 app.include_router(recipes.router)
 app.include_router(missions.router)
+app.include_router(telemetry.router)
 
 
 @app.get("/")
 async def root():
-    return {"name": "astra", "version": "0.1.0", "docs": "/docs"}
+    return {"name": "astra", "version": "0.2.0", "docs": "/docs"}

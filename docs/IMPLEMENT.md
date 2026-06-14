@@ -30,24 +30,27 @@ This document outlines the phased implementation strategy for `astra`.
 
 ---
 
-## Phase 2: The Execution (Sandbox & Trainers)
+## Phase 2: The Execution (Sandbox & Trainers) ✅
 *Goal: Enable safe, containerized code execution and specialized training logic.*
 
-- [ ] **Step 2.1: Sandbox Manager**
-    - Implement a unified `SandboxManager` with two backends:
-      - **SubprocessSandbox** (Apple Silicon): spawn a restricted host subprocess with memory/CPU limits via `psutil`/`resource`; store `SubprocessPID` in the Mission Store.
-      - **ContainerSandbox** (Cloud/CUDA): Docker/Podman orchestration with `nvidia-container-toolkit`; store `ContainerID` in the Mission Store.
-    - Define resource limiting policies (CPU/GPU/RAM) for both backends.
-    - Extend the State Recovery Manager (Step 1.2) with sandbox re-attachment: for containers, check via `docker inspect`; for subprocesses, check via `psutil.pid_exists()`; restart from last checkpoint if the sandbox is gone.
-- [ ] **Step 2.2: Universal Specialist Trainer**
-    - Build the base `Trainer` class.
-    - Enforce checkpoint cadence: write weights + optimizer state to `data/` volume every 2–5 minutes of wall-clock time; register checkpoint path in the Model Registry as metadata.
-    - Implement `RLTrainer` (wrapping SB3/PyTorch).
-    - Implement `SFTTrainer` (wrapping HuggingFace/LoRA). Override default `save_strategy` to `steps` with `save_steps` tuned to the 2–5 minute target.
-    - Implement `MLTrainer` (wrapping Scikit-learn/Lightning).
-- [ ] **Step 2.3: Telemetry Producer**
-    - Implement a WebSocket-based metrics exporter from the sandbox to the backend (FastAPI → HUD).
-    - Implement back-fill logic: on recovery, replay missed log entries from `data/` volume to the HUD.
+- [x] **Step 2.1: Sandbox Manager**
+    - `backend/sandbox/base.py`: `BaseSandbox` ABC + `SandboxConfig` dataclass + `SandboxStatus` enum.
+    - `backend/sandbox/subprocess_sandbox.py`: `SubprocessSandbox` — spawns a restricted host subprocess; memory capped via `resource.setrlimit(RLIMIT_AS)`; CPU affinity via `psutil` (no-op on macOS where it's unsupported).
+    - `backend/sandbox/container_sandbox.py`: `ContainerSandbox` — Docker SDK orchestration with optional `nvidia-container-toolkit` GPU passthrough; `docker` package is a soft dependency (graceful error if missing).
+    - `backend/sandbox/manager.py`: `SandboxManager` singleton — auto-selects `subprocess` on Apple Silicon (`darwin/arm64`), `container` elsewhere; exposes `launch()`, `terminate()`, `is_alive()`, `recover()`.
+    - State Recovery Manager extended: `recover()` checks `psutil.pid_exists()` (subprocess) or `docker inspect` (container); reattaches if alive, resets to PENDING if dead.
+    - **Note:** `psutil.cpu_affinity()` is not available on macOS — the call is wrapped in a try/except and silently skipped.
+- [x] **Step 2.2: Universal Specialist Trainer**
+    - `backend/trainers/base.py`: `BaseTrainer` ABC — background checkpoint thread (default 3-minute cadence, within 2–5 min target); `log_metric()` writes to `data/missions/{id}/telemetry.jsonl` AND POSTs to FastAPI; `_register_checkpoint()` PATCHes Model Registry with latest checkpoint path.
+    - `backend/trainers/rl_trainer.py`: `RLTrainer` stub — SB3/PyTorch; `_run_training()` injected by Phase 3 Lead Agent.
+    - `backend/trainers/sft_trainer.py`: `SFTTrainer` stub — HuggingFace/PEFT; forces `save_strategy="steps"` with `save_steps=200` default (Phase 3 tunes to observed step duration).
+    - `backend/trainers/ml_trainer.py`: `MLTrainer` stub — Scikit-learn/Lightning; `_run_training()` injected by Phase 3 Lead Agent.
+    - Training libraries (SB3, Transformers, PEFT, Lightning) are installed inside the sandbox, not the host.
+- [x] **Step 2.3: Telemetry Producer**
+    - `backend/services/connection_manager.py`: `ConnectionManager` singleton — tracks `WebSocket` connections per mission; `broadcast()` fans out to all HUD clients; auto-removes dead connections.
+    - `backend/routers/telemetry.py`:
+      - `POST /telemetry/missions/{id}/metrics` — sandbox pushes metrics here; appended to JSONL and broadcast to subscribers.
+      - `WS /ws/missions/{id}/telemetry` — HUD connects here; on connect, back-fills full JSONL history before streaming live events.
 
 ## Phase 3: The Brain (LLM & Autonomous Loop)
 *Goal: Implement the planning, self-healing, and iteration logic.*
