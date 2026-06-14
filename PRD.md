@@ -69,6 +69,11 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - astra ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., the workspace's existing Snake and Tetris models).
 - These recipes serve as the "Initial Knowledge" of the system, allowing users to achieve expert-level results on day one for common tasks.
 
+### 4.11. Crash-Safe Mission Persistence
+- **Stateful Resumption**: If the system is interrupted (crash, power loss, restart), astra automatically recovers the state of all "In-Progress" missions.
+- **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the Model Registry, ensuring no more than a few minutes of progress is lost.
+- **Atomic State Transitions**: Loop transitions (e.g., from Training to Eval) are logged as atomic events in the Mission Store to prevent duplicate or inconsistent execution upon resume.
+
 ## 5. User Experience & Autonomy Model
 
 ### 5.1. The "Goal-First" Interface

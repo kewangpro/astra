@@ -8,17 +8,33 @@
 ## 1. System Overview
 astra is designed as a modular system where a **Lead Agent** orchestrates several **Specialist Agents**, served via a high-performance **FastAPI** backend and a **Next.js** professional dashboard.
 
-```mermaid
-graph TD
-    User([Next.js Web UI]) <--> API[FastAPI Orchestrator]
-    API <--> Registry[(Memory/Registry)]
-    API --> Lead[Lead Agent / Planner]
-    API --> Trainer[Specialist Trainer]
-    
-    Trainer --> Sandbox[Secure Sandbox]
-    Sandbox --> Env[Environment]
-    
-    API -- WebSockets --> HUD[Live Training HUD]
+```
+                    +-----------------------+
+                    |    Next.js Web UI     |
+                    +-----------+-----------+
+                                |
+                                | (HTTP/REST)
+                                v
++-------------------+       +-----------+-----------+       +-----------------------+
+| Live Training HUD | <---> |  FastAPI Orchestrator | <---> |    Memory/Registry    |
++-------------------+       +-----------+-----------+       +-----------------------+
+                                |           |
+                                |           +-----------------------+
+                                v                                   |
+                    +-----------------------+                       v
+                    |  Lead Agent / Planner |           +-----------------------+
+                    |       (LLM)           |           |  Specialist Trainer   |
+                    +-----------------------+           +-----------+-----------+
+                                                                    |
+                                                                    v
+                                                        +-----------------------+
+                                                        |    Secure Sandbox     |
+                                                        +-----------+-----------+
+                                                                    |
+                                                                    v
+                                                        +-----------------------+
+                                                        |      Environment      |
+                                                        +-----------------------+
 ```
 
 ## 2. Components
@@ -37,8 +53,9 @@ The execution engine that manages the state machine of training:
 
 ### 2.3. Multi-Tier Memory System
 - **Structured Registry (SQL)**: Tracks every experiment's DNA—hyperparameters, weights, and results.
-- **Vector Memory (Semantic)**: Stores "lessons learned" from previous training runs (e.g., "High learning rates in grid size 32x24 lead to divergence").
-- **Working Memory**: Real-time buffer for current logs and telemetry being analyzed by the LLM.
+- **Vector Memory (Semantic)**: Stores "lessons learned" and semantic patterns.
+- **Recipe Library**: A versioned collection of "Crystallized Strategies." Each recipe is a JSON/YAML manifest that can be instantly re-injected into the Orchestrator to reproduce or adapt a successful run.
+- **Working Memory**: Real-time buffer for current logs and telemetry.
 
 ### 2.4. Specialist Trainer (Execution)
 The worker agents that interface with diverse training paradigms:
@@ -94,6 +111,28 @@ A real-time interface showing:
 - **Loop Status**: Current iteration count and strategic pivot history.
 - **Metric Delta**: Visual gap between "Current Best" and "Target Goal."
 - **Approval Queue**: Pending security requests with "Diff" views for code changes.
-ration count and strategic pivot history.
-- **Metric Delta**: Visual gap between "Current Best" and "Target Goal."
-- **Approval Queue**: Pending security requests with "Diff" views for code changes.
+
+## 5. Runtime Architecture
+
+Astra's runtime is split between **Persistent Management** and **Transient Compute**.
+
+### 5.1. Persistent Orchestration Layer
+- **Host**: Local Server, Mac Mini, or Cloud Instance (AWS/GCP).
+- **Process Manager**: The FastAPI server runs as a persistent service (e.g., via `pm2` or `systemd`).
+- **Autonomous Loop**: Handled by background worker processes (e.g., `asyncio` tasks or `Celery/Redis`) to ensure the training logic survives Web UI disconnections.
+
+### 5.2. Transient Compute Layer (The Sandbox)
+- **Isolation**: Every training iteration runs inside a **Docker** or **Podman** container.
+- **Lifecycle**: Containers are provisioned by the Lead Agent, execute the training code, and are decommissioned once evaluation is complete.
+- **GPU Passthrough**: Supports `nvidia-container-toolkit` for CUDA access within the sandbox.
+
+### 5.3. State & Persistence
+- **Database**: SQLite (local) or PostgreSQL (cloud) for experiment metadata and the Model Registry.
+- **Mission Store**: A specialized table tracking the active DAG state, current iteration number, and sandbox PID/ContainerID for recovery.
+- **File Store**: A dedicated `storage/` volume mounted to sandboxes for weights and logs.
+- **Memory**: ChromaDB running as a sidecar process for vector-based semantic retrieval.
+
+### 5.4. Recovery & Resumption Logic
+1. **Startup Check**: On boot, the Orchestrator queries the **Mission Store** for any tasks in the `RUNNING` or `PAUSED` state.
+2. **Sandbox Re-attachment**: Astra attempts to re-attach to existing containers or restarts them using the last known checkpoint.
+3. **Telemetry Catch-up**: The Telemetry Producer back-fills any missed logs from the `storage/` volume to the HUD.

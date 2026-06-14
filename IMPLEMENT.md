@@ -10,9 +10,10 @@ This document outlines the phased implementation strategy for `astra`.
 - [ ] **Step 1.1: Project Scaffolding**
     - Setup FastAPI backend structure.
     - Configure environment variables and logging.
-- [ ] **Step 1.2: Model Registry (SQL Storage)**
-    - Implement SQLAlchemy models for `Experiments`, `Models`, and `Metrics`.
+- [ ] **Step 1.2: Model Registry & Mission Store (SQL Storage)**
+    - Implement SQLAlchemy models for `Experiments`, `Models`, `Metrics`, and `Missions`.
     - Create migration scripts.
+    - Implement the "State Recovery Manager" to handle boot-time resumption.
 - [ ] **Step 1.3: Vector Memory (Semantic Storage)**
     - Integrate ChromaDB or FAISS for storing "Lessons Learned."
     - Implement embedding utility for log analysis.
