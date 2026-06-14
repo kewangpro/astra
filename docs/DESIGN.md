@@ -84,7 +84,7 @@ The worker agents that interface with diverse training paradigms:
   - **SFT**: HuggingFace Transformers, LoRA/QLoRA configurations, and dataset formatting.
   - **ML**: Scikit-learn, PyTorch Lightning, and XGBoost/LightGBM.
 - **Framework Wrappers**: Standardized interfaces for common libraries (Transformers, SB3, PyTorch).
-- **Telemetry Producer** (also referred to as the Telemetry Streamer in IMPLEMENT): Streams paradigm-specific metrics via WebSocket (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML). On recovery, back-fills missed logs from the `storage/` volume to the HUD.
+- **Telemetry Producer** (also referred to as the Telemetry Streamer in IMPLEMENT): Streams paradigm-specific metrics via WebSocket (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML). On recovery, back-fills missed logs from the `data/` volume to the HUD.
 
 ### 2.5. Secure Execution Sandbox
 The isolation layer where training actually occurs:
@@ -153,10 +153,10 @@ Astra's runtime is split between **Persistent Management** and **Transient Compu
 ### 5.3. State & Persistence
 - **Database**: SQLite (local) or PostgreSQL (cloud) for experiment metadata and the Model Registry.
 - **Mission Store**: A specialized table tracking the active DAG state, current iteration number, and sandbox PID/ContainerID for recovery.
-- **File Store**: A dedicated `storage/` volume mounted to sandboxes for weights and logs.
+- **File Store**: A dedicated `data/` volume mounted to sandboxes for weights and logs.
 - **Memory**: ChromaDB running as a sidecar process for vector-based semantic retrieval.
 
 ### 5.4. Recovery & Resumption Logic
 1. **Startup Check**: On boot, the Orchestrator queries the **Mission Store** for any tasks in the `RUNNING` or `PAUSED` state. Each query and subsequent state transition must execute inside a database transaction to satisfy the atomicity guarantee (PRD §4.11): read current state, validate, and write new state atomically to prevent duplicate execution on concurrent restarts.
 2. **Sandbox Re-attachment**: The Mission Store tracks either a `ContainerID` (cloud/CPU) or a `SubprocessPID` (Apple Silicon GPU). For containers, check via `docker inspect`; if live, attach to stdout/stderr for telemetry catch-up. For subprocesses, check via `psutil.pid_exists()`; if alive, reattach to its log file. In all other cases (container stopped, PID gone, or ID is `NULL`), provision a new sandbox from the last known checkpoint path in the Mission Store.
-3. **Telemetry Catch-up**: The **Telemetry Producer** back-fills any missed log entries from the `storage/` volume to the HUD, covering the outage window so operators can assess model behavior during downtime.
+3. **Telemetry Catch-up**: The **Telemetry Producer** back-fills any missed log entries from the `data/` volume to the HUD, covering the outage window so operators can assess model behavior during downtime.

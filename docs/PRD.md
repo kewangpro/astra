@@ -71,7 +71,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.11. Crash-Safe Mission Persistence
 - **Stateful Resumption**: If the system is interrupted (crash, power loss, restart), astra automatically recovers the state of all "In-Progress" missions.
-- **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the **File Store** (`storage/` volume) at regular intervals (target: every 2–5 minutes of wall-clock training time), ensuring no more than a few minutes of progress is lost. Checkpoint paths are registered as metadata in the Model Registry for discovery.
+- **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the **File Store** (`data/` volume) at regular intervals (target: every 2–5 minutes of wall-clock training time), ensuring no more than a few minutes of progress is lost. Checkpoint paths are registered as metadata in the Model Registry for discovery.
 - **Atomic State Transitions**: Loop transitions (e.g., from Training to Eval) are logged as atomic events in the Mission Store to prevent duplicate or inconsistent execution upon resume.
 
 ## 5. User Experience & Autonomy Model

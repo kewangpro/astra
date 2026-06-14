@@ -4,22 +4,31 @@ This document outlines the phased implementation strategy for `astra`.
 
 ---
 
-## Phase 1: The Foundation (Backend & Memory)
+## Phase 1: The Foundation (Backend & Memory) ✅
 *Goal: Establish the core API, database schema, and project structure.*
 
-- [ ] **Step 1.1: Project Scaffolding**
-    - Setup FastAPI backend structure.
-    - Configure environment variables and logging.
-- [ ] **Step 1.2: Model Registry & Mission Store (SQL Storage)**
-    - Implement SQLAlchemy models for `Experiments`, `Models`, `Metrics`, and `Missions`.
-    - Create migration scripts.
-    - Implement the "State Recovery Manager" for boot-time resumption: query `RUNNING`/`PAUSED` missions and reset their state using atomic DB transactions (no sandbox operations yet — sandbox re-attachment is extended in Step 2.1).
-- [ ] **Step 1.3: Vector Memory (Semantic Storage)**
-    - Integrate ChromaDB or FAISS for storing "Lessons Learned."
-    - Implement embedding utility for log analysis.
-- [ ] **Step 1.4: Base API Endpoints**
-    - CRUD for Recipes and Model Registry.
-    - Health checks and system status.
+- [x] **Step 1.1: Project Scaffolding**
+    - FastAPI backend at `backend/` with lifespan startup/shutdown hook.
+    - `backend/config.py`: Pydantic Settings reading `ASTRA_*` env vars (see `.env.example`).
+    - `backend/logging_config.py`: Structured stdout logging; noisy third-party loggers silenced.
+- [x] **Step 1.2: Model Registry & Mission Store (SQL Storage)**
+    - SQLAlchemy async models: `Experiment`, `ModelRecord`, `Mission`, `Metric` (`backend/models/`).
+    - Alembic initialized; initial schema migration at `alembic/versions/`.
+    - `Mission` table tracks `status`, `current_iteration`, `container_id`, `subprocess_pid`, `last_checkpoint_path`.
+    - `backend/services/state_recovery.py`: queries `RUNNING`/`PAUSED` missions on boot and atomically resets them to `PENDING`. Sandbox re-attachment is deferred to Step 2.1.
+    - **Note:** Python 3.9 is in use — all type hints use `Optional[X]` from `typing` (not `X | None`) and files include `from __future__ import annotations`.
+- [x] **Step 1.3: Vector Memory (Semantic Storage)**
+    - `backend/services/vector_memory.py`: ChromaDB (persistent) + `sentence-transformers` (`all-MiniLM-L6-v2`) for "Lessons Learned."
+    - Lessons stored with structured metadata (`run_id`, `domain`, `hyperparameter_name`, `hyperparameter_value`, `environment_config`) enabling regime-specific retrieval (DESIGN §2.3).
+    - FAISS was considered but ChromaDB was chosen for its built-in persistence and metadata filtering.
+- [x] **Step 1.4: Base API Endpoints**
+    - `GET/POST/PATCH/DELETE /registry/experiments` — Experiment CRUD.
+    - `GET/POST/PATCH/DELETE /registry/models` — Model Record CRUD (supports `champion_only` filter).
+    - `GET/POST/PATCH/DELETE /missions` — Mission CRUD.
+    - `GET /recipes`, `GET /recipes/{name}` — Serve YAML recipes from `recipes/` (full DB-backed crystallization in Phase 5).
+    - `GET /health`, `GET /health/ready` — Health check with live memory stats.
+
+---
 
 ## Phase 2: The Execution (Sandbox & Trainers)
 *Goal: Enable safe, containerized code execution and specialized training logic.*
@@ -32,13 +41,13 @@ This document outlines the phased implementation strategy for `astra`.
     - Extend the State Recovery Manager (Step 1.2) with sandbox re-attachment: for containers, check via `docker inspect`; for subprocesses, check via `psutil.pid_exists()`; restart from last checkpoint if the sandbox is gone.
 - [ ] **Step 2.2: Universal Specialist Trainer**
     - Build the base `Trainer` class.
-    - Enforce checkpoint cadence: write weights + optimizer state to `storage/` volume every 2–5 minutes of wall-clock time; register checkpoint path in the Model Registry as metadata.
+    - Enforce checkpoint cadence: write weights + optimizer state to `data/` volume every 2–5 minutes of wall-clock time; register checkpoint path in the Model Registry as metadata.
     - Implement `RLTrainer` (wrapping SB3/PyTorch).
     - Implement `SFTTrainer` (wrapping HuggingFace/LoRA). Override default `save_strategy` to `steps` with `save_steps` tuned to the 2–5 minute target.
     - Implement `MLTrainer` (wrapping Scikit-learn/Lightning).
 - [ ] **Step 2.3: Telemetry Producer**
     - Implement a WebSocket-based metrics exporter from the sandbox to the backend (FastAPI → HUD).
-    - Implement back-fill logic: on recovery, replay missed log entries from `storage/` volume to the HUD.
+    - Implement back-fill logic: on recovery, replay missed log entries from `data/` volume to the HUD.
 
 ## Phase 3: The Brain (LLM & Autonomous Loop)
 *Goal: Implement the planning, self-healing, and iteration logic.*

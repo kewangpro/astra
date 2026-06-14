@@ -1,0 +1,38 @@
+# ── Runtime / dev environment ──────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+
+# ── Secrets & local config ─────────────────────────────────────────────────────
+.env
+.env.local
+
+# ── Database (SQLite dev DB and journal files) ─────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# ── Vector store ───────────────────────────────────────────────────────────────
+chroma_db/
+
+# ── Runtime data: DB, weights, checkpoints, logs (track dir, not contents) ─────
+data/*
+!data/.gitkeep
+
+# ── OS ─────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ── Next.js dashboard (Phase 4) ────────────────────────────────────────────────
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+*.log
+logs/
