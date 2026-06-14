@@ -5,8 +5,10 @@
 astra is an advanced AI agent system designed to orchestrate and optimize machine learning training workflows autonomously.
 
 ## 📁 Documentation
-- [PRD.md](./PRD.md) - Product Requirements
-- [DESIGN.md](./DESIGN.md) - Technical Architecture
+- [PRD.md](./docs/PRD.md) - Product Requirements
+- [DESIGN.md](./docs/DESIGN.md) - Technical Architecture
+- [IMPLEMENT.md](./docs/IMPLEMENT.md) - Implementation Roadmap
+- [UX_SPEC.md](./docs/UX_SPEC.md) - UX Specification
 
 ## 🚀 Concept
 astra takes the manual labor out of ML training by providing **Full Autonomy with Human Oversight**:
