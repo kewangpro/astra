@@ -82,21 +82,27 @@ This document outlines the phased implementation strategy for `astra`.
     - `backend/analysis/spatial_analyzer.py`: `SpatialAnalyzer` — Grad-CAM via forward/backward hooks on last Conv2d layer; exposed via `POST /analysis/missions/{id}/saliency`.
     - `backend/analysis/policy_auditor.py`: `PolicyAuditor` — action-frequency histogram + entropy + mode-collapse detection (> 80% single action); exposed via `POST /analysis/missions/{id}/audit`.
 
-## Phase 4: Mission Control (Web Dashboard)
+## Phase 4: Mission Control (Web Dashboard) ✅
 *Goal: Build the professional Next.js interface for monitoring and control.*
 
-- [ ] **Step 4.1: Dashboard Scaffolding**
-    - Setup Next.js 15 with Tailwind CSS and shadcn/ui.
-- [ ] **Step 4.2: The Command Center (Home)**
-    - Implement the "Goal Input" bar.
-    - Create the "Active Missions" grid.
-- [ ] **Step 4.3: Live Training HUD**
-    - Implement real-time charts using `recharts`.
-    - Build the "Metric Gap" gauge and strategic pivot timeline.
-    - Embed the Approval Queue panel (built in Step 4.4) as an inline overlay within the HUD view — the user must never need to navigate away from the HUD to act on a pending gate.
-- [ ] **Step 4.4: Approval Controller UI**
-    - Build the side-by-side code diff viewer for security gates.
-    - Expose as an embeddable panel (not a standalone page) so Step 4.3 can mount it inside the HUD.
+- [x] **Step 4.1: Dashboard Scaffolding**
+    - Next.js 15 App Router + Tailwind CSS (Obsidian & Teal dark theme) at `frontend/`.
+    - Port 3200 (backend 8200); `/api/*` proxied to backend via `next.config.ts` rewrites.
+    - React Query (`@tanstack/react-query`) for polling; recharts for live charts.
+    - `make run-frontend` / `make stop-frontend` / `make ports` updated.
+- [x] **Step 4.2: The Command Center (Home)**
+    - `GoalInput` — textarea + domain selector; launches mission and navigates to HUD on submit.
+    - `MissionsGrid` — card-per-mission with status badge, best metric, run button for pending.
+    - Global stats bar (total / running / completed / failed).
+- [x] **Step 4.3: Live Training HUD**
+    - `MetricGap` — current vs. target with progress bar.
+    - `MetricChart` — multi-line recharts with target reference line.
+    - `LogStream` — WebSocket feed (`ws://localhost:8200/ws/missions/{id}/telemetry`) with JSONL back-fill; colour-coded by log level.
+    - `PivotTimeline` — vertical timeline of pivot events extracted from telemetry stream.
+- [x] **Step 4.4: Approval Controller UI**
+    - `ApprovalPanel` — embedded in the HUD; polls `/approvals/missions/{id}/pending` every 3 s.
+    - Shows code block for `execute_code` gates; key-value table for `resource_allocation`.
+    - Approve / Reject buttons call `PATCH /approvals/{id}`; toast-free, optimistic invalidation.
 
 ## Phase 5: The Wisdom (Recipes & Sharing)
 *Goal: Finalize crystallization logic and the strategy sharing library.*
