@@ -57,7 +57,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Autonomously fixes bugs in training code by analyzing error logs and stack traces.
 
 ### 4.8. Secure Sandboxed Execution
-- All generated code runs in an isolated sandbox (Docker or restricted subprocess) to protect the host system.
+- All generated code runs in an isolated sandbox to protect the host system. The sandbox type depends on the hardware target: **Docker/Podman** (cloud or CPU-only workloads) or a **restricted host subprocess** (Apple Silicon, where Metal GPU is not accessible inside Docker).
 - Resource constraints (CPU/GPU/RAM) are enforced at the sandbox level to prevent runaway processes.
 
 ### 4.9. Training Recipes & Crystallization

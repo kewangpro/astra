@@ -40,7 +40,22 @@ astra is designed as a modular system where a **Lead Agent** orchestrates severa
 ## 2. Components
 
 ### 2.1. LLM-Driven Orchestrator (Lead Agent)
-The "Brain" of astra. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon. The choice of inference engine depends on available **Unified Memory**:
+The "Brain" of astra. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon via **MLX**. 
+
+#### 2.1.1. Inference Optimization Strategy
+On a 24GB M4 Mac Mini, the landscape is unique. We leverage Apple's **Unified Memory Architecture** and the **Metal** framework to bypass standard bottlenecks.
+
+**What is NOT Worth Optimizing (Already Mastered):**
+We do not optimize core math or tensor operations (Matrix Multiplication, Quantization/Dequantization) as these are already perfectly tuned by Apple's **Accelerate** framework and **Metal Performance Shaders (MPS)** in the MLX/llama.cpp engines.
+
+**What IS Worth Optimizing (Astra's Value-Add):**
+Astra builds custom optimization layers on top of MLX to maximize the 24GB footprint:
+- **Smart KV Caching**: Standard setups waste RAM with fixed context blocks. Astra implements a dynamic cache eviction policy to drop irrelevant conversation history while preserving core system instructions and code context.
+- **Speculative Decoding** *(sandbox-idle only)*: Blazing-fast generation by loading a tiny "drafter" model (e.g., 1B/3B) alongside the main model. The tiny model guesses tokens, and the large model validates them in a single mathematical step. On 24GB, the drafter is only loaded when the training sandbox is inactive; the `ModelManager` is responsible for evicting it before launching a training run.
+- **Structured Output Parsing**: Uses **Grammar-Based Sampling** to force the model to choose tokens that fit a specific JSON or code schema, eliminating wasted tokens and ensuring valid tool calls.
+
+#### 2.1.2. Memory & Engine Tiers
+The choice of inference engine depends on available **Unified Memory**:
 - **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)**. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes.
 - **Advanced (64GB+ RAM)**: **vLLM (Metal)**. Recommended for high-concurrency multi-agent setups. Leverages **PagedAttention** for massive log contexts and **Continuous Batching** for simultaneous specialist reasoning.
 
@@ -48,7 +63,7 @@ Recommended models for 24GB M4:
 - **Lead Agent (Planning/Reasoning)**: Llama-3.1-8B (Instruct, Q8_0) or Mistral-Nemo-12B (Q4_K_M).
 - **Specialist Generator (Coding)**: DeepSeek-Coder-V2-Lite (MoE) or CodeLlama-13B (Q4_K_M).
 
-*Hardware Note:* The 24GB unified memory must be shared between the LLM and the active training runs. Using 4-bit or 8-bit quantization is required to maintain a low memory footprint. Native MLX is preferred on 24GB to avoid the pre-allocation overhead of serving engines.
+*Hardware Note:* Native MLX is preferred on 24GB to avoid the pre-allocation overhead of serving engines. The 24GB unified memory must be shared between the LLM and the active training runs; quantization (Q4/Q8) is mandatory.
 
 ### 2.2. Autonomous Training Loop
 The execution engine that manages the state machine of training:
@@ -129,9 +144,11 @@ Astra's runtime is split between **Persistent Management** and **Transient Compu
 - **Autonomous Loop**: Handled by background worker processes (e.g., `asyncio` tasks or `Celery/Redis`) to ensure the training logic survives Web UI disconnections.
 
 ### 5.2. Transient Compute Layer (The Sandbox)
-- **Isolation**: Every training iteration runs inside a **Docker** or **Podman** container.
-- **Lifecycle**: Containers are provisioned by the Lead Agent, execute the training code, and are decommissioned once evaluation is complete.
-- **GPU Passthrough**: Supports `nvidia-container-toolkit` for CUDA access within the sandbox.
+- **Isolation**: Sandbox strategy depends on the hardware target:
+  - **Apple Silicon (M4)**: Docker/Podman does **not** support Metal GPU passthrough. Training that requires the GPU runs in a **restricted host subprocess** with enforced resource limits (memory cap via `resource` module, CPU affinity via `taskset`/`psutil`). Docker is reserved for CPU-only or dependency-isolation tasks.
+  - **Cloud / CUDA**: Every training iteration runs inside a **Docker** or **Podman** container with `nvidia-container-toolkit` for GPU access.
+- **Lifecycle**: Sandboxes (container or subprocess) are provisioned by the Lead Agent, execute the training code, and are decommissioned once evaluation is complete.
+- **GPU Passthrough**: CUDA environments use `nvidia-container-toolkit`. Apple Silicon GPU access is host-native; the `ModelManager` coordinates memory between the LLM and the training subprocess.
 
 ### 5.3. State & Persistence
 - **Database**: SQLite (local) or PostgreSQL (cloud) for experiment metadata and the Model Registry.
@@ -141,5 +158,5 @@ Astra's runtime is split between **Persistent Management** and **Transient Compu
 
 ### 5.4. Recovery & Resumption Logic
 1. **Startup Check**: On boot, the Orchestrator queries the **Mission Store** for any tasks in the `RUNNING` or `PAUSED` state. Each query and subsequent state transition must execute inside a database transaction to satisfy the atomicity guarantee (PRD §4.11): read current state, validate, and write new state atomically to prevent duplicate execution on concurrent restarts.
-2. **Sandbox Re-attachment**: Check if the stored `ContainerID` maps to a live, running container (via `docker inspect`). If the container is still running, attach to its stdout/stderr stream for telemetry catch-up. If the container is stopped, not found, or the `ContainerID` is `NULL` (e.g., crash occurred before container launch or after decommission), skip re-attachment and provision a new container from the last known checkpoint path in the Mission Store.
+2. **Sandbox Re-attachment**: The Mission Store tracks either a `ContainerID` (cloud/CPU) or a `SubprocessPID` (Apple Silicon GPU). For containers, check via `docker inspect`; if live, attach to stdout/stderr for telemetry catch-up. For subprocesses, check via `psutil.pid_exists()`; if alive, reattach to its log file. In all other cases (container stopped, PID gone, or ID is `NULL`), provision a new sandbox from the last known checkpoint path in the Mission Store.
 3. **Telemetry Catch-up**: The **Telemetry Producer** back-fills any missed log entries from the `storage/` volume to the HUD, covering the outage window so operators can assess model behavior during downtime.

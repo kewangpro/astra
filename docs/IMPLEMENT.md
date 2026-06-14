@@ -25,9 +25,11 @@ This document outlines the phased implementation strategy for `astra`.
 *Goal: Enable safe, containerized code execution and specialized training logic.*
 
 - [ ] **Step 2.1: Sandbox Manager**
-    - Implement Docker/Podman orchestration logic.
-    - Define resource limiting policies (CPU/GPU/RAM).
-    - Extend the State Recovery Manager (Step 1.2) with sandbox re-attachment: detect live containers by stored `ContainerID`; restart from last checkpoint if the container is gone.
+    - Implement a unified `SandboxManager` with two backends:
+      - **SubprocessSandbox** (Apple Silicon): spawn a restricted host subprocess with memory/CPU limits via `psutil`/`resource`; store `SubprocessPID` in the Mission Store.
+      - **ContainerSandbox** (Cloud/CUDA): Docker/Podman orchestration with `nvidia-container-toolkit`; store `ContainerID` in the Mission Store.
+    - Define resource limiting policies (CPU/GPU/RAM) for both backends.
+    - Extend the State Recovery Manager (Step 1.2) with sandbox re-attachment: for containers, check via `docker inspect`; for subprocesses, check via `psutil.pid_exists()`; restart from last checkpoint if the sandbox is gone.
 - [ ] **Step 2.2: Universal Specialist Trainer**
     - Build the base `Trainer` class.
     - Enforce checkpoint cadence: write weights + optimizer state to `storage/` volume every 2–5 minutes of wall-clock time; register checkpoint path in the Model Registry as metadata.
@@ -44,6 +46,9 @@ This document outlines the phased implementation strategy for `astra`.
 - [ ] **Step 3.1: Lead Agent (The Orchestrator)**
     - Integrate **Native MLX Inference** (via `mlx-lm`) as the primary local provider for 24GB hardware.
     - Implement a `ModelManager` to dynamically adjust LLM memory footprint and trigger garbage collection when training sandboxes require more VRAM.
+    - Implement **Smart KV Caching**: custom eviction policy for conversation history vs. system/code context.
+    - Implement **Speculative Decoding** *(sandbox-idle only)*: load 1B/3B drafter models when no training run is active; `ModelManager` must evict before sandbox launch.
+    - Implement **Structured Output Parsing**: grammar-based sampling for JSON and code blocks.
     - Setup prefix caching for efficient real-time log analysis.
     - (Optional) Build an abstraction layer to support **vLLM (Metal)** for high-memory environments.
     - Setup system prompts for strategic goal decomposition.
