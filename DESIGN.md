@@ -16,7 +16,7 @@ astra is designed as a modular system where a **Lead Agent** orchestrates severa
                                 | (HTTP/REST)
                                 v
 +-------------------+       +-----------+-----------+       +-----------------------+
-| Live Training HUD | <---> |  FastAPI Orchestrator | <---> |    Memory/Registry    |
+| Live Training HUD |<-WS-->|  FastAPI Orchestrator | <---> |    Memory/Registry    |
 +-------------------+       +-----------+-----------+       +-----------------------+
                                 |           |
                                 |           +-----------------------+
@@ -53,9 +53,9 @@ The execution engine that manages the state machine of training:
 
 ### 2.3. Multi-Tier Memory System
 - **Structured Registry (SQL)**: Tracks every experiment's DNA—hyperparameters, weights, and results.
-- **Vector Memory (Semantic)**: Stores "lessons learned" and semantic patterns.
-- **Recipe Library**: A versioned collection of "Crystallized Strategies." Each recipe is a JSON/YAML manifest that can be instantly re-injected into the Orchestrator to reproduce or adapt a successful run.
-- **Working Memory**: Real-time buffer for current logs and telemetry.
+- **Vector Memory (Semantic)**: Stores "lessons learned" and semantic patterns. Each lesson must carry structured metadata (hyperparameter name, value, environment config, run ID) to enable reliable regime-specific retrieval — e.g., distinguishing lessons valid for small grids from those valid for large grids.
+- **Recipe Library**: A versioned collection of "Crystallized Strategies." Each recipe is a JSON/YAML manifest (with `version` and `created_at` fields) that can be instantly re-injected into the Orchestrator to reproduce or adapt a successful run. Stored in the SQL Registry (metadata + YAML body) and indexed in ChromaDB for semantic warm-start retrieval.
+- **Working Memory**: Real-time buffer for current logs and telemetry, actively injected into the Lead Agent's LLM context window to enable real-time pivot decisions.
 
 ### 2.4. Specialist Trainer (Execution)
 The worker agents that interface with diverse training paradigms:
@@ -64,7 +64,7 @@ The worker agents that interface with diverse training paradigms:
   - **SFT**: HuggingFace Transformers, LoRA/QLoRA configurations, and dataset formatting.
   - **ML**: Scikit-learn, PyTorch Lightning, and XGBoost/LightGBM.
 - **Framework Wrappers**: Standardized interfaces for common libraries (Transformers, SB3, PyTorch).
-- **Telemetry Producer**: Streams paradigm-specific metrics (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML).
+- **Telemetry Producer** (also referred to as the Telemetry Streamer in IMPLEMENT): Streams paradigm-specific metrics via WebSocket (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML). On recovery, back-fills missed logs from the `storage/` volume to the HUD.
 
 ### 2.5. Secure Execution Sandbox
 The isolation layer where training actually occurs:
@@ -102,9 +102,11 @@ A centralized service that intercepts high-risk transitions in the DAG:
 
 ### 4.2. Autonomy Tiers
 Astra supports three operating modes:
-1. **Guided**: Every iteration step requires an "Approve/Reject" signal.
-2. **Supervised (Default)**: Astra iterates autonomously but pauses for `EXECUTE_CODE` and `RESOURCE_ALLOCATION`.
-3. **Full Autonomy**: Astra runs to completion (target achieved) without intervention, governed only by strict Sandbox and Resource constraints.
+1. **Guided**: Every iteration step requires an "Approve/Reject" signal. All gates are active; Silent Mode (PRD §5.3) is disabled.
+2. **Supervised (Default)**: Astra iterates autonomously but pauses for `EXECUTE_CODE` and `RESOURCE_ALLOCATION`. Silent Mode may auto-promote trusted sub-tasks to bypass these specific gates based on accumulated trust score.
+3. **Full Autonomy**: Astra runs to completion without intervention, governed only by strict Sandbox and Resource constraints. All approval gates are suppressed; Silent Mode is redundant and has no additional effect.
+
+**Gate-priority rule**: the operating tier takes precedence. Silent Mode trust-score bypass only activates within **Supervised** mode and only for the specific gate types (`EXECUTE_CODE`, `RESOURCE_ALLOCATION`). It cannot escalate behavior beyond what the current tier permits.
 
 ### 4.3. Monitoring Dashboard (The "HUD")
 A real-time interface showing:
@@ -133,6 +135,6 @@ Astra's runtime is split between **Persistent Management** and **Transient Compu
 - **Memory**: ChromaDB running as a sidecar process for vector-based semantic retrieval.
 
 ### 5.4. Recovery & Resumption Logic
-1. **Startup Check**: On boot, the Orchestrator queries the **Mission Store** for any tasks in the `RUNNING` or `PAUSED` state.
-2. **Sandbox Re-attachment**: Astra attempts to re-attach to existing containers or restarts them using the last known checkpoint.
-3. **Telemetry Catch-up**: The Telemetry Producer back-fills any missed logs from the `storage/` volume to the HUD.
+1. **Startup Check**: On boot, the Orchestrator queries the **Mission Store** for any tasks in the `RUNNING` or `PAUSED` state. Each query and subsequent state transition must execute inside a database transaction to satisfy the atomicity guarantee (PRD §4.11): read current state, validate, and write new state atomically to prevent duplicate execution on concurrent restarts.
+2. **Sandbox Re-attachment**: Check if the stored `ContainerID` maps to a live, running container (via `docker inspect`). If the container is still running, attach to its stdout/stderr stream for telemetry catch-up. If the container is stopped, not found, or the `ContainerID` is `NULL` (e.g., crash occurred before container launch or after decommission), skip re-attachment and provision a new container from the last known checkpoint path in the Mission Store.
+3. **Telemetry Catch-up**: The **Telemetry Producer** back-fills any missed log entries from the `storage/` volume to the HUD, covering the outage window so operators can assess model behavior during downtime.

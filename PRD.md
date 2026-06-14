@@ -71,7 +71,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.11. Crash-Safe Mission Persistence
 - **Stateful Resumption**: If the system is interrupted (crash, power loss, restart), astra automatically recovers the state of all "In-Progress" missions.
-- **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the Model Registry, ensuring no more than a few minutes of progress is lost.
+- **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the **File Store** (`storage/` volume) at regular intervals (target: every 2–5 minutes of wall-clock training time), ensuring no more than a few minutes of progress is lost. Checkpoint paths are registered as metadata in the Model Registry for discovery.
 - **Atomic State Transitions**: Loop transitions (e.g., from Training to Eval) are logged as atomic events in the Mission Store to prevent duplicate or inconsistent execution upon resume.
 
 ## 5. User Experience & Autonomy Model
@@ -95,4 +95,4 @@ To balance autonomy with safety, astra implements a **Graduated Autonomy** syste
 - **Configurable Gates**: Users can set "Approval Flags" for:
   - **Code Generation**: Reviewing scripts before execution.
   - **Resource Usage**: Approving training runs that exceed a specific cost/time budget.
-- **Silent Mode**: Once a strategy is "trusted" (high success rate in previous iterations), astra can bypass gates for that specific sub-task.
+- **Silent Mode**: In **Supervised** mode only, once a specific sub-task strategy is "trusted" (high success rate in previous iterations), astra can bypass approval gates for that sub-task automatically. Silent Mode does not apply in Guided mode (all gates remain active) and is redundant in Full Autonomy mode (all gates are already suppressed by user choice). See DESIGN §4.2 for the full gate-priority model.

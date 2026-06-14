@@ -48,6 +48,6 @@
 2. **Dashboard**: Shows the Lead Agent "Thinking..." (Planning phase).
 3. **Dashboard**: Prompts for `EXECUTE_CODE` approval with a preview of the generated PyTorch script.
 4. **User**: Clicks "Approve & Start."
-5. **Dashboard**: Switches to HUD. Gauge shows "0/200." Curbs start plotting.
+5. **Dashboard**: Switches to HUD. Gauge shows "0/200." Curves start plotting.
 6. **Dashboard**: Gauge hits "205/200." Screen flashes "Goal Achieved."
 7. **Dashboard**: Prompts to "Crystallize as Tetris-Expert Recipe."

@@ -1,4 +1,6 @@
 name: tetris_cnn_v1
+version: "1.0.0"
+created_at: "2026-06-14"
 task_type: RL
 domain: Tetris
 description: "High-fidelity PPO recipe using CNN for spatial board awareness."

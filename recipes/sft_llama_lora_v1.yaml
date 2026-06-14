@@ -1,4 +1,6 @@
 name: sft_llama_lora_v1
+version: "1.0.0"
+created_at: "2026-06-14"
 task_type: SFT
 domain: NLP
 description: "Standard QLoRA fine-tuning recipe for Llama-3 class models."
@@ -18,5 +20,6 @@ training_params:
   learning_rate: 0.0002
   num_train_epochs: 3
   logging_steps: 10
-  save_strategy: "epoch"
+  save_strategy: "steps"
+  save_steps: 200
   fp16: true

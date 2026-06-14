@@ -1,4 +1,6 @@
 name: snake_ppo_v1
+version: "1.0.0"
+created_at: "2026-06-14"
 task_type: RL
 domain: Snake
 description: "Optimized PPO recipe for Snake with curriculum learning and distance-based rewards."
