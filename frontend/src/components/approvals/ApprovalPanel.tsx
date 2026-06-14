@@ -19,7 +19,7 @@ export function ApprovalPanel({ missionId }: Props) {
   if (!approvals?.length) return null;
 
   return (
-    <div className="bg-[#0d0d1a] border border-[#fbbf24]/30 rounded-lg overflow-hidden animate-slide-in">
+    <div className="bg-[#1e293b] border border-[#fbbf24]/30 rounded-lg overflow-hidden animate-slide-in">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-[#fbbf24]/10 border-b border-[#fbbf24]/20">
         <span className="text-[#fbbf24] text-sm">▲</span>
         <span className="text-[#fbbf24] text-xs font-semibold tracking-widest uppercase">
@@ -42,21 +42,21 @@ export function ApprovalPanel({ missionId }: Props) {
                 <span className="text-xs text-[#fbbf24] tracking-widest uppercase">
                   {GATE_LABELS[gate.gate_type] ?? gate.gate_type}
                 </span>
-                <span className="text-[10px] text-[#475569]">#{gate.id}</span>
+                <span className="text-[10px] text-[#94a3b8]">#{gate.id}</span>
               </div>
 
               {code && (
-                <pre className="bg-[#12122a] border border-[rgba(20,184,166,0.1)] rounded p-3
+                <pre className="bg-[#263347] border border-[rgba(20,184,166,0.1)] rounded p-3
                                 text-[11px] text-[#94a3b8] overflow-x-auto max-h-48 mb-3 whitespace-pre-wrap">
                   {code}
                 </pre>
               )}
 
               {resources && !code && (
-                <div className="bg-[#12122a] rounded p-3 mb-3 text-[11px] text-[#94a3b8] space-y-1">
+                <div className="bg-[#263347] rounded p-3 mb-3 text-[11px] text-[#94a3b8] space-y-1">
                   {Object.entries(resources as Record<string, unknown>).map(([k, v]) => (
                     <div key={k} className="flex justify-between">
-                      <span className="text-[#475569]">{k}</span>
+                      <span className="text-[#94a3b8]">{k}</span>
                       <span>{String(v)}</span>
                     </div>
                   ))}
@@ -69,6 +69,7 @@ export function ApprovalPanel({ missionId }: Props) {
                     resolve.mutate({ approvalId: gate.id, decision: "approved" })
                   }
                   disabled={resolve.isPending}
+                  aria-label={`Approve gate #${gate.id}`}
                   className="flex-1 py-2 rounded border border-[#4ade80]/30 text-[#4ade80] text-xs
                              hover:bg-[#4ade80]/10 disabled:opacity-40 transition-colors"
                 >
@@ -79,6 +80,7 @@ export function ApprovalPanel({ missionId }: Props) {
                     resolve.mutate({ approvalId: gate.id, decision: "rejected" })
                   }
                   disabled={resolve.isPending}
+                  aria-label={`Reject gate #${gate.id}`}
                   className="flex-1 py-2 rounded border border-[#f87171]/30 text-[#f87171] text-xs
                              hover:bg-[#f87171]/10 disabled:opacity-40 transition-colors"
                 >

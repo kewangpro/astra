@@ -21,7 +21,7 @@ function GlobalStats() {
   ];
 
   return (
-    <div className="flex gap-6 text-xs text-[#475569]">
+    <div className="flex gap-6 text-xs text-[#94a3b8]">
       {stats.map((s) => (
         <div key={s.label} className="flex items-center gap-1.5">
           {s.color && (
@@ -46,7 +46,7 @@ export default function CommandCenter() {
           <h1 className="text-lg font-semibold text-[#e2e8f0] tracking-wide">
             Command Center
           </h1>
-          <p className="text-xs text-[#475569] mt-0.5">
+          <p className="text-xs text-[#94a3b8] mt-0.5">
             Define a training goal and launch an autonomous mission
           </p>
         </div>
@@ -56,7 +56,7 @@ export default function CommandCenter() {
       <GoalInput />
 
       <div>
-        <h2 className="text-xs text-[#475569] tracking-widest uppercase mb-4">
+        <h2 className="text-xs text-[#94a3b8] tracking-widest uppercase mb-4">
           Missions
         </h2>
         <MissionsGrid />

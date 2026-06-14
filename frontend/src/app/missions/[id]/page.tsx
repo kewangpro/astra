@@ -9,6 +9,31 @@ import { MetricChart } from "@/components/hud/MetricChart";
 import { LogStream } from "@/components/hud/LogStream";
 import { PivotTimeline } from "@/components/hud/PivotTimeline";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
+import type { TelemetryEvent } from "@/lib/api";
+
+function PivotAwareLayout({
+  events,
+  connected,
+}: {
+  events: TelemetryEvent[];
+  connected: boolean;
+}) {
+  const hasPivots = events.some(
+    (e) => e.event === "pivot" || e.event === "loop.pivot" || e.event.includes("pivot")
+  );
+  return (
+    <div className={`grid grid-cols-1 gap-4 ${hasPivots ? "lg:grid-cols-3" : ""}`}>
+      <div className={hasPivots ? "lg:col-span-2" : ""}>
+        <LogStream events={events} connected={connected} />
+      </div>
+      {hasPivots && (
+        <div>
+          <PivotTimeline events={events} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 const STATUS_COLOR: Record<string, string> = {
   pending:    "#94a3b8",
@@ -34,7 +59,7 @@ export default function MissionHUD({
 
   if (isLoading)
     return (
-      <div className="flex items-center justify-center h-96 text-[#334155] text-sm">
+      <div className="flex items-center justify-center h-96 text-[#64748b] text-sm">
         Loading mission…
       </div>
     );
@@ -57,10 +82,10 @@ export default function MissionHUD({
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-1">
-            <Link href="/" className="text-[#475569] text-xs hover:text-[#14b8a6] transition-colors">
+            <Link href="/" className="text-[#94a3b8] text-xs hover:text-[#14b8a6] transition-colors">
               ← missions
             </Link>
-            <span className="text-[#334155] text-xs">/ #{missionId}</span>
+            <span className="text-[#64748b] text-xs">/ #{missionId}</span>
           </div>
           <p className="text-[#e2e8f0] text-sm leading-relaxed line-clamp-2">
             {mission.goal}
@@ -86,14 +111,7 @@ export default function MissionHUD({
       </div>
 
       {/* Log + Pivots */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <LogStream events={events} connected={connected} />
-        </div>
-        <div>
-          <PivotTimeline events={events} />
-        </div>
-      </div>
+      <PivotAwareLayout events={events} connected={connected} />
     </div>
   );
 }

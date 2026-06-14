@@ -6,9 +6,12 @@ import { useRouter } from "next/navigation";
 
 const DOMAINS = ["general", "vision", "nlp", "rl", "tabular"];
 
+const MAX = 280;
+
 export function GoalInput() {
   const [goal, setGoal] = useState("");
   const [domain, setDomain] = useState("general");
+  const [focused, setFocused] = useState(false);
   const router = useRouter();
   const create = useCreateMission();
   const run = useRunMission();
@@ -21,51 +24,98 @@ export function GoalInput() {
   };
 
   const loading = create.isPending || run.isPending;
+  const remaining = MAX - goal.length;
 
   return (
-    <div className="bg-[#0d0d1a] border border-[rgba(20,184,166,0.2)] rounded-lg p-6">
-      <label className="block text-xs text-[#64748b] tracking-widest mb-3 uppercase">
-        Training Goal
-      </label>
-      <textarea
-        value={goal}
-        onChange={(e) => setGoal(e.target.value)}
-        placeholder="e.g. Train a ResNet-18 to achieve > 92% accuracy on CIFAR-10 within 20 iterations"
-        rows={3}
-        className="w-full bg-[#12122a] border border-[rgba(20,184,166,0.15)] rounded px-4 py-3
-                   text-sm text-[#e2e8f0] placeholder-[#334155] resize-none
-                   focus:outline-none focus:border-[#14b8a6] transition-colors"
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-        }}
-      />
-      <div className="mt-3 flex items-center gap-3">
+    <div
+      className="rounded-lg transition-all duration-300"
+      style={{
+        background: "#1e293b",
+        border: focused
+          ? "1px solid rgba(20,184,166,0.5)"
+          : "1px solid rgba(20,184,166,0.15)",
+        boxShadow: focused
+          ? "0 0 0 1px rgba(20,184,166,0.1), 0 0 40px rgba(20,184,166,0.05)"
+          : "none",
+      }}
+    >
+      {/* Terminal header bar */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[rgba(20,184,166,0.08)]">
+        <span className="text-[10px] text-[#64748b] tracking-widest uppercase">
+          mission.objective
+        </span>
+        <span className="ml-auto text-[10px] text-[#94a3b8]">domain:</span>
         <select
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
-          className="bg-[#12122a] border border-[rgba(20,184,166,0.15)] rounded px-3 py-2
-                     text-sm text-[#94a3b8] focus:outline-none focus:border-[#14b8a6] transition-colors"
+          className="appearance-none bg-transparent text-[10px] text-[#14b8a6]
+                     focus:outline-none cursor-pointer tracking-widest"
         >
           {DOMAINS.map((d) => (
-            <option key={d} value={d}>
+            <option key={d} value={d} className="bg-[#263347] text-[#94a3b8]">
               {d}
             </option>
           ))}
         </select>
+        <svg width="8" height="5" viewBox="0 0 8 5" className="text-[#94a3b8]">
+          <path d="M0 0l4 5 4-5z" fill="currentColor" />
+        </svg>
+      </div>
+
+      {/* Input area */}
+      <div className="flex gap-3 px-4 py-4">
+        <span
+          className="text-[#14b8a6] text-sm mt-0.5 select-none shrink-0"
+          style={{ opacity: focused ? 1 : 0.4 }}
+        >
+          &gt;_
+        </span>
+        <textarea
+          value={goal}
+          onChange={(e) => setGoal(e.target.value.slice(0, MAX))}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="define training objective — e.g. ResNet-18 achieving >92% on CIFAR-10 in 20 iterations"
+          rows={2}
+          className="flex-1 bg-transparent text-sm text-[#e2e8f0] placeholder-[#2d3748]
+                     resize-none focus:outline-none leading-relaxed"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+          }}
+        />
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[rgba(20,184,166,0.08)]">
+        <span
+          className="text-[10px]"
+          style={{ color: remaining < 40 ? "#f87171" : "#334155" }}
+        >
+          {remaining}
+        </span>
+
+        <div className="flex-1" />
+
+        <span className="text-[10px] text-[#64748b] hidden sm:block">⌘↵ to launch</span>
+
         <button
           onClick={submit}
           disabled={loading || !goal.trim()}
-          className="ml-auto flex items-center gap-2 px-5 py-2 rounded
-                     bg-[#14b8a6] hover:bg-[#0d9488] disabled:opacity-40 disabled:cursor-not-allowed
-                     text-[#070710] text-sm font-semibold transition-colors"
+          className="flex items-center gap-2 px-4 py-1.5 rounded text-xs font-semibold
+                     transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{
+            background: goal.trim() && !loading ? "#14b8a6" : "rgba(20,184,166,0.1)",
+            color: goal.trim() && !loading ? "#0f172a" : "#14b8a6",
+            border: "1px solid rgba(20,184,166,0.3)",
+          }}
         >
           {loading ? (
             <>
-              <span className="inline-block w-3 h-3 border-2 border-[#070710] border-t-transparent rounded-full animate-spin" />
-              Launching…
+              <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+              launching
             </>
           ) : (
-            "Launch Mission ⌘↵"
+            "launch mission"
           )}
         </button>
       </div>
