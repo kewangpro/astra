@@ -40,11 +40,15 @@ astra is designed as a modular system where a **Lead Agent** orchestrates severa
 ## 2. Components
 
 ### 2.1. LLM-Driven Orchestrator (Lead Agent)
-The "Brain" of astra. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon via **MLX** or **Ollama**. On **24GB RAM (M4)**, we prioritize models that leave at least 8-12GB free for training sandboxes. Recommended models:
+The "Brain" of astra. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon. The choice of inference engine depends on available **Unified Memory**:
+- **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)**. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes.
+- **Advanced (64GB+ RAM)**: **vLLM (Metal)**. Recommended for high-concurrency multi-agent setups. Leverages **PagedAttention** for massive log contexts and **Continuous Batching** for simultaneous specialist reasoning.
+
+Recommended models for 24GB M4:
 - **Lead Agent (Planning/Reasoning)**: Llama-3.1-8B (Instruct, Q8_0) or Mistral-Nemo-12B (Q4_K_M).
 - **Specialist Generator (Coding)**: DeepSeek-Coder-V2-Lite (MoE) or CodeLlama-13B (Q4_K_M).
 
-*Hardware Note:* The 24GB unified memory must be shared between the LLM and the active training runs. Using 4-bit or 8-bit quantization is required to maintain a low memory footprint.
+*Hardware Note:* The 24GB unified memory must be shared between the LLM and the active training runs. Using 4-bit or 8-bit quantization is required to maintain a low memory footprint. Native MLX is preferred on 24GB to avoid the pre-allocation overhead of serving engines.
 
 ### 2.2. Autonomous Training Loop
 The execution engine that manages the state machine of training:
