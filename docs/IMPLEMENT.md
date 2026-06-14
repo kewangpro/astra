@@ -52,32 +52,35 @@ This document outlines the phased implementation strategy for `astra`.
       - `POST /telemetry/missions/{id}/metrics` — sandbox pushes metrics here; appended to JSONL and broadcast to subscribers.
       - `WS /ws/missions/{id}/telemetry` — HUD connects here; on connect, back-fills full JSONL history before streaming live events.
 
-## Phase 3: The Brain (LLM & Autonomous Loop)
+## Phase 3: The Brain (LLM & Autonomous Loop) ✅
 *Goal: Implement the planning, self-healing, and iteration logic.*
 
-- [ ] **Step 3.1: Lead Agent (The Orchestrator)**
-    - Integrate **Native MLX Inference** (via `mlx-lm`) as the primary local provider for 24GB hardware.
-    - Implement a `ModelManager` to dynamically adjust LLM memory footprint and trigger garbage collection when training sandboxes require more VRAM.
-    - Implement **Smart KV Caching**: custom eviction policy for conversation history vs. system/code context.
-    - Implement **Speculative Decoding** *(sandbox-idle only)*: load 1B/3B drafter models when no training run is active; `ModelManager` must evict before sandbox launch.
-    - Implement **Structured Output Parsing**: grammar-based sampling for JSON and code blocks.
-    - Setup prefix caching for efficient real-time log analysis.
-    - (Optional) Build an abstraction layer to support **vLLM (Metal)** for high-memory environments.
-    - Setup system prompts for strategic goal decomposition.
-- [ ] **Step 3.2: Code Generator & Self-Healer**
-    - Create prompt templates for generating training scripts.
-    - Implement the "Error Analyzer" that fixes code based on stack traces.
-- [ ] **Step 3.3: The Autonomous Loop State Machine**
-    - Implement the logic: Plan -> Implement -> Sandbox -> Execute -> Eval -> Refine.
-    - Add support for strategic pivots (e.g., hyperparameter adjustments).
-- [ ] **Step 3.4: Specialist Evaluator**
-    - Build the independent `Evaluator` agent (DESIGN §2.6).
-    - Implement `BenchmarkSuite`: runs the model against a fixed "Golden Set" of challenges.
-    - Implement `StressTester`: introduces noise and edge cases to verify robustness.
-    - Wire the Evaluator as the mandatory actor in the `Eval` phase of the loop state machine.
-- [ ] **Step 3.5: Analysis & Introspection Suite**
-    - Implement `SpatialAnalyzer`: generates CNN saliency/activation maps and exposes them via API for the Model Registry deep-dive view (DESIGN §2.7).
-    - Implement `PolicyAuditor`: computes and logs action-distribution histograms to detect mode collapse or bias.
+- [x] **Step 3.1: Lead Agent (The Orchestrator)**
+    - `backend/agent/inference/`: `InferenceProvider` ABC + three implementations:
+      - `MLXProvider` — native `mlx-lm` (Apple Silicon; lazy-load, `mx.metal.clear_cache()` on unload).
+      - `VLLMProvider` — vLLM Metal (optional, 64GB+).
+      - `MockProvider` — deterministic scripted responses for testing (no model weights required).
+    - `backend/agent/model_manager.py`: `ModelManager` — tracks estimated VRAM usage, evicts speculative drafter before sandbox launch via `before_sandbox_launch()`, restores on `after_sandbox_exit()`, triggers GC + Metal cache clear.
+    - `backend/agent/kv_cache.py`: `SmartKVCache` — three buckets (system/pinned, code/pinned-per-iteration, history/sliding-window); evicts oldest history turns when token budget exceeded.
+    - `backend/agent/lead_agent.py`: `LeadAgent` — structured JSON output with retry-on-parse-error; `plan()` for goal decomposition; `propose_pivot()` for stalled runs; `analyze_logs()` for prefix-cached log analysis.
+    - `backend/agent/`: vLLM abstraction layer provided via `VLLMProvider` (DESIGN §2.1.2).
+    - **Production setup**: swap `MockProvider` → `MLXProvider` in `backend/routers/agent.py` after downloading a quantized model.
+- [x] **Step 3.2: Code Generator & Self-Healer**
+    - `backend/agent/code_generator.py`: `CodeGenerator` — prompt templates for RL (SB3), SFT (HF+PEFT), and ML (sklearn/Lightning); writes generated script to `data/missions/{id}/train.py`.
+    - `backend/agent/error_analyzer.py`: `ErrorAnalyzer` — parses stack traces (extracts exception type, truncates to last 50 lines); generates and writes fixed script as `train.py.fixed_{n}.py`.
+- [x] **Step 3.3: The Autonomous Loop State Machine**
+    - `backend/loop/state_machine.py`: `LoopStateMachine` — full Plan→Implement→Sandbox→Execute→Eval→Refine cycle; atomic DB state transitions; `EXECUTE_CODE` approval gate in supervised mode; max 3 error-fix retries before FAILED.
+    - `backend/loop/pivots.py`: `PivotEngine` — detects plateau (< 1% relative improvement over 3 iterations); calls `LeadAgent.propose_pivot()` to get hyperparameter adjustments.
+    - `backend/models/approval.py`: `ApprovalGate` table (`pending/approved/rejected`; `execute_code/resource_allocation/deploy_model` gate types).
+    - `POST /agent/missions/{id}/run` — launches loop as a FastAPI background task.
+    - `GET/POST /approvals`, `POST /approvals/{id}/approve|reject` — approval gate CRUD.
+- [x] **Step 3.4: Specialist Evaluator**
+    - `backend/evaluator/specialist.py`: `SpecialistEvaluator` — mandatory Eval phase actor; finds latest checkpoint, runs BenchmarkSuite + StressTester, returns verdict.
+    - `backend/evaluator/benchmark.py`: `BenchmarkSuite` — domain-keyed Golden Sets (snake, tetris, nlp); `GoldenChallenge` dataclass with `evaluate_fn` + `pass_threshold`; Phase 6 replaces stub eval functions with real env rollouts.
+    - `backend/evaluator/stress_tester.py`: `StressTester` — domain-specific noise strategies (RL obs noise, SFT adversarial prompts, ML feature noise); runs across `n_seeds=3`.
+- [x] **Step 3.5: Analysis & Introspection Suite**
+    - `backend/analysis/spatial_analyzer.py`: `SpatialAnalyzer` — Grad-CAM via forward/backward hooks on last Conv2d layer; exposed via `POST /analysis/missions/{id}/saliency`.
+    - `backend/analysis/policy_auditor.py`: `PolicyAuditor` — action-frequency histogram + entropy + mode-collapse detection (> 80% single action); exposed via `POST /analysis/missions/{id}/audit`.
 
 ## Phase 4: Mission Control (Web Dashboard)
 *Goal: Build the professional Next.js interface for monitoring and control.*
