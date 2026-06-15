@@ -157,15 +157,21 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 - [ ] **Step 7.1: The GAN Pattern (Skeptical Peer Review)**
     - Introduce a "Safety Critic" agent to "Red Team" proposed plans before execution.
-    - LoopStateMachine: intercept `PLAN` output, pass to Critic for subjective rubric grading (Safety, Complexity, Overfitting Risk).
+    - LoopStateMachine: intercept \`PLAN\` output, pass to Critic for subjective rubric grading (Safety, Complexity, Overfitting Risk).
     - Generator must address Critic's feedback if score < 8/10.
-- [ ] **Step 7.2: Artifact-Based State Management**
-    - Implement `MISSION_MANIFEST.json` in `data/missions/{id}/`.
+- [ ] **Step 7.2: Atomic Requirement Manifests**
+    - Replace text-based goals with a structured \`requirements.json\` (e.g., list of 10+ granular "features" or "behaviours" with boolean \`passed\` flags).
+    - ASTRA is prohibited from marking a mission COMPLETED until every flag in the manifest is toggled to \`true\` by the Evaluator.
+- [ ] **Step 7.3: The "Clean Handoff" Protocol**
+    - At the end of every loop iteration, the agent must generate a \`SESSION_SUMMARY.md\`.
+    - This artifact must explicitly state: 1) Last successful action, 2) Current blocker, 3) Exact next step for the following iteration.
+    - This summary becomes the "Primary Working Memory" for the next agent, ensuring context-reset resilience.
+- [ ] **Step 7.4: Pre-Flight & Post-Flight Verification**
+    - Implement a mandatory "Pre-Flight" step: ASTRA must run existing Benchmarks/Tests to ensure a stable baseline before implementation.
+    - Implement "Post-Flight" E2E: Every code change must be verified by a newly generated test case that checks the specific requirement toggled in Step 7.2.
+- [ ] **Step 7.5: Artifact-Based State Management**
+    - Implement \`MISSION_MANIFEST.json\` in \`data/missions/{id}/\`.
     - Manifest stores "Current Source of Truth": best hyperparameters, summarized lessons, and compressed history.
-    - Each loop iteration "resets" the context window by loading the Manifest into the system prompt, rather than raw log history.
-- [ ] **Step 7.3: Multi-Dimensional Validation Contracts**
-    - `LeadAgent.plan()`: generate a "Validation Contract" alongside code (JSON rubric of secondary health metrics like entropy, gradient variance, etc.).
-    - `SpecialistEvaluator`: grade runs against the full contract, not just the primary target metric.
-- [ ] **Step 7.4: The Critique HUD**
+- [ ] **Step 7.6: The Critique HUD**
     - Expose the "Evaluator's Critique" and "Plan Red-Teaming" logs in the frontend HUD.
     - Add a "Critique Trace" component to visualize the internal debate between Generator and Critic.
