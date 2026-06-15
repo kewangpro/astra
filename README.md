@@ -119,11 +119,13 @@ make ports  # show port status for all services
 
 ## Hardware Target
 
-Optimized for **Apple Silicon M4, 24 GB unified memory**. Two-machine setup:
+Optimized for **Apple Silicon M4, 24 GB unified memory**.
+
+Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH, set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
 
 | Machine | Role | Models / Load |
 |---|---|---|
-| MacBook M4 24 GB | MLX inference (both agents) + orchestration | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) = ~8.5 GB |
-| mac-mini M4 24 GB | Training execution (SSH sandbox) | Full 24 GB available for training subprocess |
+| MacBook M4 24 GB | MLX inference (both agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) = ~8.5 GB |
+| mac-mini M4 24 GB (optional) | Remote training execution via SSH | Full 24 GB available for training subprocess |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.
