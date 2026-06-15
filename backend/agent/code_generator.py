@@ -30,7 +30,8 @@ Requirements:
     Body: {{"mission_id": "...", "name": "...", "value": 0.0, "step": 0}}
 - Save checkpoints to: {checkpoint_dir}
 - On error, print the full traceback and exit with code 1.
-Return ONLY the Python script, no explanation."""
+- DO NOT use markdown code blocks (```python ... ```).
+- Return ONLY the raw Python script, no explanation, no preamble, no stop tokens."""
 
 _RL_TEMPLATE = """\
 Generate a complete RL training script using Stable-Baselines3.
@@ -84,7 +85,10 @@ Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script must:
-1. Load the dataset (CSV or JSON) from {dataset_path}.
+1. Load the dataset: if {dataset_path} is a well-known sklearn dataset name (e.g. "iris",
+   "digits", "breast_cancer", "wine"), use sklearn.datasets.load_{dataset_path}() and
+   convert to a DataFrame — do NOT read from a file. Otherwise load from {dataset_path}
+   using pandas (CSV) or json.
 2. Split into train/val sets.
 3. Train the model.
 4. POST accuracy and loss to the telemetry endpoint after each epoch/fold.
@@ -128,7 +132,7 @@ class CodeGenerator:
         code = await self._provider.generate(messages, GenerationConfig(max_tokens=4096, temperature=0.1))
         code = self._strip_fences(code)
 
-        script_path = os.path.join(settings.data_path, "missions", mission_id, "train.py")
+        script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
         with open(script_path, "w") as f:
             f.write(code)
@@ -139,44 +143,57 @@ class CodeGenerator:
     def _build_user_prompt(self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str) -> str:
         hp = plan.get("hyperparameters", {})
         api_url = f"http://127.0.0.1:{settings.api_port}"
-        ctx = {
+        base = {
             "mission_id": mission_id,
             "checkpoint_dir": checkpoint_dir,
             "api_url": api_url,
             "target_metric": json.dumps(plan.get("target_metric", {})),
-            **hp,
         }
         if task_type == "rl":
-            return _RL_TEMPLATE.format(
-                algorithm=plan.get("algorithm", "PPO"),
-                env_id=hp.get("env_id", "CartPole-v1"),
-                hyperparameters=json.dumps(hp, indent=2),
-                **ctx,
-            )
+            ctx = {
+                "algorithm": plan.get("algorithm", "PPO"),
+                "env_id": "CartPole-v1",
+                "hyperparameters": json.dumps(hp, indent=2),
+                **hp,
+                **base,
+            }
+            return _RL_TEMPLATE.format(**ctx)
         if task_type == "sft":
-            return _SFT_TEMPLATE.format(
-                base_model=hp.get("base_model", "meta-llama/Llama-3.1-8B"),
-                dataset_path=hp.get("dataset_path", "dataset.jsonl"),
-                lora_r=hp.get("lora_r", 16),
-                lora_alpha=hp.get("lora_alpha", 32),
-                lora_dropout=hp.get("lora_dropout", 0.05),
-                batch_size=hp.get("per_device_train_batch_size", 4),
-                learning_rate=hp.get("learning_rate", 2e-4),
-                num_epochs=hp.get("num_train_epochs", 3),
-                save_steps=hp.get("save_steps", 200),
-                **ctx,
-            )
+            ctx = {
+                "base_model": "meta-llama/Llama-3.1-8B",
+                "dataset_path": "dataset.jsonl",
+                "lora_r": 16,
+                "lora_alpha": 32,
+                "lora_dropout": 0.05,
+                "batch_size": 4,
+                "learning_rate": 2e-4,
+                "num_epochs": 3,
+                "save_steps": 200,
+                **hp,
+                **base,
+            }
+            return _SFT_TEMPLATE.format(**ctx)
         # ml
-        return _ML_TEMPLATE.format(
-            framework=hp.get("framework", "sklearn"),
-            model_class=hp.get("model_class", "RandomForestClassifier"),
-            dataset_path=hp.get("dataset_path", "dataset.csv"),
-            target_column=hp.get("target_column", "label"),
-            model_params=json.dumps(hp.get("model_params", {}), indent=2),
-            **ctx,
-        )
+        ctx = {
+            "framework": "sklearn",
+            "model_class": "RandomForestClassifier",
+            "dataset_path": "dataset.csv",
+            "target_column": "label",
+            "model_params": json.dumps(hp.get("model_params", {}), indent=2),
+            **hp,
+            **base,
+        }
+        return _ML_TEMPLATE.format(**ctx)
 
     @staticmethod
     def _strip_fences(text: str) -> str:
         import re
-        return re.sub(r"^```(?:python)?\s*\n?", "", re.sub(r"\n?```\s*$", "", text.strip()))
+        # Remove common LLM artifacts
+        text = re.sub(r"<\|im_end\|>|<\|endoftext\|>", "", text)
+        # Remove lines that are purely markdown fences or artifacts
+        lines = []
+        for line in text.splitlines():
+            if line.strip().startswith("```"):
+                continue
+            lines.append(line)
+        return "\n".join(lines).strip()

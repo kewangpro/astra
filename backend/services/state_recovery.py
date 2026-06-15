@@ -27,7 +27,12 @@ async def recover_interrupted_missions() -> int:
     """
     from backend.sandbox.manager import sandbox_manager   # late import to avoid circular dep
 
-    recoverable = [MissionStatus.RUNNING.value, MissionStatus.PAUSED.value]
+    recoverable = [
+        MissionStatus.RUNNING.value,
+        MissionStatus.PAUSED.value,
+        MissionStatus.PLANNING.value,
+        MissionStatus.EVALUATING.value,
+    ]
 
     async with AsyncSessionLocal() as session:
         async with session.begin():

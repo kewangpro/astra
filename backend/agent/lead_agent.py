@@ -25,7 +25,11 @@ Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
 Consider: task type (rl/sft/ml), algorithm selection, hyperparameters, curriculum phases,
-and how you will measure success against the target metric."""
+and how you will measure success against the target metric.
+
+For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
+(e.g. "iris", "digits", "breast_cancer", "wine") for built-in datasets, or a file path for
+custom datasets."""
 
 _PIVOT_SYSTEM = """\
 You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaued.
@@ -134,18 +138,29 @@ class LeadAgent:
 
     # ── Structured output with retry ─────────────────────────────────────────
 
+    @staticmethod
+    def _extract_json(raw: str) -> str:
+        """Strip markdown fences and LLM stop tokens, then extract the first JSON object/array."""
+        import re
+        text = re.sub(r"<\|im_end\|>|<\|endoftext\|>", "", raw)
+        # Remove markdown code fences
+        text = re.sub(r"```(?:json)?\s*", "", text).replace("```", "").strip()
+        # Extract first {...} or [...] block in case of surrounding prose
+        m = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        return m.group(1) if m else text
+
     async def _generate_structured(self, messages: list[Message], schema: dict, retries: int = 2) -> dict:
         config = GenerationConfig(max_tokens=2048, temperature=0.2, json_schema=schema)
         for attempt in range(retries + 1):
             raw = await self._provider.generate(messages, config)
             try:
-                return json.loads(raw)
+                return json.loads(self._extract_json(raw))
             except json.JSONDecodeError as e:
                 if attempt < retries:
                     logger.warning("LeadAgent: JSON parse failed (attempt %d): %s", attempt + 1, e)
                     messages = messages + [
                         Message(role="assistant", content=raw),
-                        Message(role="user", content=f"Invalid JSON: {e}. Please return valid JSON only."),
+                        Message(role="user", content=f"Invalid JSON: {e}. Please return valid JSON only, no markdown."),
                     ]
                 else:
                     logger.error("LeadAgent: JSON parse failed after %d retries", retries)

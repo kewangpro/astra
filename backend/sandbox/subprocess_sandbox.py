@@ -11,6 +11,7 @@ import os
 import resource
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
 
 import psutil
@@ -47,8 +48,14 @@ class SubprocessSandbox(BaseSandbox):
             env["CUDA_VISIBLE_DEVICES"] = str(self.config.gpu_index)
             env["MPS_DEVICE_INDEX"] = str(self.config.gpu_index)
 
+        # Prefer the .venv interpreter so sandbox scripts have access to
+        # project dependencies regardless of how uvicorn was invoked.
+        _project_root = Path(__file__).resolve().parents[2]
+        _venv_python = _project_root / ".venv" / "bin" / "python"
+        python = str(_venv_python) if _venv_python.exists() else sys.executable
+
         self._process = subprocess.Popen(
-            [sys.executable, self.config.script_path],
+            [python, self.config.script_path],
             env=env,
             stdout=log_file,
             stderr=subprocess.STDOUT,

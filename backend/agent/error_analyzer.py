@@ -23,7 +23,8 @@ Rules:
 - If the error is an ImportError, add the missing import.
 - If the error is a shape mismatch or type error, fix the data handling.
 - If the error is a hyperparameter issue, adjust to a safe default.
-Return ONLY the corrected Python script, no explanation."""
+- DO NOT use markdown code blocks (```python ... ```).
+- Return ONLY the raw corrected Python script, no explanation, no preamble, no stop tokens."""
 
 _MAX_TRACEBACK_LINES = 50   # truncate very long tracebacks
 
@@ -92,4 +93,14 @@ class ErrorAnalyzer:
 
     @staticmethod
     def _strip_fences(text: str) -> str:
-        return re.sub(r"^```(?:python)?\s*\n?", "", re.sub(r"\n?```\s*$", "", text.strip()))
+        import re
+        # Remove common LLM artifacts
+        text = re.sub(r"<\|im_end\|>|<\|endoftext\|>", "", text)
+        # Remove lines that are purely markdown fences or artifacts
+        lines = []
+        for line in text.splitlines():
+            clean_line = line.strip()
+            if clean_line.startswith("```"):
+                continue
+            lines.append(line)
+        return "\n".join(lines).strip()

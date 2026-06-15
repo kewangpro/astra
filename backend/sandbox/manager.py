@@ -68,7 +68,7 @@ class SandboxManager:
         logger.info("SandboxManager initialized (default backend: %s)", self.default_backend)
 
     def _mission_data_dir(self, mission_id: str) -> str:
-        path = os.path.join(settings.data_path, "missions", mission_id)
+        path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
         os.makedirs(path, exist_ok=True)
         return path
 

@@ -14,6 +14,7 @@ from typing import Optional
 
 from backend.sandbox.base import BaseSandbox, SandboxConfig, SandboxStatus
 from backend.logging_config import get_logger
+from backend.config import settings
 
 logger = get_logger(__name__)
 
@@ -53,7 +54,8 @@ class SSHSandbox(BaseSandbox):
         env_str = " ".join(f"{k}={v}" for k, v in env_vars.items())
 
         # Launch nohup in background; echo PID so we can track it
-        cmd = f"nohup env {env_str} python3 {self._remote_script} > {self._remote_log} 2>&1 & echo $!"
+        python = settings.sandbox_python or "python3"
+        cmd = f"nohup env {env_str} {python} {self._remote_script} > {self._remote_log} 2>&1 & echo $!"
         result = subprocess.run(
             ["ssh", self._host, cmd],
             capture_output=True, text=True, check=True,

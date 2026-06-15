@@ -57,6 +57,6 @@ export const api = {
   resolveApproval: (approvalId: string, decision: "approved" | "rejected") =>
     req<ApprovalGate>(
       `/approvals/${approvalId}/${decision === "approved" ? "approve" : "reject"}`,
-      { method: "POST" }
+      { method: "POST", body: JSON.stringify({}) }
     ),
 };

@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     sandbox_host: str = ""
     # Base data directory on the remote sandbox host
     sandbox_data_path: str = "/tmp/astra"
+    # Python executable on the sandbox host (empty = python3)
+    sandbox_python: str = ""
     # Hostname/IP the training script uses to POST telemetry back to this MacBook
     telemetry_host: str = "macbook.local"
 
