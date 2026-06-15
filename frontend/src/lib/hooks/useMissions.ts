@@ -5,7 +5,7 @@ export function useMissions() {
   return useQuery({ queryKey: ["missions"], queryFn: api.getMissions });
 }
 
-export function useMission(id: number) {
+export function useMission(id: string) {
   return useQuery({
     queryKey: ["missions", id],
     queryFn: () => api.getMission(id),
@@ -13,7 +13,7 @@ export function useMission(id: number) {
   });
 }
 
-export function useMetrics(id: number) {
+export function useMetrics(id: string) {
   return useQuery({
     queryKey: ["metrics", id],
     queryFn: () => api.getMetrics(id),
@@ -22,7 +22,7 @@ export function useMetrics(id: number) {
   });
 }
 
-export function usePendingApprovals(id: number) {
+export function usePendingApprovals(id: string) {
   return useQuery({
     queryKey: ["approvals", id],
     queryFn: () => api.getPendingApprovals(id),
@@ -43,7 +43,7 @@ export function useCreateMission() {
 export function useRunMission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.runMission(id),
+    mutationFn: (id: string) => api.runMission(id),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["missions", id] });
       qc.invalidateQueries({ queryKey: ["missions"] });
@@ -51,7 +51,7 @@ export function useRunMission() {
   });
 }
 
-export function useResolveApproval(missionId: number) {
+export function useResolveApproval(missionId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({

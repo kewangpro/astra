@@ -50,8 +50,7 @@ export default function MissionHUD({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
-  const missionId = Number(id);
+  const { id: missionId } = use(params);
 
   const { data: mission, isLoading } = useMission(missionId);
   const { data: metrics = [] } = useMetrics(missionId);

@@ -44,16 +44,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getMissions: () => req<Mission[]>("/missions"),
-  getMission: (id: number) => req<Mission>(`/missions/${id}`),
+  getMission: (id: string) => req<Mission>(`/missions/${id}`),
   createMission: (goal: string, taskType?: string) =>
     req<Mission>("/missions", {
       method: "POST",
       body: JSON.stringify({ goal, task_type: taskType ?? "rl" }),
     }),
-  runMission: (id: number) =>
+  runMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/run`, { method: "POST" }),
-  getMetrics: (id: number) => req<Metric[]>(`/missions/${id}/metrics`),
-  getPendingApprovals: (id: number) =>
+  getMetrics: (id: string) => req<Metric[]>(`/missions/${id}/metrics`),
+  getPendingApprovals: (id: string) =>
     req<ApprovalGate[]>(`/approvals/missions/${id}/pending`),
   resolveApproval: (approvalId: number, decision: "approved" | "rejected") =>
     req<ApprovalGate>(`/approvals/${approvalId}`, {

@@ -3,7 +3,7 @@
 import { usePendingApprovals, useResolveApproval } from "@/lib/hooks/useMissions";
 
 interface Props {
-  missionId: number;
+  missionId: string;
 }
 
 const GATE_LABELS: Record<string, string> = {

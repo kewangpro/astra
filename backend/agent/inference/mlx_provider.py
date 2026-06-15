@@ -90,7 +90,7 @@ class MLXProvider(InferenceProvider):
                 self._tokenizer,
                 prompt=prompt,
                 max_tokens=cfg.max_tokens,
-                temp=cfg.temperature,
+                temperature=cfg.temperature,
                 top_p=cfg.top_p,
                 verbose=False,
             ),
