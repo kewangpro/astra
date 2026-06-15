@@ -116,6 +116,8 @@ class LoopStateMachine:
                 # ── SANDBOXING ────────────────────────────────────────────
                 self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
                 await emit_status(mission_id, "Launching training sandbox…", event_type="info")
+                log_path = self._sandbox.get_log_path(mission_id)
+                log_offset = os.path.getsize(log_path) if os.path.isfile(log_path) else 0
                 pid, container_id = self._sandbox.launch(
                     mission_id, script_path,
                     env_vars={"ASTRA_MISSION_ID": mission_id},
@@ -126,7 +128,7 @@ class LoopStateMachine:
 
                 # ── EXECUTING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
-                error_output = await self._wait_for_sandbox(mission_id)
+                error_output = await self._wait_for_sandbox(mission_id, log_offset)
 
                 if error_output:
                     error_count += 1
@@ -262,15 +264,16 @@ class LoopStateMachine:
 
     # ── Sandbox polling ────────────────────────────────────────────────────────
 
-    async def _wait_for_sandbox(self, mission_id: str) -> Optional[str]:
+    async def _wait_for_sandbox(self, mission_id: str, log_offset: int = 0) -> Optional[str]:
         """Poll until the sandbox exits. Returns error output if it failed, else None."""
         log_path = self._sandbox.get_log_path(mission_id)
         while self._sandbox.is_alive(mission_id):
             await asyncio.sleep(EVAL_POLL_INTERVAL)
 
-        # Read log to check for errors
+        # Only read content written by THIS run (skip prior runs' output)
         if os.path.isfile(log_path):
             with open(log_path, "r") as f:
+                f.seek(log_offset)
                 content = f.read()
             if "Traceback" in content or "Error" in content:
                 return content

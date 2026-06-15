@@ -85,15 +85,18 @@ Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script must:
-1. Load the dataset: if {dataset_path} is a well-known sklearn dataset name (e.g. "iris",
-   "digits", "breast_cancer", "wine"), use sklearn.datasets.load_{dataset_path}() and
-   convert to a DataFrame — do NOT read from a file. Otherwise load from {dataset_path}
-   using pandas (CSV) or json.
-2. Split into train/val sets.
+1. Load the dataset:
+   - If {dataset_path} is a well-known sklearn dataset name ("iris", "digits",
+     "breast_cancer", "wine"), call sklearn.datasets.load_{dataset_path}() and use
+     the returned .data and .target arrays directly as X and y. Do NOT convert to a
+     DataFrame and do NOT import pandas or numpy for this step.
+   - Otherwise load from {dataset_path} using pandas (CSV) or json.
+2. Split into train/val sets using train_test_split(X, y, ...).
 3. Train the model.
-4. POST accuracy and loss to the telemetry endpoint after each epoch/fold.
-5. Save the model with joblib (sklearn) or trainer.save_checkpoint (Lightning).
-6. Exit cleanly when target metric is reached."""
+4. POST accuracy to the telemetry endpoint. Use response.ok (2xx) to check success;
+   log a warning on failure but do NOT exit — telemetry is non-critical.
+5. Save the model with joblib.
+6. Exit cleanly (exit(0) on success, exit(1) on error with traceback)."""
 
 
 class CodeGenerator:

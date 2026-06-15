@@ -64,7 +64,7 @@ async def _backfill(mission_id: str, ws: WebSocket) -> int:
 
 # ── HTTP: sandbox → FastAPI ────────────────────────────────────────────────────
 
-@router.post("/telemetry/missions/{mission_id}/metrics", status_code=202)
+@router.post("/telemetry/missions/{mission_id}/metrics", status_code=200)
 async def ingest_metric(mission_id: str, event: MetricEvent):
     """Receive a metric from the sandbox and broadcast to all connected HUD clients."""
     if event.mission_id != mission_id:

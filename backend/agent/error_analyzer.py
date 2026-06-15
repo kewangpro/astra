@@ -20,7 +20,7 @@ You are given a training script that failed and its error output.
 Analyze the error and return the complete corrected Python script.
 Rules:
 - Fix ONLY what caused the error; do not restructure working code.
-- If the error is an ImportError, add the missing import.
+- If the error is an ImportError or NameError for a module/name, add ALL missing imports at the top (scan the full script for any other missing imports at the same time).
 - If the error is a shape mismatch or type error, fix the data handling.
 - If the error is a hyperparameter issue, adjust to a safe default.
 - DO NOT use markdown code blocks (```python ... ```).
