@@ -151,3 +151,21 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/evaluator/benchmark.py`: added `snake_hard`, `tetris_hard`, `nlp_perplexity` scenarios; lower-is-better metric semantics for loss/perplexity; missing-checkpoint guard in all eval functions.
     - `backend/evaluator/stress_tester.py`: `StressReport` fields (`mean`, `std`, `min`, `max`, `reproducible`); seed-0 reproducibility check; primary metric aggregation per task type.
     - `backend/services/evolution.py` — `GoldenPromoter.record_win()`: calls `RegressionChecker.passes()` before awarding Golden status; blocks promotion on regression.
+
+## Phase 7: Resilience & Rigor (Harness Principles) ⏳
+*Goal: Apply Anthropic "Harness" principles to maximize long-running reliability.*
+
+- [ ] **Step 7.1: The GAN Pattern (Skeptical Peer Review)**
+    - Introduce a "Safety Critic" agent to "Red Team" proposed plans before execution.
+    - LoopStateMachine: intercept `PLAN` output, pass to Critic for subjective rubric grading (Safety, Complexity, Overfitting Risk).
+    - Generator must address Critic's feedback if score < 8/10.
+- [ ] **Step 7.2: Artifact-Based State Management**
+    - Implement `MISSION_MANIFEST.json` in `data/missions/{id}/`.
+    - Manifest stores "Current Source of Truth": best hyperparameters, summarized lessons, and compressed history.
+    - Each loop iteration "resets" the context window by loading the Manifest into the system prompt, rather than raw log history.
+- [ ] **Step 7.3: Multi-Dimensional Validation Contracts**
+    - `LeadAgent.plan()`: generate a "Validation Contract" alongside code (JSON rubric of secondary health metrics like entropy, gradient variance, etc.).
+    - `SpecialistEvaluator`: grade runs against the full contract, not just the primary target metric.
+- [ ] **Step 7.4: The Critique HUD**
+    - Expose the "Evaluator's Critique" and "Plan Red-Teaming" logs in the frontend HUD.
+    - Add a "Critique Trace" component to visualize the internal debate between Generator and Critic.

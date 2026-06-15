@@ -102,6 +102,12 @@ Deep-dive tools for "Explainable AI":
 - **Spatial Analyzer**: For CNNs, generates saliency maps to see what the agent is "looking at."
 - **Policy Auditor**: Visualizes the action distribution to detect mode collapse or bias.
 
+### 2.8. Resilience & Rigor Layer (Harness Principles)
+Enhancements for long-running stability:
+- **Safety Critic (Skeptical Peer Review)**: A specialized agent that audits the Lead Agent's plans. It uses a "GAN Pattern" to challenge assumptions and force defensive coding/planning.
+- **Mission Manifest**: A structured JSON handoff artifact that stores the "Current Source of Truth." It replaces long conversation history as the primary context for each new iteration, preventing "Context Anxiety" and performance drift.
+- **Validation Contract**: A multi-dimensional rubric generated during planning that defines "success" across primary metrics (e.g., reward) and secondary health signals (e.g., action entropy, loss stability).
+
 ## 3. Data Flow
 1. **Initiation**: User sends goal.
 2. **Recipe Retrieval**: Lead Agent queries the **Recipe Library** for similar past successes to create a "Warm-Start" plan.

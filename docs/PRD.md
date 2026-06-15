@@ -74,6 +74,11 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the **File Store** (`data/` volume) at regular intervals (target: every 2–5 minutes of wall-clock training time), ensuring no more than a few minutes of progress is lost. Checkpoint paths are registered as metadata in the Model Registry for discovery.
 - **Atomic State Transitions**: Loop transitions (e.g., from Training to Eval) are logged as atomic events in the Mission Store to prevent duplicate or inconsistent execution upon resume.
 
+### 4.12. Resilience & Rigor (Harness Principles)
+- **Skeptical Peer Review**: Implements a GAN-like architecture where a "Safety Critic" must audit and approve plans before execution, driving higher quality through iterative internal critique.
+- **Artifact-Driven Context**: Uses a structured Mission Manifest to maintain a "Single Source of Truth," allowing the agent to reset its context window and avoid the performance degradation associated with long conversation histories.
+- **Multi-Dimensional Validation**: Evaluates success using a complex rubric (Validation Contract) rather than a single metric, ensuring model health and robustness.
+
 ## 5. User Experience & Autonomy Model
 
 ### 5.1. The "Goal-First" Interface

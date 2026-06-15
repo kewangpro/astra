@@ -115,6 +115,7 @@ make ports  # show port status for all services
 | 4 | Mission Control — Next.js dashboard, Live HUD | ✅ Complete |
 | 5 | Wisdom — Recipe crystallization, evolution | ✅ Complete |
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
+| 7 | Resilience & Rigor — Harness Principles | ⏳ In Progress |
 
 ## Hardware Target
 
