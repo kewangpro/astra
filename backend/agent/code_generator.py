@@ -93,8 +93,8 @@ The script must:
    - Otherwise load from {dataset_path} using pandas (CSV) or json.
 2. Split into train/val sets using train_test_split(X, y, ...).
 3. Train the model.
-4. POST accuracy to the telemetry endpoint. Use response.ok (2xx) to check success;
-   log a warning on failure but do NOT exit — telemetry is non-critical.
+4. POST accuracy to the telemetry endpoint with metric name "accuracy".
+   Use response.ok (2xx) to check success; log a warning on failure but do NOT exit — telemetry is non-critical.
 5. Save the model with joblib.
 6. Exit cleanly (exit(0) on success, exit(1) on error with traceback)."""
 

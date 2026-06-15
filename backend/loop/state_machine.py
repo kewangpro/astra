@@ -118,6 +118,8 @@ class LoopStateMachine:
                 await emit_status(mission_id, "Launching training sandbox…", event_type="info")
                 log_path = self._sandbox.get_log_path(mission_id)
                 log_offset = os.path.getsize(log_path) if os.path.isfile(log_path) else 0
+                tel_path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
+                tel_offset = os.path.getsize(tel_path) if os.path.isfile(tel_path) else 0
                 pid, container_id = self._sandbox.launch(
                     mission_id, script_path,
                     env_vars={"ASTRA_MISSION_ID": mission_id},
@@ -155,6 +157,9 @@ class LoopStateMachine:
                 await emit_status(mission_id, "Evaluating results…", event_type="info")
                 eval_result = await self._evaluator.evaluate(mission_id, plan)
                 current_metrics = eval_result.get("metrics", {})
+                # Merge in metrics the sandbox actually posted to telemetry
+                sandbox_metrics = self._read_telemetry_metrics(mission_id, tel_offset)
+                current_metrics = {**current_metrics, **sandbox_metrics}
                 pivot_engine.record(mission.current_iteration or 0, current_metrics)
                 await self._save_best_metric(mission_id, pivot_engine.best_metric_value())
 
@@ -263,6 +268,27 @@ class LoopStateMachine:
                     )
 
     # ── Sandbox polling ────────────────────────────────────────────────────────
+
+    def _read_telemetry_metrics(self, mission_id: str, offset: int = 0) -> dict:
+        """Return {metric_name: value} for metric events written to telemetry.jsonl since offset."""
+        import json as _json
+        path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
+        metrics: dict = {}
+        if not os.path.isfile(path):
+            return metrics
+        with open(path, "r") as f:
+            f.seek(offset)
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = _json.loads(line)
+                    if event.get("type") == "metric" and "name" in event and "value" in event:
+                        metrics[event["name"]] = event["value"]
+                except Exception:
+                    pass
+        return metrics
 
     async def _wait_for_sandbox(self, mission_id: str, log_offset: int = 0) -> Optional[str]:
         """Poll until the sandbox exits. Returns error output if it failed, else None."""

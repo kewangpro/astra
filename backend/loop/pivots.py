@@ -30,17 +30,28 @@ class PivotEngine:
         self._history.append({"iteration": iteration, **metrics})
 
     def is_goal_met(self, metrics: dict) -> bool:
-        value = metrics.get(self._metric_name)
+        if not self._metric_name:
+            return False
+        value = self._resolve_metric(self._metric_name, metrics)
         if value is None:
             return False
         return value >= self._target_value
 
+    def _resolve_metric(self, name: str, metrics: dict) -> Optional[float]:
+        """Look up metric by name with fallback to suffix-match (e.g. 'accuracy' matches 'validation_accuracy')."""
+        if name in metrics:
+            return metrics[name]
+        for key, val in metrics.items():
+            if key.endswith(f"_{name}") or key.startswith(f"{name}_") or key == name:
+                return val
+        return None
+
     def needs_pivot(self) -> bool:
         """Return True if the last PLATEAU_WINDOW iterations show no meaningful improvement."""
         values = [
-            h.get(self._metric_name)
+            self._resolve_metric(self._metric_name, h)
             for h in self._history[-PLATEAU_WINDOW:]
-            if h.get(self._metric_name) is not None
+            if self._resolve_metric(self._metric_name, h) is not None
         ]
         if len(values) < PLATEAU_WINDOW:
             return False
@@ -57,7 +68,11 @@ class PivotEngine:
         return stalled
 
     def best_metric_value(self) -> Optional[float]:
-        values = [h.get(self._metric_name) for h in self._history if h.get(self._metric_name) is not None]
+        values = [
+            self._resolve_metric(self._metric_name, h)
+            for h in self._history
+            if self._resolve_metric(self._metric_name, h) is not None
+        ]
         return max(values) if values else None
 
     def history_snapshot(self) -> list[dict]:

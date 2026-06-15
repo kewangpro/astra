@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -11,9 +12,30 @@ from backend.schemas.mission import MissionCreate, MissionRead, MissionUpdate
 router = APIRouter(prefix="/missions", tags=["missions"])
 
 
+def _parse_target_metric(goal: str) -> dict:
+    """Extract a target metric dict from free-text goal. Returns {} if nothing recognized."""
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%\s*accuracy", goal, re.IGNORECASE)
+    if m:
+        return {"accuracy": float(m.group(1)) / 100}
+    m = re.search(r"accuracy\s+of\s+(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
+    if m:
+        val = float(m.group(1))
+        return {"accuracy": val if val <= 1.0 else val / 100}
+    m = re.search(r"reward\s+of\s+(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
+    if m:
+        return {"mean_reward": float(m.group(1))}
+    m = re.search(r"(?:eval_)?loss\s+(?:of\s+|<=?\s*)(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
+    if m:
+        return {"eval_loss": float(m.group(1))}
+    return {}
+
+
 @router.post("", response_model=MissionRead, status_code=status.HTTP_201_CREATED)
 async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_db)):
-    mission = Mission(**payload.model_dump())
+    payload_dict = payload.model_dump()
+    if not payload_dict.get("target_metric"):
+        payload_dict["target_metric"] = _parse_target_metric(payload.goal)
+    mission = Mission(**payload_dict)
     db.add(mission)
     await db.commit()
     await db.refresh(mission)
