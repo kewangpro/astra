@@ -137,10 +137,17 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **Step 6.1: Comprehensive Test Suite**
     - `pytest.ini` + `requirements-dev.txt` (pytest, pytest-asyncio, pytest-mock, aiosqlite).
     - `tests/conftest.py`: in-memory SQLite fixtures (StaticPool), `patch_db` monkeypatches `AsyncSessionLocal` in all modules.
-    - `tests/unit/test_pivot_engine.py`: 9 pure unit tests for `PivotEngine`.
-    - `tests/unit/test_benchmark_suite.py`: 6 unit tests for `BenchmarkSuite` (domain dispatch, pass/fail thresholds, missing checkpoint guard).
-    - `tests/unit/test_stress_tester.py`: 6 unit tests for `StressTester` (seed reproducibility, summary stats, strategy dispatch).
-    - `tests/integration/test_loop_state_machine.py`: 5 integration tests — happy path, error recovery, max retries, plateau+pivot, supervised gate rejection.
+    - **143 tests total** across unit and integration suites:
+      - `test_pivot_engine.py` (9), `test_benchmark_suite.py` (6), `test_stress_tester.py` (6), `test_manifest.py` (15) — core loop logic.
+      - `test_evolution.py` (22) — `MutationOperator` bounds, `SelectionPolicy` threshold logic.
+      - `test_kv_cache.py` (17) — `SmartKVCache` eviction, token accounting, message ordering.
+      - `test_model_manager.py` (18) — memory estimation, drafter eviction, GC trigger.
+      - `test_mission_state.py` (17) — `_primary_score`, `load`, `update` state transitions.
+      - `test_crystallizer.py` (28) — `_slugify`, `_next_version`, `_build_recipe_content`.
+      - `test_preflight.py` (16) — `PreflightResult.summary`, package checks, dir writability.
+      - `test_subprocess_sandbox.py` (13) — resource limits, PID tracking, lifecycle.
+      - `test_state_recovery.py` (8) — all recoverable status variants, mixed reattach/reset.
+      - `test_loop_state_machine.py` (5, integration) — happy path, error recovery, max retries, plateau+pivot, supervised gate rejection.
 - [x] **Step 6.2: Multi-GPU Orchestration**
     - `SandboxConfig.gpu_index: Optional[int]` — per-sandbox GPU device pinning.
     - `SubprocessSandbox`: injects `CUDA_VISIBLE_DEVICES` and `MPS_DEVICE_INDEX` when `gpu_index` is set.
@@ -152,7 +159,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/evaluator/stress_tester.py`: `StressReport` fields (`mean`, `std`, `min`, `max`, `reproducible`); seed-0 reproducibility check; primary metric aggregation per task type.
     - `backend/services/evolution.py` — `GoldenPromoter.record_win()`: calls `RegressionChecker.passes()` before awarding Golden status; blocks promotion on regression.
 
-## Phase 7: Resilience & Rigor (Harness Principles) ⏳
+## Phase 7: Resilience & Rigor (Harness Principles) ✅
 *Goal: Apply Anthropic "Harness" principles to maximize long-running reliability.*
 
 - [x] **Step 7.1: The GAN Pattern (Skeptical Peer Review)**

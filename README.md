@@ -4,6 +4,19 @@
 
 ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomously. You set the goal; ASTRA plans, implements, sandboxes, trains, evaluates, and iterates until the target metric is reached.
 
+## Feature Highlights
+
+- **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, driven by an LLM planner with no human intervention required
+- **GAN-style self-critique** — a CriticAgent scores every plan on safety, complexity, and overfitting risk before code is written; the LeadAgent revises on low scores
+- **Smart KV cache** — three-bucket context window (system / code / history) with sliding-window eviction so long runs never blow the token budget
+- **Recipe crystallization & evolution** — completed missions are distilled into versioned YAML recipes; recipes can be mutated, selected, and promoted to "Golden" status after consecutive wins
+- **Semantic warm-start** — ChromaDB recipe library retrieves the closest prior strategy before each new plan, reducing wasted iterations
+- **Atomic requirement manifests** — structured pass/fail requirements (stability, artifacts, metric thresholds) replace free-text goals; the loop only completes when all are green
+- **Clean handoff protocol** — every iteration writes a `SESSION_SUMMARY.md` capturing the last action, current blocker, and exact next step for reliable warm-restart
+- **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
+- **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
+- **143 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, etc.) plus integration tests for the full loop
+
 ## Documentation
 
 | Doc | Purpose |
@@ -20,10 +33,10 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 2. Install dependencies (including training stack)
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Download local MLX models (required for first run — both run on MacBook)
+# 3. Download local MLX models (required for first run)
 huggingface-cli download mlx-community/Meta-Llama-3.1-8B-Instruct-4bit
 huggingface-cli download mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
 
@@ -44,31 +57,24 @@ API docs available at `http://localhost:8200/docs` once the backend is running.
 ```
 astra/
 ├── backend/
-│   ├── main.py              # FastAPI app entry point
-│   ├── config.py            # Settings (ASTRA_* env vars)
-│   ├── database.py          # SQLAlchemy async engine
-│   ├── logging_config.py    # Logging setup
-│   ├── models/              # ORM: Experiment, ModelRecord, Mission, Metric, ApprovalGate, RecipeRecord
-│   ├── schemas/             # Pydantic request/response models
-│   ├── routers/             # API route handlers
-│   ├── agent/               # LeadAgent, CodeGenerator, ErrorAnalyzer, ModelManager, KVCache, InferenceProviders
-│   ├── loop/                # LoopStateMachine, PivotEngine
-│   ├── sandbox/             # BaseSandbox, SubprocessSandbox, ContainerSandbox, SandboxManager
-│   ├── trainers/            # BaseTrainer, RLTrainer, SFTTrainer, MLTrainer
-│   ├── evaluator/           # SpecialistEvaluator, BenchmarkSuite, StressTester
-│   ├── analysis/            # SpatialAnalyzer (Grad-CAM), PolicyAuditor
-│   └── services/
-│       ├── state_recovery.py    # Boot-time mission recovery
-│       ├── vector_memory.py     # ChromaDB lessons-learned memory
-│       ├── connection_manager.py# WebSocket fan-out for live telemetry
-│       ├── crystallizer.py      # Distils completed missions into recipes
-│       ├── recipe_library.py    # ChromaDB semantic recipe index + warm-start
-│       └── evolution.py         # Mutation, selection, GenePool, GoldenPromoter
-├── frontend/                # Next.js 15 mission control dashboard (port 3200)
-├── alembic/                 # Database migrations
-├── recipes/                 # YAML training recipes (hand-crafted + crystallized)
-├── data/                    # Runtime data: DB, weights, checkpoints, logs (gitignored)
-├── docs/                    # Architecture & design documents
+│   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ModelManager, KVCache, inference providers
+│   ├── analysis/       # SpatialAnalyzer (Grad-CAM), PolicyAuditor
+│   ├── evaluator/      # SpecialistEvaluator, BenchmarkSuite, StressTester, ManifestEvaluator
+│   ├── loop/           # LoopStateMachine, PivotEngine
+│   ├── models/         # ORM models: Mission, Experiment, ModelRecord, RecipeRecord, ApprovalGate, Manifest
+│   ├── routers/        # API route handlers
+│   ├── sandbox/        # SubprocessSandbox, ContainerSandbox, SandboxManager
+│   ├── schemas/        # Pydantic request/response models
+│   ├── services/       # Crystallizer, RecipeLibrary, Evolution, VectorMemory, MissionState, Preflight, StateRecovery
+│   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
+├── frontend/           # Next.js 15 mission control dashboard (port 3200)
+├── tests/
+│   ├── unit/           # 135 unit tests across all core modules
+│   └── integration/    # 8 integration tests for the loop state machine
+├── alembic/            # Database migrations
+├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
+├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
+├── docs/               # Architecture & design documents
 ├── .env.example
 └── requirements.txt
 ```
@@ -82,6 +88,7 @@ astra/
 | `GET/POST/PATCH/DELETE /registry/experiments` | Experiment CRUD |
 | `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter) |
 | `GET/POST/PATCH/DELETE /missions` | Mission CRUD |
+| `GET /missions/{id}/manifest` | Live requirement manifest state |
 | `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
 | `GET/POST /approvals` | Approval gate CRUD |
 | `POST /approvals/{id}/approve\|reject` | Approve or reject a pending gate |
@@ -113,9 +120,9 @@ make ports  # show port status for all services
 | 2 | Execution — SandboxManager, Trainers, Telemetry | ✅ Complete |
 | 3 | Brain — Lead Agent (MLX), Autonomous Loop, Evaluator | ✅ Complete |
 | 4 | Mission Control — Next.js dashboard, Live HUD | ✅ Complete |
-| 5 | Wisdom — Recipe crystallization, evolution | ✅ Complete |
+| 5 | Wisdom — Recipe crystallization, evolution, golden promotion | ✅ Complete |
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
-| 7 | Resilience & Rigor — Harness Principles | ⏳ In Progress |
+| 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 
 ## Hardware Target
 
@@ -125,7 +132,7 @@ Training sandboxes run locally by default (subprocess using the project `.venv`)
 
 | Machine | Role | Models / Load |
 |---|---|---|
-| MacBook M4 24 GB | MLX inference (both agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) = ~8.5 GB |
+| MacBook M4 24 GB | MLX inference (Lead + Critic agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) ≈ 8.5 GB |
 | mac-mini M4 24 GB (optional) | Remote training execution via SSH | Full 24 GB available for training subprocess |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.
