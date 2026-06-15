@@ -106,11 +106,16 @@ class CodeGenerator:
         Returns the path to the written script.
         """
         task_type = plan.get("task_type", "rl")
-        checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
-        os.makedirs(checkpoint_dir, exist_ok=True)
+        if settings.sandbox_host:
+            checkpoint_dir = os.path.join(
+                settings.sandbox_data_path, "missions", mission_id, "checkpoints"
+            )
+        else:
+            checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+            os.makedirs(checkpoint_dir, exist_ok=True)
 
         system_prompt = _BASE_SYSTEM.format(
-            api_url=f"http://127.0.0.1:{settings.api_port}",
+            api_url=f"http://{settings.telemetry_host}:{settings.api_port}",
             mission_id=mission_id,
             checkpoint_dir=checkpoint_dir,
         )

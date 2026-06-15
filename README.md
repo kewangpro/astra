@@ -23,11 +23,9 @@ source .venv/bin/activate
 # 2. Install dependencies (including training stack)
 pip install -r requirements.txt
 
-# 3. Download local MLX models (required for first run)
-# Planning model (already cached if you have it)
+# 3. Download local MLX models (required for first run — both run on MacBook)
 huggingface-cli download mlx-community/Meta-Llama-3.1-8B-Instruct-4bit
-# Coding model
-huggingface-cli download mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit
+huggingface-cli download mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
 
 # 4. Configure environment
 cp .env.example .env   # edit as needed
@@ -121,4 +119,11 @@ make ports  # show port status for all services
 
 ## Hardware Target
 
-Optimized for **Apple Silicon (M4, 24GB unified memory)**. Local LLM inference via Native MLX (`mlx-lm`). GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.
+Optimized for **Apple Silicon M4, 24 GB unified memory**. Two-machine setup:
+
+| Machine | Role | Models / Load |
+|---|---|---|
+| MacBook M4 24 GB | MLX inference (both agents) + orchestration | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) = ~8.5 GB |
+| mac-mini M4 24 GB | Training execution (SSH sandbox) | Full 24 GB available for training subprocess |
+
+GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.

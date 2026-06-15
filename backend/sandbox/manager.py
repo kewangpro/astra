@@ -15,6 +15,7 @@ import psutil
 from backend.sandbox.base import SandboxConfig, SandboxStatus
 from backend.sandbox.subprocess_sandbox import SubprocessSandbox
 from backend.sandbox.container_sandbox import ContainerSandbox
+from backend.sandbox.ssh_sandbox import SSHSandbox
 from backend.config import settings
 from backend.logging_config import get_logger
 
@@ -22,6 +23,8 @@ logger = get_logger(__name__)
 
 
 def _detect_backend() -> str:
+    if settings.sandbox_host:
+        return "ssh"
     if platform.system() == "Darwin" and platform.machine() == "arm64":
         return "subprocess"
     return "container"
@@ -103,7 +106,13 @@ class SandboxManager:
             gpu_index=assigned_gpu,
         )
 
-        if backend == "subprocess":
+        if backend == "ssh":
+            sandbox = SSHSandbox(
+                config,
+                host=settings.sandbox_host,
+                remote_data_root=settings.sandbox_data_path,
+            )
+        elif backend == "subprocess":
             sandbox = SubprocessSandbox(config)
         else:
             sandbox = ContainerSandbox(config, image=image)

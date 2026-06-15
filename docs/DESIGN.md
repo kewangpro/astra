@@ -56,12 +56,12 @@ Astra builds custom optimization layers on top of MLX to maximize the 24GB footp
 
 #### 2.1.2. Memory & Engine Tiers
 The choice of inference engine depends on available **Unified Memory**:
-- **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)**. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes.
+- **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)** for local models; **Ollama** for offloading to a second 24GB machine. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes.
 - **Advanced (64GB+ RAM)**: **vLLM (Metal)**. Recommended for high-concurrency multi-agent setups. Leverages **PagedAttention** for massive log contexts and **Continuous Batching** for simultaneous specialist reasoning.
 
-Recommended models for 24GB M4:
-- **Lead Agent (Planning/Reasoning)**: Llama-3.1-8B (Instruct, Q8_0) or Mistral-Nemo-12B (Q4_K_M).
-- **Specialist Generator (Coding)**: DeepSeek-Coder-V2-Lite (MoE) or CodeLlama-13B (Q4_K_M).
+Deployed configuration (both machines: Apple M4, 24 GB unified memory):
+- **MacBook M4** — MLX inference for both agents. Runs `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit` (~4.5 GB) for planning and `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` (~4 GB) for codegen/error-fix. Total inference footprint ~8.5 GB, leaving ~15 GB for the OS and orchestration layer.
+- **mac-mini.local** — Dedicated training host. Receives training scripts via `SSHSandbox` (scp + nohup), executes with full 24 GB available, and streams checkpoints + logs back via rsync on completion.
 
 *Hardware Note:* Native MLX is preferred on 24GB to avoid the pre-allocation overhead of serving engines. The 24GB unified memory must be shared between the LLM and the active training runs; quantization (Q4/Q8) is mandatory.
 
