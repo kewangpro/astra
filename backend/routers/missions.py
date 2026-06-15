@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.config import settings
 from backend.database import get_db
 from backend.models.mission import Mission, MissionStatus
+from backend.models.manifest import RequirementManifest
 from backend.schemas.mission import MissionCreate, MissionRead, MissionUpdate
 
 router = APIRouter(prefix="/missions", tags=["missions"])
@@ -72,6 +75,18 @@ async def update_mission(mission_id: str, payload: MissionUpdate, db: AsyncSessi
     await db.commit()
     await db.refresh(mission)
     return mission
+
+
+@router.get("/{mission_id}/manifest")
+async def get_manifest(mission_id: str, db: AsyncSession = Depends(get_db)):
+    """Return the requirement manifest for a mission."""
+    mission = await db.get(Mission, mission_id)
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    path = os.path.join(settings.data_path, "missions", mission_id, "requirements.json")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Manifest not yet generated (mission has not started)")
+    return RequirementManifest.load(path).to_dict()
 
 
 @router.delete("/{mission_id}", status_code=status.HTTP_204_NO_CONTENT)

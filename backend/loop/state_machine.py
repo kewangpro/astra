@@ -23,7 +23,10 @@ from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
 from backend.sandbox.manager import SandboxManager
 from backend.evaluator.specialist import SpecialistEvaluator
+from backend.evaluator.manifest_evaluator import ManifestEvaluator
 from backend.loop.pivots import PivotEngine
+from backend.models.manifest import RequirementManifest
+from backend.services.manifest_generator import generate_manifest
 from backend.config import settings
 from backend.logging_config import get_logger
 from backend.services.telemetry_emitter import emit_status
@@ -61,6 +64,7 @@ class LoopStateMachine:
         self._model_manager = model_manager
         self._sandbox = sandbox_manager
         self._evaluator = evaluator
+        self._manifest_evaluator = ManifestEvaluator()
 
     async def run(self, mission_id: str) -> None:
         """Entry point: runs the full autonomous loop for a mission."""
@@ -73,10 +77,12 @@ class LoopStateMachine:
         await self._cancel_stale_gates(mission_id)
 
         pivot_engine = PivotEngine(mission.target_metric)
+        manifest = self._load_or_create_manifest(mission_id, mission)
+        mission_dir = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
         script_path: Optional[str] = None
         error_count = 0
 
-        logger.info("LoopStateMachine: starting mission=%s", mission_id)
+        logger.info("LoopStateMachine: starting mission=%s manifest=%d reqs", mission_id, len(manifest.requirements))
 
         while True:
             try:
@@ -163,13 +169,26 @@ class LoopStateMachine:
                 pivot_engine.record(mission.current_iteration or 0, current_metrics)
                 await self._save_best_metric(mission_id, pivot_engine.best_metric_value())
 
-                # Goal met → done
-                if pivot_engine.is_goal_met(current_metrics):
-                    logger.info("LoopStateMachine: goal met! mission=%s metrics=%s", mission_id, current_metrics)
+                # ── MANIFEST CHECK ────────────────────────────────────────
+                manifest = self._manifest_evaluator.evaluate(
+                    manifest, current_metrics, mission_dir, sandbox_ok=True,
+                )
+                self._save_manifest(mission_id, manifest)
+                summary = manifest.summary()
+                await emit_status(
+                    mission_id, "Requirements checked",
+                    event_type="info",
+                    value=f"{summary['passed']}/{summary['total']} passed",
+                )
+
+                # All requirements met → done
+                if manifest.is_complete():
+                    best = pivot_engine.best_metric_value()
+                    logger.info("LoopStateMachine: manifest complete! mission=%s metrics=%s", mission_id, current_metrics)
                     await emit_status(mission_id, "Goal achieved!", event_type="success",
-                                      value=str(pivot_engine.best_metric_value()))
+                                      value=str(best))
                     await self._transition(mission_id, MissionStatus.COMPLETED)
-                    await self._crystallize(mission_id, plan, pivot_engine.best_metric_value())
+                    await self._crystallize(mission_id, plan, best)
                     return
 
                 # ── REFINING ─────────────────────────────────────────────
@@ -266,6 +285,30 @@ class LoopStateMachine:
                         .where(Mission.id == mission_id)
                         .values(current_iteration=(mission.current_iteration or 0) + 1)
                     )
+
+    # ── Manifest helpers ───────────────────────────────────────────────────────
+
+    def _manifest_path(self, mission_id: str) -> str:
+        return os.path.join(settings.data_path, "missions", mission_id, "requirements.json")
+
+    def _load_or_create_manifest(self, mission_id: str, mission: Mission) -> RequirementManifest:
+        path = self._manifest_path(mission_id)
+        if os.path.isfile(path):
+            try:
+                return RequirementManifest.load(path)
+            except Exception as exc:
+                logger.warning("LoopStateMachine: could not load manifest for %s: %s — regenerating", mission_id, exc)
+        manifest = generate_manifest(
+            mission_id=mission_id,
+            goal=mission.goal,
+            task_type=mission.task_type,
+            target_metric=mission.target_metric or {},
+        )
+        manifest.save(path)
+        return manifest
+
+    def _save_manifest(self, mission_id: str, manifest: RequirementManifest) -> None:
+        manifest.save(self._manifest_path(mission_id))
 
     # ── Sandbox polling ────────────────────────────────────────────────────────
 

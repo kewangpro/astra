@@ -159,9 +159,15 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Introduce a "Safety Critic" agent to "Red Team" proposed plans before execution.
     - LoopStateMachine: intercept \`PLAN\` output, pass to Critic for subjective rubric grading (Safety, Complexity, Overfitting Risk).
     - Generator must address Critic's feedback if score < 8/10.
-- [ ] **Step 7.2: Atomic Requirement Manifests**
-    - Replace text-based goals with a structured \`requirements.json\` (e.g., list of 10+ granular "features" or "behaviours" with boolean \`passed\` flags).
-    - ASTRA is prohibited from marking a mission COMPLETED until every flag in the manifest is toggled to \`true\` by the Evaluator.
+- [x] **Step 7.2: Atomic Requirement Manifests**
+    - Replace text-based goals with a structured \`requirements.json\` stored at \`data/missions/{id}/requirements.json\`.
+    - Three check types: \`no_sandbox_error\` (stability), \`file_exists\` (artifact), \`metric_threshold\` (performance).
+    - \`backend/models/manifest.py\`: \`Requirement\` + \`RequirementManifest\` dataclasses with save/load/is_complete.
+    - \`backend/services/manifest_generator.py\`: rule-based generation from goal + target_metric + task_type; lower-is-better detection for loss/perplexity metrics.
+    - \`backend/evaluator/manifest_evaluator.py\`: checks each requirement; suffix-match for metric aliases (e.g. \`accuracy\` target matches \`validation_accuracy\`); passed flags are permanent (not re-evaluated).
+    - \`LoopStateMachine\`: generates manifest on first iteration; evaluates after every sandbox run; COMPLETED only when \`manifest.is_complete()\`.
+    - \`GET /missions/{id}/manifest\`: exposes the live manifest state via API.
+    - 19 unit tests covering model, generator, and evaluator.
 - [ ] **Step 7.3: The "Clean Handoff" Protocol**
     - At the end of every loop iteration, the agent must generate a \`SESSION_SUMMARY.md\`.
     - This artifact must explicitly state: 1) Last successful action, 2) Current blocker, 3) Exact next step for the following iteration.
