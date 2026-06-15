@@ -8,7 +8,7 @@ LOG_DIR       := logs
 
 run:
 	@mkdir -p $(LOG_DIR)
-	@$(VENV)/uvicorn backend.main:app --host 0.0.0.0 --port $(PORT) --reload \
+	@$(VENV)/uvicorn backend.main:app --host 0.0.0.0 --port $(PORT) --reload --reload-dir backend \
 		> $(LOG_DIR)/backend.log 2>&1 & echo $$! > $(LOG_DIR)/backend.pid
 	@cd frontend && npm run dev > ../$(LOG_DIR)/frontend.log 2>&1 & echo $$! > $(LOG_DIR)/frontend.pid
 	@echo "Backend   :$(PORT)          →  tail -f $(LOG_DIR)/backend.log"
