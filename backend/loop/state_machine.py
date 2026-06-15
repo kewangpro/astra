@@ -177,6 +177,11 @@ class LoopStateMachine:
                 self._agent.flush_iteration_context()
                 await self._increment_iteration(mission_id)
 
+            except asyncio.CancelledError:
+                logger.info("LoopStateMachine: mission=%s cancelled (shutdown) — resetting to pending", mission_id)
+                await self._transition(mission_id, MissionStatus.PENDING)
+                raise  # propagate so asyncio knows the task is done
+
             except Exception as e:
                 logger.exception("LoopStateMachine: unhandled error in mission=%s: %s", mission_id, e)
                 await emit_status(mission_id, "Mission failed", event_type="error", value=str(e))

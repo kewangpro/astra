@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,13 @@ async def lifespan(app: FastAPI):
     if recovered:
         logger.info("State recovery: acted on %d mission(s).", recovered)
     yield
+    # Cancel all running mission loops so uvicorn can reload without blocking
+    tasks = list(agent._running_tasks.values())
+    if tasks:
+        logger.info("ASTRA backend shutting down — cancelling %d mission task(s).", len(tasks))
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("ASTRA backend shutting down.")
 
 
