@@ -43,8 +43,8 @@ def _build_loop() -> LoopStateMachine:
     """
     Build a LoopStateMachine with configured inference providers.
 
-    lead_provider  → LeadAgent (planning, pivots)     default: Ollama → mac-mini.local
-    code_provider  → CodeGenerator + ErrorAnalyzer     default: MLX   → local MacBook
+    lead_provider  → LeadAgent (planning, pivots)     default: MLX → local MacBook
+    code_provider  → CodeGenerator + ErrorAnalyzer     default: MLX → local MacBook
     """
     lead_provider = _make_provider(settings.lead_provider, settings.lead_model)
     code_provider = _make_provider(settings.code_provider, settings.code_model)

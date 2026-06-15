@@ -6,8 +6,8 @@ mlx-lm is only installable on Apple Silicon — import is guarded.
 
 Install: pip install mlx-lm  (Apple Silicon only)
 Recommended models (quantized to fit alongside training sandboxes):
-  - mlx-community/Meta-Llama-3.1-8B-Instruct-8bit   (planning/reasoning)
-  - mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit (code generation)
+  - mlx-community/Meta-Llama-3.1-8B-Instruct-4bit   (planning/reasoning)
+  - mlx-community/Qwen2.5-Coder-7B-Instruct-4bit    (code generation)
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ except ImportError:
 
 
 class MLXProvider(InferenceProvider):
-    def __init__(self, model_id: str = "mlx-community/Meta-Llama-3.1-8B-Instruct-8bit") -> None:
+    def __init__(self, model_id: str = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit") -> None:
         self._model_id = model_id
         self._model = None
         self._tokenizer = None

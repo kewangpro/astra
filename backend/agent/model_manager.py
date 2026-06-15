@@ -21,10 +21,8 @@ logger = get_logger(__name__)
 # Estimated VRAM footprints (GB) for common quantizations
 MODEL_FOOTPRINTS: dict[str, float] = {
     # Local MLX models (MacBook)
-    "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit": 4.0,
-    "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit": 8.8,
-    "mlx-community/Meta-Llama-3.1-8B-Instruct-8bit": 9.0,
     "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit": 4.5,
+    "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit": 4.0,
     "mlx-community/Mistral-Nemo-Instruct-2407-4bit": 8.0,
     # Ollama models run on mac-mini — no local memory cost
     "llama3.1:8b": 0.0,
