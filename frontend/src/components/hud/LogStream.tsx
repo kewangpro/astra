@@ -6,6 +6,7 @@ import type { TelemetryEvent } from "@/lib/api";
 interface Props {
   events: TelemetryEvent[];
   connected: boolean;
+  missionStatus?: string;
 }
 
 const LEVEL_STYLES: Record<string, { dot: string; text: string; label: string }> = {
@@ -16,22 +17,36 @@ const LEVEL_STYLES: Record<string, { dot: string; text: string; label: string }>
   "":      { dot: "#334155", text: "#64748b", label: "   " },
 };
 
-function classify(event: string): string {
-  if (event.includes("error") || event.includes("failed")) return "error";
-  if (event.includes("warn")) return "warn";
-  if (event.includes("complete") || event.includes("success") || event.includes("metric"))
-    return "success";
-  if (event.includes("start") || event.includes("launch") || event.includes("loop"))
-    return "info";
-  return "";
+function classify(type: string | undefined, name: string | undefined): string {
+  if (type === "error") return "error";
+  if (type === "warn") return "warn";
+  if (type === "success") return "success";
+  if (type === "pivot") return "warn";
+  if (type === "metric") return "success";
+  const s = `${name ?? ""}`;
+  if (s.includes("error") || s.includes("failed") || s.includes("rejected")) return "error";
+  if (s.includes("warn") || s.includes("approval") || s.includes("healing")) return "warn";
+  if (s.includes("ready") || s.includes("complete") || s.includes("approved") || s.includes("achieved")) return "success";
+  return "info";
 }
 
-export function LogStream({ events, connected }: Props) {
+const STATUS_LABEL: Record<string, string> = {
+  planning:   "LLM generating plan…",
+  running:    "AWAITING EVENTS",
+  evaluating: "Evaluating results…",
+  paused:     "PAUSED",
+  pending:    "NOT STARTED",
+  failed:     "MISSION FAILED",
+  completed:  "MISSION COMPLETE",
+};
+
+export function LogStream({ events, connected, missionStatus }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const visible = events.filter((e) => e.type !== "backfill_complete");
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events.length]);
+  }, [visible.length]);
 
   return (
     <div
@@ -48,8 +63,8 @@ export function LogStream({ events, connected }: Props) {
           <span className="text-[10px] text-[#64748b] tracking-widest uppercase">
             event stream
           </span>
-          {events.length > 0 && (
-            <span className="text-[10px] text-[#64748b]">({events.length})</span>
+          {visible.length > 0 && (
+            <span className="text-[10px] text-[#64748b]">({visible.length})</span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
@@ -71,17 +86,23 @@ export function LogStream({ events, connected }: Props) {
 
       {/* Log rows */}
       <div className="flex-1 overflow-y-auto py-1">
-        {events.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="flex items-center gap-3 px-4 py-6 text-[#64748b]">
-            <span className="text-[10px] tracking-widest">AWAITING EVENTS</span>
+            <span className="text-[10px] tracking-widest">
+              {STATUS_LABEL[missionStatus ?? ""] ?? "AWAITING EVENTS"}
+            </span>
             <span className="inline-block w-1.5 h-3 bg-[#2d3f57] animate-pulse" />
           </div>
         ) : (
-          events.map((e, i) => {
-            const level = classify(e.event);
+          visible.map((e, i) => {
+            const level = classify(e.type, e.name);
             const style = LEVEL_STYLES[level];
-            const msg =
-              e.data.message != null ? String(e.data.message) : JSON.stringify(e.data);
+            const ts = e.recorded_at ? new Date(e.recorded_at) : null;
+            const msg = e.name != null
+              ? e.value != null
+                ? `${e.name}: ${e.value}${e.step != null ? ` (step ${e.step})` : ""}`
+                : e.name
+              : e.type;
 
             return (
               <div
@@ -95,17 +116,17 @@ export function LogStream({ events, connected }: Props) {
                   {style.label}
                 </span>
                 <span className="shrink-0 text-[10px] text-[#64748b] mt-0.5">
-                  {new Date(e.ts).toLocaleTimeString("en", {
+                  {ts ? ts.toLocaleTimeString("en", {
                     hour12: false,
                     hour: "2-digit",
                     minute: "2-digit",
                     second: "2-digit",
-                  })}
+                  }) : "--:--:--"}
                 </span>
                 <span
                   className="text-[10px] text-[#94a3b8] mt-0.5 shrink-0 group-hover:text-[#64748b]"
                 >
-                  [{e.event}]
+                  [{e.type}]
                 </span>
                 <span
                   className="text-[11px] leading-relaxed break-all"

@@ -129,6 +129,7 @@ class CodeGenerator:
         code = self._strip_fences(code)
 
         script_path = os.path.join(settings.data_path, "missions", mission_id, "train.py")
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
         with open(script_path, "w") as f:
             f.write(code)
 

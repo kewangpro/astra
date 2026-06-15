@@ -6,7 +6,7 @@ const WS_BASE =
     ? `ws://${window.location.hostname}:8200`
     : "ws://localhost:8200";
 
-export function useTelemetry(missionId: number) {
+export function useTelemetry(missionId: string) {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);

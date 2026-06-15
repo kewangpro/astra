@@ -7,12 +7,7 @@ interface Props {
 }
 
 export function PivotTimeline({ events }: Props) {
-  const pivots = events.filter(
-    (e) =>
-      e.event === "pivot" ||
-      e.event === "loop.pivot" ||
-      e.event.includes("pivot")
-  );
+  const pivots = events.filter((e) => e.type === "pivot");
 
   if (!pivots.length) return null;
 
@@ -26,13 +21,13 @@ export function PivotTimeline({ events }: Props) {
           <li key={i} className="relative">
             <span className="absolute -left-[22px] top-1 w-3 h-3 rounded-full bg-[#fbbf24] border-2 border-[#0f172a]" />
             <div className="text-[11px] text-[#fbbf24] mb-0.5">
-              iter {String(p.data.iteration ?? "?")} — pivot triggered
+              iter {p.iteration ?? "?"} — pivot triggered
             </div>
             <div className="text-[11px] text-[#64748b]">
-              {p.data.reason ? String(p.data.reason) : "plateau detected"}
+              {p.reason ?? "plateau detected"}
             </div>
             <div className="text-[10px] text-[#64748b] mt-0.5">
-              {new Date(p.ts).toLocaleString()}
+              {p.recorded_at ? new Date(p.recorded_at).toLocaleString() : ""}
             </div>
           </li>
         ))}

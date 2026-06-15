@@ -26,6 +26,7 @@ from backend.evaluator.specialist import SpecialistEvaluator
 from backend.loop.pivots import PivotEngine
 from backend.config import settings
 from backend.logging_config import get_logger
+from backend.services.telemetry_emitter import emit_status
 
 logger = get_logger(__name__)
 
@@ -78,34 +79,47 @@ class LoopStateMachine:
             try:
                 # ── PLANNING ──────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.PLANNING)
+                await emit_status(mission_id, "Generating training plan…", event_type="info")
                 plan = await self._agent.plan(
                     mission.goal, mission.task_type, mission.target_metric
                 )
                 await self._save_plan(mission_id, plan)
+                await emit_status(
+                    mission_id, "Plan ready",
+                    event_type="success",
+                    value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
+                )
 
                 # ── IMPLEMENTING ─────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
+                await emit_status(mission_id, "Generating training script…", event_type="info")
                 script_path = await self._codegen.generate_training_script(mission_id, plan)
+                await emit_status(mission_id, "Training script ready", event_type="success")
 
                 # EXECUTE_CODE approval gate (supervised mode)
                 if mission.autonomy_mode == "supervised":
+                    await emit_status(mission_id, "Awaiting approval to execute script", event_type="warn")
                     approved = await self._request_approval(
                         mission_id, GateType.EXECUTE_CODE,
                         payload={"script_path": script_path},
                     )
                     if not approved:
                         logger.info("LoopStateMachine: EXECUTE_CODE gate rejected — aborting")
+                        await emit_status(mission_id, "Execution rejected by user", event_type="error")
                         await self._transition(mission_id, MissionStatus.FAILED)
                         return
+                    await emit_status(mission_id, "Execution approved", event_type="success")
 
                 # ── SANDBOXING ────────────────────────────────────────────
                 self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
+                await emit_status(mission_id, "Launching training sandbox…", event_type="info")
                 pid, container_id = self._sandbox.launch(
                     mission_id, script_path,
                     env_vars={"ASTRA_MISSION_ID": mission_id},
                     memory_limit_gb=plan.get("sandbox_memory_gb", 8.0),
                 )
                 await self._save_sandbox_ids(mission_id, pid, container_id)
+                await emit_status(mission_id, "Sandbox running", event_type="info", value=f"pid={pid}")
 
                 # ── EXECUTING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
@@ -115,17 +129,25 @@ class LoopStateMachine:
                     error_count += 1
                     if error_count > MAX_RETRIES:
                         logger.error("LoopStateMachine: max retries exceeded — failing mission")
+                        await emit_status(mission_id, "Max retries exceeded", event_type="error")
                         await self._transition(mission_id, MissionStatus.FAILED)
                         return
                     logger.warning("LoopStateMachine: sandbox error (attempt %d/%d) — healing", error_count, MAX_RETRIES)
+                    await emit_status(
+                        mission_id, "Sandbox error — healing script",
+                        event_type="warn",
+                        value=f"attempt {error_count}/{MAX_RETRIES}",
+                    )
                     script_path = await self._healer.fix_script(script_path, error_output, error_count)
                     continue   # retry from sandboxing
 
                 self._model_manager.after_sandbox_exit()
                 error_count = 0
+                await emit_status(mission_id, "Training complete", event_type="success")
 
                 # ── EVALUATING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.EVALUATING)
+                await emit_status(mission_id, "Evaluating results…", event_type="info")
                 eval_result = await self._evaluator.evaluate(mission_id, plan)
                 current_metrics = eval_result.get("metrics", {})
                 pivot_engine.record(mission.current_iteration or 0, current_metrics)
@@ -134,6 +156,8 @@ class LoopStateMachine:
                 # Goal met → done
                 if pivot_engine.is_goal_met(current_metrics):
                     logger.info("LoopStateMachine: goal met! mission=%s metrics=%s", mission_id, current_metrics)
+                    await emit_status(mission_id, "Goal achieved!", event_type="success",
+                                      value=str(pivot_engine.best_metric_value()))
                     await self._transition(mission_id, MissionStatus.COMPLETED)
                     await self._crystallize(mission_id, plan, pivot_engine.best_metric_value())
                     return
@@ -143,12 +167,19 @@ class LoopStateMachine:
                     pivot = await self._agent.propose_pivot(current_metrics, pivot_engine.history_snapshot())
                     plan["hyperparameters"].update(pivot.get("adjustments", {}))
                     logger.info("LoopStateMachine: pivot applied: %s", pivot.get("reason"))
+                    await emit_status(
+                        mission_id, "Pivot triggered",
+                        event_type="pivot",
+                        value=pivot.get("reason", "plateau detected"),
+                        iteration=mission.current_iteration or 0,
+                    )
 
                 self._agent.flush_iteration_context()
                 await self._increment_iteration(mission_id)
 
             except Exception as e:
                 logger.exception("LoopStateMachine: unhandled error in mission=%s: %s", mission_id, e)
+                await emit_status(mission_id, "Mission failed", event_type="error", value=str(e))
                 await self._transition(mission_id, MissionStatus.FAILED)
                 return
 

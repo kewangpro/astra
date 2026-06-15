@@ -26,6 +26,7 @@ _MLX_AVAILABLE = False
 try:
     import mlx.core as mx
     import mlx_lm
+    from mlx_lm.sample_utils import make_sampler
     _MLX_AVAILABLE = True
 except ImportError:
     pass
@@ -73,14 +74,25 @@ class MLXProvider(InferenceProvider):
 
         # Build prompt using the tokenizer's chat template
         chat = [{"role": m.role, "content": m.content} for m in messages]
+
+        # Inject schema instruction into the last user message so it appears
+        # inside the user turn, not after the assistant start token.
+        if cfg.json_schema:
+            schema_hint = (
+                f"\n\nRespond ONLY with valid JSON matching this schema:\n"
+                f"{json.dumps(cfg.json_schema, indent=2)}"
+            )
+            if chat and chat[-1]["role"] == "user":
+                chat[-1] = {**chat[-1], "content": chat[-1]["content"] + schema_hint}
+            else:
+                chat.append({"role": "user", "content": schema_hint})
+
         prompt = self._tokenizer.apply_chat_template(
             chat, tokenize=False, add_generation_prompt=True
         )
 
-        # If structured output requested, append schema hint to the last user message
-        if cfg.json_schema:
-            schema_hint = f"\nRespond ONLY with valid JSON matching this schema:\n{json.dumps(cfg.json_schema, indent=2)}"
-            prompt = prompt.rstrip() + schema_hint
+        # mlx_lm 0.29+: temperature/top_p go through make_sampler, not generate() kwargs
+        sampler = make_sampler(temp=cfg.temperature, top_p=cfg.top_p)
 
         # mlx_lm.generate is synchronous — run in thread pool to avoid blocking
         response = await asyncio.get_event_loop().run_in_executor(
@@ -90,8 +102,7 @@ class MLXProvider(InferenceProvider):
                 self._tokenizer,
                 prompt=prompt,
                 max_tokens=cfg.max_tokens,
-                temperature=cfg.temperature,
-                top_p=cfg.top_p,
+                sampler=sampler,
                 verbose=False,
             ),
         )

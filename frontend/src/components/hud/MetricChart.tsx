@@ -10,26 +10,30 @@ import {
   ReferenceLine,
   CartesianGrid,
 } from "recharts";
-import type { Metric } from "@/lib/api";
+import type { TelemetryEvent } from "@/lib/api";
 
 interface Props {
-  metrics: Metric[];
+  events: TelemetryEvent[];
   target?: number;
 }
 
 const COLORS = ["#14b8a6", "#60a5fa", "#a78bfa", "#fbbf24", "#4ade80"];
 
-export function MetricChart({ metrics, target = 0.92 }: Props) {
-  const byIter = metrics.reduce<Record<number, Record<string, number>>>(
-    (acc, m) => {
-      if (!acc[m.iteration]) acc[m.iteration] = { iteration: m.iteration };
-      acc[m.iteration][m.metric_name] = m.metric_value;
+export function MetricChart({ events, target = 0.92 }: Props) {
+  const metricEvents = events.filter(
+    (e) => (e.type === "metric" || e.type === "backfill") && e.name != null && e.value != null
+  );
+  const byIter = metricEvents.reduce<Record<number, Record<string, number>>>(
+    (acc, e) => {
+      const iter = e.iteration ?? e.step ?? 0;
+      if (!acc[iter]) acc[iter] = { iteration: iter };
+      acc[iter][e.name!] = e.value!;
       return acc;
     },
     {}
   );
   const data = Object.values(byIter).sort((a, b) => a.iteration - b.iteration);
-  const names = [...new Set(metrics.map((m) => m.metric_name))];
+  const names = [...new Set(metricEvents.map((e) => e.name!))];
 
   if (!data.length)
     return (

@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useMission, useMetrics } from "@/lib/hooks/useMissions";
+import { useMission } from "@/lib/hooks/useMissions";
 import { useTelemetry } from "@/lib/hooks/useTelemetry";
 import { MetricGap } from "@/components/hud/MetricGap";
 import { MetricChart } from "@/components/hud/MetricChart";
@@ -14,17 +14,17 @@ import type { TelemetryEvent } from "@/lib/api";
 function PivotAwareLayout({
   events,
   connected,
+  missionStatus,
 }: {
   events: TelemetryEvent[];
   connected: boolean;
+  missionStatus: string;
 }) {
-  const hasPivots = events.some(
-    (e) => e.event === "pivot" || e.event === "loop.pivot" || e.event.includes("pivot")
-  );
+  const hasPivots = events.some((e) => e.type === "pivot");
   return (
     <div className={`grid grid-cols-1 gap-4 ${hasPivots ? "lg:grid-cols-3" : ""}`}>
       <div className={hasPivots ? "lg:col-span-2" : ""}>
-        <LogStream events={events} connected={connected} />
+        <LogStream events={events} connected={connected} missionStatus={missionStatus} />
       </div>
       {hasPivots && (
         <div>
@@ -53,7 +53,6 @@ export default function MissionHUD({
   const { id: missionId } = use(params);
 
   const { data: mission, isLoading } = useMission(missionId);
-  const { data: metrics = [] } = useMetrics(missionId);
   const { events, connected } = useTelemetry(missionId);
 
   if (isLoading)
@@ -105,12 +104,12 @@ export default function MissionHUD({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricGap mission={mission} />
         <div className="md:col-span-2">
-          <MetricChart metrics={metrics} />
+          <MetricChart events={events} />
         </div>
       </div>
 
       {/* Log + Pivots */}
-      <PivotAwareLayout events={events} connected={connected} />
+      <PivotAwareLayout events={events} connected={connected} missionStatus={mission.status} />
     </div>
   );
 }

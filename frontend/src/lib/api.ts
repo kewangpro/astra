@@ -1,7 +1,7 @@
 const BASE = "/api";
 
 export interface Mission {
-  id: number;
+  id: string;
   goal: string;
   task_type: string;
   status: string;
@@ -11,26 +11,24 @@ export interface Mission {
   updated_at: string;
 }
 
-export interface Metric {
-  iteration: number;
-  metric_name: string;
-  metric_value: number;
-  timestamp: string;
-}
-
 export interface ApprovalGate {
-  id: number;
-  mission_id: number;
+  id: string;
+  mission_id: string;
   gate_type: string;
   status: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> | null;
   created_at: string;
 }
 
 export interface TelemetryEvent {
-  ts: string;
-  event: string;
-  data: Record<string, unknown>;
+  type: string;           // "metric" | "backfill" | "backfill_complete" | "pivot"
+  mission_id?: string;
+  name?: string;
+  value?: number;
+  step?: number;
+  iteration?: number;
+  recorded_at?: string;
+  reason?: string;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -52,12 +50,13 @@ export const api = {
     }),
   runMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/run`, { method: "POST" }),
-  getMetrics: (id: string) => req<Metric[]>(`/missions/${id}/metrics`),
-  getPendingApprovals: (id: string) =>
-    req<ApprovalGate[]>(`/approvals/missions/${id}/pending`),
-  resolveApproval: (approvalId: number, decision: "approved" | "rejected") =>
-    req<ApprovalGate>(`/approvals/${approvalId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: decision }),
-    }),
+  getPendingApprovals: (missionId: string) =>
+    req<ApprovalGate[]>(`/approvals?pending_only=true`).then((gates) =>
+      gates.filter((g) => g.mission_id === missionId)
+    ),
+  resolveApproval: (approvalId: string, decision: "approved" | "rejected") =>
+    req<ApprovalGate>(
+      `/approvals/${approvalId}/${decision === "approved" ? "approve" : "reject"}`,
+      { method: "POST" }
+    ),
 };

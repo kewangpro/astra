@@ -13,15 +13,6 @@ export function useMission(id: string) {
   });
 }
 
-export function useMetrics(id: string) {
-  return useQuery({
-    queryKey: ["metrics", id],
-    queryFn: () => api.getMetrics(id),
-    enabled: !!id,
-    refetchInterval: 3000,
-  });
-}
-
 export function usePendingApprovals(id: string) {
   return useQuery({
     queryKey: ["approvals", id],
@@ -58,7 +49,7 @@ export function useResolveApproval(missionId: string) {
       approvalId,
       decision,
     }: {
-      approvalId: number;
+      approvalId: string;
       decision: "approved" | "rejected";
     }) => api.resolveApproval(approvalId, decision),
     onSuccess: () => {
