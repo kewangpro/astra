@@ -65,7 +65,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/agent/kv_cache.py`: `SmartKVCache` — three buckets (system/pinned, code/pinned-per-iteration, history/sliding-window); evicts oldest history turns when token budget exceeded.
     - `backend/agent/lead_agent.py`: `LeadAgent` — structured JSON output with retry-on-parse-error; `plan()` for goal decomposition; `propose_pivot()` for stalled runs; `analyze_logs()` for prefix-cached log analysis.
     - `backend/agent/`: vLLM abstraction layer provided via `VLLMProvider` (DESIGN §2.1.2).
-    - **Note:** `MLXProvider` is used for both planning (`Llama-3.1`) and coding (`DeepSeek-Coder`) by default, optimized for 24GB unified memory.
+    - **Note:** `MLXProvider` is used for both planning (`Llama-3.1-8B-Instruct-4bit`) and coding (`Qwen2.5-Coder-7B-Instruct-4bit`) by default, optimized for 24GB unified memory.
 
 - [x] **Step 3.2: Code Generator & Self-Healer**
     - `backend/agent/code_generator.py`: `CodeGenerator` — prompt templates for RL (SB3), SFT (HF+PEFT), and ML (sklearn/Lightning); writes generated script to `data/missions/{id}/train.py`.
@@ -91,7 +91,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Next.js 15 App Router + Tailwind CSS (Obsidian & Teal dark theme) at `frontend/`.
     - Port 3200 (backend 8200); `/api/*` proxied to backend via `next.config.ts` rewrites.
     - React Query (`@tanstack/react-query`) for polling; recharts for live charts.
-    - `make run-frontend` / `make stop-frontend` / `make ports` updated.
+    - `make run` / `make stop` / `make ports` — all services managed via Makefile.
 - [x] **Step 4.2: The Command Center (Home)**
     - `GoalInput` — textarea + domain selector; launches mission and navigates to HUD on submit.
     - `MissionsGrid` — card-per-mission with status badge, best metric, run button for pending.

@@ -31,8 +31,7 @@ huggingface-cli download mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
 cp .env.example .env   # edit as needed
 
 # 5. Apply database migrations
-make migrate
-# or: alembic upgrade head
+alembic upgrade head
 
 # 6. Run
 make run   # backend + frontend → http://localhost:8200 / http://localhost:3200
