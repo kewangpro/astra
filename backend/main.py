@@ -14,17 +14,17 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("astra backend starting (env=%s, autonomy=%s)", settings.env, settings.autonomy_mode)
+    logger.info("ASTRA backend starting (env=%s, autonomy=%s)", settings.env, settings.autonomy_mode)
     await init_db()
     recovered = await recover_interrupted_missions()
     if recovered:
         logger.info("State recovery: acted on %d mission(s).", recovered)
     yield
-    logger.info("astra backend shutting down.")
+    logger.info("ASTRA backend shutting down.")
 
 
 app = FastAPI(
-    title="astra API",
+    title="ASTRA API",
     description="Autonomous Strategic Training Agent — backend orchestration layer",
     version="0.4.0",
     lifespan=lifespan,
@@ -49,4 +49,4 @@ app.include_router(analysis.router)
 
 @app.get("/")
 async def root():
-    return {"name": "astra", "version": "0.4.0", "docs": "/docs"}
+    return {"name": "ASTRA", "version": "0.4.0", "docs": "/docs"}

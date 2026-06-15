@@ -1,4 +1,4 @@
-# astra: Design Document
+# ASTRA: Design Document
 
 **Architecture Version:** 1.0.0  
 **Core Stack:** Python, PyTorch, SQLAlchemy (Registry), FastAPI (Backend API), Next.js 15 (Frontend Dashboard)
@@ -6,7 +6,7 @@
 ---
 
 ## 1. System Overview
-astra is designed as a modular system where a **Lead Agent** orchestrates several **Specialist Agents**, served via a high-performance **FastAPI** backend and a **Next.js** professional dashboard.
+ASTRA is designed as a modular system where a **Lead Agent** orchestrates several **Specialist Agents**, served via a high-performance **FastAPI** backend and a **Next.js** professional dashboard.
 
 ```
                     +-----------------------+
@@ -40,7 +40,7 @@ astra is designed as a modular system where a **Lead Agent** orchestrates severa
 ## 2. Components
 
 ### 2.1. LLM-Driven Orchestrator (Lead Agent)
-The "Brain" of astra. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon via **MLX**. 
+The "Brain" of ASTRA. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon via **MLX**. 
 
 #### 2.1.1. Inference Optimization Strategy
 On a 24GB M4 Mac Mini, the landscape is unique. We leverage Apple's **Unified Memory Architecture** and the **Metal** framework to bypass standard bottlenecks.
@@ -48,9 +48,9 @@ On a 24GB M4 Mac Mini, the landscape is unique. We leverage Apple's **Unified Me
 **What is NOT Worth Optimizing (Already Mastered):**
 We do not optimize core math or tensor operations (Matrix Multiplication, Quantization/Dequantization) as these are already perfectly tuned by Apple's **Accelerate** framework and **Metal Performance Shaders (MPS)** in the MLX/llama.cpp engines.
 
-**What IS Worth Optimizing (Astra's Value-Add):**
-Astra builds custom optimization layers on top of MLX to maximize the 24GB footprint:
-- **Smart KV Caching**: Standard setups waste RAM with fixed context blocks. Astra implements a dynamic cache eviction policy to drop irrelevant conversation history while preserving core system instructions and code context.
+**What IS Worth Optimizing (ASTRA's Value-Add):**
+ASTRA builds custom optimization layers on top of MLX to maximize the 24GB footprint:
+- **Smart KV Caching**: Standard setups waste RAM with fixed context blocks. ASTRA implements a dynamic cache eviction policy to drop irrelevant conversation history while preserving core system instructions and code context.
 - **Speculative Decoding** *(sandbox-idle only)*: Blazing-fast generation by loading a tiny "drafter" model (e.g., 1B/3B) alongside the main model. The tiny model guesses tokens, and the large model validates them in a single mathematical step. On 24GB, the drafter is only loaded when the training sandbox is inactive; the `ModelManager` is responsible for evicting it before launching a training run.
 - **Structured Output Parsing**: Uses **Grammar-Based Sampling** to force the model to choose tokens that fit a specific JSON or code schema, eliminating wasted tokens and ensuring valid tool calls.
 
@@ -121,10 +121,10 @@ A centralized service that intercepts high-risk transitions in the DAG:
 - **Gate: `DEPLOY_MODEL`**: Requires human sign-off before a champion model is moved from the Registry to a production endpoint.
 
 ### 4.2. Autonomy Tiers
-Astra supports three operating modes:
+ASTRA supports three operating modes:
 1. **Guided**: Every iteration step requires an "Approve/Reject" signal. All gates are active; Silent Mode (PRD §5.3) is disabled.
-2. **Supervised (Default)**: Astra iterates autonomously but pauses for `EXECUTE_CODE` and `RESOURCE_ALLOCATION`. Silent Mode may auto-promote trusted sub-tasks to bypass these specific gates based on accumulated trust score.
-3. **Full Autonomy**: Astra runs to completion without intervention, governed only by strict Sandbox and Resource constraints. All approval gates are suppressed; Silent Mode is redundant and has no additional effect.
+2. **Supervised (Default)**: ASTRA iterates autonomously but pauses for `EXECUTE_CODE` and `RESOURCE_ALLOCATION`. Silent Mode may auto-promote trusted sub-tasks to bypass these specific gates based on accumulated trust score.
+3. **Full Autonomy**: ASTRA runs to completion without intervention, governed only by strict Sandbox and Resource constraints. All approval gates are suppressed; Silent Mode is redundant and has no additional effect.
 
 **Gate-priority rule**: the operating tier takes precedence. Silent Mode trust-score bypass only activates within **Supervised** mode and only for the specific gate types (`EXECUTE_CODE`, `RESOURCE_ALLOCATION`). It cannot escalate behavior beyond what the current tier permits.
 
@@ -136,7 +136,7 @@ A real-time interface showing:
 
 ## 5. Runtime Architecture
 
-Astra's runtime is split between **Persistent Management** and **Transient Compute**.
+ASTRA's runtime is split between **Persistent Management** and **Transient Compute**.
 
 ### 5.1. Persistent Orchestration Layer
 - **Host**: Local Server, Mac Mini, or Cloud Instance (AWS/GCP).

@@ -20,7 +20,7 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 _PLANNING_SYSTEM = """\
-You are astra's Lead Agent — an autonomous ML training strategist.
+You are ASTRA's Lead Agent — an autonomous ML training strategist.
 Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
@@ -28,7 +28,7 @@ Consider: task type (rl/sft/ml), algorithm selection, hyperparameters, curriculu
 and how you will measure success against the target metric."""
 
 _PIVOT_SYSTEM = """\
-You are astra's Lead Agent analyzing a training run that has stalled or plateaued.
+You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaued.
 Given the current metrics and training history, propose a strategic pivot.
 Respond with valid JSON describing the adjustments to make."""
 

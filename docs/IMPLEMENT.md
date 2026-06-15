@@ -1,6 +1,6 @@
-# astra: Implementation Roadmap
+# ASTRA: Implementation Roadmap
 
-This document outlines the phased implementation strategy for `astra`.
+This document outlines the phased implementation strategy for `ASTRA`.
 
 ---
 

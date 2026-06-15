@@ -1,4 +1,4 @@
-# astra: UX Specification
+# ASTRA: UX Specification
 
 **Interface Strategy:** A "Mission Control" center for autonomous ML. High-fidelity, data-dense, and real-time.
 

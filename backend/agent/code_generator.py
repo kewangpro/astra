@@ -20,12 +20,12 @@ logger = get_logger(__name__)
 # ── System prompts ─────────────────────────────────────────────────────────────
 
 _BASE_SYSTEM = """\
-You are astra's Code Generator — an expert ML engineer.
+You are ASTRA's Code Generator — an expert ML engineer.
 Generate complete, runnable Python training scripts.
 Requirements:
 - The script must run standalone inside a sandboxed Python environment.
 - Import all dependencies at the top.
-- Log metrics by POSTing to the astra telemetry endpoint:
+- Log metrics by POSTing to the ASTRA telemetry endpoint:
     POST {api_url}/telemetry/missions/{mission_id}/metrics
     Body: {{"mission_id": "...", "name": "...", "value": 0.0, "step": 0}}
 - Save checkpoints to: {checkpoint_dir}

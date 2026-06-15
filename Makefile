@@ -3,6 +3,7 @@
 VENV          := .venv/bin
 PORT          := 8200
 PORT_FRONTEND := 3200
+PORT_MLX      := 8080
 LOG_DIR       := logs
 
 run:
@@ -19,7 +20,7 @@ stop:
 	@rm -f $(LOG_DIR)/backend.pid $(LOG_DIR)/frontend.pid
 
 ports:
-	@echo "astra Port Status:"
+	@echo "ASTRA Port Status:"
 	@echo "------------------------------------------------"
 	@printf "%-22s %-6s %-10s %s\n" "SERVICE" "PORT" "STATUS" "PROCESS/PID"
 	@echo "------------------------------------------------"
@@ -34,5 +35,6 @@ ports:
 		fi; \
 	}; \
 	_check_port "FastAPI Backend" $(PORT); \
-	_check_port "Next.js Dashboard" $(PORT_FRONTEND)
+	_check_port "Next.js Dashboard" $(PORT_FRONTEND); \
+	_check_port "MLX LM Server" $(PORT_MLX)
 	@echo "------------------------------------------------"

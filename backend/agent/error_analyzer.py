@@ -15,7 +15,7 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 _SYSTEM_PROMPT = """\
-You are astra's Self-Healer — an expert Python debugger.
+You are ASTRA's Self-Healer — an expert Python debugger.
 You are given a training script that failed and its error output.
 Analyze the error and return the complete corrected Python script.
 Rules:

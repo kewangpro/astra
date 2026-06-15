@@ -1,8 +1,8 @@
-# astra
+# ASTRA
 
-**Autonomous Strategic Training Agent**
+**A**utonomous **S**trategic **Tr**aining **A**gent
 
-astra is an AI agent system that orchestrates end-to-end ML/RL training autonomously. You set the goal; astra plans, implements, sandboxes, trains, evaluates, and iterates until the target metric is reached.
+ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomously. You set the goal; ASTRA plans, implements, sandboxes, trains, evaluates, and iterates until the target metric is reached.
 
 ## Documentation
 

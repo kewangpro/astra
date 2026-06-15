@@ -1,13 +1,13 @@
-# astra: Product Requirements Document (PRD)
+# ASTRA: Product Requirements Document (PRD)
 
-**Project Name:** astra (**A**utonomous **S**trategic **Tr**aining **A**gent)  
+**Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
 **Status:** Draft  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
 
 ## 1. Executive Summary
-astra is an autonomous agent designed to manage the end-to-end lifecycle of Reinforcement Learning (RL) and Machine Learning (ML) training. It leverages lessons from high-performance Snake and Tetris AI implementations to automate curriculum shifts, reward shaping, and competitive benchmarking.
+ASTRA is an autonomous agent designed to manage the end-to-end lifecycle of Reinforcement Learning (RL) and Machine Learning (ML) training. It leverages lessons from high-performance Snake and Tetris AI implementations to automate curriculum shifts, reward shaping, and competitive benchmarking.
 
 ## 2. Problem Statement
 Manual ML training is repetitive and error-prone. Engineers often spend hours:
@@ -50,7 +50,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Learns from failed iterations to adjust future hyperparameters or curriculum steps.
 
 ### 4.7. Autonomous Code Implementation
-- astra can generate necessary training scripts across various paradigms:
+- ASTRA can generate necessary training scripts across various paradigms:
   - **RL**: Environment wrappers, reward functions, and policy networks.
   - **SFT**: Tokenization logic, prompt templates, and supervised loss functions.
   - **ML**: Feature engineering, data loaders, and standard classification/regression architectures.
@@ -61,16 +61,16 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Resource constraints (CPU/GPU/RAM) are enforced at the sandbox level to prevent runaway processes.
 
 ### 4.9. Training Recipes & Crystallization
-- **Recipe Generation**: Upon achieving a goal, astra "crystallizes" the successful strategy into a **Training Recipe** (a package containing the optimized hyperparameters, reward/loss logic, curriculum phases, and model architecture).
-- **Strategy Sharing**: Recipes are stored in a global library, allowing astra to "warm-start" new, similar goals by retrieving and adapting existing recipes.
-- **Recipe Evolution**: astra can treat a recipe as a "DNA" strand, mutating and improving it across different training runs to discover universal "Golden Recipes" for specific domains (e.g., "The Golden Snake Recipe").
+- **Recipe Generation**: Upon achieving a goal, ASTRA "crystallizes" the successful strategy into a **Training Recipe** (a package containing the optimized hyperparameters, reward/loss logic, curriculum phases, and model architecture).
+- **Strategy Sharing**: Recipes are stored in a global library, allowing ASTRA to "warm-start" new, similar goals by retrieving and adapting existing recipes.
+- **Recipe Evolution**: ASTRA can treat a recipe as a "DNA" strand, mutating and improving it across different training runs to discover universal "Golden Recipes" for specific domains (e.g., "The Golden Snake Recipe").
 
 ### 4.10. Predefined "Golden" Recipes
-- astra ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., the workspace's existing Snake and Tetris models).
+- ASTRA ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., the workspace's existing Snake and Tetris models).
 - These recipes serve as the "Initial Knowledge" of the system, allowing users to achieve expert-level results on day one for common tasks.
 
 ### 4.11. Crash-Safe Mission Persistence
-- **Stateful Resumption**: If the system is interrupted (crash, power loss, restart), astra automatically recovers the state of all "In-Progress" missions.
+- **Stateful Resumption**: If the system is interrupted (crash, power loss, restart), ASTRA automatically recovers the state of all "In-Progress" missions.
 - **Checkpoint-Aware Training**: All trainers are required to save frequent checkpoints (weights + optimizer state) to the **File Store** (`data/` volume) at regular intervals (target: every 2–5 minutes of wall-clock training time), ensuring no more than a few minutes of progress is lost. Checkpoint paths are registered as metadata in the Model Registry for discovery.
 - **Atomic State Transitions**: Loop transitions (e.g., from Training to Eval) are logged as atomic events in the Mission Store to prevent duplicate or inconsistent execution upon resume.
 
@@ -82,17 +82,17 @@ The user provides a high-level goal and a success threshold.
 - **Example**: `{"task": "RL", "env": "Snake-v0", "target_metric": {"mean_reward": 150}}`
 
 ### 5.2. Fully Autonomous Execution
-Once the goal is set, astra enters a recursive loop:
+Once the goal is set, ASTRA enters a recursive loop:
 1. **Plan**: LLM designs the training trajectory.
 2. **Implement**: Generates scripts and configs.
 3. **Execute**: Runs in sandbox.
 4. **Evaluate**: Compares current metrics against the `target_metric`.
-5. **Iterate**: If the goal isn't met, astra self-corrects and repeats from Step 1.
+5. **Iterate**: If the goal isn't met, ASTRA self-corrects and repeats from Step 1.
 
 ### 5.3. Security & Approval Gates
-To balance autonomy with safety, astra implements a **Graduated Autonomy** system:
+To balance autonomy with safety, ASTRA implements a **Graduated Autonomy** system:
 - **Mandatory Approval**: Irreversible or high-risk actions (e.g., accessing external APIs, deploying to production) require user confirmation.
 - **Configurable Gates**: Users can set "Approval Flags" for:
   - **Code Generation**: Reviewing scripts before execution.
   - **Resource Usage**: Approving training runs that exceed a specific cost/time budget.
-- **Silent Mode**: In **Supervised** mode only, once a specific sub-task strategy is "trusted" (high success rate in previous iterations), astra can bypass approval gates for that sub-task automatically. Silent Mode does not apply in Guided mode (all gates remain active) and is redundant in Full Autonomy mode (all gates are already suppressed by user choice). See DESIGN §4.2 for the full gate-priority model.
+- **Silent Mode**: In **Supervised** mode only, once a specific sub-task strategy is "trusted" (high success rate in previous iterations), ASTRA can bypass approval gates for that sub-task automatically. Silent Mode does not apply in Guided mode (all gates remain active) and is redundant in Full Autonomy mode (all gates are already suppressed by user choice). See DESIGN §4.2 for the full gate-priority model.
