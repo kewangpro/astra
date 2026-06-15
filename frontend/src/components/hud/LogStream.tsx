@@ -10,11 +10,12 @@ interface Props {
 }
 
 const LEVEL_STYLES: Record<string, { dot: string; text: string; label: string }> = {
-  error:   { dot: "#f87171", text: "#f87171", label: "ERR" },
-  warn:    { dot: "#fbbf24", text: "#fbbf24", label: "WRN" },
-  info:    { dot: "#60a5fa", text: "#94a3b8", label: "INF" },
-  success: { dot: "#4ade80", text: "#86efac", label: "OK " },
-  "":      { dot: "#334155", text: "#64748b", label: "   " },
+  error:    { dot: "#f87171", text: "#f87171", label: "ERR" },
+  warn:     { dot: "#fbbf24", text: "#fbbf24", label: "WRN" },
+  info:     { dot: "#60a5fa", text: "#94a3b8", label: "INF" },
+  success:  { dot: "#4ade80", text: "#86efac", label: "OK " },
+  critique: { dot: "#a78bfa", text: "#c4b5fd", label: "CRT" },
+  "":       { dot: "#334155", text: "#64748b", label: "   " },
 };
 
 function classify(type: string | undefined, name: string | undefined): string {
@@ -23,6 +24,7 @@ function classify(type: string | undefined, name: string | undefined): string {
   if (type === "success") return "success";
   if (type === "pivot") return "warn";
   if (type === "metric") return "success";
+  if (type === "critique") return "critique";
   const s = `${name ?? ""}`;
   if (s.includes("error") || s.includes("failed") || s.includes("rejected")) return "error";
   if (s.includes("warn") || s.includes("approval") || s.includes("healing")) return "warn";

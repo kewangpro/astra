@@ -22,6 +22,29 @@ def _telemetry_path(mission_id: str) -> str:
     return os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
 
 
+async def emit_critique(
+    mission_id: str,
+    critique_data: dict,
+) -> None:
+    """Broadcast a critique event (from CriticAgent) to the HUD."""
+    payload: dict = {
+        "type": "critique",
+        "mission_id": mission_id,
+        "name": "Plan critique",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "value": str(round(critique_data.get("overall_score", 0), 1)),
+        "critique": critique_data,
+    }
+    path = _telemetry_path(mission_id)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception as exc:
+        logger.warning("telemetry_emitter: failed to persist critique for %s: %s", mission_id, exc)
+    await manager.broadcast(mission_id, payload)
+
+
 async def emit_status(
     mission_id: str,
     name: str,

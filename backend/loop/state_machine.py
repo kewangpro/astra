@@ -26,10 +26,13 @@ from backend.evaluator.specialist import SpecialistEvaluator
 from backend.evaluator.manifest_evaluator import ManifestEvaluator
 from backend.loop.pivots import PivotEngine
 from backend.models.manifest import RequirementManifest
+from backend.agent.critic_agent import CriticAgent, MAX_REVISIONS as CRITIC_MAX_REVISIONS
 from backend.services.manifest_generator import generate_manifest
+from backend.services.preflight import PreflightChecker
+from backend.services import mission_state, session_summary
 from backend.config import settings
 from backend.logging_config import get_logger
-from backend.services.telemetry_emitter import emit_status
+from backend.services.telemetry_emitter import emit_status, emit_critique
 
 logger = get_logger(__name__)
 
@@ -57,6 +60,7 @@ class LoopStateMachine:
         model_manager: ModelManager,
         sandbox_manager: SandboxManager,
         evaluator: SpecialistEvaluator,
+        critic: Optional[CriticAgent] = None,
     ) -> None:
         self._agent = lead_agent
         self._codegen = code_generator
@@ -64,7 +68,9 @@ class LoopStateMachine:
         self._model_manager = model_manager
         self._sandbox = sandbox_manager
         self._evaluator = evaluator
+        self._critic = critic
         self._manifest_evaluator = ManifestEvaluator()
+        self._preflight = PreflightChecker()
 
     async def run(self, mission_id: str) -> None:
         """Entry point: runs the full autonomous loop for a mission."""
@@ -76,11 +82,20 @@ class LoopStateMachine:
         # Cancel stale approval gates left by any previous loop instance
         await self._cancel_stale_gates(mission_id)
 
+        # ── PRE-FLIGHT (Step 7.4) ─────────────────────────────────────────────
+        preflight = self._preflight.run(mission_id, mission.task_type)
+        await emit_status(
+            mission_id, "Pre-flight checks",
+            event_type="success" if preflight.passed else "warn",
+            value=preflight.summary(),
+        )
+
         pivot_engine = PivotEngine(mission.target_metric)
         manifest = self._load_or_create_manifest(mission_id, mission)
         mission_dir = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
         script_path: Optional[str] = None
         error_count = 0
+        pivot_reason: Optional[str] = None
 
         logger.info("LoopStateMachine: starting mission=%s manifest=%d reqs", mission_id, len(manifest.requirements))
 
@@ -98,6 +113,29 @@ class LoopStateMachine:
                     event_type="success",
                     value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
                 )
+
+                # ── CRITIC REVIEW (Step 7.1) ──────────────────────────────
+                if self._critic is not None:
+                    critique = await self._critic.review(plan, mission.goal, revision=0)
+                    await emit_critique(mission_id, critique.to_dict())
+                    for rev in range(1, CRITIC_MAX_REVISIONS + 1):
+                        if critique.approved:
+                            break
+                        await emit_status(
+                            mission_id, "Critic requesting revision",
+                            event_type="warn",
+                            value=f"score={critique.overall_score:.1f} revision {rev}/{CRITIC_MAX_REVISIONS}",
+                        )
+                        plan = await self._agent.revise_plan(plan, critique.feedback)
+                        await self._save_plan(mission_id, plan)
+                        critique = await self._critic.review(plan, mission.goal, revision=rev)
+                        await emit_critique(mission_id, critique.to_dict())
+                    status = "approved" if critique.approved else "proceeding despite low score"
+                    await emit_status(
+                        mission_id, f"Critic: {status}",
+                        event_type="success" if critique.approved else "warn",
+                        value=f"score={critique.overall_score:.1f}",
+                    )
 
                 # ── IMPLEMENTING ─────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
@@ -191,17 +229,38 @@ class LoopStateMachine:
                     await self._crystallize(mission_id, plan, best)
                     return
 
+                # ── MISSION STATE (Step 7.5) ──────────────────────────────
+                mission_state.update(
+                    mission_id,
+                    iteration=mission.current_iteration or 0,
+                    plan=plan,
+                    metrics=current_metrics,
+                )
+
                 # ── REFINING ─────────────────────────────────────────────
+                pivot_reason = None
                 if pivot_engine.needs_pivot():
                     pivot = await self._agent.propose_pivot(current_metrics, pivot_engine.history_snapshot())
                     plan["hyperparameters"].update(pivot.get("adjustments", {}))
-                    logger.info("LoopStateMachine: pivot applied: %s", pivot.get("reason"))
+                    pivot_reason = pivot.get("reason", "plateau detected")
+                    logger.info("LoopStateMachine: pivot applied: %s", pivot_reason)
                     await emit_status(
                         mission_id, "Pivot triggered",
                         event_type="pivot",
-                        value=pivot.get("reason", "plateau detected"),
+                        value=pivot_reason,
                         iteration=mission.current_iteration or 0,
                     )
+
+                # ── SESSION SUMMARY (Step 7.3) ────────────────────────────
+                session_summary.write_session_summary(
+                    mission_id=mission_id,
+                    iteration=mission.current_iteration or 0,
+                    goal=mission.goal,
+                    algorithm=plan.get("algorithm", "unknown"),
+                    current_metrics=current_metrics,
+                    manifest_summary=manifest.summary(),
+                    pivot_applied=pivot_reason,
+                )
 
                 self._agent.flush_iteration_context()
                 await self._increment_iteration(mission_id)

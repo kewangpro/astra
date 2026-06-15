@@ -8,10 +8,11 @@ import { MetricGap } from "@/components/hud/MetricGap";
 import { MetricChart } from "@/components/hud/MetricChart";
 import { LogStream } from "@/components/hud/LogStream";
 import { PivotTimeline } from "@/components/hud/PivotTimeline";
+import { CritiqueTrace } from "@/components/hud/CritiqueTrace";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
 import type { TelemetryEvent } from "@/lib/api";
 
-function PivotAwareLayout({
+function SidebarLayout({
   events,
   connected,
   missionStatus,
@@ -21,14 +22,18 @@ function PivotAwareLayout({
   missionStatus: string;
 }) {
   const hasPivots = events.some((e) => e.type === "pivot");
+  const hasCritiques = events.some((e) => e.type === "critique");
+  const hasSidebar = hasPivots || hasCritiques;
+
   return (
-    <div className={`grid grid-cols-1 gap-4 ${hasPivots ? "lg:grid-cols-3" : ""}`}>
-      <div className={hasPivots ? "lg:col-span-2" : ""}>
+    <div className={`grid grid-cols-1 gap-4 ${hasSidebar ? "lg:grid-cols-3" : ""}`}>
+      <div className={hasSidebar ? "lg:col-span-2" : ""}>
         <LogStream events={events} connected={connected} missionStatus={missionStatus} />
       </div>
-      {hasPivots && (
-        <div>
-          <PivotTimeline events={events} />
+      {hasSidebar && (
+        <div className="space-y-4">
+          {hasCritiques && <CritiqueTrace events={events} />}
+          {hasPivots && <PivotTimeline events={events} />}
         </div>
       )}
     </div>
@@ -108,8 +113,8 @@ export default function MissionHUD({
         </div>
       </div>
 
-      {/* Log + Pivots */}
-      <PivotAwareLayout events={events} connected={connected} missionStatus={mission.status} />
+      {/* Log + Critic Trace + Pivots */}
+      <SidebarLayout events={events} connected={connected} missionStatus={mission.status} />
     </div>
   );
 }

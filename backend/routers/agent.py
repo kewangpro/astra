@@ -24,6 +24,7 @@ from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
 from backend.sandbox.manager import sandbox_manager
 from backend.evaluator.specialist import SpecialistEvaluator
+from backend.agent.critic_agent import CriticAgent
 from backend.loop.state_machine import LoopStateMachine
 from backend.logging_config import get_logger
 
@@ -66,6 +67,7 @@ def _build_loop() -> LoopStateMachine:
         model_manager=model_manager,
         sandbox_manager=sandbox_manager,
         evaluator=SpecialistEvaluator(),
+        critic=CriticAgent(lead_provider),
     )
 
 

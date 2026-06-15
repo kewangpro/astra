@@ -124,6 +124,27 @@ class LeadAgent:
         logger.info("LeadAgent pivot proposed: reason=%s", pivot.get("reason"))
         return pivot
 
+    # ── Plan revision (critic feedback) ──────────────────────────────────────
+
+    async def revise_plan(self, plan: dict, feedback: str) -> dict:
+        """
+        Revise a training plan in response to critic feedback.
+        Returns an updated plan dict.
+        """
+        query = (
+            f"The following training plan was rejected by the Safety Critic:\n"
+            f"{json.dumps(plan, indent=2)}\n\n"
+            f"Critic feedback:\n{feedback}\n\n"
+            "Revise the plan to address the concerns. Return JSON with the same schema."
+        )
+        messages = self._cache.get_messages(query)
+        response = await self._generate_structured(messages, _PLAN_SCHEMA)
+        self._cache.add_turn("user", query)
+        self._cache.add_turn("assistant", json.dumps(response))
+        revised = response.get("plan", response)
+        logger.info("LeadAgent: plan revised in response to critic feedback")
+        return revised
+
     # ── Log analysis (prefix cache) ───────────────────────────────────────────
 
     async def analyze_logs(self, log_snippet: str) -> str:

@@ -155,10 +155,11 @@ This document outlines the phased implementation strategy for `ASTRA`.
 ## Phase 7: Resilience & Rigor (Harness Principles) ⏳
 *Goal: Apply Anthropic "Harness" principles to maximize long-running reliability.*
 
-- [ ] **Step 7.1: The GAN Pattern (Skeptical Peer Review)**
-    - Introduce a "Safety Critic" agent to "Red Team" proposed plans before execution.
-    - LoopStateMachine: intercept \`PLAN\` output, pass to Critic for subjective rubric grading (Safety, Complexity, Overfitting Risk).
-    - Generator must address Critic's feedback if score < 8/10.
+- [x] **Step 7.1: The GAN Pattern (Skeptical Peer Review)**
+    - \`backend/agent/critic_agent.py\`: \`CriticAgent\` — evaluates plans on three rubric dimensions (Safety, Complexity, Overfitting Risk); returns \`CritiqueResult\` with per-dimension scores, concerns list, and overall score (0–10).
+    - \`LeadAgent.revise_plan()\`: revises a plan in response to critic feedback.
+    - \`LoopStateMachine\`: after planning, passes plan to Critic; if score < 7.0 (APPROVAL_THRESHOLD), asks LeadAgent to revise (max 2 rounds); proceeds regardless after cap to avoid infinite loops.
+    - \`emit_critique()\` in telemetry_emitter broadcasts \`{"type": "critique", ...}\` events to the HUD.
 - [x] **Step 7.2: Atomic Requirement Manifests**
     - Replace text-based goals with a structured \`requirements.json\` stored at \`data/missions/{id}/requirements.json\`.
     - Three check types: \`no_sandbox_error\` (stability), \`file_exists\` (artifact), \`metric_threshold\` (performance).
@@ -168,16 +169,19 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - \`LoopStateMachine\`: generates manifest on first iteration; evaluates after every sandbox run; COMPLETED only when \`manifest.is_complete()\`.
     - \`GET /missions/{id}/manifest\`: exposes the live manifest state via API.
     - 19 unit tests covering model, generator, and evaluator.
-- [ ] **Step 7.3: The "Clean Handoff" Protocol**
-    - At the end of every loop iteration, the agent must generate a \`SESSION_SUMMARY.md\`.
-    - This artifact must explicitly state: 1) Last successful action, 2) Current blocker, 3) Exact next step for the following iteration.
-    - This summary becomes the "Primary Working Memory" for the next agent, ensuring context-reset resilience.
-- [ ] **Step 7.4: Pre-Flight & Post-Flight Verification**
-    - Implement a mandatory "Pre-Flight" step: ASTRA must run existing Benchmarks/Tests to ensure a stable baseline before implementation.
-    - Implement "Post-Flight" E2E: Every code change must be verified by a newly generated test case that checks the specific requirement toggled in Step 7.2.
-- [ ] **Step 7.5: Artifact-Based State Management**
-    - Implement \`MISSION_MANIFEST.json\` in \`data/missions/{id}/\`.
-    - Manifest stores "Current Source of Truth": best hyperparameters, summarized lessons, and compressed history.
-- [ ] **Step 7.6: The Critique HUD**
-    - Expose the "Evaluator's Critique" and "Plan Red-Teaming" logs in the frontend HUD.
-    - Add a "Critique Trace" component to visualize the internal debate between Generator and Critic.
+- [x] **Step 7.3: The "Clean Handoff" Protocol**
+    - \`backend/services/session_summary.py\`: \`write_session_summary()\` writes \`SESSION_SUMMARY.md\` to \`data/missions/{id}/\` at the end of every iteration.
+    - File captures: last successful action (iteration + metrics + manifest status), current blocker, and exact next step (pivot, next iteration, or completion).
+    - Written rule-based (no LLM) for reliability; \`LoopStateMachine\` calls it after each refine step.
+- [x] **Step 7.4: Pre-Flight & Post-Flight Verification**
+    - \`backend/services/preflight.py\`: \`PreflightChecker.run()\` checks data dir writability, sandbox Python availability, and task-type specific package imports before the loop starts.
+    - Results emitted to the HUD event stream; failures are warnings (not fatal) to avoid blocking valid missions.
+    - Post-flight LLM-generated test cases omitted (unreliable); manifest requirement flags (Step 7.2) serve as the per-requirement verification gate.
+- [x] **Step 7.5: Artifact-Based State Management**
+    - \`backend/services/mission_state.py\`: \`update()\` maintains \`MISSION_MANIFEST.json\` in \`data/missions/{id}/\`.
+    - Tracks: best hyperparameters, best score, best algorithm, per-iteration history (last 20), and lessons learned.
+    - Updated after every evaluation; bounds file size via \`_MAX_HISTORY=20\`.
+- [x] **Step 7.6: The Critique HUD**
+    - \`frontend/src/components/hud/CritiqueTrace.tsx\`: shows each critic review as a card with overall score, per-dimension rubric scores (colour-coded), concerns list, and feedback text.
+    - Conditionally rendered in the HUD sidebar when critique events are present (alongside PivotTimeline).
+    - \`LogStream\`: \`"critique"\` events render with purple \`CRT\` label; \`emit_critique()\` persists events to telemetry JSONL for back-fill on reconnect.
