@@ -34,8 +34,8 @@ export function usePendingApprovals(id: number) {
 export function useCreateMission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ goal, domain }: { goal: string; domain?: string }) =>
-      api.createMission(goal, domain),
+    mutationFn: ({ goal, taskType }: { goal: string; taskType?: string }) =>
+      api.createMission(goal, taskType),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["missions"] }),
   });
 }

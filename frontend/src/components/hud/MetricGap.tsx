@@ -75,7 +75,7 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
 }
 
 export function MetricGap({ mission, target = 0.92 }: Props) {
-  const current = mission.best_metric ?? 0;
+  const current = parseFloat(mission.best_metric_value ?? "0");
   const gap = Math.max(0, target - current);
   const pct = Math.min(100, (current / target) * 100);
   const achieved = gap <= 0;
@@ -102,7 +102,7 @@ export function MetricGap({ mission, target = 0.92 }: Props) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-xs text-[#94a3b8] mb-1">iter {mission.iteration}</div>
+          <div className="text-xs text-[#94a3b8] mb-1">iter {mission.current_iteration}</div>
           {achieved ? (
             <div className="text-xs text-[#4ade80] font-medium">Target achieved</div>
           ) : (

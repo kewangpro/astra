@@ -3,9 +3,10 @@ const BASE = "/api";
 export interface Mission {
   id: number;
   goal: string;
+  task_type: string;
   status: string;
-  iteration: number;
-  best_metric: number | null;
+  current_iteration: number;
+  best_metric_value: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,10 +45,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getMissions: () => req<Mission[]>("/missions"),
   getMission: (id: number) => req<Mission>(`/missions/${id}`),
-  createMission: (goal: string, domain?: string) =>
+  createMission: (goal: string, taskType?: string) =>
     req<Mission>("/missions", {
       method: "POST",
-      body: JSON.stringify({ goal, domain: domain ?? "general" }),
+      body: JSON.stringify({ goal, task_type: taskType ?? "rl" }),
     }),
   runMission: (id: number) =>
     req<{ status: string }>(`/agent/missions/${id}/run`, { method: "POST" }),

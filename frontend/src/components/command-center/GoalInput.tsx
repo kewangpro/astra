@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useCreateMission, useRunMission } from "@/lib/hooks/useMissions";
 import { useRouter } from "next/navigation";
 
-const DOMAINS = ["general", "vision", "nlp", "rl", "tabular"];
+const DOMAINS = ["rl", "sft", "ml"];
 
 const MAX = 280;
 
 export function GoalInput() {
   const [goal, setGoal] = useState("");
-  const [domain, setDomain] = useState("general");
+  const [domain, setDomain] = useState("rl");
   const [focused, setFocused] = useState(false);
   const router = useRouter();
   const create = useCreateMission();
@@ -18,7 +18,7 @@ export function GoalInput() {
 
   const submit = async () => {
     if (!goal.trim()) return;
-    const mission = await create.mutateAsync({ goal: goal.trim(), domain });
+    const mission = await create.mutateAsync({ goal: goal.trim(), taskType: domain });
     await run.mutateAsync(mission.id);
     router.push(`/missions/${mission.id}`);
   };

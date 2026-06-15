@@ -74,10 +74,10 @@ function MissionCard({ m }: { m: Mission }) {
         </p>
 
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-[#64748b]">iter {m.iteration}</span>
-          {m.best_metric !== null && (
+          <span className="text-[10px] text-[#64748b]">iter {m.current_iteration}</span>
+          {m.best_metric_value !== null && (
             <span className="text-[11px] font-medium" style={{ color }}>
-              {(m.best_metric * 100).toFixed(1)}%
+              {m.best_metric_value}
             </span>
           )}
         </div>
