@@ -27,6 +27,31 @@ def _detect_backend() -> str:
     return "container"
 
 
+class GPUPool:
+    """
+    Tracks GPU assignment per mission.
+    Picks the least-loaded GPU index for each new launch.
+    gpu_count=0 means GPU pinning is disabled (single-GPU or CPU-only).
+    """
+
+    def __init__(self, gpu_count: int = 0) -> None:
+        self._gpu_count = gpu_count
+        self._assignments: dict[str, int] = {}   # mission_id → gpu_index
+
+    def acquire(self, mission_id: str) -> Optional[int]:
+        if self._gpu_count == 0:
+            return None
+        counts = [0] * self._gpu_count
+        for idx in self._assignments.values():
+            counts[idx] += 1
+        chosen = counts.index(min(counts))
+        self._assignments[mission_id] = chosen
+        return chosen
+
+    def release(self, mission_id: str) -> None:
+        self._assignments.pop(mission_id, None)
+
+
 class SandboxManager:
     """
     Manages the full lifecycle of training sandboxes:
@@ -36,6 +61,7 @@ class SandboxManager:
     def __init__(self) -> None:
         self.default_backend = _detect_backend()
         self._sandboxes: dict[str, SubprocessSandbox | ContainerSandbox] = {}
+        self._gpu_pool = GPUPool(gpu_count=int(os.environ.get("ASTRA_GPU_COUNT", "0")))
         logger.info("SandboxManager initialized (default backend: %s)", self.default_backend)
 
     def _mission_data_dir(self, mission_id: str) -> str:
@@ -52,6 +78,7 @@ class SandboxManager:
         memory_limit_gb: float = 8.0,
         cpu_count: int = 4,
         gpu: bool = False,
+        gpu_index: Optional[int] = None,
         image: str = ContainerSandbox.DEFAULT_IMAGE,
         backend: Optional[str] = None,
     ) -> tuple[Optional[int], Optional[str]]:
@@ -63,6 +90,7 @@ class SandboxManager:
         """
         backend = backend or self.default_backend
         data_dir = self._mission_data_dir(mission_id)
+        assigned_gpu = gpu_index if gpu_index is not None else self._gpu_pool.acquire(mission_id)
 
         config = SandboxConfig(
             mission_id=mission_id,
@@ -72,6 +100,7 @@ class SandboxManager:
             memory_limit_gb=memory_limit_gb,
             cpu_count=cpu_count,
             gpu=gpu,
+            gpu_index=assigned_gpu,
         )
 
         if backend == "subprocess":
@@ -91,6 +120,7 @@ class SandboxManager:
         if sandbox:
             sandbox.terminate()
             del self._sandboxes[mission_id]
+        self._gpu_pool.release(mission_id)
 
     def is_alive(self, mission_id: str) -> bool:
         sandbox = self._sandboxes.get(mission_id)

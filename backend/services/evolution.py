@@ -137,6 +137,14 @@ class GoldenPromoter:
                 return False
             recipe.consecutive_wins = (recipe.consecutive_wins or 0) + 1
             if not recipe.is_golden and recipe.consecutive_wins >= GOLDEN_WIN_THRESHOLD:
+                # Guard against regression before awarding Golden status
+                checker = RegressionChecker()
+                if not await checker.passes(recipe):
+                    logger.warning(
+                        "GoldenPromoter: regression check blocked promotion of '%s'", recipe.name
+                    )
+                    await session.commit()
+                    return False
                 recipe.is_golden = True
                 recipe.updated_at = datetime.now(timezone.utc)
                 await session.commit()

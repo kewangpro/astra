@@ -22,6 +22,7 @@ class SandboxConfig:
     memory_limit_gb: float = 8.0
     cpu_count: int = 4
     gpu: bool = False                    # only meaningful for ContainerSandbox
+    gpu_index: Optional[int] = None      # None = no pinning; int = specific GPU device index
 
 
 class BaseSandbox(ABC):

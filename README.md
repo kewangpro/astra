@@ -111,7 +111,7 @@ make ports  # show port status for all services
 | 3 | Brain — Lead Agent (MLX), Autonomous Loop, Evaluator | ✅ Complete |
 | 4 | Mission Control — Next.js dashboard, Live HUD | ✅ Complete |
 | 5 | Wisdom — Recipe crystallization, evolution | ✅ Complete |
-| 6 | Validation — Test suite, multi-GPU | Pending |
+| 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 
 ## Hardware Target
 

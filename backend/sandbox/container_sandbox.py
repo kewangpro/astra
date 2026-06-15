@@ -45,7 +45,11 @@ class ContainerSandbox(BaseSandbox):
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
         device_requests = []
-        if self.config.gpu:
+        if self.config.gpu_index is not None:
+            device_requests = [
+                docker.types.DeviceRequest(device_ids=[str(self.config.gpu_index)], capabilities=[["gpu"]])
+            ]
+        elif self.config.gpu:
             device_requests = [
                 docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
             ]

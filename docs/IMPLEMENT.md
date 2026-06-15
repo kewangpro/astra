@@ -129,13 +129,23 @@ This document outlines the phased implementation strategy for `astra`.
     - `GET /recipes/db`: lists DB-backed records with domain/golden filters.
     - `GET /recipes` + `GET /recipes/{name}`: now DB-aware; DB records take priority over disk on name collisions.
 
-## Phase 6: Validation & Scaling
+## Phase 6: Validation & Scaling ✅
 *Goal: Ensure robustness and prepare for multi-GPU/distributed use.*
 
-- [ ] **Step 6.1: Comprehensive Test Suite**
-    - Integration tests for the full loop (using a "Mock" environment).
-- [ ] **Step 6.2: Multi-GPU Orchestration**
-    - Add support for assigning specific sandboxes to specific GPUs.
-- [ ] **Step 6.3: "Golden Set" Benchmarking**
-    - Harden and expand the Specialist Evaluator (built in Step 3.4): add domain-specific Golden Set scenarios for Snake, Tetris, and NLP tasks.
-    - Stress-test the StressTester itself: verify edge-case coverage, noise injection calibration, and benchmark reproducibility.
+- [x] **Step 6.1: Comprehensive Test Suite**
+    - `pytest.ini` + `requirements-dev.txt` (pytest, pytest-asyncio, pytest-mock, aiosqlite).
+    - `tests/conftest.py`: in-memory SQLite fixtures (StaticPool), `patch_db` monkeypatches `AsyncSessionLocal` in all modules.
+    - `tests/unit/test_pivot_engine.py`: 9 pure unit tests for `PivotEngine`.
+    - `tests/unit/test_benchmark_suite.py`: 6 unit tests for `BenchmarkSuite` (domain dispatch, pass/fail thresholds, missing checkpoint guard).
+    - `tests/unit/test_stress_tester.py`: 6 unit tests for `StressTester` (seed reproducibility, summary stats, strategy dispatch).
+    - `tests/integration/test_loop_state_machine.py`: 5 integration tests — happy path, error recovery, max retries, plateau+pivot, supervised gate rejection.
+- [x] **Step 6.2: Multi-GPU Orchestration**
+    - `SandboxConfig.gpu_index: Optional[int]` — per-sandbox GPU device pinning.
+    - `SubprocessSandbox`: injects `CUDA_VISIBLE_DEVICES` and `MPS_DEVICE_INDEX` when `gpu_index` is set.
+    - `ContainerSandbox`: passes `DeviceRequest(device_ids=[str(gpu_index)])` to Docker when `gpu_index` is set.
+    - `GPUPool` (in `manager.py`): least-loaded GPU assignment, `acquire()`/`release()` per mission.
+    - `SandboxManager.launch()`: accepts `gpu_index` param; auto-assigns via `GPUPool` when `ASTRA_GPU_COUNT > 0`.
+- [x] **Step 6.3: "Golden Set" Benchmarking**
+    - `backend/evaluator/benchmark.py`: added `snake_hard`, `tetris_hard`, `nlp_perplexity` scenarios; lower-is-better metric semantics for loss/perplexity; missing-checkpoint guard in all eval functions.
+    - `backend/evaluator/stress_tester.py`: `StressReport` fields (`mean`, `std`, `min`, `max`, `reproducible`); seed-0 reproducibility check; primary metric aggregation per task type.
+    - `backend/services/evolution.py` — `GoldenPromoter.record_win()`: calls `RegressionChecker.passes()` before awarding Golden status; blocks promotion on regression.

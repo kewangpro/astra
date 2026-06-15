@@ -43,6 +43,9 @@ class SubprocessSandbox(BaseSandbox):
         log_file = open(self.log_path, "a")
 
         env = {**os.environ, **self.config.env_vars}
+        if self.config.gpu_index is not None:
+            env["CUDA_VISIBLE_DEVICES"] = str(self.config.gpu_index)
+            env["MPS_DEVICE_INDEX"] = str(self.config.gpu_index)
 
         self._process = subprocess.Popen(
             [sys.executable, self.config.script_path],
