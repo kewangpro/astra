@@ -79,13 +79,16 @@ class LeadAgent:
     async def plan(self, goal: str, task_type: str, target_metric: dict) -> dict:
         """
         Decompose a user goal into a structured training plan.
+        Checks the recipe library for a warm-start hint before planning.
         Returns the plan dict (JSON-parsed).
         """
+        warm_hint = self._get_warm_start_hint(goal, task_type)
         query = (
             f"Goal: {goal}\n"
             f"Task type: {task_type}\n"
-            f"Target metric: {json.dumps(target_metric)}\n\n"
-            "Design the optimal training plan. Return JSON."
+            f"Target metric: {json.dumps(target_metric)}\n"
+            + (f"Warm-start hint (best matching past recipe): {json.dumps(warm_hint)}\n" if warm_hint else "")
+            + "\nDesign the optimal training plan. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PLAN_SCHEMA)
@@ -151,3 +154,21 @@ class LeadAgent:
     def flush_iteration_context(self) -> None:
         """Call between training iterations to clear stale code context."""
         self._cache.flush_code_context()
+
+    # ── Warm-start ────────────────────────────────────────────────────────────
+
+    def _get_warm_start_hint(self, goal: str, task_type: str) -> Optional[dict]:
+        """
+        Query the recipe library for the best matching past recipe.
+        Returns a hint dict for the planning prompt, or None if none found.
+        """
+        try:
+            from backend.services.recipe_library import get_warm_start_hint
+            # Derive domain from task_type as a rough signal
+            hint = get_warm_start_hint(goal, task_type)
+            if hint:
+                logger.info("LeadAgent: warm-start hint from recipe '%s'", hint.get("best_matching_recipe"))
+            return hint
+        except Exception as exc:
+            logger.debug("LeadAgent: warm-start lookup failed (non-fatal): %s", exc)
+            return None

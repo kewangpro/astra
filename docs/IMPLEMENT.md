@@ -104,20 +104,30 @@ This document outlines the phased implementation strategy for `astra`.
     - Shows code block for `execute_code` gates; key-value table for `resource_allocation`.
     - Approve / Reject buttons call `PATCH /approvals/{id}`; toast-free, optimistic invalidation.
 
-## Phase 5: The Wisdom (Recipes & Sharing)
+## Phase 5: The Wisdom (Recipes & Sharing) ✅
 *Goal: Finalize crystallization logic and the strategy sharing library.*
 
-- [ ] **Step 5.1: Recipe Crystallization Logic**
-    - Automate the distillation of a successful run into a YAML recipe.
-- [ ] **Step 5.2: Recipe Library & Retrieval**
-    - Implement semantic search for recipes based on new goals.
-    - Build the "Warm-Start" planning logic.
-- [ ] **Step 5.3: Strategy Evolution**
-    - Implement a mutation operator: produce candidate child recipes by perturbing hyperparameter values within configurable bounds.
-    - Implement a selection policy: promote a child recipe to replace its parent only if it achieves a higher score on the Specialist Evaluator's benchmark suite.
-    - Build a cross-mission candidate pool: aggregate top-performing recipes across different runs of the same domain into a gene pool.
-    - Define Golden Recipe promotion criteria: a recipe earns "Golden" status after N consecutive successful runs above the target threshold.
-    - Add a regression test harness: ensure a newly promoted Golden Recipe does not regress on any prior benchmark the domain has solved.
+- [x] **Step 5.1: Recipe Crystallization Logic**
+    - `backend/services/crystallizer.py`: `crystallize(mission_id)` — distils a completed mission's plan, best metric, and lessons into a YAML recipe; persists as a `RecipeRecord` in DB and writes YAML to `recipes/`; indexes in the semantic recipe library.
+    - `backend/models/recipe.py`: `RecipeRecord` ORM model — tracks name, domain, task_type, hyperparameters, curriculum, score, generation, consecutive_wins, is_golden, and provenance (mission_id, parent_recipe_id).
+    - `alembic/versions/f3a9b2c1d8e7_add_recipe_records.py`: DB migration for the `recipe_records` table.
+    - `LoopStateMachine`: automatically calls `crystallize()` after a mission transitions to `COMPLETED`.
+- [x] **Step 5.2: Recipe Library & Retrieval**
+    - `backend/services/recipe_library.py`: ChromaDB collection `recipe_library` — `index_recipe()`, `search_recipes()` (semantic), `get_warm_start_hint()`.
+    - `LeadAgent.plan()`: queries the recipe library before planning; injects best-matching recipe name as a warm-start hint in the planning prompt.
+    - `GET /recipes/search?q=...&domain=...`: semantic search endpoint.
+- [x] **Step 5.3: Strategy Evolution**
+    - `backend/services/evolution.py`:
+      - `MutationOperator`: perturbs numeric hyperparameters ±15% within per-param bounds.
+      - `SelectionPolicy`: promotes a child only if it beats its parent by ≥1%.
+      - `GenePool`: aggregates top-N recipes per domain as evolution candidates.
+      - `GoldenPromoter`: awards Golden status after 3 consecutive wins; re-indexes in recipe library.
+      - `RegressionChecker`: validates a candidate Golden recipe against the best existing Golden score in the domain.
+      - `evolve_recipe(parent_id)`: orchestration helper — mutates, persists child to DB + YAML, indexes.
+    - `POST /recipes/{recipe_id}/evolve`: spawns a mutated child recipe.
+    - `GET /recipes/{recipe_id}/lineage`: returns the full ancestor chain.
+    - `GET /recipes/db`: lists DB-backed records with domain/golden filters.
+    - `GET /recipes` + `GET /recipes/{name}`: now DB-aware; DB records take priority over disk on name collisions.
 
 ## Phase 6: Validation & Scaling
 *Goal: Ensure robustness and prepare for multi-GPU/distributed use.*

@@ -135,6 +135,7 @@ class LoopStateMachine:
                 if pivot_engine.is_goal_met(current_metrics):
                     logger.info("LoopStateMachine: goal met! mission=%s metrics=%s", mission_id, current_metrics)
                     await self._transition(mission_id, MissionStatus.COMPLETED)
+                    await self._crystallize(mission_id, plan, pivot_engine.best_metric_value())
                     return
 
                 # ── REFINING ─────────────────────────────────────────────
@@ -220,6 +221,18 @@ class LoopStateMachine:
             if "Traceback" in content or "Error" in content:
                 return content
         return None
+
+    # ── Crystallization ────────────────────────────────────────────────────────
+
+    async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
+        """Distil a completed mission into a reusable recipe (non-blocking on failure)."""
+        try:
+            from backend.services.crystallizer import crystallize
+            record = await crystallize(mission_id, plan=plan, score=score)
+            if record:
+                logger.info("LoopStateMachine: crystallized recipe '%s' for mission=%s", record.name, mission_id)
+        except Exception as exc:
+            logger.warning("LoopStateMachine: crystallization failed for mission=%s: %s", mission_id, exc)
 
     # ── Approval gate ──────────────────────────────────────────────────────────
 

@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="astra API",
     description="Autonomous Strategic Training Agent — backend orchestration layer",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -49,4 +49,4 @@ app.include_router(analysis.router)
 
 @app.get("/")
 async def root():
-    return {"name": "astra", "version": "0.3.0", "docs": "/docs"}
+    return {"name": "astra", "version": "0.4.0", "docs": "/docs"}
