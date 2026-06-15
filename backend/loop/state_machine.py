@@ -69,6 +69,9 @@ class LoopStateMachine:
             logger.error("LoopStateMachine: mission %s not found", mission_id)
             return
 
+        # Cancel stale approval gates left by any previous loop instance
+        await self._cancel_stale_gates(mission_id)
+
         pivot_engine = PivotEngine(mission.target_metric)
         script_path: Optional[str] = None
         error_count = 0
@@ -189,6 +192,21 @@ class LoopStateMachine:
                 return
 
     # ── DB helpers ─────────────────────────────────────────────────────────────
+
+    async def _cancel_stale_gates(self, mission_id: str) -> None:
+        """Reject any pending approval gates left by a previous loop instance."""
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(ApprovalGate).where(
+                        ApprovalGate.mission_id == mission_id,
+                        ApprovalGate.status == ApprovalStatus.PENDING.value,
+                    )
+                )
+                stale = result.scalars().all()
+                for gate in stale:
+                    gate.status = ApprovalStatus.REJECTED.value
+                    logger.info("LoopStateMachine: cancelled stale gate=%s for mission=%s", gate.id, mission_id)
 
     async def _load_mission(self, mission_id: str) -> Optional[Mission]:
         async with AsyncSessionLocal() as session:
