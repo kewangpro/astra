@@ -20,17 +20,23 @@ astra is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 2. Install dependencies
+# 2. Install dependencies (including training stack)
 pip install -r requirements.txt
 
-# 3. Configure environment
+# 3. Download local MLX models (required for first run)
+# Planning model (already cached if you have it)
+huggingface-cli download mlx-community/Meta-Llama-3.1-8B-Instruct-4bit
+# Coding model
+huggingface-cli download mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit
+
+# 4. Configure environment
 cp .env.example .env   # edit as needed
 
-# 4. Apply database migrations
+# 5. Apply database migrations
 make migrate
 # or: alembic upgrade head
 
-# 5. Run
+# 6. Run
 make run   # backend + frontend → http://localhost:8200 / http://localhost:3200
 ```
 

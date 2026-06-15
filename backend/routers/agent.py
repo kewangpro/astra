@@ -11,9 +11,13 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.config import settings
 from backend.database import get_db
 from backend.models.mission import Mission
+from backend.agent.inference.base import InferenceProvider
 from backend.agent.inference.mock_provider import MockProvider
+from backend.agent.inference.mlx_provider import MLXProvider
+from backend.agent.inference.ollama_provider import OllamaProvider
 from backend.agent.lead_agent import LeadAgent
 from backend.agent.code_generator import CodeGenerator
 from backend.agent.error_analyzer import ErrorAnalyzer
@@ -27,19 +31,38 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
+def _make_provider(provider_type: str, model: str) -> InferenceProvider:
+    if provider_type == "ollama":
+        return OllamaProvider(model_id=model, base_url=settings.ollama_base_url)
+    if provider_type == "mlx":
+        return MLXProvider(model_id=model)
+    return MockProvider()
+
+
 def _build_loop() -> LoopStateMachine:
     """
-    Build a LoopStateMachine with the default provider.
-    Phase 3 production: swap MockProvider → MLXProvider after model download.
+    Build a LoopStateMachine with configured inference providers.
+
+    lead_provider  → LeadAgent (planning, pivots)     default: Ollama → mac-mini.local
+    code_provider  → CodeGenerator + ErrorAnalyzer     default: MLX   → local MacBook
     """
-    provider = MockProvider()
+    lead_provider = _make_provider(settings.lead_provider, settings.lead_model)
+    code_provider = _make_provider(settings.code_provider, settings.code_model)
+
     model_manager = ModelManager()
-    model_manager.register("lead", provider)
+    model_manager.register("lead", lead_provider)
+    model_manager.register("code", code_provider)
+
+    logger.info(
+        "Agent: lead=%s/%s  code=%s/%s",
+        settings.lead_provider, settings.lead_model,
+        settings.code_provider, settings.code_model,
+    )
 
     return LoopStateMachine(
-        lead_agent=LeadAgent(provider),
-        code_generator=CodeGenerator(provider),
-        error_analyzer=ErrorAnalyzer(provider),
+        lead_agent=LeadAgent(lead_provider),
+        code_generator=CodeGenerator(code_provider),
+        error_analyzer=ErrorAnalyzer(code_provider),
         model_manager=model_manager,
         sandbox_manager=sandbox_manager,
         evaluator=SpecialistEvaluator(),

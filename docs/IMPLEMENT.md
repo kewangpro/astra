@@ -45,7 +45,8 @@ This document outlines the phased implementation strategy for `astra`.
     - `backend/trainers/rl_trainer.py`: `RLTrainer` stub — SB3/PyTorch; `_run_training()` injected by Phase 3 Lead Agent.
     - `backend/trainers/sft_trainer.py`: `SFTTrainer` stub — HuggingFace/PEFT; forces `save_strategy="steps"` with `save_steps=200` default (Phase 3 tunes to observed step duration).
     - `backend/trainers/ml_trainer.py`: `MLTrainer` stub — Scikit-learn/Lightning; `_run_training()` injected by Phase 3 Lead Agent.
-    - Training libraries (SB3, Transformers, PEFT, Lightning) are installed inside the sandbox, not the host.
+    - **Note:** Full training stack (`stable-baselines3`, `transformers`, `peft`, `trl`, `torch`, `scikit-learn`, `pytorch-lightning`) is installed in the project environment to support `SubprocessSandbox` on Apple Silicon.
+
 - [x] **Step 2.3: Telemetry Producer**
     - `backend/services/connection_manager.py`: `ConnectionManager` singleton — tracks `WebSocket` connections per mission; `broadcast()` fans out to all HUD clients; auto-removes dead connections.
     - `backend/routers/telemetry.py`:
@@ -64,7 +65,8 @@ This document outlines the phased implementation strategy for `astra`.
     - `backend/agent/kv_cache.py`: `SmartKVCache` — three buckets (system/pinned, code/pinned-per-iteration, history/sliding-window); evicts oldest history turns when token budget exceeded.
     - `backend/agent/lead_agent.py`: `LeadAgent` — structured JSON output with retry-on-parse-error; `plan()` for goal decomposition; `propose_pivot()` for stalled runs; `analyze_logs()` for prefix-cached log analysis.
     - `backend/agent/`: vLLM abstraction layer provided via `VLLMProvider` (DESIGN §2.1.2).
-    - **Production setup**: swap `MockProvider` → `MLXProvider` in `backend/routers/agent.py` after downloading a quantized model.
+    - **Note:** `MLXProvider` is used for both planning (`Llama-3.1`) and coding (`DeepSeek-Coder`) by default, optimized for 24GB unified memory.
+
 - [x] **Step 3.2: Code Generator & Self-Healer**
     - `backend/agent/code_generator.py`: `CodeGenerator` — prompt templates for RL (SB3), SFT (HF+PEFT), and ML (sklearn/Lightning); writes generated script to `data/missions/{id}/train.py`.
     - `backend/agent/error_analyzer.py`: `ErrorAnalyzer` — parses stack traces (extracts exception type, truncates to last 50 lines); generates and writes fixed script as `train.py.fixed_{n}.py`.

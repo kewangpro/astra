@@ -23,5 +23,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     autonomy_mode: Literal["guided", "supervised", "full_autonomy"] = "supervised"
 
+    # ── Inference providers ───────────────────────────────────────────────────
+    # Lead agent (planning / pivots) — MLX local
+    lead_provider: Literal["ollama", "mlx", "mock"] = "mlx"
+    lead_model: str = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
+    ollama_base_url: str = "http://localhost:11434"
+
+    # Code / error-fix agent — MLX on local MacBook
+    code_provider: Literal["mlx", "ollama", "mock"] = "mlx"
+    code_model: str = "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit"
+
 
 settings = Settings()
