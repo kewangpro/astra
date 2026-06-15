@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -37,11 +38,19 @@ async def db_session(db_engine):
 
 @pytest.fixture
 def patch_db(db_engine, monkeypatch):
-    """Replace AsyncSessionLocal in all modules with a test session maker."""
+    """Replace AsyncSessionLocal in all modules with a test session maker.
+    Also stubs out filesystem-writing services so tests don't create real directories."""
     maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
     monkeypatch.setattr("backend.database.AsyncSessionLocal", maker)
     monkeypatch.setattr("backend.loop.state_machine.AsyncSessionLocal", maker)
     monkeypatch.setattr("backend.services.evolution.AsyncSessionLocal", maker)
+
+    # Stub file-writing services to avoid creating real data/ directories in tests
+    monkeypatch.setattr("backend.services.session_summary.write_session_summary", lambda *a, **kw: None)
+    monkeypatch.setattr("backend.services.mission_state.update", lambda *a, **kw: {})
+    monkeypatch.setattr("backend.services.preflight.PreflightChecker.run",
+                        lambda self, *a, **kw: type("R", (), {"passed": True, "summary": lambda s: "4/4 checks passed"})())
+
     return maker
 
 

@@ -24,6 +24,7 @@ from sqlalchemy import select
 from backend.loop.state_machine import LoopStateMachine
 from backend.models.mission import Mission, MissionStatus
 from backend.models.approval import ApprovalGate, ApprovalStatus
+from backend.evaluator.manifest_evaluator import ManifestEvaluator
 
 
 # ── Mock helpers ───────────────────────────────────────────────────────────────
@@ -122,9 +123,10 @@ class _AlwaysErrorSandbox:
         self._log_paths: dict = {}
 
     def launch(self, mission_id, script_path, **kwargs):
-        log_path = os.path.join(self._tmp_dir, f"{mission_id}_{id(self)}.log")
-        with open(log_path, "w") as f:
-            f.write("Traceback\nRuntimeError: always fails")
+        # Always use the same log file (append) so offset tracking works across retries
+        log_path = os.path.join(self._tmp_dir, f"{mission_id}.log")
+        with open(log_path, "a") as f:
+            f.write("Traceback\nRuntimeError: always fails\n")
         self._log_paths[mission_id] = log_path
         return (1234, None)
 
@@ -154,9 +156,22 @@ async def _noop_crystallize(self, *args, **kwargs):
     pass
 
 
+class _SkipFileExistsManifestEvaluator(ManifestEvaluator):
+    """Auto-passes file_exists requirements (no real checkpoints in tests)
+    but evaluates metric_threshold and no_sandbox_error checks normally."""
+    def evaluate(self, manifest, metrics, mission_dir, sandbox_ok):
+        from datetime import datetime, timezone
+        for r in manifest.requirements:
+            if r.check_type == "file_exists" and not r.passed:
+                r.passed = True
+                r.passed_at = datetime.now(timezone.utc).isoformat()
+                r.evidence = "test-skip-file-check"
+        return super().evaluate(manifest, metrics, mission_dir, sandbox_ok)
+
+
 def _build_sm(agent, codegen, healer, sandbox, evaluator):
     mm = MagicMock()  # ModelManager — no-op
-    return LoopStateMachine(
+    sm = LoopStateMachine(
         lead_agent=agent,
         code_generator=codegen,
         error_analyzer=healer,
@@ -164,6 +179,9 @@ def _build_sm(agent, codegen, healer, sandbox, evaluator):
         sandbox_manager=sandbox,
         evaluator=evaluator,
     )
+    # Override manifest evaluator so tests aren't blocked by missing checkpoint files
+    sm._manifest_evaluator = _SkipFileExistsManifestEvaluator()
+    return sm
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
