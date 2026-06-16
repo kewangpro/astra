@@ -21,7 +21,7 @@ export function PivotTimeline({ events }: Props) {
           <li key={i} className="relative">
             <span className="absolute -left-[22px] top-1 w-3 h-3 rounded-full bg-[#fbbf24] border-2 border-[#0f172a]" />
             <div className="text-[11px] text-[#fbbf24] mb-0.5">
-              pivot #{i + 1}{p.iteration != null ? ` — iter ${p.iteration}` : ""} — triggered
+              iter {p.iteration ?? "?"} — pivot triggered
             </div>
             <div className="text-[11px] text-[#64748b]">
               {p.reason ?? "plateau detected"}
