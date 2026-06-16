@@ -21,7 +21,19 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
   const resolve = useResolveApproval(missionId);
   const autoApprove = useAutoApprove(missionId);
   const [verdicts, setVerdicts] = useState<Record<string, AutoApproveResult>>({});
+  const [classifyingGates, setClassifyingGates] = useState<Set<string>>(new Set());
   const triggeredRef = useRef<Set<string>>(new Set());
+
+  const runAutoApprove = (gateId: string) => {
+    setClassifyingGates((s) => new Set(s).add(gateId));
+    autoApprove.mutateAsync(gateId).then((result) => {
+      if (result.action === "blocked") {
+        setVerdicts((v) => ({ ...v, [gateId]: result }));
+      }
+    }).catch(() => {}).finally(() => {
+      setClassifyingGates((s) => { const n = new Set(s); n.delete(gateId); return n; });
+    });
+  };
 
   // Auto-trigger classification for execute_code gates when mode is on
   useEffect(() => {
@@ -29,23 +41,16 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
     for (const gate of approvals) {
       if (gate.gate_type === "execute_code" && !triggeredRef.current.has(gate.id)) {
         triggeredRef.current.add(gate.id);
-        autoApprove.mutateAsync(gate.id).then((result) => {
-          if (result.action === "blocked") {
-            setVerdicts((v) => ({ ...v, [gate.id]: result }));
-          }
-        }).catch(() => {});
+        runAutoApprove(gate.id);
       }
     }
   }, [autoApproveMode, approvals]);
 
   if (!approvals?.length) return null;
 
-  const handleAutoApprove = async (gateId: string) => {
+  const handleAutoApprove = (gateId: string) => {
     onAutoApproveModeChange?.(true);
-    const result = await autoApprove.mutateAsync(gateId);
-    if (result.action === "blocked") {
-      setVerdicts((v) => ({ ...v, [gateId]: result }));
-    }
+    runAutoApprove(gateId);
   };
 
   return (
@@ -66,7 +71,7 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
               ? gate.payload.resources
               : null;
           const verdict = verdicts[gate.id];
-          const isAutoLoading = autoApprove.isPending;
+          const isAutoLoading = classifyingGates.has(gate.id);
 
           return (
             <div key={gate.id} className="p-4">

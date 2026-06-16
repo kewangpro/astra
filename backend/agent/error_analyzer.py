@@ -146,6 +146,13 @@ class ErrorAnalyzer:
     @staticmethod
     def _patch_missing_imports(code: str) -> str:
         """Deterministically inject imports that the LLM forgot but the script uses."""
+        import re as _re
+        # Replace `import stable_baselines3 as sb3` + `sb3.XXX` with direct imports
+        if "import stable_baselines3 as sb3" in code:
+            code = _re.sub(r'\bsb3\.(PPO|SAC|A2C|DQN|TD3)\b', r'\1', code)
+            code = _re.sub(r'^\s*import stable_baselines3 as sb3\s*\n?', '', code, flags=_re.MULTILINE)
+
+        # Re-split after any string-level substitution above
         lines = code.splitlines()
         # Find the last existing import line to insert after it
         last_import_idx = 0
@@ -154,17 +161,15 @@ class ErrorAnalyzer:
             if stripped.startswith("import ") or stripped.startswith("from "):
                 last_import_idx = i
 
+        import_lines = "\n".join(l for l in lines if l.strip().startswith(("import ", "from ")))
         to_inject = []
-        if "PPO" in code and "from stable_baselines3 import PPO" not in code:
-            to_inject.append("from stable_baselines3 import PPO")
-        if "BaseCallback" in code and "from stable_baselines3.common.callbacks import BaseCallback" not in code:
+        for algo in ("PPO", "SAC", "A2C", "DQN", "TD3"):
+            if algo in code and f"from stable_baselines3 import {algo}" not in import_lines:
+                to_inject.append(f"from stable_baselines3 import {algo}")
+        if "BaseCallback" in code and "from stable_baselines3.common.callbacks import BaseCallback" not in import_lines:
             to_inject.append("from stable_baselines3.common.callbacks import BaseCallback")
-        if "SAC" in code and "from stable_baselines3 import SAC" not in code:
-            to_inject.append("from stable_baselines3 import SAC")
-        if "A2C" in code and "from stable_baselines3 import A2C" not in code:
-            to_inject.append("from stable_baselines3 import A2C")
-        if "DQN" in code and "from stable_baselines3 import DQN" not in code:
-            to_inject.append("from stable_baselines3 import DQN")
+        if "CheckpointCallback" in code and "CheckpointCallback" not in import_lines:
+            to_inject.append("from stable_baselines3.common.callbacks import CheckpointCallback")
 
         if to_inject:
             insert_at = last_import_idx + 1

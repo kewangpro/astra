@@ -59,7 +59,13 @@ export default function MissionHUD({
 
   const { data: mission, isLoading } = useMission(missionId);
   const { events, connected } = useTelemetry(missionId);
-  const [autoApproveMode, setAutoApproveMode] = useState(false);
+  const [autoApproveMode, setAutoApproveModeRaw] = useState(() => {
+    try { return localStorage.getItem(`auto-approve:${missionId}`) === "1"; } catch { return false; }
+  });
+  const setAutoApproveMode = (on: boolean) => {
+    setAutoApproveModeRaw(on);
+    try { localStorage.setItem(`auto-approve:${missionId}`, on ? "1" : "0"); } catch {}
+  };
 
   if (isLoading)
     return (
@@ -103,7 +109,7 @@ export default function MissionHUD({
             {mission.status}
           </span>
           <button
-            onClick={() => setAutoApproveMode((v) => !v)}
+            onClick={() => setAutoApproveMode(!autoApproveMode)}
             title={autoApproveMode ? "Disable auto-approve" : "Enable auto-approve"}
             className={`text-[11px] px-2.5 py-1 rounded border transition-colors ${
               autoApproveMode

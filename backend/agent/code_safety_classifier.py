@@ -80,8 +80,8 @@ class CodeSafetyClassifier:
             logger.info("CodeSafetyClassifier: safe=%s reason=%s", verdict.safe, verdict.reason)
             return verdict
         except Exception as exc:
-            logger.warning("CodeSafetyClassifier: LLM failed, defaulting to unsafe: %s", exc)
-            return SafetyVerdict(safe=False, reason=f"Classification failed: {exc}")
+            logger.warning("CodeSafetyClassifier: LLM failed: %s", exc)
+            return SafetyVerdict(safe=False, reason="LLM classifier unavailable — manual review required", classifier="static")
 
     @staticmethod
     def _static_check(script: str) -> SafetyVerdict:

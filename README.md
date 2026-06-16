@@ -13,10 +13,23 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Semantic warm-start** — ChromaDB recipe library retrieves the closest prior strategy before each new plan, reducing wasted iterations
 - **Atomic requirement manifests** — structured pass/fail requirements (stability, artifacts, metric thresholds) replace free-text goals; the loop only completes when all are green
 - **Autonomous error learning** — ErrorAnalyzer scans the entire script for all instances of an error class per healing pass; each fix is stored as a ChromaDB lesson so the CodeGenerator avoids the same mistake on future missions
+- **Deterministic SB3 patching** — post-generation pass in CodeGenerator and ErrorAnalyzer injects missing stable-baselines3 imports, fixes callback class inheritance, and strips invalid constructor kwargs so weak LLM output never blocks training
+- **Auto-approve with LLM classification** — `execute_code` gates can be auto-approved via a two-stage classifier: static regex pre-filter (subprocess, eval, external HTTP) followed by LLM review; unsafe scripts are flagged for manual review with a reason
 - **Clean handoff protocol** — every iteration writes a `SESSION_SUMMARY.md` capturing the last action, current blocker, and exact next step for reliable warm-restart
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
-- **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **223 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, missions router) plus integration tests for the full loop
+- **Live mission HUD** — Next.js dashboard with real-time metric charts (current vs. prior run differentiated by color), log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
+- **Custom RL environments** — `envs/snake_env.py` provides a Gymnasium-compatible Snake-v0 environment for custom environment missions
+- **254 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, missions router) plus integration tests for the full loop
+
+### Screenshots
+
+| Command Center | Mission HUD |
+|---|---|
+| ![Command Center — mission grid with status badges and Run button](docs/screenshots/command_center.png) | ![Mission HUD — metric chart, log stream, pivot timeline](docs/screenshots/mission_hud.png) |
+
+| Metric History (current vs. prior run) | Auto-Approve & Approval Panel |
+|---|---|
+| ![Metric History chart showing bright current run over muted prior runs](docs/screenshots/metric_history.png) | ![Approval panel with Auto-Approve button and safety verdict card](docs/screenshots/approval_panel.png) |
 
 ## Documentation
 
@@ -58,7 +71,7 @@ API docs available at `http://localhost:8200/docs` once the backend is running.
 ```
 astra/
 ├── backend/
-│   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ModelManager, KVCache, inference providers
+│   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ErrorAnalyzer, CodeSafetyClassifier, ModelManager, KVCache, inference providers
 │   ├── analysis/       # SpatialAnalyzer (Grad-CAM), PolicyAuditor
 │   ├── evaluator/      # SpecialistEvaluator, BenchmarkSuite, StressTester, ManifestEvaluator
 │   ├── loop/           # LoopStateMachine, PivotEngine
@@ -70,9 +83,10 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 215 unit tests across all core modules
+│   ├── unit/           # 246 unit tests across all core modules
 │   └── integration/    # 8 integration tests for the loop state machine
 ├── alembic/            # Database migrations
+├── envs/               # Custom Gymnasium environments (snake_env.py → Snake-v0)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
@@ -93,6 +107,7 @@ astra/
 | `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
 | `GET/POST /approvals` | Approval gate CRUD |
 | `POST /approvals/{id}/approve\|reject` | Approve or reject a pending gate |
+| `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
 | `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
 | `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
 | `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
@@ -125,6 +140,7 @@ make ports  # show port status for all services
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 | 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
+| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, 254 tests | 🔄 In Progress |
 
 ## Hardware Target
 

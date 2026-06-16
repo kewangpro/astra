@@ -61,6 +61,8 @@ The script MUST start with these exact imports (do not omit any):
     import numpy as np
     import requests
     import logging
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
 1. Create the environment with EXACTLY these two lines — copy verbatim:
@@ -261,6 +263,13 @@ class CodeGenerator:
     @staticmethod
     def _patch_rl_imports(code: str) -> str:
         """Inject any SB3 imports the LLM forgot to include."""
+        import re
+        # Replace `import stable_baselines3 as sb3` + `sb3.XXX` with direct imports
+        if "import stable_baselines3 as sb3" in code:
+            code = re.sub(r'\bsb3\.(PPO|SAC|A2C|DQN|TD3)\b', r'\1', code)
+            code = re.sub(r'^\s*import stable_baselines3 as sb3\s*\n?', '', code, flags=re.MULTILINE)
+
+        # Re-split after any string-level substitution above
         lines = code.splitlines()
         last_import_idx = 0
         for i, line in enumerate(lines):
@@ -268,14 +277,16 @@ class CodeGenerator:
             if s.startswith("import ") or s.startswith("from "):
                 last_import_idx = i
 
+        import_lines = "\n".join(l for l in lines if l.strip().startswith(("import ", "from ")))
         to_inject = []
         for algo in ("PPO", "SAC", "A2C", "DQN", "TD3"):
-            if algo in code and f"from stable_baselines3 import {algo}" not in code:
+            if algo in code and f"from stable_baselines3 import {algo}" not in import_lines:
                 to_inject.append(f"from stable_baselines3 import {algo}")
-        if "BaseCallback" in code and "from stable_baselines3.common.callbacks import BaseCallback" not in code:
+        if "BaseCallback" in code and "from stable_baselines3.common.callbacks import BaseCallback" not in import_lines:
             to_inject.append("from stable_baselines3.common.callbacks import BaseCallback")
+        if "CheckpointCallback" in code and "CheckpointCallback" not in import_lines:
+            to_inject.append("from stable_baselines3.common.callbacks import CheckpointCallback")
 
-        import re
         if to_inject:
             insert_at = last_import_idx + 1
             for i, imp in enumerate(to_inject):
