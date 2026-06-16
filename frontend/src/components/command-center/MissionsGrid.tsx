@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMissions, useRunMission } from "@/lib/hooks/useMissions";
 import type { Mission } from "@/lib/api";
 
@@ -33,6 +34,7 @@ function SkeletonCard() {
 
 function MissionCard({ m }: { m: Mission }) {
   const run = useRunMission();
+  const router = useRouter();
   const color = STATUS_COLOR[m.status] ?? STATUS_COLOR.pending;
   const isRunning = m.status === "running";
 
@@ -86,7 +88,9 @@ function MissionCard({ m }: { m: Mission }) {
           <button
             onClick={(e) => {
               e.preventDefault();
-              run.mutate(m.id);
+              run.mutate(m.id, {
+                onSuccess: () => router.push(`/missions/${m.id}`),
+              });
             }}
             className="mt-3 w-full text-[11px] py-1.5 rounded-sm border transition-colors"
             style={{

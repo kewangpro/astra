@@ -90,7 +90,7 @@ export function MetricGap({ mission, target = 0.92 }: Props) {
       <div className="flex items-center gap-4">
         <div className="relative shrink-0">
           <ArcGauge pct={pct} achieved={achieved} />
-          <div className="absolute inset-0 flex flex-col items-center justify-center pb-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center pt-6">
             <span
               className="text-2xl font-semibold leading-none"
               style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}

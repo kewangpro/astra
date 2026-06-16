@@ -25,6 +25,8 @@ Generate complete, runnable Python training scripts.
 Requirements:
 - The script must run standalone inside a sandboxed Python environment.
 - Import all dependencies at the top.
+- For RL scripts: ALWAYS use `import gymnasium as gym` — NOT `import gym`.
+  The `gym` package is NOT installed; only `gymnasium` is available.
 - Log metrics by POSTing to the ASTRA telemetry endpoint:
     POST {api_url}/telemetry/missions/{mission_id}/metrics
     Body: {{"mission_id": "...", "name": "...", "value": 0.0, "step": 0}}

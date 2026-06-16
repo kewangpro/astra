@@ -1,16 +1,26 @@
 task_type: RL
 domain: Train
 algorithm: PPO
-description: Auto-crystallized recipe from mission 87128994.
+description: Auto-crystallized recipe from mission b2774a8c.
 hyperparameters:
-  learning_rate: 0.0003
+  num_episodes: 1000
+  batch_size: 64
+  learning_rate: 0.001
   gamma: 0.99
-created_at: '2026-06-15'
+  clip_range: 0.1
+  dataset_path: CartPole-v1
+created_at: '2026-06-16'
 provenance:
-  mission_id: 87128994-9ad5-45ab-aabe-53b7f737c870
+  mission_id: b2774a8c-4d3b-4d8c-9678-79e7064c4705
   iterations: 0
-  best_score: 0.0
-target_metric:
-  mean_reward: 100.0
+  best_score: null
+curriculum:
+  phases:
+  - phase: exploration
+    num_episodes: 200
+    batch_size: 64
+  - phase: exploitation
+    num_episodes: 800
+    batch_size: 64
 name: train_rl_v1
 version: 1.0.0
