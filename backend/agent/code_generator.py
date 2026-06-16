@@ -45,8 +45,12 @@ Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script must:
-1. Create the environment (use gymnasium).
+1. Create the environment with EXACTLY: env = gym.make("{env_id}")
+   Do NOT read the environment name from hyperparameters or any variable —
+   hard-code the string "{env_id}" directly in the gym.make() call.
 2. Instantiate the {algorithm} model with the given hyperparameters.
+   Only pass valid {algorithm} constructor kwargs — do NOT pass dataset_path,
+   env_id, or any non-hyperparameter key to the model.
 3. Implement a custom BaseCallback that computes mean_reward from
    self.model.ep_info_buffer — NOT from self.locals (which does not contain
    mean_reward). Use this pattern inside _on_step:
