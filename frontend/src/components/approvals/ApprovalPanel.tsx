@@ -7,6 +7,7 @@ import type { AutoApproveResult } from "@/lib/api";
 interface Props {
   missionId: string;
   autoApproveMode?: boolean;
+  onAutoApproveModeChange?: (on: boolean) => void;
 }
 
 const GATE_LABELS: Record<string, string> = {
@@ -15,7 +16,7 @@ const GATE_LABELS: Record<string, string> = {
   deploy_model: "Deploy Model",
 };
 
-export function ApprovalPanel({ missionId, autoApproveMode = false }: Props) {
+export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApproveModeChange }: Props) {
   const { data: approvals } = usePendingApprovals(missionId);
   const resolve = useResolveApproval(missionId);
   const autoApprove = useAutoApprove(missionId);
@@ -40,6 +41,7 @@ export function ApprovalPanel({ missionId, autoApproveMode = false }: Props) {
   if (!approvals?.length) return null;
 
   const handleAutoApprove = async (gateId: string) => {
+    onAutoApproveModeChange?.(true);
     const result = await autoApprove.mutateAsync(gateId);
     if (result.action === "blocked") {
       setVerdicts((v) => ({ ...v, [gateId]: result }));

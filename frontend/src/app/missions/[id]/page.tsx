@@ -122,7 +122,7 @@ export default function MissionHUD({
       </div>
 
       {/* Approval gate — shown prominently when pending */}
-      <ApprovalPanel missionId={missionId} autoApproveMode={autoApproveMode} />
+      <ApprovalPanel missionId={missionId} autoApproveMode={autoApproveMode} onAutoApproveModeChange={setAutoApproveMode} />
 
       {/* Metric row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
