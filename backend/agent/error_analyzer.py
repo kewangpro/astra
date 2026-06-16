@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Optional
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
 from backend.logging_config import get_logger
@@ -19,10 +20,12 @@ You are ASTRA's Self-Healer — an expert Python debugger.
 You are given a training script that failed and its error output.
 Analyze the error and return the complete corrected Python script.
 Rules:
-- Fix ONLY what caused the error; do not restructure working code.
-- If the error is an ImportError or NameError for a module/name, add ALL missing imports at the top (scan the full script for any other missing imports at the same time).
-- If the error is a shape mismatch or type error, fix the data handling.
-- If the error is a hyperparameter issue, adjust to a safe default.
+- Scan the ENTIRE script for ALL instances of this error class and fix them all in one pass — do not fix just the one line that appeared in the traceback.
+- If the error is an ImportError or ModuleNotFoundError, add ALL missing imports at the top and check the full script for any other missing imports at the same time.
+- If the error is a TypeError about unexpected keyword arguments, remove ALL invalid kwargs from every model constructor call in the script, not just the first one.
+- If the error is a shape mismatch or type error, fix all data handling of that type.
+- If the error is a hyperparameter issue, replace ALL occurrences with safe defaults.
+- Do not restructure working code.
 - DO NOT use markdown code blocks (```python ... ```).
 - Return ONLY the raw corrected Python script, no explanation, no preamble, no stop tokens."""
 
@@ -50,10 +53,16 @@ class ErrorAnalyzer:
         script_path: str,
         error_output: str,
         iteration: int = 0,
+        prior_errors: Optional[list[str]] = None,
+        mission_id: Optional[str] = None,
+        domain: Optional[str] = None,
     ) -> str:
         """
         Generate a fixed version of the failing script.
         Writes the fix to {script_path}.fixed_{iteration}.py and returns the path.
+
+        prior_errors: errors from previous healing attempts, so the LLM knows
+                      what was already tried and can fix all issues in one pass.
         """
         try:
             with open(script_path, "r") as f:
@@ -67,10 +76,23 @@ class ErrorAnalyzer:
 
         logger.warning("ErrorAnalyzer: fixing %s after %s (iteration %d)", script_path, error_type, iteration)
 
+        prior_context = ""
+        if prior_errors:
+            summaries = "\n".join(
+                f"Attempt {i+1}: {_extract_error_type(e)} — {_extract_traceback(e).splitlines()[-1]}"
+                for i, e in enumerate(prior_errors)
+            )
+            prior_context = (
+                f"\nPrevious fix attempts also failed with these errors "
+                f"(fix all of them in this pass):\n{summaries}\n"
+            )
+
         user_prompt = (
             f"The following Python training script raised a {error_type}:\n\n"
             f"=== SCRIPT ===\n{original_code}\n\n"
-            f"=== ERROR ===\n{traceback}\n\n"
+            f"=== CURRENT ERROR ===\n{traceback}\n"
+            f"{prior_context}\n"
+            "Scan the entire script and fix ALL instances of these error classes. "
             "Return the complete corrected script."
         )
 
@@ -89,7 +111,36 @@ class ErrorAnalyzer:
             f.write(fixed_code)
 
         logger.info("ErrorAnalyzer: fix written to %s", fixed_path)
+
+        # Store lesson in vector memory so future code generation avoids this error
+        self._store_lesson(error_type, traceback, mission_id, domain)
+
         return fixed_path
+
+    def _store_lesson(
+        self,
+        error_type: str,
+        traceback: str,
+        mission_id: Optional[str],
+        domain: Optional[str],
+    ) -> None:
+        try:
+            import uuid
+            from backend.services import vector_memory
+            last_line = traceback.strip().splitlines()[-1] if traceback else ""
+            lesson = (
+                f"Code generation error ({error_type}): {last_line}. "
+                f"Fix: scan entire script for all instances of this error class and remove/correct them all."
+            )
+            vector_memory.add_lesson(
+                f"codegen-{error_type}-{uuid.uuid4().hex[:8]}",
+                lesson,
+                run_id=mission_id or "unknown",
+                domain=domain or "code_generation",
+                extra={"error_type": error_type, "source": "error_analyzer"},
+            )
+        except Exception as exc:
+            logger.debug("ErrorAnalyzer: could not store lesson: %s", exc)
 
     @staticmethod
     def _strip_fences(text: str) -> str:

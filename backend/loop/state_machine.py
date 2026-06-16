@@ -142,6 +142,7 @@ class LoopStateMachine:
                 await emit_status(mission_id, "Generating training script…", event_type="info")
                 script_path = await self._codegen.generate_training_script(mission_id, plan)
                 await emit_status(mission_id, "Training script ready", event_type="success")
+                error_history: list[str] = []   # accumulated errors for this script
 
                 # EXECUTE_CODE approval gate (supervised mode)
                 if mission.autonomy_mode == "supervised":
@@ -178,6 +179,7 @@ class LoopStateMachine:
 
                 if error_output:
                     error_count += 1
+                    error_history.append(error_output)
                     if error_count > MAX_RETRIES:
                         logger.error("LoopStateMachine: max retries exceeded — failing mission")
                         await emit_status(mission_id, "Max retries exceeded", event_type="error")
@@ -189,7 +191,12 @@ class LoopStateMachine:
                         event_type="warn",
                         value=f"attempt {error_count}/{MAX_RETRIES}",
                     )
-                    script_path = await self._healer.fix_script(script_path, error_output, error_count)
+                    script_path = await self._healer.fix_script(
+                        script_path, error_output, error_count,
+                        prior_errors=error_history[:-1],
+                        mission_id=mission_id,
+                        domain=plan.get("domain"),
+                    )
                     continue   # retry from sandboxing
 
                 self._model_manager.after_sandbox_exit()

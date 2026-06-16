@@ -50,9 +50,12 @@ The script must:
 1. Create the environment with EXACTLY: env = gym.make("{env_id}")
    Do NOT read the environment name from hyperparameters or any variable —
    hard-code the string "{env_id}" directly in the gym.make() call.
-2. Instantiate the {algorithm} model with the given hyperparameters.
-   Only pass valid {algorithm} constructor kwargs — do NOT pass dataset_path,
-   env_id, or any non-hyperparameter key to the model.
+2. Instantiate the {algorithm} model passing ONLY these valid SB3 PPO kwargs
+   (filter out anything else from the hyperparameters dict before passing):
+   learning_rate, n_steps, batch_size, n_epochs, gamma, gae_lambda,
+   clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
+   DO NOT pass: actor_lr, critic_lr, entropy_coef, entropy_coeff,
+   clip_range_value, or any other key not in the list above.
 3. Implement a custom BaseCallback that computes mean_reward from
    self.model.ep_info_buffer — NOT from self.locals (which does not contain
    mean_reward). Use this pattern inside _on_step:
@@ -138,6 +141,13 @@ class CodeGenerator:
             mission_id=mission_id,
             checkpoint_dir=checkpoint_dir,
         )
+
+        # Inject lessons learned from prior code generation failures
+        lessons = self._query_lessons(plan)
+        if lessons:
+            lesson_block = "\n".join(f"- {l}" for l in lessons)
+            system_prompt += f"\n\nLessons learned from prior failures (avoid repeating these):\n{lesson_block}"
+
         user_prompt = self._build_user_prompt(task_type, mission_id, plan, checkpoint_dir)
 
         messages = [
@@ -199,6 +209,21 @@ class CodeGenerator:
             **base,
         }
         return _ML_TEMPLATE.format(**ctx)
+
+    @staticmethod
+    def _query_lessons(plan: dict) -> list[str]:
+        """Retrieve past code generation failure lessons from vector memory."""
+        try:
+            from backend.services import vector_memory
+            domain = plan.get("domain", "code_generation")
+            results = vector_memory.query_lessons(
+                f"{plan.get('algorithm', '')} {plan.get('task_type', '')} training script",
+                domain=domain,
+                n_results=3,
+            )
+            return [r["text"] for r in results if r.get("text")]
+        except Exception:
+            return []
 
     @staticmethod
     def _strip_fences(text: str) -> str:
