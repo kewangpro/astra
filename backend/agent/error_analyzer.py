@@ -172,6 +172,14 @@ class ErrorAnalyzer:
                 lines.insert(insert_at + i, imp)
             logger.info("ErrorAnalyzer: patched missing imports: %s", to_inject)
             code = "\n".join(lines)
+        # Fix callback class that has _on_step but doesn't extend BaseCallback
+        import re
+        code = re.sub(r'(class\s+\w*[Cc]allback\w*)\s*:', r'\1(BaseCallback):', code)
+        if "def __init__(self):" in code and "(BaseCallback)" in code:
+            code = code.replace(
+                "def __init__(self):",
+                "def __init__(self, verbose=0, **kwargs):\n        super().__init__(verbose=verbose)",
+            )
         return _patch_callback_init(code)
 
     def _store_lesson(

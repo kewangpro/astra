@@ -287,6 +287,19 @@ class CodeGenerator:
             r'\1()',
             code,
         )
+        # Fix callback class that has _on_step but doesn't extend BaseCallback
+        code = re.sub(
+            r'(class\s+\w*[Cc]allback\w*)\s*:',
+            r'\1(BaseCallback):',
+            code,
+        )
+        # Ensure __init__ accepts **kwargs to tolerate extra args
+        if "class " in code and "(BaseCallback)" in code:
+            if "def __init__(self):" in code:
+                code = code.replace(
+                    "def __init__(self):",
+                    "def __init__(self, verbose=0, **kwargs):\n        super().__init__(verbose=verbose)",
+                )
         return code
 
     @staticmethod
