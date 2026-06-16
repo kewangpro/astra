@@ -43,11 +43,12 @@ Do NOT include env_id, dataset_path, entropy_coeff, actor_lr, or any non-SB3 key
 _PIVOT_SYSTEM = """\
 You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaued.
 Given the current metrics and training history, propose a strategic pivot.
-Respond with valid JSON describing the adjustments to make.
+The algorithm is fixed — only tune hyperparameters and/or the policy network architecture.
+Respond with valid JSON with two optional fields: "adjustments" (hyperparameters) and "policy_kwargs" (network architecture).
 
-For RL (PPO) pivots, only adjust these hyperparameters and stay within these ranges:
+For RL (PPO) hyperparameter adjustments, stay within these ranges:
 - learning_rate: 1e-5 to 1e-2
-- n_steps: 512 to 4096 (must be a multiple of batch_size)
+- n_steps: 512 to 4096 (must be >= batch_size)
 - batch_size: 64 to 512 (must be <= n_steps)
 - n_epochs: 3 to 20
 - gamma: 0.90 to 0.999
@@ -56,7 +57,14 @@ For RL (PPO) pivots, only adjust these hyperparameters and stay within these ran
 - ent_coef: 0.0 to 0.1
 - vf_coef: 0.1 to 1.0
 - max_grad_norm: 0.3 to 1.0
-Do NOT set n_epochs > 20 or n_steps < 512 — these destabilize training."""
+Do NOT set n_epochs > 20 or n_steps < 512 — these destabilize training.
+
+For policy network architecture changes, use "policy_kwargs" with a "net_arch" list:
+- Default (often too small): [64, 64]
+- Recommended for complex envs: [256, 256] or [400, 300]
+- Deep option: [256, 256, 128]
+Example: {"policy_kwargs": {"net_arch": [256, 256]}}
+Consider a wider network when the agent is stuck well below target despite many iterations."""
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -86,6 +94,7 @@ _PIVOT_SCHEMA = {
             "properties": {
                 "reason": {"type": "string"},
                 "adjustments": {"type": "object"},
+                "policy_kwargs": {"type": "object"},
                 "reasoning": {"type": "string"},
             },
             "required": ["reason", "adjustments"],

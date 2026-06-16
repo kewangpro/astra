@@ -52,6 +52,7 @@ Mission ID: {mission_id}
 Algorithm: {algorithm}
 Environment: {env_id}
 Hyperparameters: {hyperparameters}
+Policy kwargs (network architecture): {policy_kwargs}
 Target metric: {target_metric}
 Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
@@ -76,6 +77,7 @@ The script must:
    clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
    DO NOT pass: actor_lr, critic_lr, entropy_coef, entropy_coeff,
    clip_range_value, or any other key not in the list above.
+   If "Policy kwargs" above is not empty, also pass policy_kwargs=<that dict> to the constructor.
 3. Implement a custom BaseCallback. Inside _on_step use EXACTLY this pattern —
    do NOT post telemetry on every step, only every 2048 steps:
 
@@ -223,13 +225,14 @@ class CodeGenerator:
                 ))
                 if env_id == "Snake-v0" else ""
             )
+            policy_kwargs = hp.pop("policy_kwargs", None)
             ctx = {
                 "algorithm": plan.get("algorithm", "PPO"),
                 "env_id": env_id,
                 "hyperparameters": json.dumps(hp, indent=2),
+                "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "none",
                 "target_reward": target_reward,
                 "snake_setup": snake_setup,
-                **hp,
                 **base,
             }
             return _RL_TEMPLATE.format(**ctx)

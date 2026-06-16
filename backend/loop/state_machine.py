@@ -253,8 +253,13 @@ class LoopStateMachine:
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
                     plan["hyperparameters"].update(adjustments)
+                    if pivot.get("policy_kwargs"):
+                        plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
                     pivot_reason = pivot.get("reason", "plateau detected")
-                    logger.info("LoopStateMachine: pivot applied: %s | adjustments: %s", pivot_reason, adjustments)
+                    logger.info(
+                        "LoopStateMachine: pivot applied: %s | adjustments: %s | policy_kwargs: %s",
+                        pivot_reason, adjustments, pivot.get("policy_kwargs"),
+                    )
                     await emit_status(
                         mission_id, "Pivot triggered",
                         event_type="pivot",
