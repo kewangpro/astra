@@ -48,7 +48,7 @@ def _build_loop() -> LoopStateMachine:
     code_provider  → CodeGenerator + ErrorAnalyzer     default: MLX → local MacBook
     """
     lead_provider = _make_provider(settings.lead_provider, settings.lead_model)
-    code_provider = _make_provider(settings.code_provider, settings.code_model)
+    code_provider = get_code_provider()
 
     model_manager = ModelManager()
     model_manager.register("lead", lead_provider)
@@ -73,6 +73,17 @@ def _build_loop() -> LoopStateMachine:
 
 # Tracks running mission tasks so they can be cancelled on shutdown
 _running_tasks: dict[str, asyncio.Task] = {}
+
+# Shared code provider — reused by the approvals auto-approve endpoint
+_code_provider: Optional[InferenceProvider] = None
+
+
+def get_code_provider() -> InferenceProvider:
+    """Return the shared code inference provider, creating it if needed."""
+    global _code_provider
+    if _code_provider is None:
+        _code_provider = _make_provider(settings.code_provider, settings.code_model)
+    return _code_provider
 
 
 @router.post("/missions/{mission_id}/run", status_code=202)

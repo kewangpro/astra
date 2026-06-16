@@ -214,3 +214,25 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **Run button navigation + CritiqueTrace height**
     - `frontend/src/components/command-center/MissionsGrid.tsx`: Run button `onSuccess` navigates to `/missions/{id}` via `useRouter`.
     - `frontend/src/components/hud/CritiqueTrace.tsx`: outer container capped at `maxHeight: "24rem"` to match LogStream.
+
+---
+
+## Phase 9: Autonomous Approval & Loop Hardening 🔄
+*Goal: Reduce human friction in supervised mode; make the loop more robust against weak LLM output.*
+
+- [x] **Auto-Approve gate (Step 9.1)**
+    - `backend/agent/code_safety_classifier.py`: `CodeSafetyClassifier` — two-stage check: (1) static regex pre-filter (subprocess, eval, exec, external HTTP); (2) LLM classification using code inference provider. Returns `SafetyVerdict(safe, reason, classifier)`.
+    - `backend/routers/approvals.py`: `POST /approvals/{gate_id}/auto-approve` — reads `train.py` from gate payload, runs classifier; approves gate automatically if safe, leaves PENDING with verdict if unsafe.
+    - `frontend/src/lib/api.ts`: `autoApprove()` method + `AutoApproveResult` type.
+    - `frontend/src/lib/hooks/useMissions.ts`: `useAutoApprove()` mutation hook.
+    - `frontend/src/components/approvals/ApprovalPanel.tsx`: "Auto-Approve" button (sky-blue, only on `execute_code` gates); shows "Classifying…" spinner; renders inline safety verdict card when classifier blocks.
+
+- [x] **Deterministic import/callback patching (Step 9.2)**
+    - `backend/agent/code_generator.py`: `_patch_rl_imports()` — post-generation pass injecting missing SB3 imports (`PPO`, `BaseCallback`, etc.); fixes `class Foo:` → `class Foo(BaseCallback):`; strips invalid callback constructor kwargs.
+    - `backend/agent/error_analyzer.py`: same via `_patch_missing_imports()` + `_patch_callback_init()`; healer now writes fixes back to canonical `train.py` in addition to `.fixed_N.py`.
+
+- [x] **Iteration counter fix (Step 9.3)**
+    - `backend/loop/state_machine.py`: introduced local `current_iteration` counter initialized from `mission.current_iteration`; incremented in-memory after each `_increment_iteration()` DB write. Fixes stale iteration number on pivot events and session summaries (was always showing iter 1).
+
+- [x] **Pivot timeline UX (Step 9.4)**
+    - `frontend/src/components/hud/PivotTimeline.tsx`: displays `iter N — pivot triggered` using correct iteration from backend event (fixed by Step 9.3).

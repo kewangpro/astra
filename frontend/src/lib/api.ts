@@ -21,6 +21,14 @@ export interface ApprovalGate {
   created_at: string;
 }
 
+export interface AutoApproveResult {
+  gate_id: string;
+  safe: boolean;
+  reason: string;
+  classifier: string;
+  action: "approved" | "blocked";
+}
+
 export interface TelemetryEvent {
   type: string;           // "metric" | "backfill" | "backfill_complete" | "pivot"
   mission_id?: string;
@@ -60,4 +68,6 @@ export const api = {
       `/approvals/${approvalId}/${decision === "approved" ? "approve" : "reject"}`,
       { method: "POST", body: JSON.stringify({}) }
     ),
+  autoApprove: (approvalId: string) =>
+    req<AutoApproveResult>(`/approvals/${approvalId}/auto-approve`, { method: "POST" }),
 };

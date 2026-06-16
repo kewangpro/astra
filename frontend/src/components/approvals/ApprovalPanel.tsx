@@ -1,6 +1,8 @@
 "use client";
 
-import { usePendingApprovals, useResolveApproval } from "@/lib/hooks/useMissions";
+import { useState } from "react";
+import { usePendingApprovals, useResolveApproval, useAutoApprove } from "@/lib/hooks/useMissions";
+import type { AutoApproveResult } from "@/lib/api";
 
 interface Props {
   missionId: string;
@@ -15,8 +17,17 @@ const GATE_LABELS: Record<string, string> = {
 export function ApprovalPanel({ missionId }: Props) {
   const { data: approvals } = usePendingApprovals(missionId);
   const resolve = useResolveApproval(missionId);
+  const autoApprove = useAutoApprove(missionId);
+  const [verdicts, setVerdicts] = useState<Record<string, AutoApproveResult>>({});
 
   if (!approvals?.length) return null;
+
+  const handleAutoApprove = async (gateId: string) => {
+    const result = await autoApprove.mutateAsync(gateId);
+    if (result.action === "blocked") {
+      setVerdicts((v) => ({ ...v, [gateId]: result }));
+    }
+  };
 
   return (
     <div className="bg-[#1e293b] border border-[#fbbf24]/30 rounded-lg overflow-hidden animate-slide-in">
@@ -35,6 +46,8 @@ export function ApprovalPanel({ missionId }: Props) {
             typeof gate.payload?.resources === "object" && gate.payload.resources
               ? gate.payload.resources
               : null;
+          const verdict = verdicts[gate.id];
+          const isAutoLoading = autoApprove.isPending;
 
           return (
             <div key={gate.id} className="p-4">
@@ -63,23 +76,44 @@ export function ApprovalPanel({ missionId }: Props) {
                 </div>
               )}
 
+              {verdict && (
+                <div className="mb-3 px-3 py-2 rounded bg-[#f87171]/10 border border-[#f87171]/20">
+                  <div className="text-[10px] text-[#f87171] font-semibold mb-0.5">
+                    ⚠ Unsafe — manual review required
+                  </div>
+                  <div className="text-[10px] text-[#94a3b8]">{verdict.reason}</div>
+                  <div className="text-[9px] text-[#64748b] mt-0.5">classifier: {verdict.classifier}</div>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button
                   onClick={() =>
                     resolve.mutate({ approvalId: gate.id, decision: "approved" })
                   }
-                  disabled={resolve.isPending}
+                  disabled={resolve.isPending || isAutoLoading}
                   aria-label={`Approve gate #${gate.id}`}
                   className="flex-1 py-2 rounded border border-[#4ade80]/30 text-[#4ade80] text-xs
                              hover:bg-[#4ade80]/10 disabled:opacity-40 transition-colors"
                 >
                   Approve
                 </button>
+                {gate.gate_type === "execute_code" && (
+                  <button
+                    onClick={() => handleAutoApprove(gate.id)}
+                    disabled={resolve.isPending || isAutoLoading}
+                    aria-label={`Auto-approve gate #${gate.id}`}
+                    className="flex-1 py-2 rounded border border-[#38bdf8]/30 text-[#38bdf8] text-xs
+                               hover:bg-[#38bdf8]/10 disabled:opacity-40 transition-colors"
+                  >
+                    {isAutoLoading ? "Classifying…" : "Auto-Approve"}
+                  </button>
+                )}
                 <button
                   onClick={() =>
                     resolve.mutate({ approvalId: gate.id, decision: "rejected" })
                   }
-                  disabled={resolve.isPending}
+                  disabled={resolve.isPending || isAutoLoading}
                   aria-label={`Reject gate #${gate.id}`}
                   className="flex-1 py-2 rounded border border-[#f87171]/30 text-[#f87171] text-xs
                              hover:bg-[#f87171]/10 disabled:opacity-40 transition-colors"

@@ -42,6 +42,17 @@ export function useRunMission() {
   });
 }
 
+export function useAutoApprove(missionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (approvalId: string) => api.autoApprove(approvalId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["approvals", missionId] });
+      qc.invalidateQueries({ queryKey: ["missions", missionId] });
+    },
+  });
+}
+
 export function useResolveApproval(missionId: string) {
   const qc = useQueryClient();
   return useMutation({
