@@ -78,8 +78,7 @@ The script must:
    DO NOT pass: actor_lr, critic_lr, entropy_coef, entropy_coeff,
    clip_range_value, or any other key not in the list above.
    If "Policy kwargs" above is not empty, also pass policy_kwargs=<that dict> to the constructor.
-3. Implement a custom BaseCallback. Inside _on_step use EXACTLY this pattern —
-   do NOT post telemetry on every step, only every 2048 steps:
+3. Implement a custom BaseCallback. Copy this _on_step EXACTLY — do not modify:
 
        def _on_step(self) -> bool:
            if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
@@ -95,14 +94,20 @@ The script must:
                        logger.warning("Telemetry failed: %s", response.status_code)
                except Exception as exc:
                    logger.warning("Telemetry error: %s", exc)
+               if not hasattr(self, "_best_reward"):
+                   self._best_reward = float("-inf")
+               if mean_reward > self._best_reward:
+                   self._best_reward = mean_reward
+                   self.model.save("{checkpoint_dir}/best_model")
                if mean_reward >= {target_reward}:
                    return False  # stop training — target reached
            return True
 
    The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
+   The best_model save block is MANDATORY — it ensures the peak model is preserved.
 4. Call model.learn(total_timesteps=500000, callback=callback) — use at least
    500000 timesteps. Do NOT use 10000 or any small number.
-5. Save a checkpoint when mean_reward improves.
+5. After training, save the final model: model.save("{checkpoint_dir}/last_model")
 6. Exit cleanly when target mean_reward is reached."""
 
 _SFT_TEMPLATE = """\

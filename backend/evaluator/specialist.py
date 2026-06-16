@@ -73,6 +73,10 @@ class SpecialistEvaluator:
     def _latest_checkpoint(checkpoint_dir: str) -> Optional[str]:
         if not os.path.isdir(checkpoint_dir):
             return None
+        # Prefer best_model.zip (saved at peak reward) over last_model.zip (final, often degraded)
+        best = os.path.join(checkpoint_dir, "best_model.zip")
+        if os.path.isfile(best):
+            return best
         entries = [
             os.path.join(checkpoint_dir, f)
             for f in os.listdir(checkpoint_dir)
