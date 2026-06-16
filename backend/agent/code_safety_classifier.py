@@ -67,8 +67,11 @@ class CodeSafetyClassifier:
             raw = await self._provider.generate(
                 messages, GenerationConfig(max_tokens=128, temperature=0.0)
             )
-            raw = re.sub(r"```(?:json)?\s*|```", "", raw).strip()
             import json
+            raw = re.sub(r"```(?:json)?\s*|```", "", raw).strip()
+            # Extract first JSON object in case the LLM appends extra text
+            m = re.search(r"\{[^}]*\}", raw, re.DOTALL)
+            raw = m.group(0) if m else raw
             data = json.loads(raw)
             verdict = SafetyVerdict(
                 safe=bool(data.get("safe", False)),
