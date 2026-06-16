@@ -1,24 +1,21 @@
+name: train_ml_v2
+version: 2.0.0
+created_at: '2026-06-15'
 task_type: ML
-domain: Train
+domain: iris
 algorithm: LogisticRegression
-description: Auto-crystallized recipe from mission 79e57fc3. Achieved score 1.0000.
+description: Auto-crystallized recipe from mission 79e57fc3. Achieved accuracy 1.000 on iris dataset.
+
+dataset: iris
 hyperparameters:
-  C: 1
+  C: 1.0
   penalty: l2
   max_iter: 1000
-  dataset_path: load_iris
-created_at: '2026-06-15'
+
+target_metric:
+  accuracy: 0.9
+
 provenance:
   mission_id: 79e57fc3-51f2-4387-9f6a-bf5d788b8f48
   iterations: 0
   best_score: 1.0
-curriculum:
-  phases:
-  - phase: pre-training
-    description: Train a simple model with a small number of iterations
-  - phase: fine-tuning
-    description: Increase the number of iterations and adjust hyperparameters
-target_metric:
-  accuracy: 0.9
-name: train_ml_v2
-version: 2.0.0

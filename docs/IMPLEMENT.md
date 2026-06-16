@@ -196,7 +196,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Conditionally rendered in the HUD sidebar when critique events are present (alongside PivotTimeline).
     - \`LogStream\`: \`"critique"\` events render with purple \`CRT\` label; \`emit_critique()\` persists events to telemetry JSONL for back-fill on reconnect.
 
-## Post-Phase-7: Autonomous Learning & HUD Polish ✅
+## Phase 8: Autonomous Learning & HUD Polish ✅
 *Incremental improvements driven by live CartPole-v1 mission runs.*
 
 - [x] **Autonomous error learning (ErrorAnalyzer + CodeGenerator + StateMachine)**

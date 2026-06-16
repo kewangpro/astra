@@ -1,28 +1,21 @@
+name: train_ml_v1
+version: 1.0.0
+created_at: '2026-06-15'
 task_type: ML
-domain: Train
+domain: iris
 algorithm: RandomForestClassifier
-description: Auto-crystallized recipe from mission 539d5d9f. Achieved score 1.0000.
+description: Auto-crystallized recipe from mission 539d5d9f. Achieved accuracy 1.000 on iris dataset.
+
+dataset: iris
 hyperparameters:
   n_estimators: 100
   criterion: gini
   max_depth: null
-  dataset_path: load_iris
-created_at: '2026-06-15'
+
+target_metric:
+  accuracy: 0.9
+
 provenance:
   mission_id: 539d5d9f-93f7-4414-af7e-8c3dab32d531
   iterations: 3
   best_score: 1.0
-curriculum:
-  phases:
-  - phase: training
-    batch_size: 32
-    learning_rate: 0.01
-    epochs: 10
-  - phase: evaluation
-    batch_size: 32
-    learning_rate: 0.001
-    epochs: 5
-target_metric:
-  accuracy: 0.9
-name: train_ml_v1
-version: 1.0.0

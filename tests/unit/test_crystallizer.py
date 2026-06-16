@@ -116,10 +116,31 @@ class TestBuildRecipeContent:
         assert "mission" in content["description"].lower()
 
     def test_hyperparameters_extracted(self):
-        hp = {"lr": 0.001, "gamma": 0.99}
+        # Uses valid SB3 PPO kwargs; invalid keys (e.g. 'lr') are filtered out
+        hp = {"learning_rate": 0.001, "gamma": 0.99}
         mission = _make_mission(current_plan={"task_type": "rl", "algorithm": "ppo", "hyperparameters": hp})
         content = _build_recipe_content(mission, score=None, lessons=[])
         assert content["hyperparameters"] == hp
+
+    def test_invalid_rl_kwargs_stripped(self):
+        hp = {"learning_rate": 0.001, "gamma": 0.99, "entropy_coeff": 0.01, "dataset_path": "CartPole-v1"}
+        mission = _make_mission(current_plan={"task_type": "rl", "algorithm": "ppo", "hyperparameters": hp})
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert "dataset_path" not in content["hyperparameters"]
+        assert "entropy_coeff" not in content["hyperparameters"]
+        assert content["hyperparameters"].get("ent_coef") == 0.01
+
+    def test_env_id_surfaced_for_rl(self):
+        plan = {"task_type": "rl", "algorithm": "PPO", "env_id": "CartPole-v1", "hyperparameters": {}}
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert content.get("env_id") == "CartPole-v1"
+
+    def test_domain_inferred_from_env_id(self):
+        plan = {"task_type": "rl", "algorithm": "PPO", "env_id": "LunarLander-v2", "hyperparameters": {}}
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert content["domain"] == "LunarLander"
 
     def test_curriculum_included_when_present(self):
         plan = {"task_type": "rl", "algorithm": "ppo", "hyperparameters": {},

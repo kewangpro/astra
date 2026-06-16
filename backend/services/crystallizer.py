@@ -53,23 +53,72 @@ def _next_version(existing_names: list[str], base: str) -> int:
     return max(versions, default=0) + 1
 
 
+# Valid SB3 PPO kwargs — strip everything else from RL hyperparameters
+_VALID_PPO_KWARGS = {
+    "learning_rate", "n_steps", "batch_size", "n_epochs", "gamma",
+    "gae_lambda", "clip_range", "clip_range_vf", "ent_coef", "vf_coef",
+    "max_grad_norm", "target_kl",
+}
+
+# Rename map: LLM-invented keys → canonical SB3 names
+_PPO_RENAMES = {
+    "entropy_coeff": "ent_coef",
+    "entropy_coef": "ent_coef",
+    "entropy": "ent_coef",
+    "clip_ratio": "clip_range",
+}
+
+
+def _clean_rl_hyperparams(raw: dict) -> dict:
+    """Rename invalid keys and drop non-SB3 kwargs."""
+    cleaned = {}
+    for k, v in raw.items():
+        k = _PPO_RENAMES.get(k, k)
+        if k in _VALID_PPO_KWARGS:
+            cleaned[k] = v
+    return cleaned
+
+
+def _infer_domain(plan: dict, task_type: str, goal: str) -> str:
+    """Derive a meaningful domain name from the plan, not the raw goal string."""
+    if plan.get("domain") and plan["domain"].lower() not in ("train", "unknown", ""):
+        return plan["domain"]
+    if task_type == "rl":
+        env_id = plan.get("env_id") or plan.get("hyperparameters", {}).get("env_id", "")
+        if env_id:
+            # "CartPole-v1" → "CartPole"
+            return env_id.split("-")[0]
+    if task_type in ("ml", "sft"):
+        ds = (plan.get("dataset_path") or
+              plan.get("hyperparameters", {}).get("dataset_path", ""))
+        if ds:
+            return ds.replace("load_", "").split(".")[0]
+    return task_type.upper()
+
+
 def _build_recipe_content(mission: Mission, score: Optional[float], lessons: list[dict]) -> dict:
     plan = mission.current_plan or {}
-    hyperparams = plan.get("hyperparameters", {})
-    curriculum = plan.get("curriculum_phases")
+    task_type = (plan.get("task_type") or mission.task_type or "unknown").lower()
     algorithm = plan.get("algorithm", "unknown")
+    raw_hp = plan.get("hyperparameters", {})
 
-    # Distil top lessons into description annotations
+    # Clean hyperparameters: strip invalid SB3 keys for RL, drop dataset_path everywhere
+    if task_type == "rl":
+        hyperparams = _clean_rl_hyperparams(raw_hp)
+    else:
+        hyperparams = {k: v for k, v in raw_hp.items() if k != "dataset_path"}
+
+    curriculum = plan.get("curriculum_phases")
     lesson_notes = [l["text"][:120] for l in lessons[:3]] if lessons else []
+    domain = _infer_domain(plan, task_type, mission.goal)
 
+    score_str = f" Achieved score {score:.4f}." if score else ""
     content: dict = {
-        "task_type": (plan.get("task_type") or mission.task_type or "unknown").upper(),
-        "domain": mission.goal.split()[0] if mission.goal else "unknown",
+        "task_type": task_type.upper(),
+        "domain": domain,
         "algorithm": algorithm,
         "description": (
-            f"Auto-crystallized recipe from mission {mission.id[:8]}. "
-            f"Achieved score {score:.4f}." if score else
-            f"Auto-crystallized recipe from mission {mission.id[:8]}."
+            f"Auto-crystallized recipe from mission {mission.id[:8]}.{score_str}"
         ),
         "hyperparameters": hyperparams,
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -79,6 +128,22 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
             "best_score": score,
         },
     }
+
+    # For RL recipes, surface env_id as a top-level field
+    if task_type == "rl":
+        env_id = (plan.get("env_id") or
+                  raw_hp.get("env_id") or
+                  raw_hp.get("dataset_path"))
+        if env_id:
+            content["env_id"] = env_id
+
+    # For ML/SFT, surface the dataset name
+    if task_type in ("ml", "sft"):
+        dataset = (plan.get("dataset_path") or
+                   raw_hp.get("dataset_path", "").replace("load_", ""))
+        if dataset:
+            content["dataset"] = dataset
+
     if curriculum:
         content["curriculum"] = {"phases": curriculum}
     if lesson_notes:

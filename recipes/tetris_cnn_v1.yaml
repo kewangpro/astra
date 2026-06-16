@@ -15,8 +15,8 @@ architecture:
 
 hyperparameters:
   learning_rate: 0.0001
-  clip_ratio: 0.3
-  entropy: 0.05
+  clip_range: 0.3
+  ent_coef: 0.05
   batch_size: 64
 
 reward_shaping:

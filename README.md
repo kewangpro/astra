@@ -124,6 +124,7 @@ make ports  # show port status for all services
 | 5 | Wisdom — Recipe crystallization, evolution, golden promotion | ✅ Complete |
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
+| 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
 
 ## Hardware Target
 
