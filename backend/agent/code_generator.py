@@ -27,6 +27,8 @@ Requirements:
 - Import all dependencies at the top.
 - For RL scripts: ALWAYS use `import gymnasium as gym` — NOT `import gym`.
   The `gym` package is NOT installed; only `gymnasium` is available.
+- NEVER import or call `stable_baselines3.common.logger.configure()` — it is
+  not needed. Use Python's standard `logging` module for any logging.
 - Log metrics by POSTing to the ASTRA telemetry endpoint:
     POST {api_url}/telemetry/missions/{mission_id}/metrics
     Body: {{"mission_id": "...", "name": "...", "value": 0.0, "step": 0}}

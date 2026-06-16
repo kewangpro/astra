@@ -137,7 +137,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **Step 6.1: Comprehensive Test Suite**
     - `pytest.ini` + `requirements-dev.txt` (pytest, pytest-asyncio, pytest-mock, aiosqlite).
     - `tests/conftest.py`: in-memory SQLite fixtures (StaticPool), `patch_db` monkeypatches `AsyncSessionLocal` in all modules.
-    - **143 tests total** across unit and integration suites:
+    - **223 tests total** across unit and integration suites:
       - `test_pivot_engine.py` (9), `test_benchmark_suite.py` (6), `test_stress_tester.py` (6), `test_manifest.py` (15) — core loop logic.
       - `test_evolution.py` (22) — `MutationOperator` bounds, `SelectionPolicy` threshold logic.
       - `test_kv_cache.py` (17) — `SmartKVCache` eviction, token accounting, message ordering.
@@ -147,6 +147,9 @@ This document outlines the phased implementation strategy for `ASTRA`.
       - `test_preflight.py` (16) — `PreflightResult.summary`, package checks, dir writability.
       - `test_subprocess_sandbox.py` (13) — resource limits, PID tracking, lifecycle.
       - `test_state_recovery.py` (8) — all recoverable status variants, mixed reattach/reset.
+      - `test_error_analyzer.py` (17) — `_extract_error_type`, `_extract_traceback`, `fix_script` with prior errors, `_store_lesson`, fence stripping.
+      - `test_code_generator.py` (15) — `_build_user_prompt` per task type, telemetry guard, lesson injection, `_query_lessons` edge cases, `_strip_fences`.
+      - `test_missions_router.py` (11) — `_parse_target_metric` for reward/accuracy/loss patterns and no-match fallback.
       - `test_loop_state_machine.py` (5, integration) — happy path, error recovery, max retries, plateau+pivot, supervised gate rejection.
 - [x] **Step 6.2: Multi-GPU Orchestration**
     - `SandboxConfig.gpu_index: Optional[int]` — per-sandbox GPU device pinning.
@@ -192,3 +195,22 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - \`frontend/src/components/hud/CritiqueTrace.tsx\`: shows each critic review as a card with overall score, per-dimension rubric scores (colour-coded), concerns list, and feedback text.
     - Conditionally rendered in the HUD sidebar when critique events are present (alongside PivotTimeline).
     - \`LogStream\`: \`"critique"\` events render with purple \`CRT\` label; \`emit_critique()\` persists events to telemetry JSONL for back-fill on reconnect.
+
+## Post-Phase-7: Autonomous Learning & HUD Polish ✅
+*Incremental improvements driven by live CartPole-v1 mission runs.*
+
+- [x] **Autonomous error learning (ErrorAnalyzer + CodeGenerator + StateMachine)**
+    - `backend/agent/error_analyzer.py`: updated `_SYSTEM_PROMPT` to scan the *entire* script for all instances of an error class per pass (not just the traceback line); extended `fix_script` signature with `prior_errors`, `mission_id`, `domain`; added `_store_lesson()` — persists each fix to ChromaDB via `vector_memory.add_lesson`.
+    - `backend/agent/code_generator.py`: `_query_lessons(plan)` retrieves domain-relevant lessons from ChromaDB before generation and injects them into the system prompt; RL template now embeds the exact `n_calls % 2048 == 0` guard code (not prose); `target_reward` is resolved from `plan.target_metric` and substituted directly; `env_id` read from plan instead of hardcoded; prohibition on `stable_baselines3.common.logger.configure()` added to system prompt.
+    - `backend/loop/state_machine.py`: accumulates `error_history` across healing retries and passes `prior_errors=error_history[:-1]` to `fix_script` so the healer sees what already failed.
+
+- [x] **HUD metric display fixes**
+    - `frontend/src/lib/api.ts`: added `target_metric: Record<string, number> | null` to `Mission` type (backed by existing `MissionRead` schema field).
+    - `frontend/src/components/hud/MetricGap.tsx`: reads `target_metric` dict (`{"mean_reward": 475}`) to derive metric name and target value; raw display for RL (reward), percentage display for ML (accuracy); arc pct always `current / target * 100`.
+    - `frontend/src/components/hud/MetricChart.tsx`: same `target_metric` logic; y-axis domain and tick formatter switch between raw and fraction modes; reference line label shows `"target 475"` (not `"target 92%"`).
+    - `frontend/src/components/hud/LogStream.tsx`: filters out `metric`-type events (shown in MetricHistory instead), eliminating per-step telemetry spam (hundreds of events per run).
+    - `backend/routers/missions.py` `_parse_target_metric`: already correctly extracts `{"mean_reward": 475}` from free-text goals — no change needed.
+
+- [x] **Run button navigation + CritiqueTrace height**
+    - `frontend/src/components/command-center/MissionsGrid.tsx`: Run button `onSuccess` navigates to `/missions/{id}` via `useRouter`.
+    - `frontend/src/components/hud/CritiqueTrace.tsx`: outer container capped at `maxHeight: "24rem"` to match LogStream.

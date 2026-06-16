@@ -12,10 +12,11 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Recipe crystallization & evolution** — completed missions are distilled into versioned YAML recipes; recipes can be mutated, selected, and promoted to "Golden" status after consecutive wins
 - **Semantic warm-start** — ChromaDB recipe library retrieves the closest prior strategy before each new plan, reducing wasted iterations
 - **Atomic requirement manifests** — structured pass/fail requirements (stability, artifacts, metric thresholds) replace free-text goals; the loop only completes when all are green
+- **Autonomous error learning** — ErrorAnalyzer scans the entire script for all instances of an error class per healing pass; each fix is stored as a ChromaDB lesson so the CodeGenerator avoids the same mistake on future missions
 - **Clean handoff protocol** — every iteration writes a `SESSION_SUMMARY.md` capturing the last action, current blocker, and exact next step for reliable warm-restart
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
 - **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **143 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, etc.) plus integration tests for the full loop
+- **223 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, missions router) plus integration tests for the full loop
 
 ## Documentation
 
@@ -69,7 +70,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 135 unit tests across all core modules
+│   ├── unit/           # 215 unit tests across all core modules
 │   └── integration/    # 8 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
