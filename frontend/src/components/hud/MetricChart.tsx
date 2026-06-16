@@ -25,32 +25,51 @@ export function MetricChart({ events, targetMetric }: Props) {
     (e) => (e.type === "metric" || e.type === "backfill") && e.name != null && e.value != null
   );
 
-  // Track which steps are "live" (current run) vs historical (backfill)
-  const liveSteps = new Set(
-    events
-      .filter((e) => e.type === "metric" && e.name != null && e.value != null)
-      .map((e) => e.step ?? e.iteration ?? 0)
-  );
+  // Detect the last run boundary: step resets to a low value after a high one.
+  // Everything at or after the last reset is the "current" run.
+  let lastResetIdx = 0;
+  for (let i = 1; i < metricEvents.length; i++) {
+    const prev = metricEvents[i - 1].step ?? 0;
+    const curr = metricEvents[i].step ?? 0;
+    if (curr < prev) lastResetIdx = i;
+  }
 
-  const byStep = metricEvents.reduce<Record<number, Record<string, unknown>>>(
+  // Assign a unique x key per run to avoid step-number collisions across runs.
+  // Historical runs get a large negative offset so they stay left on the axis.
+  let runOffset = 0;
+  const chartEvents: Array<{ x: number; name: string; value: number; isLive: boolean }> = [];
+  for (let i = 0; i < metricEvents.length; i++) {
+    const e = metricEvents[i];
+    if (i > 0) {
+      const prev = metricEvents[i - 1].step ?? 0;
+      const curr = e.step ?? 0;
+      if (curr < prev) runOffset += 500000; // step counter reset
+    }
+    chartEvents.push({
+      x: (e.step ?? 0) + runOffset,
+      name: e.name!,
+      value: e.value as number,
+      isLive: i >= lastResetIdx,
+    });
+  }
+
+  const byX = chartEvents.reduce<Record<number, Record<string, unknown>>>(
     (acc, e) => {
-      const step = e.step ?? e.iteration ?? 0;
-      if (!acc[step]) acc[step] = { step };
-      const suffix = liveSteps.has(step) ? "_live" : "_hist";
-      acc[step][`${e.name!}${suffix}`] = e.value!;
-      // Keep both so the tooltip can show value regardless of which series
-      acc[step][`_val_${e.name!}`] = e.value!;
+      if (!acc[e.x]) acc[e.x] = { step: e.x };
+      const suffix = e.isLive ? "_live" : "_hist";
+      acc[e.x][`${e.name}${suffix}`] = e.value;
       return acc;
     },
     {}
   );
 
-  const data = Object.values(byStep).sort(
+  const data = Object.values(byX).sort(
     (a, b) => (a.step as number) - (b.step as number)
   );
 
+  const hasLive = chartEvents.some((e) => e.isLive);
+
   const names = [...new Set(metricEvents.map((e) => e.name!))];
-  const hasLive = liveSteps.size > 0;
 
   // Resolve target value and display mode from targetMetric dict
   const [targetName, targetValue] =
@@ -61,7 +80,9 @@ export function MetricChart({ events, targetMetric }: Props) {
 
   const maxObserved = Math.max(
     0,
-    ...data.map((d) => (targetName ? ((d[`_val_${targetName}`] as number) ?? 0) : 0))
+    ...chartEvents
+      .filter((e) => e.name === targetName)
+      .map((e) => e.value)
   );
   const yDomain: [number, number] = isRaw
     ? [0, Math.max(targetValue * 1.1, maxObserved)]
