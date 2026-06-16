@@ -56,10 +56,18 @@ Target metric: {target_metric}
 Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
+The script MUST start with these exact imports (do not omit any):
+    import gymnasium as gym
+    import numpy as np
+    import requests
+    import logging
+
 The script must:
-1. Create the environment with EXACTLY: env = gym.make("{env_id}")
-   Do NOT read the environment name from hyperparameters or any variable —
-   hard-code the string "{env_id}" directly in the gym.make() call.
+1. Create the environment with EXACTLY these two lines — copy verbatim:
+       import gymnasium as gym
+       env = gym.make("{env_id}")
+   The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
+   Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
 2. Instantiate the {algorithm} model passing ONLY these valid SB3 PPO kwargs
    (filter out anything else from the hyperparameters dict before passing):
    learning_rate, n_steps, batch_size, n_epochs, gamma, gae_lambda,
@@ -88,8 +96,10 @@ The script must:
            return True
 
    The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
-4. Save a checkpoint when mean_reward improves.
-5. Exit cleanly when target mean_reward is reached."""
+4. Call model.learn(total_timesteps=500000, callback=callback) — use at least
+   500000 timesteps. Do NOT use 10000 or any small number.
+5. Save a checkpoint when mean_reward improves.
+6. Exit cleanly when target mean_reward is reached."""
 
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT.
