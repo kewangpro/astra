@@ -21,8 +21,14 @@ You are given a training script that failed and its error output.
 Analyze the error and return the complete corrected Python script.
 Rules:
 - Scan the ENTIRE script for ALL instances of this error class and fix them all in one pass — do not fix just the one line that appeared in the traceback.
-- If the error is an ImportError or ModuleNotFoundError, add ALL missing imports at the top and check the full script for any other missing imports at the same time.
+- If the error is an ImportError, ModuleNotFoundError, or NameError, add ALL missing imports at the top and check the full script for any other missing names at the same time. NameError almost always means a missing import.
+- For RL scripts using stable-baselines3, the script MUST include ALL of these imports — add any that are missing:
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.callbacks import BaseCallback
+  Never omit these. If PPO or BaseCallback appear in the script body, they MUST be imported.
 - If the error is a TypeError about unexpected keyword arguments, remove ALL invalid kwargs from every model constructor call in the script, not just the first one.
+- Valid SB3 PPO kwargs: learning_rate, n_steps, batch_size, n_epochs, gamma, gae_lambda, clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl. Remove any others.
+- For custom callback classes that extend BaseCallback: the __init__ MUST be `def __init__(self, verbose=0, **kwargs): super().__init__(verbose=verbose)`. This accepts extra kwargs safely. Do NOT pass checkpoint_freq, save_path, or check_freq to the callback constructor call — call it as `CustomCallback()` with no arguments.
 - If the error is a shape mismatch or type error, fix all data handling of that type.
 - If the error is a hyperparameter issue, replace ALL occurrences with safe defaults.
 - Do not restructure working code.
@@ -30,6 +36,22 @@ Rules:
 - Return ONLY the raw corrected Python script, no explanation, no preamble, no stop tokens."""
 
 _MAX_TRACEBACK_LINES = 50   # truncate very long tracebacks
+
+
+def _patch_callback_init(code: str) -> str:
+    """Ensure BaseCallback subclasses have a **kwargs-accepting __init__."""
+    import re
+    # Replace bare `class Foo(BaseCallback):` bodies that lack __init__
+    # by inserting __init__ after the class line if missing
+    if "BaseCallback" not in code:
+        return code
+    # Fix callback constructor calls: CustomCallback(checkpoint_freq=...) -> CustomCallback()
+    code = re.sub(
+        r'(\w*[Cc]allback\w*)\s*\(\s*(?:check_freq|checkpoint_freq|save_path)[^)]*\)',
+        r'\1()',
+        code,
+    )
+    return code
 
 
 def _extract_traceback(error_output: str) -> str:
@@ -105,17 +127,52 @@ class ErrorAnalyzer:
             messages, GenerationConfig(max_tokens=4096, temperature=0.05)
         )
         fixed_code = self._strip_fences(fixed_code)
+        fixed_code = self._patch_missing_imports(fixed_code)
 
         fixed_path = f"{script_path}.fixed_{iteration}.py"
         with open(fixed_path, "w") as f:
             f.write(fixed_code)
+        # Also overwrite the canonical train.py so the next sandbox run uses the fix
+        with open(script_path, "w") as f:
+            f.write(fixed_code)
 
-        logger.info("ErrorAnalyzer: fix written to %s", fixed_path)
+        logger.info("ErrorAnalyzer: fix written to %s (and %s)", fixed_path, script_path)
 
         # Store lesson in vector memory so future code generation avoids this error
         self._store_lesson(error_type, traceback, mission_id, domain)
 
         return fixed_path
+
+    @staticmethod
+    def _patch_missing_imports(code: str) -> str:
+        """Deterministically inject imports that the LLM forgot but the script uses."""
+        lines = code.splitlines()
+        # Find the last existing import line to insert after it
+        last_import_idx = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                last_import_idx = i
+
+        to_inject = []
+        if "PPO" in code and "from stable_baselines3 import PPO" not in code:
+            to_inject.append("from stable_baselines3 import PPO")
+        if "BaseCallback" in code and "from stable_baselines3.common.callbacks import BaseCallback" not in code:
+            to_inject.append("from stable_baselines3.common.callbacks import BaseCallback")
+        if "SAC" in code and "from stable_baselines3 import SAC" not in code:
+            to_inject.append("from stable_baselines3 import SAC")
+        if "A2C" in code and "from stable_baselines3 import A2C" not in code:
+            to_inject.append("from stable_baselines3 import A2C")
+        if "DQN" in code and "from stable_baselines3 import DQN" not in code:
+            to_inject.append("from stable_baselines3 import DQN")
+
+        if to_inject:
+            insert_at = last_import_idx + 1
+            for i, imp in enumerate(to_inject):
+                lines.insert(insert_at + i, imp)
+            logger.info("ErrorAnalyzer: patched missing imports: %s", to_inject)
+            code = "\n".join(lines)
+        return _patch_callback_init(code)
 
     def _store_lesson(
         self,

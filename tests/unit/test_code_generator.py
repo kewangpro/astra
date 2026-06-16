@@ -152,6 +152,41 @@ def test_generate_training_script_writes_file(tmp_path, monkeypatch):
     assert "gymnasium" in open(path).read()
 
 
+# ── _patch_rl_imports ─────────────────────────────────────────────────────────
+
+def test_patch_rl_imports_adds_ppo():
+    code = "import numpy as np\nmodel = PPO('MlpPolicy', env)"
+    result = CodeGenerator._patch_rl_imports(code)
+    assert "from stable_baselines3 import PPO" in result
+
+
+def test_patch_rl_imports_adds_basecallback():
+    code = "import numpy as np\nclass Cb(BaseCallback): pass"
+    result = CodeGenerator._patch_rl_imports(code)
+    assert "from stable_baselines3.common.callbacks import BaseCallback" in result
+
+
+def test_patch_rl_imports_strips_bad_callback_kwargs():
+    code = (
+        "from stable_baselines3.common.callbacks import BaseCallback\n"
+        "class CustomCallback(BaseCallback): pass\n"
+        "callback = CustomCallback(checkpoint_freq=2048, save_path='./ckpt')"
+    )
+    result = CodeGenerator._patch_rl_imports(code)
+    assert "checkpoint_freq" not in result
+    assert "CustomCallback()" in result
+
+
+def test_patch_rl_imports_noop_when_clean():
+    code = (
+        "from stable_baselines3 import PPO\n"
+        "from stable_baselines3.common.callbacks import BaseCallback\n"
+        "callback = CustomCallback()"
+    )
+    result = CodeGenerator._patch_rl_imports(code)
+    assert result.count("from stable_baselines3 import PPO") == 1
+
+
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

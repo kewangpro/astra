@@ -10,6 +10,7 @@ from backend.agent.error_analyzer import (
     ErrorAnalyzer,
     _extract_error_type,
     _extract_traceback,
+    _patch_callback_init,
     _MAX_TRACEBACK_LINES,
 )
 
@@ -208,3 +209,67 @@ def test_strip_fences_removes_llm_stop_tokens():
 def test_strip_fences_passthrough_clean_code():
     code = "import numpy as np\nx = np.array([1, 2, 3])\n"
     assert ErrorAnalyzer._strip_fences(code).strip() == code.strip()
+
+
+# ── _patch_callback_init ──────────────────────────────────────────────────────
+
+def test_patch_callback_init_strips_checkpoint_freq():
+    code = (
+        "from stable_baselines3.common.callbacks import BaseCallback\n"
+        "class CustomCallback(BaseCallback): pass\n"
+        "callback = CustomCallback(checkpoint_freq=2048, save_path='./ckpt')"
+    )
+    result = _patch_callback_init(code)
+    assert "checkpoint_freq" not in result
+    assert "CustomCallback()" in result
+
+
+def test_patch_callback_init_strips_check_freq():
+    code = (
+        "from stable_baselines3.common.callbacks import BaseCallback\n"
+        "class AstraCallback(BaseCallback): pass\n"
+        "callback = AstraCallback(check_freq=1000, save_path='./x')"
+    )
+    result = _patch_callback_init(code)
+    assert "check_freq" not in result
+    assert "AstraCallback()" in result
+
+
+def test_patch_callback_init_noop_when_no_basecallback():
+    # No BaseCallback present — function returns early, doesn't touch the call
+    code = "callback = MyFunc(check_freq=1000)"
+    result = _patch_callback_init(code)
+    assert result == code
+
+
+def test_patch_callback_init_passthrough_clean():
+    code = "from stable_baselines3.common.callbacks import BaseCallback\ncallback = CustomCallback()"
+    result = _patch_callback_init(code)
+    assert result == code
+
+
+# ── _patch_missing_imports ────────────────────────────────────────────────────
+
+def test_patch_missing_imports_injects_ppo():
+    code = "import numpy as np\nmodel = PPO('MlpPolicy', env)"
+    analyzer = ErrorAnalyzer(AsyncMock())
+    result = analyzer._patch_missing_imports(code)
+    assert "from stable_baselines3 import PPO" in result
+
+
+def test_patch_missing_imports_injects_basecallback():
+    code = "import numpy as np\nclass Cb(BaseCallback): pass"
+    analyzer = ErrorAnalyzer(AsyncMock())
+    result = analyzer._patch_missing_imports(code)
+    assert "from stable_baselines3.common.callbacks import BaseCallback" in result
+
+
+def test_patch_missing_imports_noop_when_already_present():
+    code = (
+        "from stable_baselines3 import PPO\n"
+        "from stable_baselines3.common.callbacks import BaseCallback\n"
+        "model = PPO('MlpPolicy', env)"
+    )
+    analyzer = ErrorAnalyzer(AsyncMock())
+    result = analyzer._patch_missing_imports(code)
+    assert result.count("from stable_baselines3 import PPO") == 1

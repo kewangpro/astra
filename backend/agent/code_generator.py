@@ -190,6 +190,8 @@ class CodeGenerator:
         ]
         code = await self._provider.generate(messages, GenerationConfig(max_tokens=4096, temperature=0.1))
         code = self._strip_fences(code)
+        if task_type == "rl":
+            code = self._patch_rl_imports(code)
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -255,6 +257,37 @@ class CodeGenerator:
             **base,
         }
         return _ML_TEMPLATE.format(**ctx)
+
+    @staticmethod
+    def _patch_rl_imports(code: str) -> str:
+        """Inject any SB3 imports the LLM forgot to include."""
+        lines = code.splitlines()
+        last_import_idx = 0
+        for i, line in enumerate(lines):
+            s = line.strip()
+            if s.startswith("import ") or s.startswith("from "):
+                last_import_idx = i
+
+        to_inject = []
+        for algo in ("PPO", "SAC", "A2C", "DQN", "TD3"):
+            if algo in code and f"from stable_baselines3 import {algo}" not in code:
+                to_inject.append(f"from stable_baselines3 import {algo}")
+        if "BaseCallback" in code and "from stable_baselines3.common.callbacks import BaseCallback" not in code:
+            to_inject.append("from stable_baselines3.common.callbacks import BaseCallback")
+
+        import re
+        if to_inject:
+            insert_at = last_import_idx + 1
+            for i, imp in enumerate(to_inject):
+                lines.insert(insert_at + i, imp)
+            code = "\n".join(lines)
+        # Fix callback constructor calls with unsupported kwargs
+        code = re.sub(
+            r'(\w*[Cc]allback\w*)\s*\(\s*(?:check_freq|checkpoint_freq|save_path)[^)]*\)',
+            r'\1()',
+            code,
+        )
+        return code
 
     @staticmethod
     def _query_lessons(plan: dict) -> list[str]:
