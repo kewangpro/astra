@@ -96,11 +96,6 @@ export default function MissionHUD({
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {autoApproveMode && (
-            <span className="text-[11px] px-3 py-1 rounded border uppercase tracking-widest text-[#38bdf8] border-[#38bdf8]/40 bg-[#38bdf8]/5">
-              auto-approve
-            </span>
-          )}
           <span
             className="text-[11px] px-3 py-1 rounded border uppercase tracking-widest"
             style={{ color: statusColor, borderColor: `${statusColor}40` }}
