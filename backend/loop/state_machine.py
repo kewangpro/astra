@@ -249,7 +249,9 @@ class LoopStateMachine:
                 pivot_reason = None
                 if pivot_engine.needs_pivot():
                     pivot = await self._agent.propose_pivot(current_metrics, pivot_engine.history_snapshot())
-                    adjustments = pivot.get("adjustments", {})
+                    adjustments = self._clamp_rl_adjustments(
+                        pivot.get("adjustments", {}), plan.get("task_type", "rl")
+                    )
                     plan["hyperparameters"].update(adjustments)
                     pivot_reason = pivot.get("reason", "plateau detected")
                     logger.info("LoopStateMachine: pivot applied: %s | adjustments: %s", pivot_reason, adjustments)
@@ -343,6 +345,39 @@ class LoopStateMachine:
                     .where(Mission.id == mission_id)
                     .values(best_metric_value=str(value))
                 )
+
+    @staticmethod
+    def _clamp_rl_adjustments(adjustments: dict, task_type: str) -> dict:
+        """Clamp LLM-proposed pivot hyperparameters to safe RL ranges."""
+        if task_type != "rl":
+            return adjustments
+        _RANGES = {
+            "learning_rate":  (1e-5,  1e-2),
+            "n_steps":        (512,   4096),
+            "batch_size":     (64,    512),
+            "n_epochs":       (3,     20),
+            "gamma":          (0.90,  0.999),
+            "gae_lambda":     (0.80,  0.99),
+            "clip_range":     (0.1,   0.4),
+            "clip_range_vf":  (0.1,   0.4),
+            "ent_coef":       (0.0,   0.1),
+            "vf_coef":        (0.1,   1.0),
+            "max_grad_norm":  (0.3,   1.0),
+            "target_kl":      (0.01,  0.05),
+        }
+        clamped = {}
+        for k, v in adjustments.items():
+            if k in _RANGES and isinstance(v, (int, float)):
+                lo, hi = _RANGES[k]
+                clamped[k] = max(lo, min(hi, v))
+            else:
+                clamped[k] = v
+        # batch_size must not exceed n_steps
+        if "batch_size" in clamped and "n_steps" in clamped:
+            clamped["batch_size"] = min(clamped["batch_size"], clamped["n_steps"])
+        if clamped != adjustments:
+            logger.info("LoopStateMachine: clamped pivot adjustments %s → %s", adjustments, clamped)
+        return clamped
 
     async def _increment_iteration(self, mission_id: str) -> None:
         async with AsyncSessionLocal() as session:
