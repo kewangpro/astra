@@ -61,11 +61,11 @@ class CodeSafetyClassifier:
 
         messages = [
             Message(role="system", content=_SYSTEM),
-            Message(role="user", content=f"Classify this script:\n\n{script[:6000]}"),
+            Message(role="user", content=f"Classify this script:\n\n{script[:2000]}"),
         ]
         try:
             raw = await self._provider.generate(
-                messages, GenerationConfig(max_tokens=128, temperature=0.0)
+                messages, GenerationConfig(max_tokens=64, temperature=0.0)
             )
             import json
             raw = re.sub(r"```(?:json)?\s*|```", "", raw).strip()
