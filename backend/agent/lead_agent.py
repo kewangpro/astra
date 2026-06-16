@@ -29,7 +29,16 @@ and how you will measure success against the target metric.
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
 (e.g. "iris", "digits", "breast_cancer", "wine") for built-in datasets, or a file path for
-custom datasets."""
+custom datasets.
+
+For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
+Available environments:
+  - Standard gymnasium: "CartPole-v1", "LunarLander-v3", "Acrobot-v1", "MountainCar-v0"
+  - Custom ASTRA env: "Snake-v0" (16×16 grid, discrete 4-action, food reward +10, death -10)
+    Use "Snake-v0" when the goal mentions Snake or a grid-based game.
+Valid SB3 PPO hyperparameter keys: learning_rate, n_steps, batch_size, n_epochs, gamma,
+gae_lambda, clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
+Do NOT include env_id, dataset_path, entropy_coeff, actor_lr, or any non-SB3 key in hyperparameters."""
 
 _PIVOT_SYSTEM = """\
 You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaued.
@@ -44,6 +53,7 @@ _PLAN_SCHEMA = {
             "properties": {
                 "task_type": {"type": "string", "enum": ["rl", "sft", "ml"]},
                 "algorithm": {"type": "string"},
+                "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},
                 "curriculum_phases": {"type": "array"},
                 "estimated_iterations": {"type": "integer"},

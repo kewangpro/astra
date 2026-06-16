@@ -37,9 +37,17 @@ Requirements:
 - DO NOT use markdown code blocks (```python ... ```).
 - Return ONLY the raw Python script, no explanation, no preamble, no stop tokens."""
 
+# Injected verbatim at the top of Snake training scripts
+_SNAKE_SETUP = """\
+import sys as _sys
+_sys.path.insert(0, "{project_root}")
+from envs.snake_env import register as _register_snake
+_register_snake()
+"""
+
 _RL_TEMPLATE = """\
 Generate a complete RL training script using Stable-Baselines3.
-
+{snake_setup}
 Mission ID: {mission_id}
 Algorithm: {algorithm}
 Environment: {env_id}
@@ -192,12 +200,21 @@ class CodeGenerator:
         }
         if task_type == "rl":
             tm = plan.get("target_metric", {})
-            target_reward = next(iter(tm.values()), 475) if tm else 475
+            target_reward = next(iter(tm.values()), 200) if tm else 200
+            env_id = plan.get("env_id", "CartPole-v1")
+            # Inject Snake registration preamble when the env is Snake-v0
+            snake_setup = (
+                _SNAKE_SETUP.format(project_root=os.path.abspath(
+                    os.path.join(settings.data_path, "..")
+                ))
+                if env_id == "Snake-v0" else ""
+            )
             ctx = {
                 "algorithm": plan.get("algorithm", "PPO"),
-                "env_id": plan.get("env_id", "CartPole-v1"),
+                "env_id": env_id,
                 "hyperparameters": json.dumps(hp, indent=2),
                 "target_reward": target_reward,
+                "snake_setup": snake_setup,
                 **hp,
                 **base,
             }
