@@ -249,9 +249,10 @@ class LoopStateMachine:
                 pivot_reason = None
                 if pivot_engine.needs_pivot():
                     pivot = await self._agent.propose_pivot(current_metrics, pivot_engine.history_snapshot())
-                    plan["hyperparameters"].update(pivot.get("adjustments", {}))
+                    adjustments = pivot.get("adjustments", {})
+                    plan["hyperparameters"].update(adjustments)
                     pivot_reason = pivot.get("reason", "plateau detected")
-                    logger.info("LoopStateMachine: pivot applied: %s", pivot_reason)
+                    logger.info("LoopStateMachine: pivot applied: %s | adjustments: %s", pivot_reason, adjustments)
                     await emit_status(
                         mission_id, "Pivot triggered",
                         event_type="pivot",
