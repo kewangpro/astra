@@ -64,8 +64,6 @@ alembic upgrade head
 make run   # backend + frontend → http://localhost:8200 / http://localhost:3200
 ```
 
-API docs available at `http://localhost:8200/docs` once the backend is running.
-
 ## Project Structure
 
 ```
@@ -96,29 +94,7 @@ astra/
 
 ## API Overview
 
-| Endpoint | Description |
-|---|---|
-| `GET /health` | System status + memory stats |
-| `GET /health/ready` | Readiness probe |
-| `GET/POST/PATCH/DELETE /registry/experiments` | Experiment CRUD |
-| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter) |
-| `GET/POST/PATCH/DELETE /missions` | Mission CRUD |
-| `GET /missions/{id}/manifest` | Live requirement manifest state |
-| `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
-| `GET/POST /approvals` | Approval gate CRUD |
-| `POST /approvals/{id}/approve\|reject` | Approve or reject a pending gate |
-| `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
-| `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
-| `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
-| `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
-| `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
-| `GET /recipes` | List all recipes (disk + DB merged) |
-| `GET /recipes/db` | List DB-backed recipes (`domain`, `golden_only` filters) |
-| `GET /recipes/search?q=` | Semantic search over recipe library |
-| `GET /recipes/{name}` | Fetch a single recipe (DB-first, disk fallback) |
-| `POST /recipes/crystallize/{mission_id}` | Distil a completed mission into a recipe |
-| `POST /recipes/{id}/evolve` | Spawn a mutated child recipe |
-| `GET /recipes/{id}/lineage` | Ancestor chain for an evolved recipe |
+Full endpoint reference is in [DESIGN.md § 5.4](docs/DESIGN.md). Interactive docs available at `http://localhost:8200/docs` once the backend is running.
 
 ## Make Commands
 

@@ -162,7 +162,35 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 - **File Store**: A dedicated `data/` volume mounted to sandboxes for weights and logs.
 - **Memory**: ChromaDB running as a sidecar process for vector-based semantic retrieval.
 
-### 5.4. Recovery & Resumption Logic
+### 5.4. API Reference
+
+| Endpoint | Description |
+|---|---|
+| `GET /health` | System status + memory stats |
+| `GET /health/ready` | Readiness probe |
+| `GET/POST/PATCH/DELETE /registry/experiments` | Experiment CRUD |
+| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter) |
+| `GET/POST/PATCH/DELETE /missions` | Mission CRUD |
+| `GET /missions/{id}/manifest` | Live requirement manifest state |
+| `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
+| `GET/POST /approvals` | Approval gate CRUD |
+| `POST /approvals/{id}/approve\|reject` | Approve or reject a pending gate |
+| `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
+| `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
+| `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
+| `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
+| `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
+| `GET /recipes` | List all recipes (disk + DB merged) |
+| `GET /recipes/db` | List DB-backed recipes (`domain`, `golden_only` filters) |
+| `GET /recipes/search?q=` | Semantic search over recipe library |
+| `GET /recipes/{name}` | Fetch a single recipe (DB-first, disk fallback) |
+| `POST /recipes/crystallize/{mission_id}` | Distil a completed mission into a recipe |
+| `POST /recipes/{id}/evolve` | Spawn a mutated child recipe |
+| `GET /recipes/{id}/lineage` | Ancestor chain for an evolved recipe |
+
+Interactive docs available at `http://localhost:8200/docs` when the backend is running.
+
+### 5.5. Recovery & Resumption Logic
 1. **Startup Check**: On boot, the Orchestrator queries the **Mission Store** for any tasks in the `RUNNING` or `PAUSED` state. Each query and subsequent state transition must execute inside a database transaction to satisfy the atomicity guarantee (PRD §4.11): read current state, validate, and write new state atomically to prevent duplicate execution on concurrent restarts.
 2. **Sandbox Re-attachment**: The Mission Store tracks either a `ContainerID` (cloud/CPU) or a `SubprocessPID` (Apple Silicon GPU). For containers, check via `docker inspect`; if live, attach to stdout/stderr for telemetry catch-up. For subprocesses, check via `psutil.pid_exists()`; if alive, reattach to its log file. In all other cases (container stopped, PID gone, or ID is `NULL`), provision a new sandbox from the last known checkpoint path in the Mission Store.
 3. **Telemetry Catch-up**: The **Telemetry Producer** back-fills any missed log entries from the `data/` volume to the HUD, covering the outage window so operators can assess model behavior during downtime.
