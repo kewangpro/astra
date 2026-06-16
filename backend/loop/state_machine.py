@@ -96,6 +96,7 @@ class LoopStateMachine:
         script_path: Optional[str] = None
         error_count = 0
         pivot_reason: Optional[str] = None
+        current_iteration = mission.current_iteration or 0
 
         logger.info("LoopStateMachine: starting mission=%s manifest=%d reqs", mission_id, len(manifest.requirements))
 
@@ -211,7 +212,7 @@ class LoopStateMachine:
                 # Merge in metrics the sandbox actually posted to telemetry
                 sandbox_metrics = self._read_telemetry_metrics(mission_id, tel_offset)
                 current_metrics = {**current_metrics, **sandbox_metrics}
-                pivot_engine.record(mission.current_iteration or 0, current_metrics)
+                pivot_engine.record(current_iteration, current_metrics)
                 await self._save_best_metric(mission_id, pivot_engine.best_metric_value())
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
@@ -239,7 +240,7 @@ class LoopStateMachine:
                 # ── MISSION STATE (Step 7.5) ──────────────────────────────
                 mission_state.update(
                     mission_id,
-                    iteration=mission.current_iteration or 0,
+                    iteration=current_iteration,
                     plan=plan,
                     metrics=current_metrics,
                 )
@@ -255,13 +256,13 @@ class LoopStateMachine:
                         mission_id, "Pivot triggered",
                         event_type="pivot",
                         value=pivot_reason,
-                        iteration=mission.current_iteration or 0,
+                        iteration=current_iteration,
                     )
 
                 # ── SESSION SUMMARY (Step 7.3) ────────────────────────────
                 session_summary.write_session_summary(
                     mission_id=mission_id,
-                    iteration=mission.current_iteration or 0,
+                    iteration=current_iteration,
                     goal=mission.goal,
                     algorithm=plan.get("algorithm", "unknown"),
                     current_metrics=current_metrics,
@@ -271,6 +272,7 @@ class LoopStateMachine:
 
                 self._agent.flush_iteration_context()
                 await self._increment_iteration(mission_id)
+                current_iteration += 1
 
             except asyncio.CancelledError:
                 logger.info("LoopStateMachine: mission=%s cancelled (shutdown) — resetting to pending", mission_id)
