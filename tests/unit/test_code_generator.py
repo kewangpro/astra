@@ -187,6 +187,49 @@ def test_patch_rl_imports_noop_when_clean():
     assert result.count("from stable_baselines3 import PPO") == 1
 
 
+def test_patch_rl_imports_adds_checkpoint_callback():
+    code = "import numpy as np\ncb = CheckpointCallback(save_freq=1000)"
+    result = CodeGenerator._patch_rl_imports(code)
+    assert "from stable_baselines3.common.callbacks import CheckpointCallback" in result
+
+
+def test_patch_rl_imports_replaces_sb3_alias():
+    code = "import stable_baselines3 as sb3\nmodel = sb3.PPO('MlpPolicy', env)"
+    result = CodeGenerator._patch_rl_imports(code)
+    assert "import stable_baselines3 as sb3" not in result
+    assert "from stable_baselines3 import PPO" in result
+    assert "sb3.PPO" not in result
+
+
+def test_build_user_prompt_rl_includes_policy_kwargs(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(hyperparameters={
+        "learning_rate": 0.001,
+        "n_steps": 2048,
+        "policy_kwargs": {"net_arch": [256, 256]},
+    })
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "[256, 256]" in prompt
+    assert "policy_kwargs" in prompt
+
+
+def test_build_user_prompt_rl_policy_kwargs_none_when_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "Policy kwargs (network architecture): none" in prompt
+
+
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

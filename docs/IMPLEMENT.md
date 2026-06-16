@@ -228,7 +228,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `frontend/src/components/approvals/ApprovalPanel.tsx`: "Auto-Approve" button (sky-blue, only on `execute_code` gates); shows "Classifying…" spinner; renders inline safety verdict card when classifier blocks.
 
 - [x] **Deterministic import/callback patching (Step 9.2)**
-    - `backend/agent/code_generator.py`: `_patch_rl_imports()` — post-generation pass injecting missing SB3 imports (`PPO`, `BaseCallback`, etc.); fixes `class Foo:` → `class Foo(BaseCallback):`; strips invalid callback constructor kwargs.
+    - `backend/agent/code_generator.py`: `_patch_rl_imports()` — post-generation pass injecting missing SB3 imports (`PPO`, `BaseCallback`, `CheckpointCallback`, etc.); fixes `class Foo:` → `class Foo(BaseCallback):`; strips invalid callback constructor kwargs; replaces `import stable_baselines3 as sb3` + `sb3.PPO(...)` alias pattern with direct imports.
     - `backend/agent/error_analyzer.py`: same via `_patch_missing_imports()` + `_patch_callback_init()`; healer now writes fixes back to canonical `train.py` in addition to `.fixed_N.py`.
 
 - [x] **Iteration counter fix (Step 9.3)**
@@ -236,3 +236,11 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 - [x] **Pivot timeline UX (Step 9.4)**
     - `frontend/src/components/hud/PivotTimeline.tsx`: displays `iter N — pivot triggered` using correct iteration from backend event (fixed by Step 9.3).
+
+- [x] **Pivot hardening — clamping & architecture pivots (Step 9.5)**
+    - `backend/loop/state_machine.py`: `_clamp_rl_adjustments()` enforces valid PPO hyperparameter ranges before applying pivot adjustments (learning_rate [1e-5, 1e-2], n_steps [512, 4096], n_epochs [3, 20], etc.); also ensures `batch_size <= n_steps`. Logs both raw and clamped values.
+    - `backend/agent/lead_agent.py`: pivot system prompt updated with explicit valid ranges and guidance to avoid destabilizing values; `_PIVOT_SCHEMA` extended with optional `policy_kwargs` field.
+    - `backend/loop/state_machine.py`: applies `policy_kwargs` (network architecture) from pivot to `plan["hyperparameters"]` before code generation.
+    - `backend/agent/code_generator.py`: `_RL_TEMPLATE` passes `policy_kwargs` to LLM; LLM instructed to include `policy_kwargs=<dict>` in PPO constructor when provided (e.g. `{"net_arch": [256, 256]}`).
+    - `tests/unit/test_state_machine_helpers.py`: 13 tests for `_clamp_rl_adjustments` (bounds, batch_size cap, passthrough, non-rl noop).
+    - `tests/unit/test_code_generator.py`: 4 new tests for `CheckpointCallback` injection, `sb3` alias replacement, `policy_kwargs` in prompt.
