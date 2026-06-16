@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useMission } from "@/lib/hooks/useMissions";
 import { useTelemetry } from "@/lib/hooks/useTelemetry";
@@ -59,6 +59,7 @@ export default function MissionHUD({
 
   const { data: mission, isLoading } = useMission(missionId);
   const { events, connected } = useTelemetry(missionId);
+  const [autoApproveMode, setAutoApproveMode] = useState(false);
 
   if (isLoading)
     return (
@@ -94,16 +95,34 @@ export default function MissionHUD({
             {mission.goal}
           </p>
         </div>
-        <span
-          className="shrink-0 text-[11px] px-3 py-1 rounded border uppercase tracking-widest"
-          style={{ color: statusColor, borderColor: `${statusColor}40` }}
-        >
-          {mission.status}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {autoApproveMode && (
+            <span className="text-[11px] px-3 py-1 rounded border uppercase tracking-widest text-[#38bdf8] border-[#38bdf8]/40 bg-[#38bdf8]/5">
+              auto-approve
+            </span>
+          )}
+          <span
+            className="text-[11px] px-3 py-1 rounded border uppercase tracking-widest"
+            style={{ color: statusColor, borderColor: `${statusColor}40` }}
+          >
+            {mission.status}
+          </span>
+          <button
+            onClick={() => setAutoApproveMode((v) => !v)}
+            title={autoApproveMode ? "Disable auto-approve" : "Enable auto-approve"}
+            className={`text-[11px] px-2.5 py-1 rounded border transition-colors ${
+              autoApproveMode
+                ? "border-[#38bdf8]/50 text-[#38bdf8] bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20"
+                : "border-[#475569] text-[#64748b] hover:border-[#38bdf8]/40 hover:text-[#38bdf8]"
+            }`}
+          >
+            ⚡
+          </button>
+        </div>
       </div>
 
       {/* Approval gate — shown prominently when pending */}
-      <ApprovalPanel missionId={missionId} />
+      <ApprovalPanel missionId={missionId} autoApproveMode={autoApproveMode} />
 
       {/* Metric row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePendingApprovals, useResolveApproval, useAutoApprove } from "@/lib/hooks/useMissions";
 import type { AutoApproveResult } from "@/lib/api";
 
 interface Props {
   missionId: string;
+  autoApproveMode?: boolean;
 }
 
 const GATE_LABELS: Record<string, string> = {
@@ -14,11 +15,27 @@ const GATE_LABELS: Record<string, string> = {
   deploy_model: "Deploy Model",
 };
 
-export function ApprovalPanel({ missionId }: Props) {
+export function ApprovalPanel({ missionId, autoApproveMode = false }: Props) {
   const { data: approvals } = usePendingApprovals(missionId);
   const resolve = useResolveApproval(missionId);
   const autoApprove = useAutoApprove(missionId);
   const [verdicts, setVerdicts] = useState<Record<string, AutoApproveResult>>({});
+  const triggeredRef = useRef<Set<string>>(new Set());
+
+  // Auto-trigger classification for execute_code gates when mode is on
+  useEffect(() => {
+    if (!autoApproveMode || !approvals?.length) return;
+    for (const gate of approvals) {
+      if (gate.gate_type === "execute_code" && !triggeredRef.current.has(gate.id)) {
+        triggeredRef.current.add(gate.id);
+        autoApprove.mutateAsync(gate.id).then((result) => {
+          if (result.action === "blocked") {
+            setVerdicts((v) => ({ ...v, [gate.id]: result }));
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [autoApproveMode, approvals]);
 
   if (!approvals?.length) return null;
 
