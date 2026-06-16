@@ -237,6 +237,12 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **Pivot timeline UX (Step 9.4)**
     - `frontend/src/components/hud/PivotTimeline.tsx`: displays `iter N — pivot triggered` using correct iteration from backend event (fixed by Step 9.3).
 
+- [x] **Best-model checkpoint preservation (Step 9.6)**
+    - `backend/agent/code_generator.py`: RL template now hardcodes best-model saving in the callback — `self._best_reward` tracking + `model.save("{checkpoint_dir}/best_model")` whenever `mean_reward` improves; final `model.save("{checkpoint_dir}/last_model")` after training. Previously the LLM only saved at end of training (the degraded model after policy collapse).
+    - `backend/evaluator/specialist.py`: `_latest_checkpoint()` now prefers `best_model.zip` over the most-recently-modified file; falls back to newest file only if `best_model.zip` is absent.
+    - `tests/unit/test_specialist_evaluator.py`: 7 new tests covering best_model preference, mtime fallback, hidden file skipping, empty dir, missing dir.
+    - `tests/unit/test_code_generator.py`: 2 new tests verifying `best_model` and `_best_reward` pattern appear in RL prompt.
+
 - [x] **Pivot hardening — clamping & architecture pivots (Step 9.5)**
     - `backend/loop/state_machine.py`: `_clamp_rl_adjustments()` enforces valid PPO hyperparameter ranges before applying pivot adjustments (learning_rate [1e-5, 1e-2], n_steps [512, 4096], n_epochs [3, 20], etc.); also ensures `batch_size <= n_steps`. Logs both raw and clamped values.
     - `backend/agent/lead_agent.py`: pivot system prompt updated with explicit valid ranges and guidance to avoid destabilizing values; `_PIVOT_SCHEMA` extended with optional `policy_kwargs` field.
