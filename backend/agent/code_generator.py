@@ -47,9 +47,15 @@ Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 The script must:
 1. Create the environment (use gymnasium).
 2. Instantiate the {algorithm} model with the given hyperparameters.
-3. Train in a loop, evaluating every 10000 steps.
-4. POST mean_reward to the telemetry endpoint after each eval.
-5. Save a checkpoint every eval if it is the best so far.
+3. Implement a custom BaseCallback that computes mean_reward from
+   self.model.ep_info_buffer — NOT from self.locals (which does not contain
+   mean_reward). Use this pattern inside _on_step:
+       if len(self.model.ep_info_buffer) > 0:
+           mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
+4. Every 2048 steps (check with self.n_calls % 2048 == 0), POST mean_reward
+   to the telemetry endpoint. Use response.ok to check success; log a warning
+   on failure but do NOT exit — telemetry is non-critical.
+5. Save a checkpoint when mean_reward improves.
 6. Exit cleanly when target mean_reward is reached."""
 
 _SFT_TEMPLATE = """\

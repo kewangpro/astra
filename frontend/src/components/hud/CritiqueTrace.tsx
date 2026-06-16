@@ -101,6 +101,7 @@ export function CritiqueTrace({ events }: Props) {
       style={{
         background: "#0f172a",
         border: "1px solid rgba(167,139,250,0.15)",
+        maxHeight: "24rem",
       }}
     >
       {/* Header */}
