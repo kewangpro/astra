@@ -7,6 +7,7 @@ export interface Mission {
   status: string;
   current_iteration: number;
   best_metric_value: string | null;
+  target_metric: { name?: string; target?: number; operator?: string } | null;
   created_at: string;
   updated_at: string;
 }

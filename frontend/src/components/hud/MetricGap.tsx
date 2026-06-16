@@ -4,14 +4,12 @@ import type { Mission } from "@/lib/api";
 
 interface Props {
   mission: Mission;
-  target?: number;
 }
 
 function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
   const R = 52;
   const cx = 64;
   const cy = 68;
-  // 210° arc: from 195° to 345° (bottom-left sweeping up and over to bottom-right)
   const startAngle = 195;
   const totalAngle = 210;
 
@@ -46,7 +44,6 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
           </feMerge>
         </filter>
       </defs>
-      {/* Track */}
       <path
         d={trackPath}
         stroke="rgba(255,255,255,0.05)"
@@ -54,7 +51,6 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
         strokeLinecap="round"
         fill="none"
       />
-      {/* Fill */}
       {fillPath && (
         <path
           d={fillPath}
@@ -63,28 +59,46 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
           strokeLinecap="round"
           fill="none"
           filter="url(#glow)"
-          style={{
-            filter: `drop-shadow(0 0 6px ${glowColor})`,
-          }}
+          style={{ filter: `drop-shadow(0 0 6px ${glowColor})` }}
         />
       )}
-      {/* Tick marks at target */}
       <circle cx={end.x} cy={end.y} r="2" fill="rgba(20,184,166,0.3)" />
     </svg>
   );
 }
 
-export function MetricGap({ mission, target = 0.92 }: Props) {
+export function MetricGap({ mission }: Props) {
+  const tm = mission.target_metric;
+  const targetValue = tm?.target ?? 0.92;
+  const metricName = tm?.name ?? "metric";
+
+  // RL missions have raw reward targets (>1); ML missions use 0–1 fractions
+  const isRaw = targetValue > 1;
+
   const current = parseFloat(mission.best_metric_value ?? "0");
-  const gap = Math.max(0, target - current);
-  const pct = Math.min(100, (current / target) * 100);
+  const pct = targetValue > 0 ? Math.min(100, (current / targetValue) * 100) : 0;
+  const gap = Math.max(0, targetValue - current);
   const achieved = gap <= 0;
+
+  // Display helpers
+  const formatCurrent = isRaw
+    ? current.toFixed(1)
+    : (current * 100).toFixed(1);
+  const formatTarget = isRaw
+    ? targetValue.toFixed(0)
+    : `${(targetValue * 100).toFixed(0)}%`;
+  const formatGap = isRaw
+    ? `−${gap.toFixed(1)} to close`
+    : `−${(gap * 100).toFixed(2)}% to close`;
+  const unit = isRaw ? "" : "%";
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
       <div className="flex items-baseline justify-between mb-2">
         <span className="text-xs text-[#94a3b8] tracking-widest uppercase">Metric Gap</span>
-        <span className="text-[#94a3b8] text-[10px]">target {(target * 100).toFixed(0)}%</span>
+        <span className="text-[#94a3b8] text-[10px]">
+          {metricName} · target {formatTarget}
+        </span>
       </div>
 
       <div className="flex items-center gap-4">
@@ -95,9 +109,11 @@ export function MetricGap({ mission, target = 0.92 }: Props) {
               className="text-2xl font-semibold leading-none"
               style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}
             >
-              {(current * 100).toFixed(1)}
+              {formatCurrent}
             </span>
-            <span className="text-[10px] text-[#94a3b8] mt-0.5">%</span>
+            {unit && (
+              <span className="text-[10px] text-[#94a3b8] mt-0.5">{unit}</span>
+            )}
           </div>
         </div>
 
@@ -106,9 +122,7 @@ export function MetricGap({ mission, target = 0.92 }: Props) {
           {achieved ? (
             <div className="text-xs text-[#4ade80] font-medium">Target achieved</div>
           ) : (
-            <div className="text-xs text-[#f87171]">
-              −{(gap * 100).toFixed(2)}% to close
-            </div>
+            <div className="text-xs text-[#f87171]">{formatGap}</div>
           )}
           <div className="mt-2 text-[10px] text-[#64748b]">
             {pct.toFixed(0)}% of target
