@@ -14,12 +14,12 @@ import type { TelemetryEvent } from "@/lib/api";
 
 interface Props {
   events: TelemetryEvent[];
-  target?: number;
+  targetMetric?: Record<string, number> | null;
 }
 
 const COLORS = ["#14b8a6", "#60a5fa", "#a78bfa", "#fbbf24", "#4ade80"];
 
-export function MetricChart({ events, target = 0.92 }: Props) {
+export function MetricChart({ events, targetMetric }: Props) {
   const metricEvents = events.filter(
     (e) => (e.type === "metric" || e.type === "backfill") && e.name != null && e.value != null
   );
@@ -34,6 +34,28 @@ export function MetricChart({ events, target = 0.92 }: Props) {
   );
   const data = Object.values(byIter).sort((a, b) => a.iteration - b.iteration);
   const names = [...new Set(metricEvents.map((e) => e.name!))];
+
+  // Resolve target value and display mode from targetMetric dict
+  const [targetName, targetValue] = targetMetric && Object.keys(targetMetric).length > 0
+    ? [Object.keys(targetMetric)[0], Object.values(targetMetric)[0] as number]
+    : [null, 0.92];
+  const isRaw = targetValue > 1;
+
+  const yDomain: [number, number] = isRaw
+    ? [0, Math.max(targetValue * 1.1, ...data.map((d) => (targetName && d[targetName]) || 0))]
+    : [0, 1];
+
+  const yFormatter = isRaw
+    ? (v: number) => v.toFixed(0)
+    : (v: number) => `${(v * 100).toFixed(0)}%`;
+
+  const tooltipFormatter = isRaw
+    ? (v: unknown) => (v as number).toFixed(1)
+    : (v: unknown) => `${((v as number) * 100).toFixed(2)}%`;
+
+  const targetLabel = isRaw
+    ? `target ${targetValue.toFixed(0)}`
+    : `target ${(targetValue * 100).toFixed(0)}%`;
 
   if (!data.length)
     return (
@@ -87,8 +109,8 @@ export function MetricChart({ events, target = 0.92 }: Props) {
             tickLine={false}
           />
           <YAxis
-            domain={[0, 1]}
-            tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
+            domain={yDomain}
+            tickFormatter={yFormatter}
             tick={{ fontSize: 10, fill: "#334155" }}
             axisLine={false}
             tickLine={false}
@@ -102,15 +124,15 @@ export function MetricChart({ events, target = 0.92 }: Props) {
               color: "#e2e8f0",
               boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
             }}
-            formatter={(v: unknown) => `${((v as number) * 100).toFixed(2)}%`}
+            formatter={tooltipFormatter}
             cursor={{ stroke: "rgba(20,184,166,0.2)", strokeWidth: 1 }}
           />
           <ReferenceLine
-            y={target}
+            y={targetValue}
             stroke="rgba(20,184,166,0.35)"
             strokeDasharray="3 5"
             label={{
-              value: `target ${(target * 100).toFixed(0)}%`,
+              value: targetLabel,
               position: "right",
               fontSize: 9,
               fill: "rgba(20,184,166,0.5)",
