@@ -44,7 +44,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function LogStream({ events, connected, missionStatus }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const visible = events.filter((e) => e.type !== "backfill_complete");
+  // metric events are shown in MetricHistory — exclude them from the stream
+  const visible = events.filter(
+    (e) => e.type !== "backfill_complete" && e.type !== "metric"
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

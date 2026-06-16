@@ -56,16 +56,30 @@ The script must:
    clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
    DO NOT pass: actor_lr, critic_lr, entropy_coef, entropy_coeff,
    clip_range_value, or any other key not in the list above.
-3. Implement a custom BaseCallback that computes mean_reward from
-   self.model.ep_info_buffer — NOT from self.locals (which does not contain
-   mean_reward). Use this pattern inside _on_step:
-       if len(self.model.ep_info_buffer) > 0:
-           mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
-4. Every 2048 steps (check with self.n_calls % 2048 == 0), POST mean_reward
-   to the telemetry endpoint. Use response.ok to check success; log a warning
-   on failure but do NOT exit — telemetry is non-critical.
-5. Save a checkpoint when mean_reward improves.
-6. Exit cleanly when target mean_reward is reached."""
+3. Implement a custom BaseCallback. Inside _on_step use EXACTLY this pattern —
+   do NOT post telemetry on every step, only every 2048 steps:
+
+       def _on_step(self) -> bool:
+           if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
+               mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
+               try:
+                   response = requests.post(
+                       "{api_url}/telemetry/missions/{mission_id}/metrics",
+                       json={{"mission_id": "{mission_id}", "name": "mean_reward",
+                              "value": mean_reward, "step": self.n_calls}},
+                       timeout=2,
+                   )
+                   if not response.ok:
+                       logger.warning("Telemetry failed: %s", response.status_code)
+               except Exception as exc:
+                   logger.warning("Telemetry error: %s", exc)
+               if mean_reward >= {target_reward}:
+                   return False  # stop training — target reached
+           return True
+
+   The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
+4. Save a checkpoint when mean_reward improves.
+5. Exit cleanly when target mean_reward is reached."""
 
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT.
@@ -175,10 +189,13 @@ class CodeGenerator:
             "target_metric": json.dumps(plan.get("target_metric", {})),
         }
         if task_type == "rl":
+            tm = plan.get("target_metric", {})
+            target_reward = next(iter(tm.values()), 475) if tm else 475
             ctx = {
                 "algorithm": plan.get("algorithm", "PPO"),
-                "env_id": "CartPole-v1",
+                "env_id": plan.get("env_id", "CartPole-v1"),
                 "hyperparameters": json.dumps(hp, indent=2),
+                "target_reward": target_reward,
                 **hp,
                 **base,
             }

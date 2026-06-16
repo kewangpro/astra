@@ -69,8 +69,10 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
 
 export function MetricGap({ mission }: Props) {
   const tm = mission.target_metric;
-  const targetValue = tm?.target ?? 0.92;
-  const metricName = tm?.name ?? "metric";
+  // target_metric is {"mean_reward": 475} or {"accuracy": 0.92} — take first entry
+  const [metricName, targetValue] = tm && Object.keys(tm).length > 0
+    ? [Object.keys(tm)[0], Object.values(tm)[0] as number]
+    : ["metric", 0.92];
 
   // RL missions have raw reward targets (>1); ML missions use 0–1 fractions
   const isRaw = targetValue > 1;
