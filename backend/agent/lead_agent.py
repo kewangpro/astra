@@ -48,7 +48,7 @@ Respond with valid JSON with two optional fields: "adjustments" (hyperparameters
 
 For RL (PPO) hyperparameter adjustments, stay within these ranges:
 - learning_rate: 1e-5 to 1e-2
-- n_steps: 512 to 4096 (must be >= batch_size)
+- n_steps: 1024 to 4096 (must be >= batch_size)
 - batch_size: 64 to 512 (must be <= n_steps)
 - n_epochs: 3 to 20
 - gamma: 0.90 to 0.999

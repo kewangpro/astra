@@ -26,7 +26,7 @@ def test_clamp_learning_rate_too_low():
 
 def test_clamp_n_steps_too_low():
     result = LoopStateMachine._clamp_rl_adjustments({"n_steps": 64}, "rl")
-    assert result["n_steps"] == 512
+    assert result["n_steps"] == 1024
 
 
 def test_clamp_n_steps_too_high():

@@ -358,7 +358,7 @@ class LoopStateMachine:
             return adjustments
         _RANGES = {
             "learning_rate":  (1e-5,  1e-2),
-            "n_steps":        (512,   4096),
+            "n_steps":        (1024,  4096),
             "batch_size":     (64,    512),
             "n_epochs":       (3,     20),
             "gamma":          (0.90,  0.999),
