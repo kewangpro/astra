@@ -58,6 +58,7 @@ Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script MUST start with these exact imports (do not omit any):
+    import os
     import gymnasium as gym
     import numpy as np
     import requests
@@ -314,6 +315,8 @@ class CodeGenerator:
 
         import_lines = "\n".join(l for l in lines if l.strip().startswith(("import ", "from ")))
         to_inject = []
+        if "import os" not in import_lines:
+            to_inject.append("import os")
         for algo in ("PPO", "SAC", "A2C", "DQN", "TD3"):
             if algo in code and f"from stable_baselines3 import {algo}" not in import_lines:
                 to_inject.append(f"from stable_baselines3 import {algo}")
