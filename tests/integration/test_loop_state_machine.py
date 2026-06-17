@@ -60,7 +60,7 @@ class _MockHealer:
     def __init__(self, tmp_dir: str):
         self._tmp_dir = tmp_dir
 
-    async def fix_script(self, script_path, error_output, iteration=0):
+    async def fix_script(self, script_path, error_output, iteration=0, prior_errors=None, mission_id=None, domain=None):
         fixed = os.path.join(self._tmp_dir, f"train_fixed_{iteration}.py")
         with open(fixed, "w") as f:
             f.write("print('fixed script')\n")
