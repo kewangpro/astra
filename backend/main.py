@@ -7,7 +7,7 @@ from backend.config import settings
 from backend.logging_config import configure_logging, get_logger
 from backend.database import init_db
 from backend.services.state_recovery import recover_interrupted_missions
-from backend.routers import health, registry, recipes, missions, telemetry, agent, approvals, analysis
+from backend.routers import health, registry, recipes, missions, telemetry, agent, approvals, analysis, play
 
 configure_logging()
 logger = get_logger(__name__)
@@ -53,6 +53,7 @@ app.include_router(telemetry.router)
 app.include_router(agent.router)
 app.include_router(approvals.router)
 app.include_router(analysis.router)
+app.include_router(play.router)
 
 
 @app.get("/")

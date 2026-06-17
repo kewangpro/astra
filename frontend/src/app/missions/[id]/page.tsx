@@ -9,6 +9,7 @@ import { MetricChart } from "@/components/hud/MetricChart";
 import { LogStream } from "@/components/hud/LogStream";
 import { PivotTimeline } from "@/components/hud/PivotTimeline";
 import { CritiqueTrace } from "@/components/hud/CritiqueTrace";
+import { SnakePlayer } from "@/components/hud/SnakePlayer";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
 import type { TelemetryEvent } from "@/lib/api";
 
@@ -132,6 +133,11 @@ export default function MissionHUD({
           <MetricChart events={events} targetMetric={mission.target_metric} />
         </div>
       </div>
+
+      {/* Snake live player — shown for Snake-v0 missions */}
+      {mission.goal.includes("Snake-v0") && (
+        <SnakePlayer missionId={missionId} envId="Snake-v0" />
+      )}
 
       {/* Log + Critic Trace + Pivots */}
       <SidebarLayout events={events} connected={connected} missionStatus={mission.status} />

@@ -285,3 +285,23 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - **Problem**: the `CodeSafetyClassifier` LLM marked scripts as `unsafe` when they contained `del _warm` (used to free the warm-start model from memory), misreading it as a file deletion.
     - `backend/agent/code_safety_classifier.py`: `_SYSTEM` prompt clarified with three explicit rules: (1) `del variable` is Python object deletion (freeing memory), **not** a file operation — SAFE; (2) `requests.post(...)` to 127.0.0.1 or localhost is SAFE telemetry; (3) importing standard libraries (`os`, `sys`, `json`, `logging`, etc.) is SAFE.
     - No new tests — this is a prompt-engineering fix; correctness verified manually by observing auto-approve succeeding after the fix.
+
+- [x] **Absolute checkpoint path enforcement post-generation (Step 9.13)**
+    - **Problem**: the LLM substituted the absolute `{checkpoint_dir}` format variable with relative paths (`./data/missions/<uuid>/checkpoints/...`), making warm-start and model saves fragile and dependent on the process working directory.
+    - `backend/agent/code_generator.py`: new `_fix_checkpoint_paths()` static method runs after code generation and replaces any relative `data/missions/<uuid>/checkpoints` pattern with the absolute `checkpoint_dir` path. Applied to both RL and ML scripts.
+    - `tests/unit/test_code_generator.py`: 2 new tests — `test_fix_checkpoint_paths_replaces_relative_paths` and `test_fix_checkpoint_paths_leaves_absolute_paths_alone`.
+
+- [x] **Classifier false positive on `sys.path.insert` (Step 9.14)**
+    - **Problem**: the `CodeSafetyClassifier` LLM flagged Snake-v0 scripts as `unsafe` because they contain `sys.path.insert(0, "/Users/.../astra")` (needed to import `envs.snake_env`), which the classifier misread as a file operation on an external path.
+    - `backend/agent/code_safety_classifier.py`: `_SYSTEM` prompt extended with two additional clarifications: (1) `sys.path.insert(...)` is a Python import path modification, NOT a file operation — SAFE; (2) writing files to absolute paths inside the project directory is SAFE.
+
+- [x] **Remove domain dropdown from GoalInput (Step 9.15)**
+    - **Problem**: the `domain:` dropdown on the mission creation form (`rl / sft / ml`) was a footgun — users who left it on the default `rl` got a mis-typed manifest for ML missions (the iris incident). Since the LeadAgent infers task_type from the goal text and the manifest is reconciled on iter 0, the dropdown had no functional benefit.
+    - `frontend/src/components/command-center/GoalInput.tsx`: dropdown and `DOMAINS` array removed. `taskType` is hardcoded to `"rl"` on mission creation; the backend reconciles it from the plan's `task_type` on the first iteration.
+
+- [x] **Snake-v0 live agent viewer on mission HUD (Step 9.16)**
+    - **Feature**: once a Snake-v0 mission has a `best_model.zip`, the mission HUD shows a `▶ watch` button that streams the trained agent playing the game in real time.
+    - `backend/routers/play.py`: new WebSocket endpoint `WS /ws/missions/{id}/play?env_id=Snake-v0&fps=12`. Loads `best_model.zip` in a thread-pool executor (SB3 is not async-native), runs PPO inference in a loop, and streams `{"type": "frame", "grid": [...256 floats...], "episode_reward": ..., ...}` JSON frames at the requested fps. Loops episodes continuously until the client disconnects.
+    - `backend/main.py`: `play` router registered.
+    - `frontend/src/components/hud/SnakePlayer.tsx`: canvas component (320×320px, 16×16 grid at 20px/cell). Head = teal, body = dark teal, food = red circle. Connects to the play WebSocket on button press; shows live episode number, current reward, and best episode reward. Cleans up on unmount.
+    - `frontend/src/app/missions/[id]/page.tsx`: `SnakePlayer` rendered below the metric chart when `mission.goal` contains `"Snake-v0"`.
