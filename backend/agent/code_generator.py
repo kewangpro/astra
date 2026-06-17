@@ -78,7 +78,17 @@ The script must:
    DO NOT pass: actor_lr, critic_lr, entropy_coef, entropy_coeff,
    clip_range_value, or any other key not in the list above.
    If "Policy kwargs" above is not empty, also pass policy_kwargs=<that dict> to the constructor.
-3. Implement a custom BaseCallback. Copy this _on_step EXACTLY — do not modify:
+3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
+
+       _best_ckpt = "{checkpoint_dir}/best_model.zip"
+       if os.path.exists(_best_ckpt):
+           _warm = PPO.load(_best_ckpt, env=env)
+           model.policy.load_state_dict(_warm.policy.state_dict())
+           del _warm
+
+   This resumes training from the best previously saved weights while keeping the new hyperparameters.
+   `os` is already imported. The block is MANDATORY — do not remove or skip it.
+4. Implement a custom BaseCallback. Copy this _on_step EXACTLY — do not modify:
 
        def _on_step(self) -> bool:
            if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
@@ -111,10 +121,10 @@ The script must:
 
    The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
    The best_model save block is MANDATORY — it ensures the peak model is preserved.
-4. Call model.learn(total_timesteps=500000, callback=callback) — use at least
+5. Call model.learn(total_timesteps=500000, callback=callback) — use at least
    500000 timesteps. Do NOT use 10000 or any small number.
-5. After training, save the final model: model.save("{checkpoint_dir}/last_model")
-6. Exit cleanly when target mean_reward is reached."""
+6. After training, save the final model: model.save("{checkpoint_dir}/last_model")
+7. Exit cleanly when target mean_reward is reached."""
 
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT.

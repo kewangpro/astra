@@ -250,3 +250,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/agent/code_generator.py`: `_RL_TEMPLATE` passes `policy_kwargs` to LLM; LLM instructed to include `policy_kwargs=<dict>` in PPO constructor when provided (e.g. `{"net_arch": [256, 256]}`).
     - `tests/unit/test_state_machine_helpers.py`: 13 tests for `_clamp_rl_adjustments` (bounds, batch_size cap, passthrough, non-rl noop).
     - `tests/unit/test_code_generator.py`: 4 new tests for `CheckpointCallback` injection, `sb3` alias replacement, `policy_kwargs` in prompt.
+
+- [x] **Warm-start from best checkpoint (Step 9.7)**
+    - **Problem**: every iteration generated a fresh PPO model with random weights. The agent would climb to ~180 reward by step 200k, then policy collapse brought it back to negative — and the next iteration started from scratch again, repeating the cycle.
+    - `backend/agent/code_generator.py`: `_RL_TEMPLATE` now includes a mandatory warm-start block (hardcoded, verbatim) that runs immediately after model construction. It loads `best_model.zip` with `PPO.load()` and copies its policy weights into the new model via `model.policy.load_state_dict(_warm.policy.state_dict())`. The new model retains the pivot's hyperparameters; only the neural network weights are transferred. If no `best_model.zip` exists (first run), the block is a no-op.
+    - `tests/unit/test_code_generator.py`: 1 new test verifying `_best_ckpt`, `best_model.zip`, and `load_state_dict` all appear in the generated RL prompt.
