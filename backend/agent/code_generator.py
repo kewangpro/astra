@@ -229,6 +229,13 @@ class CodeGenerator:
         code = self._strip_fences(code)
         if task_type == "rl":
             code = self._patch_rl_imports(code)
+            env_id = plan.get("env_id", "")
+            if env_id == "Snake-v0" and "register" not in code:
+                snake_preamble = _SNAKE_SETUP.format(
+                    project_root=os.path.abspath(os.path.join(settings.data_path, ".."))
+                )
+                code = snake_preamble + "\n" + code
+                logger.info("CodeGenerator: injected Snake-v0 registration preamble")
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)

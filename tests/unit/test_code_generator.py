@@ -314,6 +314,44 @@ def test_build_user_prompt_ml_hardcodes_checkpoint_path(tmp_path, monkeypatch):
     assert "joblib.dump" in prompt
 
 
+def test_generate_training_script_injects_snake_preamble(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    # LLM returns script without registration preamble
+    code = "import gymnasium as gym\nenv = gym.make('Snake-v0')\n"
+    gen = CodeGenerator(_make_provider(code))
+    plan = _make_rl_plan(env_id="Snake-v0")
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-snake", plan)
+        )
+
+    content = open(path).read()
+    assert "register" in content
+    assert "snake_env" in content
+
+
+def test_generate_training_script_no_snake_preamble_for_non_snake(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    code = "import gymnasium as gym\nenv = gym.make('CartPole-v1')\n"
+    gen = CodeGenerator(_make_provider(code))
+    plan = _make_rl_plan(env_id="CartPole-v1")
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-cartpole", plan)
+        )
+
+    content = open(path).read()
+    assert "snake_env" not in content
+
+
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
