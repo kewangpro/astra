@@ -91,6 +91,16 @@ class LoopStateMachine:
         )
 
         pivot_engine = PivotEngine(mission.target_metric)
+        # Seed pivot engine with the persisted best so restarts don't lose history
+        persisted_best = self._load_persisted_best(mission_id, mission)
+        if persisted_best is not None:
+            pivot_engine.record(-1, {next(iter(mission.target_metric), "metric"): persisted_best})
+            logger.info("LoopStateMachine: seeded pivot engine with persisted best=%.2f", persisted_best)
+            # Sync DB if best_score.txt is higher than DB value
+            db_best = float(mission.best_metric_value) if mission.best_metric_value else None
+            if db_best is None or persisted_best > db_best:
+                await self._save_best_metric(mission_id, persisted_best)
+
         manifest = self._load_or_create_manifest(mission_id, mission)
         mission_dir = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
         script_path: Optional[str] = None
@@ -339,6 +349,23 @@ class LoopStateMachine:
                     .where(Mission.id == mission_id)
                     .values(subprocess_pid=pid, container_id=container_id)
                 )
+
+    def _load_persisted_best(self, mission_id: str, mission) -> Optional[float]:
+        """Return the highest known best metric from best_score.txt and DB."""
+        candidates = []
+        # From best_score.txt (written by training callback)
+        score_file = os.path.join(settings.data_path, "missions", mission_id, "checkpoints", "best_score.txt")
+        try:
+            candidates.append(float(open(score_file).read().strip()))
+        except Exception:
+            pass
+        # From DB
+        try:
+            if mission.best_metric_value:
+                candidates.append(float(mission.best_metric_value))
+        except Exception:
+            pass
+        return max(candidates) if candidates else None
 
     async def _save_best_metric(self, mission_id: str, value: Optional[float]) -> None:
         if value is None:
