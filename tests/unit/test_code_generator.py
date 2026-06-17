@@ -227,7 +227,7 @@ def test_build_user_prompt_rl_policy_kwargs_none_when_absent(tmp_path, monkeypat
     plan = _make_rl_plan()
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert "Policy kwargs (network architecture): none" in prompt
+    assert "Policy kwargs (network architecture): None" in prompt
 
 
 def test_build_user_prompt_rl_includes_best_model_save(tmp_path, monkeypatch):
@@ -255,6 +255,35 @@ def test_build_user_prompt_rl_includes_last_model_save(tmp_path, monkeypatch):
     assert "last_model" in prompt
 
 
+def test_build_user_prompt_rl_hardcodes_hyperparameters(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(hyperparameters={"learning_rate": 0.0005, "n_steps": 1024, "batch_size": 128})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    # Exact pivot values must appear verbatim in the code block
+    assert "_hp = " in prompt
+    assert "0.0005" in prompt
+    assert "_VALID_PPO_KEYS" in prompt
+    assert "_filtered" in prompt
+    assert "_policy_kwargs" in prompt
+
+
+def test_build_user_prompt_rl_policy_kwargs_none_renders_as_python_none(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "_policy_kwargs = None" in prompt
+
+
 def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
@@ -267,6 +296,8 @@ def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     assert "best_model.zip" in prompt
     assert "load_state_dict" in prompt
     assert "_best_ckpt" in prompt
+    # architecture mismatch must be caught, not crash the script
+    assert "except" in prompt
 
 
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):

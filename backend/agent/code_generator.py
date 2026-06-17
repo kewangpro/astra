@@ -71,23 +71,33 @@ The script must:
        env = gym.make("{env_id}")
    The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
    Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
-2. Instantiate the {algorithm} model passing ONLY these valid SB3 PPO kwargs
-   (filter out anything else from the hyperparameters dict before passing):
-   learning_rate, n_steps, batch_size, n_epochs, gamma, gae_lambda,
-   clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
-   DO NOT pass: actor_lr, critic_lr, entropy_coef, entropy_coeff,
-   clip_range_value, or any other key not in the list above.
-   If "Policy kwargs" above is not empty, also pass policy_kwargs=<that dict> to the constructor.
+2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
+
+       _VALID_PPO_KEYS = {{"learning_rate", "n_steps", "batch_size", "n_epochs", "gamma",
+                           "gae_lambda", "clip_range", "clip_range_vf", "ent_coef",
+                           "vf_coef", "max_grad_norm", "target_kl"}}
+       _hp = {hyperparameters}
+       _filtered = {{k: v for k, v in _hp.items() if k in _VALID_PPO_KEYS}}
+       _policy_kwargs = {policy_kwargs}
+       model = PPO("MlpPolicy", env, **_filtered,
+                   **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
+
+   These values are set by the optimizer — do NOT substitute your own hyperparameter values.
 3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
 
        _best_ckpt = "{checkpoint_dir}/best_model.zip"
        if os.path.exists(_best_ckpt):
-           _warm = PPO.load(_best_ckpt, env=env)
-           model.policy.load_state_dict(_warm.policy.state_dict())
-           del _warm
+           try:
+               _warm = PPO.load(_best_ckpt, env=env)
+               model.policy.load_state_dict(_warm.policy.state_dict())
+               del _warm
+           except Exception as _e:
+               logging.warning("Warm-start skipped (architecture mismatch or load error): %s", _e)
 
    This resumes training from the best previously saved weights while keeping the new hyperparameters.
-   `os` is already imported. The block is MANDATORY — do not remove or skip it.
+   If the checkpoint architecture differs (e.g. after a net_arch pivot), the except branch silently
+   falls back to random weights. `os` and `logging` are already imported.
+   The block is MANDATORY — do not remove or skip it.
 4. Implement a custom BaseCallback. Copy this _on_step EXACTLY — do not modify:
 
        def _on_step(self) -> bool:
@@ -251,7 +261,7 @@ class CodeGenerator:
                 "algorithm": plan.get("algorithm", "PPO"),
                 "env_id": env_id,
                 "hyperparameters": json.dumps(hp, indent=2),
-                "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "none",
+                "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "None",
                 "target_reward": target_reward,
                 "snake_setup": snake_setup,
                 **base,
