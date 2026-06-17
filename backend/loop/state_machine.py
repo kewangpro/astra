@@ -125,6 +125,23 @@ class LoopStateMachine:
                     value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
                 )
 
+                # Reconcile manifest artifact pattern if plan task_type differs
+                # from the mission's stored task_type (e.g. user left dropdown on "rl")
+                if current_iteration == 0:
+                    plan_task_type = plan.get("task_type", "").lower()
+                    if plan_task_type and plan_task_type != mission.task_type:
+                        manifest = generate_manifest(
+                            mission_id=mission_id,
+                            goal=mission.goal,
+                            task_type=plan_task_type,
+                            target_metric=mission.target_metric or {},
+                        )
+                        self._save_manifest(mission_id, manifest)
+                        logger.info(
+                            "LoopStateMachine: manifest reconciled task_type %s→%s for mission=%s",
+                            mission.task_type, plan_task_type, mission_id,
+                        )
+
                 # ── CRITIC REVIEW (Step 7.1) ──────────────────────────────
                 if self._critic is not None:
                     critique = await self._critic.review(plan, mission.goal, revision=0)

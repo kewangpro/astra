@@ -19,7 +19,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
 - **Live mission HUD** — Next.js dashboard with real-time metric charts (current vs. prior run differentiated by color), log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
 - **Custom RL environments** — `envs/snake_env.py` provides a Gymnasium-compatible Snake-v0 environment for custom environment missions
-- **281 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping, specialist evaluator, missions router) plus integration tests for the full loop
+- **285 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping, specialist evaluator, missions router) plus integration tests for the full loop
 
 ### Screenshots
 
@@ -116,7 +116,7 @@ make ports  # show port status for all services
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 | 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
-| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, 281 tests | 🔄 In Progress |
+| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, 285 tests | 🔄 In Progress |
 
 ## Hardware Target
 

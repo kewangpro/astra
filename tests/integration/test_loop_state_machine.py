@@ -294,6 +294,64 @@ async def test_plateau_triggers_pivot_then_goal_met(seeded_mission, db_session, 
 
 
 @pytest.mark.asyncio
+async def test_manifest_reconciled_when_plan_task_type_differs(db_session, patch_db, monkeypatch):
+    """Mission created with task_type='rl' (UI default) but plan identifies 'ml'.
+    Manifest artifact pattern should be reconciled to checkpoints/model.* after iter 0."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="Train a sklearn classifier on iris to 95% accuracy",
+        task_type="rl",  # wrong — simulates user leaving dropdown on default
+        target_metric={"accuracy": 0.95},
+        autonomy_mode="full_autonomy",
+        status=MissionStatus.PENDING.value,
+        current_iteration=0,
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    class _MLLeadAgent:
+        async def plan(self, goal, task_type, target_metric):
+            return {
+                "task_type": "ml",   # LeadAgent correctly identifies ml
+                "algorithm": "RandomForestClassifier",
+                "hyperparameters": {"n_estimators": 100},
+                "sandbox_memory_gb": 1.0,
+            }
+        async def propose_pivot(self, current_metrics, history):
+            return {"reason": "plateau", "adjustments": {}}
+        def flush_iteration_context(self):
+            pass
+
+    with tempfile.TemporaryDirectory() as tmp:
+        monkeypatch.setattr("backend.config.settings.data_path", tmp)
+        evaluator = _SequenceEvaluator([{"accuracy": 1.0}])
+        sm = _build_sm(
+            _MLLeadAgent(),
+            _MockCodeGen(tmp),
+            _MockHealer(tmp),
+            _MockSandbox(tmp),
+            evaluator,
+        )
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(mission.id)
+
+        # Check that the saved manifest uses the ml artifact pattern
+        import json, glob as _glob
+        manifest_path = os.path.join(tmp, "missions", mission.id, "requirements.json")
+        assert os.path.isfile(manifest_path), "requirements.json not written"
+        reqs = json.load(open(manifest_path))["requirements"]
+        artifact = next(r for r in reqs if r["check_type"] == "file_exists")
+        assert artifact["path_pattern"] == "checkpoints/model.*", (
+            f"Expected checkpoints/model.* but got {artifact['path_pattern']}"
+        )
+
+    await db_session.refresh(mission)
+    assert mission.status == MissionStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
 async def test_supervised_gate_rejected_marks_failed(db_session, patch_db, monkeypatch):
     monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
 

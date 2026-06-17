@@ -253,5 +253,20 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 - [x] **Warm-start from best checkpoint (Step 9.7)**
     - **Problem**: every iteration generated a fresh PPO model with random weights. The agent would climb to ~180 reward by step 200k, then policy collapse brought it back to negative — and the next iteration started from scratch again, repeating the cycle.
-    - `backend/agent/code_generator.py`: `_RL_TEMPLATE` now includes a mandatory warm-start block (hardcoded, verbatim) that runs immediately after model construction. It loads `best_model.zip` with `PPO.load()` and copies its policy weights into the new model via `model.policy.load_state_dict(_warm.policy.state_dict())`. The new model retains the pivot's hyperparameters; only the neural network weights are transferred. If no `best_model.zip` exists (first run), the block is a no-op.
-    - `tests/unit/test_code_generator.py`: 1 new test verifying `_best_ckpt`, `best_model.zip`, and `load_state_dict` all appear in the generated RL prompt.
+    - `backend/agent/code_generator.py`: `_RL_TEMPLATE` now includes a mandatory warm-start block (hardcoded, verbatim) that runs immediately after model construction. It loads `best_model.zip` with `PPO.load()` and copies its policy weights into the new model via `model.policy.load_state_dict(_warm.policy.state_dict())`. The new model retains the pivot's hyperparameters; only the neural network weights are transferred. If no `best_model.zip` exists (first run), the block is a no-op. Wrapped in `try/except` so an architecture mismatch after a net_arch pivot silently falls back to random weights.
+    - `tests/unit/test_code_generator.py`: 1 new test verifying `_best_ckpt`, `best_model.zip`, and `load_state_dict` all appear in the generated RL prompt; 1 test verifying the `except` branch is present.
+
+- [x] **Hardcoded pivot hyperparameters in RL template (Step 9.8)**
+    - **Problem**: LLM was ignoring plan hyperparameters and hallucinating its own values (e.g. `n_steps=128` instead of pivot's `n_steps=1024`), making pivots ineffective.
+    - `backend/agent/code_generator.py`: `_RL_TEMPLATE` step 2 now contains a mandatory verbatim Python code block embedding the optimizer's hyperparameter values directly — `_hp = {hyperparameters}`, `_filtered = {k: v ...}`, `_policy_kwargs = {policy_kwargs}`, `model = PPO("MlpPolicy", env, **_filtered, ...)`. LLM copies it unchanged. `policy_kwargs` renders as `None` (Python literal) when absent, or as a JSON dict when provided.
+    - `tests/unit/test_code_generator.py`: 2 new tests — `_hp` and pivot values appear verbatim in prompt; `_policy_kwargs = None` renders correctly when no policy_kwargs.
+
+- [x] **ML checkpoint path and manifest task_type reconciliation (Step 9.9)**
+    - **Problem 1**: ML template said "save the model with joblib" without specifying where, so `model.joblib` landed in the wrong directory and the `file_exists` manifest requirement (`checkpoints/model.*`) never passed.
+    - `backend/agent/code_generator.py`: `_ML_TEMPLATE` step 5 now hardcodes `joblib.dump(model, "{checkpoint_dir}/model.joblib")` verbatim.
+    - **Problem 2**: manifest was generated at mission start using `mission.task_type` (from the UI dropdown, default `"rl"`), before the LeadAgent had a chance to identify the correct type. A scikit-learn mission created with the default dropdown got `checkpoints/*.zip` as its artifact requirement instead of `checkpoints/model.*`.
+    - `backend/loop/state_machine.py`: on iteration 0, after the first plan is ready, if `plan["task_type"]` differs from `mission.task_type`, the manifest is regenerated using the plan's type and saved to disk. The LeadAgent's determination is authoritative.
+    - **Problem 3**: MLX SIGABRT crash when auto-approve was clicked during active inference — two concurrent MLX calls raced on the same Metal GPU command buffer.
+    - `backend/agent/inference/mlx_provider.py`: module-level `asyncio.Lock` (`_MLX_LOCK`) serializes all `generate()` calls across all `MLXProvider` instances.
+    - `tests/unit/test_code_generator.py`: 1 new test verifying `joblib.dump` and checkpoint path appear in ML prompt.
+    - `tests/integration/test_loop_state_machine.py`: 1 new integration test (`test_manifest_reconciled_when_plan_task_type_differs`) — mission created with `task_type="rl"`, plan returns `task_type="ml"`, asserts saved manifest uses `checkpoints/model.*`.
