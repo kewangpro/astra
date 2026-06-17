@@ -236,6 +236,8 @@ class CodeGenerator:
                 )
                 code = snake_preamble + "\n" + code
                 logger.info("CodeGenerator: injected Snake-v0 registration preamble")
+        # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
+        code = self._fix_checkpoint_paths(code, checkpoint_dir)
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -357,6 +359,17 @@ class CodeGenerator:
                     "def __init__(self, verbose=0, **kwargs):\n        super().__init__(verbose=verbose)",
                 )
         return code
+
+    @staticmethod
+    def _fix_checkpoint_paths(code: str, checkpoint_dir: str) -> str:
+        """Replace relative ./data/missions/.../checkpoints paths with the absolute checkpoint_dir."""
+        import re
+        # Match patterns like ./data/missions/<uuid>/checkpoints or data/missions/<uuid>/checkpoints
+        pattern = r'\.?/?\bdata/missions/[0-9a-f-]{36}/checkpoints\b'
+        fixed = re.sub(pattern, checkpoint_dir, code)
+        if fixed != code:
+            logger.info("CodeGenerator: replaced relative checkpoint paths with absolute: %s", checkpoint_dir)
+        return fixed
 
     @staticmethod
     def _query_lessons(plan: dict) -> list[str]:

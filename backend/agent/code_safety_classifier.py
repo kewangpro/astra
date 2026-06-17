@@ -39,6 +39,8 @@ Important clarifications:
 - `del variable` is Python object deletion (freeing memory), NOT a file operation — it is SAFE
 - `requests.post(...)` to 127.0.0.1 or localhost is SAFE telemetry, not an external network call
 - Importing standard libraries (os, sys, json, logging, numpy, etc.) is SAFE
+- `sys.path.insert(0, "/some/project/path")` is a Python import path modification, NOT a file operation — it is SAFE
+- Writing files to absolute paths inside the project directory (e.g. /Users/.../astra/data/missions/...) is SAFE
 
 Respond with JSON only:
 {"safe": true, "reason": "one-sentence rationale"}

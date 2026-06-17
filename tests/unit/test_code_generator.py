@@ -352,6 +352,25 @@ def test_generate_training_script_no_snake_preamble_for_non_snake(tmp_path, monk
     assert "snake_env" not in content
 
 
+def test_fix_checkpoint_paths_replaces_relative_paths():
+    ckpt = "/abs/path/to/checkpoints"
+    code = (
+        "model.save('./data/missions/2b395824-e128-453d-9d58-e1ba241a3522/checkpoints/best_model')\n"
+        "open('data/missions/2b395824-e128-453d-9d58-e1ba241a3522/checkpoints/best_score.txt')\n"
+    )
+    result = CodeGenerator._fix_checkpoint_paths(code, ckpt)
+    assert "./data/missions/" not in result
+    assert ckpt in result
+    assert result.count(ckpt) == 2
+
+
+def test_fix_checkpoint_paths_leaves_absolute_paths_alone():
+    ckpt = "/abs/path/to/checkpoints"
+    code = f"model.save('{ckpt}/best_model')\n"
+    result = CodeGenerator._fix_checkpoint_paths(code, ckpt)
+    assert result == code
+
+
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
