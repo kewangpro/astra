@@ -22,6 +22,15 @@ from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Serializes all MLX inference calls — concurrent Metal GPU access causes SIGABRT
+_MLX_LOCK: Optional[asyncio.Lock] = None
+
+def _get_mlx_lock() -> asyncio.Lock:
+    global _MLX_LOCK
+    if _MLX_LOCK is None:
+        _MLX_LOCK = asyncio.Lock()
+    return _MLX_LOCK
+
 _MLX_AVAILABLE = False
 try:
     import mlx.core as mx
@@ -67,6 +76,10 @@ class MLXProvider(InferenceProvider):
         return self._model_id
 
     async def generate(self, messages: list[Message], config: Optional[GenerationConfig] = None) -> str:
+        async with _get_mlx_lock():
+            return await self._generate_locked(messages, config)
+
+    async def _generate_locked(self, messages: list[Message], config: Optional[GenerationConfig] = None) -> str:
         if not self.is_loaded():
             self.load()
 

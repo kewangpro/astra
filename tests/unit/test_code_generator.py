@@ -300,6 +300,20 @@ def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     assert "except" in prompt
 
 
+def test_build_user_prompt_ml_hardcodes_checkpoint_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_ml_plan()
+    ckpt = str(tmp_path / "ckpt")
+    prompt = gen._build_user_prompt("ml", "test-id", plan, ckpt)
+
+    assert f"{ckpt}/model.joblib" in prompt
+    assert "joblib.dump" in prompt
+
+
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

@@ -179,7 +179,8 @@ The script must:
 3. Train the model.
 4. POST accuracy to the telemetry endpoint with metric name "accuracy".
    Use response.ok (2xx) to check success; log a warning on failure but do NOT exit — telemetry is non-critical.
-5. Save the model with joblib.
+5. Save the model using this EXACT line — do not change the path:
+       import joblib; joblib.dump(model, "{checkpoint_dir}/model.joblib")
 6. Exit cleanly (exit(0) on success, exit(1) on error with traceback)."""
 
 
