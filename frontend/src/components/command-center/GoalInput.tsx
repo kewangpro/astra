@@ -4,13 +4,10 @@ import { useState } from "react";
 import { useCreateMission, useRunMission } from "@/lib/hooks/useMissions";
 import { useRouter } from "next/navigation";
 
-const DOMAINS = ["rl", "sft", "ml"];
-
 const MAX = 280;
 
 export function GoalInput() {
   const [goal, setGoal] = useState("");
-  const [domain, setDomain] = useState("rl");
   const [focused, setFocused] = useState(false);
   const router = useRouter();
   const create = useCreateMission();
@@ -18,7 +15,7 @@ export function GoalInput() {
 
   const submit = async () => {
     if (!goal.trim()) return;
-    const mission = await create.mutateAsync({ goal: goal.trim(), taskType: domain });
+    const mission = await create.mutateAsync({ goal: goal.trim(), taskType: "rl" });
     await run.mutateAsync(mission.id);
     router.push(`/missions/${mission.id}`);
   };
@@ -44,22 +41,6 @@ export function GoalInput() {
         <span className="text-[10px] text-[#64748b] tracking-widest uppercase">
           mission.objective
         </span>
-        <span className="ml-auto text-[10px] text-[#94a3b8]">domain:</span>
-        <select
-          value={domain}
-          onChange={(e) => setDomain(e.target.value)}
-          className="appearance-none bg-transparent text-[10px] text-[#14b8a6]
-                     focus:outline-none cursor-pointer tracking-widest"
-        >
-          {DOMAINS.map((d) => (
-            <option key={d} value={d} className="bg-[#263347] text-[#94a3b8]">
-              {d}
-            </option>
-          ))}
-        </select>
-        <svg width="8" height="5" viewBox="0 0 8 5" className="text-[#94a3b8]">
-          <path d="M0 0l4 5 4-5z" fill="currentColor" />
-        </svg>
       </div>
 
       {/* Input area */}
