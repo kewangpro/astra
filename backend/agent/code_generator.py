@@ -95,10 +95,16 @@ The script must:
                except Exception as exc:
                    logger.warning("Telemetry error: %s", exc)
                if not hasattr(self, "_best_reward"):
-                   self._best_reward = float("-inf")
+                   _score_file = "{checkpoint_dir}/best_score.txt"
+                   try:
+                       self._best_reward = float(open(_score_file).read().strip())
+                   except Exception:
+                       self._best_reward = float("-inf")
                if mean_reward > self._best_reward:
                    self._best_reward = mean_reward
                    self.model.save("{checkpoint_dir}/best_model")
+                   with open("{checkpoint_dir}/best_score.txt", "w") as _f:
+                       _f.write(str(mean_reward))
                if mean_reward >= {target_reward}:
                    return False  # stop training — target reached
            return True
