@@ -61,9 +61,11 @@ class CodeSafetyClassifier:
 
     async def classify(self, script: str) -> SafetyVerdict:
         """Classify a training script and return a SafetyVerdict."""
-        # Fast-path static checks before calling LLM
+        # Fast-path static checks before calling LLM.
+        # classifier="static" means a definitive verdict (safe or unsafe) — skip LLM.
+        # classifier="static_ambiguous" means no danger found but not confirmed safe — proceed to LLM.
         static = self._static_check(script)
-        if not static.safe:
+        if static.classifier != "static_ambiguous":
             return static
 
         messages = [
@@ -122,4 +124,4 @@ class CodeSafetyClassifier:
                 classifier="static",
             )
 
-        return SafetyVerdict(safe=True, reason="passed static checks", classifier="static")
+        return SafetyVerdict(safe=True, reason="passed static checks", classifier="static_ambiguous")
