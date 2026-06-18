@@ -390,7 +390,7 @@ class LoopStateMachine:
                 )
 
     def _load_persisted_best(self, mission_id: str, mission) -> Optional[float]:
-        """Return the highest known best metric from best_score.txt and DB."""
+        """Return the highest known best metric from all available sources."""
         candidates = []
         # From best_score.txt (written by training callback)
         score_file = os.path.join(settings.data_path, "missions", mission_id, "checkpoints", "best_score.txt")
@@ -404,6 +404,13 @@ class LoopStateMachine:
                 candidates.append(float(mission.best_metric_value))
         except Exception:
             pass
+        # From full telemetry scan — catches cases where best_score.txt or DB lagged behind
+        # the true training peak (e.g. if the callback used a different eval window).
+        metric_name = next(iter(mission.target_metric), None) if mission.target_metric else None
+        if metric_name:
+            all_telem = self._read_telemetry_metrics(mission_id, offset=0)
+            if metric_name in all_telem:
+                candidates.append(all_telem[metric_name])
         return max(candidates) if candidates else None
 
     async def _save_best_metric(self, mission_id: str, value: Optional[float]) -> None:
@@ -488,7 +495,11 @@ class LoopStateMachine:
     # ── Sandbox polling ────────────────────────────────────────────────────────
 
     def _read_telemetry_metrics(self, mission_id: str, offset: int = 0) -> dict:
-        """Return {metric_name: value} for metric events written to telemetry.jsonl since offset."""
+        """Return {metric_name: peak_value} for metric events written to telemetry.jsonl since offset.
+
+        Uses the MAX value seen per metric key so that the state machine always
+        records the iteration's best performance, not just the last eval snapshot.
+        """
         import json as _json
         path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
         metrics: dict = {}
@@ -503,7 +514,9 @@ class LoopStateMachine:
                 try:
                     event = _json.loads(line)
                     if event.get("type") == "metric" and "name" in event and "value" in event:
-                        metrics[event["name"]] = event["value"]
+                        name, val = event["name"], event["value"]
+                        if name not in metrics or val > metrics[name]:
+                            metrics[name] = val
                 except Exception:
                     pass
         return metrics
