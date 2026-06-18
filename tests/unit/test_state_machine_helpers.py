@@ -158,3 +158,48 @@ def test_read_telemetry_missing_file(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     sm = object.__new__(LoopStateMachine)
     assert sm._read_telemetry_metrics("nonexistent-mission") == {}
+
+
+# ── _hp_changed (no-op pivot filter) ─────────────────────────────────────────
+
+def _make_noop_filter(plan_hps: dict):
+    """Return a closure that mimics the _hp_changed logic defined inside _step."""
+    def _hp_changed(k, proposed):
+        current = plan_hps.get(k)
+        if current is None:
+            return True
+        try:
+            return float(current) != float(proposed)
+        except (TypeError, ValueError):
+            return current != proposed
+    return _hp_changed
+
+
+def test_noop_filter_same_float_values():
+    f = _make_noop_filter({"learning_rate": 0.0005, "batch_size": 128})
+    assert not f("learning_rate", 0.0005)
+    assert not f("batch_size", 128)
+
+
+def test_noop_filter_string_vs_float():
+    """LLM often returns strings; should still compare equal to float in plan."""
+    f = _make_noop_filter({"learning_rate": 0.0005, "batch_size": 128})
+    assert not f("learning_rate", "0.0005")
+    assert not f("batch_size", "128")
+
+
+def test_noop_filter_detects_real_change():
+    f = _make_noop_filter({"learning_rate": 0.0005})
+    assert f("learning_rate", 0.001)
+    assert f("learning_rate", "0.001")
+
+
+def test_noop_filter_unknown_key_treated_as_change():
+    f = _make_noop_filter({"learning_rate": 0.0005})
+    assert f("n_steps", 2048)
+
+
+def test_noop_filter_non_numeric_equality():
+    f = _make_noop_filter({"mode": "fast"})
+    assert not f("mode", "fast")
+    assert f("mode", "slow")

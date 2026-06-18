@@ -295,10 +295,20 @@ class LoopStateMachine:
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
 
-                    # Filter out HP adjustments identical to current values
+                    # Filter out HP adjustments identical to current values.
+                    # Compare as float to handle LLM returning "0.0005" (str) vs 0.0005 (float).
+                    def _hp_changed(k: str, proposed) -> bool:
+                        current = plan["hyperparameters"].get(k)
+                        if current is None:
+                            return True
+                        try:
+                            return float(current) != float(proposed)
+                        except (TypeError, ValueError):
+                            return current != proposed
+
                     real_adjustments = {
                         k: v for k, v in adjustments.items()
-                        if plan["hyperparameters"].get(k) != v
+                        if _hp_changed(k, v)
                     }
                     algo_changed = bool(pivot.get("algorithm") and pivot["algorithm"] != current_algo)
                     arch_changed = bool(pivot.get("policy_kwargs"))
@@ -345,7 +355,7 @@ class LoopStateMachine:
                         if real_adjustments:
                             hp_strs = []
                             for k, v in real_adjustments.items():
-                                old_v = adjustments.get(k)
+                                old_v = plan["hyperparameters"].get(k)
                                 hp_strs.append(f"{k}: {old_v}→{v}" if old_v is not None else f"{k}={v}")
                             change_parts.append(", ".join(hp_strs))
                         if arch_changed:
