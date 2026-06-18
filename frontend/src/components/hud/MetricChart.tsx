@@ -25,33 +25,44 @@ export function MetricChart({ events, targetMetric }: Props) {
     (e) => (e.type === "metric" || e.type === "backfill") && e.name != null && e.value != null
   );
 
-  // Detect the last run boundary: step resets to a low value after a high one.
-  // Everything at or after the last reset is the "current" run.
-  let lastResetIdx = 0;
+  // Find all run-reset boundaries (step counter drops back to low value).
+  const resetIndices: number[] = [0];
   for (let i = 1; i < metricEvents.length; i++) {
     const prev = metricEvents[i - 1].step ?? 0;
     const curr = metricEvents[i].step ?? 0;
-    if (curr < prev) lastResetIdx = i;
+    if (curr < prev) resetIndices.push(i);
   }
+  const lastResetIdx = resetIndices[resetIndices.length - 1];
+
+  // Only keep the last 3 runs so the current run isn't a tiny sliver.
+  const MAX_RUNS = 3;
+  const startIdx = resetIndices.length > MAX_RUNS
+    ? resetIndices[resetIndices.length - MAX_RUNS]
+    : 0;
+  const visibleEvents = metricEvents.slice(startIdx);
+  const visibleResetOffset = resetIndices.length > MAX_RUNS
+    ? resetIndices.length - MAX_RUNS
+    : 0;
 
   // Assign a unique x key per run to avoid step-number collisions across runs.
-  // Historical runs get a large negative offset so they stay left on the axis.
   let runOffset = 0;
   const chartEvents: Array<{ x: number; name: string; value: number; isLive: boolean }> = [];
-  for (let i = 0; i < metricEvents.length; i++) {
-    const e = metricEvents[i];
+  for (let i = 0; i < visibleEvents.length; i++) {
+    const globalIdx = startIdx + i;
+    const e = visibleEvents[i];
     if (i > 0) {
-      const prev = metricEvents[i - 1].step ?? 0;
+      const prev = visibleEvents[i - 1].step ?? 0;
       const curr = e.step ?? 0;
-      if (curr < prev) runOffset += 500000; // step counter reset
+      if (curr < prev) runOffset += 500000;
     }
     chartEvents.push({
       x: (e.step ?? 0) + runOffset,
       name: e.name!,
       value: e.value as number,
-      isLive: i >= lastResetIdx,
+      isLive: globalIdx >= lastResetIdx,
     });
   }
+  void visibleResetOffset;
 
   const byX = chartEvents.reduce<Record<number, Record<string, unknown>>>(
     (acc, e) => {
