@@ -88,19 +88,18 @@ export function MetricGap({ mission }: Props) {
 
   const fmt = (v: number) =>
     isRaw ? v.toFixed(1) : `${(v * 100).toFixed(1)}%`;
-  const formatTarget = isRaw
-    ? targetValue.toFixed(0)
-    : `${(targetValue * 100).toFixed(0)}%`;
+  const formatTarget = isRaw ? targetValue.toFixed(0) : `${(targetValue * 100).toFixed(0)}%`;
   const formatGap = isRaw
     ? `−${gap.toFixed(1)} to close`
     : `−${(gap * 100).toFixed(2)}% to close`;
 
-  const isBestCurrent =
-    bestIter != null && bestIter === currentIter;
+  // Show current score only when it differs meaningfully from best
+  const showCurrent = current != null && Math.abs(current - best) > 0.05;
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
-      <div className="flex items-baseline justify-between mb-2">
+      {/* Header */}
+      <div className="flex items-baseline justify-between mb-3">
         <span className="text-xs text-[#94a3b8] tracking-widest uppercase">Metric Gap</span>
         <span className="text-[#94a3b8] text-[10px]">
           {metricName} · target {formatTarget}
@@ -108,50 +107,41 @@ export function MetricGap({ mission }: Props) {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="relative shrink-0">
-          <ArcGauge pct={pct} achieved={achieved} />
-          <div className="absolute inset-0 flex flex-col items-center justify-center pt-6">
-            <span
-              className="text-2xl font-semibold leading-none"
-              style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}
-            >
-              {fmt(best)}
-            </span>
-            <span className="text-[9px] text-[#64748b] mt-0.5">peak</span>
+        {/* Arc gauge + gap summary below it */}
+        <div className="shrink-0 flex flex-col items-center gap-1">
+          <div className="relative">
+            <ArcGauge pct={pct} achieved={achieved} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center pt-6">
+              <span
+                className="text-2xl font-semibold leading-none"
+                style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}
+              >
+                {fmt(best)}
+              </span>
+            </div>
+          </div>
+          {/* Gap summary — below the arc */}
+          <div className="text-center">
+            {achieved ? (
+              <div className="text-xs text-[#4ade80] font-medium">Target achieved</div>
+            ) : (
+              <div className="text-xs text-[#f87171]">{formatGap}</div>
+            )}
+            <div className="text-[10px] text-[#64748b]">{pct.toFixed(0)}% of target</div>
           </div>
         </div>
 
-        <div className="flex-1 min-w-0 space-y-1.5">
-          {/* Best score row */}
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[10px] text-[#4ade80] font-medium">best</span>
-            <span className="text-[11px] font-semibold" style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}>
-              {fmt(best)}
-            </span>
-            {bestIter != null && (
-              <span className="text-[10px] text-[#64748b]">@ iter {bestIter}</span>
-            )}
-          </div>
-
-          {/* Current iteration row */}
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[10px] text-[#94a3b8]">now</span>
-            {current != null && !isBestCurrent ? (
-              <span className="text-[11px] text-[#94a3b8]">{fmt(current)}</span>
-            ) : (
-              <span className="text-[10px] text-[#64748b]">—</span>
-            )}
-            <span className="text-[10px] text-[#64748b]">iter {currentIter}</span>
-          </div>
-
-          {/* Gap / achieved */}
-          {achieved ? (
-            <div className="text-xs text-[#4ade80] font-medium">Target achieved</div>
-          ) : (
-            <div className="text-xs text-[#f87171]">{formatGap}</div>
-          )}
+        <div className="flex-1 min-w-0 space-y-1">
+          {/* Best iter */}
           <div className="text-[10px] text-[#64748b]">
-            {pct.toFixed(0)}% of target
+            best at iter {bestIter ?? "—"}
+          </div>
+
+          {/* Current iter — only show score when it differs from best */}
+          <div className="text-[10px] text-[#94a3b8]">
+            {showCurrent
+              ? `iter ${currentIter}: ${fmt(current!)}`
+              : `current iter: ${currentIter}`}
           </div>
         </div>
       </div>
