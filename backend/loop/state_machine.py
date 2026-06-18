@@ -294,53 +294,79 @@ class LoopStateMachine:
                     adjustments = self._clamp_rl_adjustments(
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
-                    plan["hyperparameters"].update(adjustments)
-                    if pivot.get("policy_kwargs"):
-                        plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
-                    if pivot.get("algorithm") and pivot["algorithm"] != current_algo:
-                        logger.info(
-                            "LoopStateMachine: algorithm switch %s → %s",
-                            current_algo, pivot["algorithm"],
-                        )
-                        plan["algorithm"] = pivot["algorithm"]
-                        # Reset hyperparameters to sensible defaults for new algorithm
-                        plan["hyperparameters"] = pivot.get("adjustments", {})
-                    if pivot.get("env_kwargs"):
-                        plan["env_kwargs"] = pivot["env_kwargs"]
-                        logger.info(
-                            "LoopStateMachine: reward reshape applied: %s",
-                            pivot["env_kwargs"],
-                        )
-                    pivot_reason = pivot.get("reason", "plateau detected")
-                    # Build a compact changes summary for the event stream
-                    change_parts = []
-                    if pivot.get("algorithm") and pivot["algorithm"] != current_algo:
-                        change_parts.append(f"algo: {current_algo}→{pivot['algorithm']}")
-                    if adjustments:
-                        hp_strs = []
-                        for k, v in adjustments.items():
-                            old_v = plan["hyperparameters"].get(k)
-                            hp_strs.append(f"{k}: {old_v}→{v}" if old_v is not None else f"{k}={v}")
-                        change_parts.append(", ".join(hp_strs))
-                    if pivot.get("policy_kwargs"):
-                        arch = pivot["policy_kwargs"].get("net_arch")
-                        if arch:
-                            change_parts.append(f"net_arch: {arch}")
-                    if pivot.get("env_kwargs"):
-                        env_strs = [f"{k}={v}" for k, v in pivot["env_kwargs"].items()]
-                        change_parts.append(f"env_kwargs: {{{', '.join(env_strs)}}}")
-                    changes_summary = " | ".join(change_parts) if change_parts else "hyperparameter adjustment"
-                    pivot_value = f"{pivot_reason} | changes: {changes_summary}"
-                    logger.info(
-                        "LoopStateMachine: pivot applied (escalation=%d): %s | algo=%s | adjustments: %s | policy_kwargs: %s",
-                        escalation, pivot_reason, plan.get("algorithm"), adjustments, pivot.get("policy_kwargs"),
+
+                    # Filter out HP adjustments identical to current values
+                    real_adjustments = {
+                        k: v for k, v in adjustments.items()
+                        if plan["hyperparameters"].get(k) != v
+                    }
+                    algo_changed = bool(pivot.get("algorithm") and pivot["algorithm"] != current_algo)
+                    arch_changed = bool(pivot.get("policy_kwargs"))
+                    env_kwargs_changed = bool(
+                        pivot.get("env_kwargs") and pivot["env_kwargs"] != plan.get("env_kwargs", {})
                     )
-                    await emit_status(
-                        mission_id, "Pivot triggered",
-                        event_type="pivot",
-                        value=pivot_value,
-                        iteration=current_iteration,
-                    )
+
+                    # No-op pivot: nothing actually changed — force escalation and skip
+                    if not real_adjustments and not algo_changed and not arch_changed and not env_kwargs_changed:
+                        logger.warning(
+                            "LoopStateMachine: no-op pivot detected (all proposed values identical to current) — "
+                            "escalating pivot count without applying; escalation=%d", escalation,
+                        )
+                        pivot_engine.record_pivot()  # double-count to escalate faster
+                        await emit_status(
+                            mission_id, "Pivot skipped — no changes proposed",
+                            event_type="warn",
+                            value=f"escalation now {pivot_engine.escalation_level()}",
+                            iteration=current_iteration,
+                        )
+                        pivot_reason = None  # don't regenerate code
+                    else:
+                        plan["hyperparameters"].update(real_adjustments)
+                        if arch_changed:
+                            plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
+                        if algo_changed:
+                            logger.info(
+                                "LoopStateMachine: algorithm switch %s → %s",
+                                current_algo, pivot["algorithm"],
+                            )
+                            plan["algorithm"] = pivot["algorithm"]
+                            plan["hyperparameters"] = pivot.get("adjustments", {})
+                        if env_kwargs_changed:
+                            plan["env_kwargs"] = pivot["env_kwargs"]
+                            logger.info(
+                                "LoopStateMachine: reward reshape applied: %s",
+                                pivot["env_kwargs"],
+                            )
+                        pivot_reason = pivot.get("reason", "plateau detected")
+                        # Build a compact changes summary for the event stream
+                        change_parts = []
+                        if algo_changed:
+                            change_parts.append(f"algo: {current_algo}→{pivot['algorithm']}")
+                        if real_adjustments:
+                            hp_strs = []
+                            for k, v in real_adjustments.items():
+                                old_v = adjustments.get(k)
+                                hp_strs.append(f"{k}: {old_v}→{v}" if old_v is not None else f"{k}={v}")
+                            change_parts.append(", ".join(hp_strs))
+                        if arch_changed:
+                            arch = pivot["policy_kwargs"].get("net_arch")
+                            if arch:
+                                change_parts.append(f"net_arch: {arch}")
+                        if env_kwargs_changed:
+                            env_strs = [f"{k}={v}" for k, v in pivot["env_kwargs"].items()]
+                            change_parts.append(f"env_kwargs: {{{', '.join(env_strs)}}}")
+                        changes_summary = " | ".join(change_parts) if change_parts else "hyperparameter adjustment"
+                        pivot_value = f"{pivot_reason} | changes: {changes_summary}"
+                        logger.info(
+                            "LoopStateMachine: pivot applied (escalation=%d): %s | algo=%s | adjustments: %s | policy_kwargs: %s",
+                            escalation, pivot_reason, plan.get("algorithm"), real_adjustments, pivot.get("policy_kwargs"),
+                        )
+                        await emit_status(
+                            mission_id, "Pivot triggered",
+                            event_type="pivot",
+                            value=pivot_value,
+                            iteration=current_iteration,
+                        )
 
                 # ── SESSION SUMMARY (Step 7.3) ────────────────────────────
                 session_summary.write_session_summary(
