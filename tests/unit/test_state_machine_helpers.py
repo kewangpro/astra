@@ -203,3 +203,40 @@ def test_noop_filter_non_numeric_equality():
     f = _make_noop_filter({"mode": "fast"})
     assert not f("mode", "fast")
     assert f("mode", "slow")
+
+
+# ── old_hps snapshot (display shows old→new, not new→new) ────────────────────
+
+def test_display_uses_pre_update_value():
+    """Verify that snapshotting before update produces old→new, not new→new."""
+    plan_hps = {"learning_rate": 0.001, "batch_size": 64}
+    real_adjustments = {"learning_rate": 0.0005, "batch_size": 128}
+
+    old_hps = {k: plan_hps.get(k) for k in real_adjustments}
+    plan_hps.update(real_adjustments)  # mutate, as state_machine does
+
+    hp_strs = []
+    for k, v in real_adjustments.items():
+        old_v = old_hps.get(k)
+        hp_strs.append(f"{k}: {old_v}→{v}" if old_v is not None else f"{k}={v}")
+
+    assert "learning_rate: 0.001→0.0005" in hp_strs
+    assert "batch_size: 64→128" in hp_strs
+
+
+def test_display_does_not_show_noop_arrow():
+    """A key that passes through unchanged (filtered by _hp_changed) never appears."""
+    plan_hps = {"learning_rate": 0.0005, "batch_size": 128}
+    adjustments = {"learning_rate": 0.0005, "batch_size": 128}
+
+    def _hp_changed(k, proposed):
+        current = plan_hps.get(k)
+        if current is None:
+            return True
+        try:
+            return float(current) != float(proposed)
+        except (TypeError, ValueError):
+            return current != proposed
+
+    real_adjustments = {k: v for k, v in adjustments.items() if _hp_changed(k, v)}
+    assert real_adjustments == {}, "identical HPs must be filtered out"

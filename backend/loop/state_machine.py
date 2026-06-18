@@ -331,6 +331,8 @@ class LoopStateMachine:
                         )
                         pivot_reason = None  # don't regenerate code
                     else:
+                        # Snapshot before mutating so display shows old→new correctly
+                        old_hps = {k: plan["hyperparameters"].get(k) for k in real_adjustments}
                         plan["hyperparameters"].update(real_adjustments)
                         if arch_changed:
                             plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
@@ -355,7 +357,7 @@ class LoopStateMachine:
                         if real_adjustments:
                             hp_strs = []
                             for k, v in real_adjustments.items():
-                                old_v = plan["hyperparameters"].get(k)
+                                old_v = old_hps.get(k)
                                 hp_strs.append(f"{k}: {old_v}→{v}" if old_v is not None else f"{k}={v}")
                             change_parts.append(", ".join(hp_strs))
                         if arch_changed:
