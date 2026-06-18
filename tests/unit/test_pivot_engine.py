@@ -62,6 +62,34 @@ def test_best_metric_value_tracked():
     assert e.best_metric_value() == 50.0
 
 
+def test_best_metric_iteration_returns_correct_iter():
+    e = _engine()
+    e.record(0, {"mean_reward": 10.0})
+    e.record(3, {"mean_reward": 50.0})
+    e.record(5, {"mean_reward": 30.0})
+    assert e.best_metric_iteration() == 3
+
+
+def test_best_metric_iteration_seed_entry_returns_none():
+    e = _engine()
+    # Seed entry uses iteration=-1; best_metric_iteration should hide that
+    e.record(-1, {"mean_reward": 52.0})
+    assert e.best_metric_iteration() is None
+
+
+def test_best_metric_iteration_seed_beaten_by_real_iter():
+    e = _engine()
+    e.record(-1, {"mean_reward": 52.0})
+    e.record(7, {"mean_reward": 60.0})
+    assert e.best_metric_iteration() == 7
+    assert e.best_metric_value() == 60.0
+
+
+def test_best_metric_iteration_empty():
+    e = _engine()
+    assert e.best_metric_iteration() is None
+
+
 def test_history_snapshot_is_copy():
     e = _engine()
     e.record(0, {"mean_reward": 5.0})

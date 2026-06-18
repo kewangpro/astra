@@ -69,30 +69,34 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
 
 export function MetricGap({ mission }: Props) {
   const tm = mission.target_metric;
-  // target_metric is {"mean_reward": 475} or {"accuracy": 0.92} — take first entry
   const [metricName, targetValue] = tm && Object.keys(tm).length > 0
     ? [Object.keys(tm)[0], Object.values(tm)[0] as number]
     : ["metric", 0.92];
 
-  // RL missions have raw reward targets (>1); ML missions use 0–1 fractions
   const isRaw = targetValue > 1;
 
-  const current = parseFloat(mission.best_metric_value ?? "0");
-  const pct = targetValue > 0 ? Math.min(100, (current / targetValue) * 100) : 0;
-  const gap = Math.max(0, targetValue - current);
+  const best = parseFloat(mission.best_metric_value ?? "0");
+  const bestIter = mission.best_metric_iteration ?? null;
+  const current = mission.current_metric_value != null
+    ? parseFloat(mission.current_metric_value)
+    : null;
+  const currentIter = mission.current_iteration;
+
+  const pct = targetValue > 0 ? Math.min(100, (best / targetValue) * 100) : 0;
+  const gap = Math.max(0, targetValue - best);
   const achieved = gap <= 0;
 
-  // Display helpers
-  const formatCurrent = isRaw
-    ? current.toFixed(1)
-    : (current * 100).toFixed(1);
+  const fmt = (v: number) =>
+    isRaw ? v.toFixed(1) : `${(v * 100).toFixed(1)}%`;
   const formatTarget = isRaw
     ? targetValue.toFixed(0)
     : `${(targetValue * 100).toFixed(0)}%`;
   const formatGap = isRaw
     ? `−${gap.toFixed(1)} to close`
     : `−${(gap * 100).toFixed(2)}% to close`;
-  const unit = isRaw ? "" : "%";
+
+  const isBestCurrent =
+    bestIter != null && bestIter === currentIter;
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
@@ -111,22 +115,42 @@ export function MetricGap({ mission }: Props) {
               className="text-2xl font-semibold leading-none"
               style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}
             >
-              {formatCurrent}
+              {fmt(best)}
             </span>
-            {unit && (
-              <span className="text-[10px] text-[#94a3b8] mt-0.5">{unit}</span>
-            )}
+            <span className="text-[9px] text-[#64748b] mt-0.5">peak</span>
           </div>
         </div>
 
-        <div className="flex-1 min-w-0">
-          <div className="text-xs text-[#94a3b8] mb-1">iter {mission.current_iteration}</div>
+        <div className="flex-1 min-w-0 space-y-1.5">
+          {/* Best score row */}
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] text-[#4ade80] font-medium">best</span>
+            <span className="text-[11px] font-semibold" style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}>
+              {fmt(best)}
+            </span>
+            {bestIter != null && (
+              <span className="text-[10px] text-[#64748b]">@ iter {bestIter}</span>
+            )}
+          </div>
+
+          {/* Current iteration row */}
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] text-[#94a3b8]">now</span>
+            {current != null && !isBestCurrent ? (
+              <span className="text-[11px] text-[#94a3b8]">{fmt(current)}</span>
+            ) : (
+              <span className="text-[10px] text-[#64748b]">—</span>
+            )}
+            <span className="text-[10px] text-[#64748b]">iter {currentIter}</span>
+          </div>
+
+          {/* Gap / achieved */}
           {achieved ? (
             <div className="text-xs text-[#4ade80] font-medium">Target achieved</div>
           ) : (
             <div className="text-xs text-[#f87171]">{formatGap}</div>
           )}
-          <div className="mt-2 text-[10px] text-[#64748b]">
+          <div className="text-[10px] text-[#64748b]">
             {pct.toFixed(0)}% of target
           </div>
         </div>

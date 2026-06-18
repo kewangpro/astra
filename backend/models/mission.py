@@ -30,6 +30,8 @@ class Mission(Base):
     status: Mapped[str] = mapped_column(String(50), default=MissionStatus.PENDING, index=True)
     current_iteration: Mapped[int] = mapped_column(Integer, default=0)
     best_metric_value: Mapped[Optional[str]] = mapped_column(String(100))
+    best_metric_iteration: Mapped[Optional[int]] = mapped_column(Integer)
+    current_metric_value: Mapped[Optional[str]] = mapped_column(String(100))
     current_plan: Mapped[Optional[dict]] = mapped_column(JSON)
     container_id: Mapped[Optional[str]] = mapped_column(String(255))
     subprocess_pid: Mapped[Optional[int]] = mapped_column(Integer)

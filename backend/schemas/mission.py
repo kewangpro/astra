@@ -33,6 +33,8 @@ class MissionRead(BaseModel):
     status: str
     current_iteration: int
     best_metric_value: Optional[str]
+    best_metric_iteration: Optional[int]
+    current_metric_value: Optional[str]
     last_checkpoint_path: Optional[str]
     error_log: Optional[str]
     created_at: datetime

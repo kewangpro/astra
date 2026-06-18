@@ -7,6 +7,8 @@ export interface Mission {
   status: string;
   current_iteration: number;
   best_metric_value: string | null;
+  best_metric_iteration: number | null;
+  current_metric_value: string | null;
   target_metric: Record<string, number> | null;
   created_at: string;
   updated_at: string;

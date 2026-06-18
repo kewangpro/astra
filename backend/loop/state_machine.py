@@ -240,7 +240,14 @@ class LoopStateMachine:
                 sandbox_metrics = self._read_telemetry_metrics(mission_id, tel_offset)
                 current_metrics = {**current_metrics, **sandbox_metrics}
                 pivot_engine.record(current_iteration, current_metrics)
-                await self._save_best_metric(mission_id, pivot_engine.best_metric_value())
+                metric_name = next(iter(mission.target_metric), None)
+                current_val = current_metrics.get(metric_name) if metric_name else None
+                await self._save_best_metric(
+                    mission_id,
+                    pivot_engine.best_metric_value(),
+                    best_iteration=pivot_engine.best_metric_iteration(),
+                )
+                await self._save_current_metric(mission_id, current_val)
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
                 manifest = self._manifest_evaluator.evaluate(
@@ -432,7 +439,24 @@ class LoopStateMachine:
                 candidates.append(all_telem[metric_name])
         return max(candidates) if candidates else None
 
-    async def _save_best_metric(self, mission_id: str, value: Optional[float]) -> None:
+    async def _save_best_metric(
+        self,
+        mission_id: str,
+        value: Optional[float],
+        best_iteration: Optional[int] = None,
+    ) -> None:
+        if value is None:
+            return
+        updates: dict = {"best_metric_value": str(value)}
+        if best_iteration is not None:
+            updates["best_metric_iteration"] = best_iteration
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(Mission).where(Mission.id == mission_id).values(**updates)
+                )
+
+    async def _save_current_metric(self, mission_id: str, value: Optional[float]) -> None:
         if value is None:
             return
         async with AsyncSessionLocal() as session:
@@ -440,7 +464,7 @@ class LoopStateMachine:
                 await session.execute(
                     update(Mission)
                     .where(Mission.id == mission_id)
-                    .values(best_metric_value=str(value))
+                    .values(current_metric_value=str(value))
                 )
 
     @staticmethod

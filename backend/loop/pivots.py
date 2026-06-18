@@ -100,12 +100,27 @@ class PivotEngine:
         return stalled
 
     def best_metric_value(self) -> Optional[float]:
-        values = [
-            self._resolve_metric(self._metric_name, h)
-            for h in self._history
-            if self._resolve_metric(self._metric_name, h) is not None
-        ]
-        return max(values) if values else None
+        best_entry = self._best_entry()
+        return best_entry[1] if best_entry else None
+
+    def best_metric_iteration(self) -> Optional[int]:
+        """Return the iteration index at which the best metric was recorded."""
+        best_entry = self._best_entry()
+        if best_entry is None:
+            return None
+        iteration = best_entry[0]
+        return None if iteration == -1 else iteration  # -1 is the seed entry
+
+    def _best_entry(self) -> Optional[tuple]:
+        """Return (iteration, value) for the history entry with the highest metric."""
+        best_val: Optional[float] = None
+        best_iter: Optional[int] = None
+        for h in self._history:
+            v = self._resolve_metric(self._metric_name, h)
+            if v is not None and (best_val is None or v > best_val):
+                best_val = v
+                best_iter = h.get("iteration")
+        return (best_iter, best_val) if best_val is not None else None
 
     def history_snapshot(self) -> list[dict]:
         return list(self._history)
