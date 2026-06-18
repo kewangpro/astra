@@ -305,6 +305,25 @@ class LoopStateMachine:
                             pivot["env_kwargs"],
                         )
                     pivot_reason = pivot.get("reason", "plateau detected")
+                    # Build a compact changes summary for the event stream
+                    change_parts = []
+                    if pivot.get("algorithm") and pivot["algorithm"] != current_algo:
+                        change_parts.append(f"algo: {current_algo}→{pivot['algorithm']}")
+                    if adjustments:
+                        hp_strs = []
+                        for k, v in adjustments.items():
+                            old_v = plan["hyperparameters"].get(k)
+                            hp_strs.append(f"{k}: {old_v}→{v}" if old_v is not None else f"{k}={v}")
+                        change_parts.append(", ".join(hp_strs))
+                    if pivot.get("policy_kwargs"):
+                        arch = pivot["policy_kwargs"].get("net_arch")
+                        if arch:
+                            change_parts.append(f"net_arch: {arch}")
+                    if pivot.get("env_kwargs"):
+                        env_strs = [f"{k}={v}" for k, v in pivot["env_kwargs"].items()]
+                        change_parts.append(f"env_kwargs: {{{', '.join(env_strs)}}}")
+                    changes_summary = " | ".join(change_parts) if change_parts else "hyperparameter adjustment"
+                    pivot_value = f"{pivot_reason} | changes: {changes_summary}"
                     logger.info(
                         "LoopStateMachine: pivot applied (escalation=%d): %s | algo=%s | adjustments: %s | policy_kwargs: %s",
                         escalation, pivot_reason, plan.get("algorithm"), adjustments, pivot.get("policy_kwargs"),
@@ -312,7 +331,7 @@ class LoopStateMachine:
                     await emit_status(
                         mission_id, "Pivot triggered",
                         event_type="pivot",
-                        value=pivot_reason,
+                        value=pivot_value,
                         iteration=current_iteration,
                     )
 
