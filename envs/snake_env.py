@@ -6,11 +6,11 @@ Observation: flattened (grid_h * grid_w,) float32 array
 
 Action space: Discrete(4) — 0=UP, 1=RIGHT, 2=DOWN, 3=LEFT
 
-Reward:
-  +10  eating food
-  -10  dying (wall or self collision)
-  +0.1 every step alive (survival bonus, encourages longer episodes)
-  +1   each step closer to food, -1 each step farther (distance shaping)
+Reward (all components configurable via constructor kwargs):
+  +food_reward   eating food            (default +10)
+  +death_penalty dying                  (default -10, passed as negative)
+  +survival_bonus every step alive      (default +0.1)
+  +/-distance_weight step toward/away food (default 1.0; set 0 to disable shaping)
 
 Episode terminates on wall/self collision or after max_steps.
 Solved threshold: mean_reward >= 50 (roughly food_items = 5 per episode).
@@ -34,12 +34,20 @@ class SnakeEnv(gym.Env):
         grid_w: int = 16,
         max_steps: int = 500,
         render_mode: Optional[str] = None,
+        food_reward: float = 10.0,
+        death_penalty: float = -10.0,
+        survival_bonus: float = 0.1,
+        distance_weight: float = 1.0,
     ):
         super().__init__()
         self.grid_h = grid_h
         self.grid_w = grid_w
         self.max_steps = max_steps
         self.render_mode = render_mode
+        self.food_reward = food_reward
+        self.death_penalty = death_penalty
+        self.survival_bonus = survival_bonus
+        self.distance_weight = distance_weight
 
         self.action_space = spaces.Discrete(4)  # UP RIGHT DOWN LEFT
         self.observation_space = spaces.Box(
@@ -83,23 +91,24 @@ class SnakeEnv(gym.Env):
             or new_head in self._snake
         )
         if dead:
-            return self._obs(), -10.0, True, False, {}
+            return self._obs(), self.death_penalty, True, False, {}
 
         self._snake.append(new_head)
         self._steps += 1
 
-        reward = 0.1  # survival
+        reward = self.survival_bonus
 
         if new_head == self._food:
-            reward += 10.0
+            reward += self.food_reward
             self._place_food()
         else:
             self._snake.popleft()
 
-        # Distance shaping
-        dist = self._dist_to_food()
-        reward += 1.0 if dist < self._prev_dist else -1.0
-        self._prev_dist = dist
+        # Distance shaping (disabled when distance_weight == 0)
+        if self.distance_weight != 0.0:
+            dist = self._dist_to_food()
+            reward += self.distance_weight if dist < self._prev_dist else -self.distance_weight
+            self._prev_dist = dist
 
         truncated = self._steps >= self.max_steps
         return self._obs(), reward, False, truncated, {}

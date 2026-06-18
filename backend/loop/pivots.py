@@ -14,6 +14,11 @@ logger = get_logger(__name__)
 PLATEAU_WINDOW = 3          # iterations with no improvement → plateau
 PLATEAU_THRESHOLD = 0.01    # minimum relative improvement to count as progress
 
+# Escalation: how many consecutive failed pivots before stepping up aggressiveness
+ESCALATION_ARCH   = 2  # pivot count → suggest architecture change
+ESCALATION_ALGO   = 4  # pivot count → allow algorithm switch
+ESCALATION_REWARD = 6  # pivot count → allow reward shaping changes
+
 
 class PivotEngine:
     """
@@ -25,9 +30,36 @@ class PivotEngine:
         self._metric_name = next(iter(target_metric), "")
         self._target_value = target_metric.get(self._metric_name, 0)
         self._history: list[dict] = []   # [{iteration, metric_name, value}]
+        self._pivot_count: int = 0       # consecutive pivots without breakthrough
+        self._best_at_last_pivot: Optional[float] = None
 
     def record(self, iteration: int, metrics: dict) -> None:
         self._history.append({"iteration": iteration, **metrics})
+
+    def record_pivot(self) -> None:
+        """Call each time a pivot is applied to track escalation."""
+        current_best = self.best_metric_value()
+        if (
+            self._best_at_last_pivot is not None
+            and current_best is not None
+            and self._best_at_last_pivot > 0
+            and (current_best - self._best_at_last_pivot) / self._best_at_last_pivot
+               < PLATEAU_THRESHOLD
+        ):
+            self._pivot_count += 1
+        else:
+            self._pivot_count = 0
+        self._best_at_last_pivot = current_best
+
+    def escalation_level(self) -> int:
+        """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards."""
+        if self._pivot_count >= ESCALATION_REWARD:
+            return 3
+        if self._pivot_count >= ESCALATION_ALGO:
+            return 2
+        if self._pivot_count >= ESCALATION_ARCH:
+            return 1
+        return 0
 
     def is_goal_met(self, metrics: dict) -> bool:
         if not self._metric_name:

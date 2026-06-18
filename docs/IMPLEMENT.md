@@ -305,3 +305,37 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/main.py`: `play` router registered.
     - `frontend/src/components/hud/SnakePlayer.tsx`: canvas component (320×320px, 16×16 grid at 20px/cell). Head = teal, body = dark teal, food = red circle. Connects to the play WebSocket on button press; shows live episode number, current reward, and best episode reward. Cleans up on unmount.
     - `frontend/src/app/missions/[id]/page.tsx`: `SnakePlayer` rendered below the metric chart when `mission.goal` contains `"Snake-v0"`.
+
+- [x] **Classifier localhost short-circuit (Step 9.17)**
+    - **Problem**: the LLM safety classifier kept marking standard training scripts as unsafe because they call `requests.post("http://127.0.0.1:8200/...")` for telemetry — a false positive the prompt clarifications didn't reliably fix.
+    - `backend/agent/code_safety_classifier.py`: `_static_check` now includes a positive short-circuit: after all danger patterns pass, if every `requests` call in the script targets `127.0.0.1` or `localhost`, return `safe=True` immediately without invoking the LLM. Mixed scripts (any external URL) still go to the LLM.
+    - `tests/unit/test_code_safety_classifier.py`: 12 new tests covering safe/unsafe static-check paths including the localhost short-circuit and the mixed-host edge case.
+
+- [x] **MetricChart limited to last 3 runs (Step 9.18)**
+    - **Problem**: missions with 50+ iterations accumulated 14k+ datapoints across a huge x-axis range (~25M steps), making the current training run a tiny sliver on the far right of the chart.
+    - `frontend/src/components/hud/MetricChart.tsx`: chart now shows only the last 3 iteration runs (current + 2 prior). Run-reset boundaries are detected from step counter drops; the display slice is computed from the last `MAX_RUNS` reset indices. Missions with fewer than 3 runs are unaffected.
+
+- [x] **Escalating pivot strategy (Step 9.19)**
+    - **Problem**: the pivot system always proposed minor hyperparameter tweaks regardless of how many consecutive pivots had failed. The `_PIVOT_SYSTEM` prompt said "the algorithm is fixed", preventing algorithm switches even when the current algorithm (e.g. DQN) was clearly not working.
+    - `backend/loop/pivots.py`: `PivotEngine` now tracks `_pivot_count` (consecutive pivots that didn't improve the best metric). `record_pivot()` increments/resets this counter. `escalation_level()` returns 0 (tune HPs), 1 (change architecture), or 2 (allow algorithm switch) based on thresholds `ESCALATION_ARCH=2` and `ESCALATION_ALGO=4`.
+    - `backend/agent/lead_agent.py`: `_PIVOT_SYSTEM` rewritten — removed "algorithm is fixed", added 3-level escalation instructions with HP ranges for both PPO and DQN. `propose_pivot()` accepts `escalation_level` and `current_algorithm` and includes them verbatim in the user message so the LLM knows exactly what latitude it has.
+    - `_PIVOT_SCHEMA`: added optional `"algorithm"` field so the LLM can propose a switch.
+    - `backend/loop/state_machine.py`: passes `escalation_level` and `current_algorithm` to `propose_pivot`; calls `pivot_engine.record_pivot()` after each pivot; if the response includes a new `algorithm`, updates `plan["algorithm"]` and resets hyperparameters to the pivot's suggested values.
+    - `tests/integration/test_loop_state_machine.py`: `_track_pivot` mock updated to accept new kwargs.
+
+- [x] **Reward shaping as escalation level 3 (Step 9.20)**
+    - **Problem**: purely structural pivots (HP tune → arch change → algo switch) are insufficient when the reward function itself is pathological. Distance shaping (±1/step toward food) causes greedy behaviour in Snake that leads to body collisions and a hard ceiling around 50–100.
+    - `envs/snake_env.py`: added four configurable constructor params: `food_reward` (default 10.0), `death_penalty` (−10.0), `survival_bonus` (0.1), `distance_weight` (1.0). `step()` uses these instead of hardcoded constants.
+    - `backend/loop/pivots.py`: added `ESCALATION_REWARD=6` threshold; `escalation_level()` returns 3 when `_pivot_count >= 6`.
+    - `backend/agent/lead_agent.py`: level-3 description in `propose_pivot()` instructs the LLM to set `env_kwargs` (e.g. `distance_weight=0, food_reward=20.0`). `_PIVOT_SCHEMA` includes optional `"env_kwargs"` field.
+    - `backend/loop/state_machine.py`: if pivot response includes `env_kwargs`, updates `plan["env_kwargs"]` so subsequent code generation passes them to `gym.make()`.
+    - `backend/agent/code_generator.py`: `_build_user_prompt` injects `env_kwargs` into the `gym.make()` call in the RL template.
+    - `tests/unit/test_snake_env.py`: 3 new tests for custom reward params.
+    - `tests/unit/test_code_generator.py`: 2 new tests for env_kwargs injection.
+
+- [x] **Play endpoint robustness — algorithm and reward config (Step 9.21)**
+    - **Problem**: `backend/routers/play.py` hardcoded `PPO.load()` and `gym.make(env_id)` with no env_kwargs. If the pivot engine switches to DQN, the viewer crashes. If reward shaping is active, the displayed episode reward uses wrong defaults.
+    - `backend/agent/code_generator.py`: after writing `train.py`, writes `checkpoints/train_config.json` with `{"algorithm": ..., "env_id": ..., "env_kwargs": {...}}`. This is deterministic (not LLM-generated) so it's always accurate.
+    - `backend/routers/play.py`: reads `train_config.json` at WebSocket open time. Uses `_get_algo_class(algorithm)` to dispatch to the correct SB3 class (PPO/DQN/SAC/A2C via `importlib`). Passes `env_kwargs` to `gym.make()`. Falls back to PPO + empty kwargs if config file is absent (backward compat with existing missions).
+    - `tests/unit/test_play_router.py`: 9 new tests covering config loading defaults/values, algorithm dispatch (PPO/DQN/A2C), unknown-algo fallback, and case-insensitive lookup.
+    - `tests/unit/test_code_generator.py`: 2 new tests verifying `train_config.json` is written with correct content including env_kwargs and algorithm name.

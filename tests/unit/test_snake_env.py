@@ -113,3 +113,39 @@ def test_food_value_in_obs(env):
     fr, fc = env._food
     idx = fr * env.grid_w + fc
     assert obs[idx] == -1.0
+
+
+def test_custom_food_reward():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(food_reward=20.0, survival_bonus=0.0, distance_weight=0.0)
+    env.reset(seed=0)
+    # Force snake to eat food by placing food at the next step position
+    env._food = (env._snake[-1][0], env._snake[-1][1] + 1)
+    env._direction = 1  # RIGHT
+    _, reward, _, _, _ = env.step(1)
+    assert reward == 20.0
+
+
+def test_custom_death_penalty():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(death_penalty=-5.0, survival_bonus=0.0, distance_weight=0.0)
+    env.reset(seed=0)
+    # Move into wall
+    env._snake = __import__("collections").deque([(0, 0)])
+    env._direction = 0  # UP — will hit top wall
+    _, reward, done, _, _ = env.step(0)
+    assert done
+    assert reward == -5.0
+
+
+def test_distance_weight_zero_disables_shaping():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(survival_bonus=0.1, distance_weight=0.0, food_reward=10.0)
+    env.reset(seed=42)
+    # Place food far away so distance changes
+    env._food = (0, 0)
+    env._direction = 1  # RIGHT
+    _, reward, done, truncated, _ = env.step(1)
+    if not done and not truncated:
+        # Only survival bonus — no distance component
+        assert reward == 0.1

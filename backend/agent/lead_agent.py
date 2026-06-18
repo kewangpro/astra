@@ -42,29 +42,35 @@ Do NOT include env_id, dataset_path, entropy_coeff, actor_lr, or any non-SB3 key
 
 _PIVOT_SYSTEM = """\
 You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaued.
-Given the current metrics and training history, propose a strategic pivot.
-The algorithm is fixed — only tune hyperparameters and/or the policy network architecture.
-Respond with valid JSON with two optional fields: "adjustments" (hyperparameters) and "policy_kwargs" (network architecture).
+Given the current metrics, training history, and escalation level, propose a strategic pivot.
+Respond with valid JSON.
 
-For RL (PPO) hyperparameter adjustments, stay within these ranges:
-- learning_rate: 1e-5 to 1e-2
-- n_steps: 1024 to 4096 (must be >= batch_size)
-- batch_size: 64 to 512 (must be <= n_steps)
-- n_epochs: 3 to 20
-- gamma: 0.90 to 0.999
-- gae_lambda: 0.80 to 0.99
-- clip_range: 0.1 to 0.4
-- ent_coef: 0.0 to 0.1
-- vf_coef: 0.1 to 1.0
-- max_grad_norm: 0.3 to 1.0
-Do NOT set n_epochs > 20 or n_steps < 512 — these destabilize training.
+Escalation levels — follow the level provided in the user message:
+  Level 0 (first plateau): tune hyperparameters only. Small changes — adjust learning_rate,
+    batch_size, gamma, ent_coef, etc. Keep the same algorithm and architecture.
+  Level 1 (repeated plateau): change the policy network architecture in addition to HPs.
+    Use "policy_kwargs" with a larger "net_arch": [256, 256], [400, 300], or [256, 256, 128].
+  Level 2 (stuck for many pivots): switch to a fundamentally different algorithm if the
+    current one is not working. Set "algorithm" to "PPO", "SAC", "A2C", or "DQN".
+    For Snake-v0, PPO with [256, 256] net_arch is strongly recommended over DQN.
+    Also update hyperparameters to suit the new algorithm.
+  Level 3 (deeply stuck): reshape the reward function via "env_kwargs". For Snake-v0:
+    - Disable distance shaping (set distance_weight=0) to prevent greedy body collision
+    - Increase food_reward (e.g. 20.0) to make food-seeking the dominant signal
+    - Adjust survival_bonus (e.g. 0.05) and death_penalty (e.g. -5.0)
+    env_kwargs example: {"food_reward": 20.0, "death_penalty": -5.0, "distance_weight": 0.0, "survival_bonus": 0.05}
 
-For policy network architecture changes, use "policy_kwargs" with a "net_arch" list:
-- Default (often too small): [64, 64]
-- Recommended for complex envs: [256, 256] or [400, 300]
-- Deep option: [256, 256, 128]
-Example: {"policy_kwargs": {"net_arch": [256, 256]}}
-Consider a wider network when the agent is stuck well below target despite many iterations."""
+PPO hyperparameter ranges:
+  learning_rate: 1e-5 to 1e-2 | n_steps: 1024–4096 | batch_size: 64–512
+  n_epochs: 3–20 | gamma: 0.90–0.999 | gae_lambda: 0.80–0.99
+  clip_range: 0.1–0.4 | ent_coef: 0.0–0.1 | vf_coef: 0.1–1.0 | max_grad_norm: 0.3–1.0
+
+DQN hyperparameter ranges:
+  learning_rate: 1e-5 to 1e-3 | batch_size: 32–256 | gamma: 0.90–0.999
+  exploration_fraction: 0.1–0.5 | exploration_final_eps: 0.01–0.1
+  target_update_interval: 500–10000 | learning_starts: 1000–50000
+
+Do NOT set n_epochs > 20 or n_steps < 512 for PPO — these destabilize training."""
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -95,6 +101,8 @@ _PIVOT_SCHEMA = {
                 "reason": {"type": "string"},
                 "adjustments": {"type": "object"},
                 "policy_kwargs": {"type": "object"},
+                "algorithm": {"type": "string"},
+                "env_kwargs": {"type": "object"},
                 "reasoning": {"type": "string"},
             },
             "required": ["reason", "adjustments"],
@@ -137,15 +145,33 @@ class LeadAgent:
 
     # ── Pivot ─────────────────────────────────────────────────────────────────
 
-    async def propose_pivot(self, current_metrics: dict, history: list[dict]) -> dict:
+    async def propose_pivot(
+        self,
+        current_metrics: dict,
+        history: list[dict],
+        escalation_level: int = 0,
+        current_algorithm: str = "PPO",
+    ) -> dict:
         """
-        Analyze a stalled run and propose hyperparameter adjustments.
+        Analyze a stalled run and propose a strategic pivot.
+        escalation_level: 0=tune HPs, 1=change arch, 2=allow algorithm switch.
         Returns the pivot dict.
         """
         self._cache.set_system_prompt(_PIVOT_SYSTEM)
+        escalation_desc = {
+            0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
+            1: "Level 1 — try a larger network architecture in addition to HP tuning.",
+            2: f"Level 2 — the current algorithm ({current_algorithm}) is not working. "
+               "Consider switching to a different algorithm entirely (e.g. PPO if currently DQN).",
+            3: f"Level 3 — algorithm and architecture changes have not worked. "
+               "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
+               "distance shaping (distance_weight=0) and increasing food_reward.",
+        }.get(escalation_level, "Level 0 — tune hyperparameters only.")
         query = (
+            f"Current algorithm: {current_algorithm}\n"
             f"Current metrics: {json.dumps(current_metrics)}\n"
-            f"Recent history (last {len(history)} iterations): {json.dumps(history[-5:])}\n\n"
+            f"Recent history (last {min(len(history), 5)} iterations): {json.dumps(history[-5:])}\n"
+            f"Escalation: {escalation_desc}\n\n"
             "Propose a strategic pivot. Return JSON."
         )
         messages = self._cache.get_messages(query)
@@ -153,7 +179,10 @@ class LeadAgent:
         # Restore planning system prompt for next call
         self._cache.set_system_prompt(_PLANNING_SYSTEM)
         pivot = response.get("pivot", response)
-        logger.info("LeadAgent pivot proposed: reason=%s", pivot.get("reason"))
+        logger.info(
+            "LeadAgent pivot proposed: reason=%s algorithm=%s escalation=%d",
+            pivot.get("reason"), pivot.get("algorithm", current_algorithm), escalation_level,
+        )
         return pivot
 
     # ── Plan revision (critic feedback) ──────────────────────────────────────

@@ -275,17 +275,39 @@ class LoopStateMachine:
                 # ── REFINING ─────────────────────────────────────────────
                 pivot_reason = None
                 if pivot_engine.needs_pivot():
-                    pivot = await self._agent.propose_pivot(current_metrics, pivot_engine.history_snapshot())
+                    escalation = pivot_engine.escalation_level()
+                    current_algo = plan.get("algorithm", "PPO")
+                    pivot = await self._agent.propose_pivot(
+                        current_metrics,
+                        pivot_engine.history_snapshot(),
+                        escalation_level=escalation,
+                        current_algorithm=current_algo,
+                    )
+                    pivot_engine.record_pivot()
                     adjustments = self._clamp_rl_adjustments(
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
                     plan["hyperparameters"].update(adjustments)
                     if pivot.get("policy_kwargs"):
                         plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
+                    if pivot.get("algorithm") and pivot["algorithm"] != current_algo:
+                        logger.info(
+                            "LoopStateMachine: algorithm switch %s → %s",
+                            current_algo, pivot["algorithm"],
+                        )
+                        plan["algorithm"] = pivot["algorithm"]
+                        # Reset hyperparameters to sensible defaults for new algorithm
+                        plan["hyperparameters"] = pivot.get("adjustments", {})
+                    if pivot.get("env_kwargs"):
+                        plan["env_kwargs"] = pivot["env_kwargs"]
+                        logger.info(
+                            "LoopStateMachine: reward reshape applied: %s",
+                            pivot["env_kwargs"],
+                        )
                     pivot_reason = pivot.get("reason", "plateau detected")
                     logger.info(
-                        "LoopStateMachine: pivot applied: %s | adjustments: %s | policy_kwargs: %s",
-                        pivot_reason, adjustments, pivot.get("policy_kwargs"),
+                        "LoopStateMachine: pivot applied (escalation=%d): %s | algo=%s | adjustments: %s | policy_kwargs: %s",
+                        escalation, pivot_reason, plan.get("algorithm"), adjustments, pivot.get("policy_kwargs"),
                     )
                     await emit_status(
                         mission_id, "Pivot triggered",

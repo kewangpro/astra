@@ -352,6 +352,31 @@ def test_generate_training_script_no_snake_preamble_for_non_snake(tmp_path, monk
     assert "snake_env" not in content
 
 
+def test_build_user_prompt_rl_env_kwargs_injected(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(env_kwargs={"food_reward": 20.0, "distance_weight": 0.0})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "food_reward=20.0" in prompt
+    assert "distance_weight=0.0" in prompt
+
+
+def test_build_user_prompt_rl_no_env_kwargs_clean(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert 'gym.make("CartPole-v1")' in prompt
+
+
 def test_fix_checkpoint_paths_replaces_relative_paths():
     ckpt = "/abs/path/to/checkpoints"
     code = (
@@ -369,6 +394,49 @@ def test_fix_checkpoint_paths_leaves_absolute_paths_alone():
     code = f"model.save('{ckpt}/best_model')\n"
     result = CodeGenerator._fix_checkpoint_paths(code, ckpt)
     assert result == code
+
+
+def test_generate_training_script_writes_train_config(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    code = "import gymnasium as gym\nenv = gym.make('CartPole-v1')\npass"
+    gen = CodeGenerator(_make_provider(code))
+    plan = _make_rl_plan(algorithm="DQN", env_kwargs={"food_reward": 20.0, "distance_weight": 0.0})
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-cfg", plan)
+        )
+
+    cfg_path = tmp_path / "missions" / "mission-cfg" / "checkpoints" / "train_config.json"
+    assert cfg_path.exists()
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["algorithm"] == "DQN"
+    assert cfg["env_kwargs"]["food_reward"] == 20.0
+    assert cfg["env_kwargs"]["distance_weight"] == 0.0
+
+
+def test_generate_training_script_writes_train_config_no_env_kwargs(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    code = "import gymnasium as gym\nenv = gym.make('CartPole-v1')\npass"
+    gen = CodeGenerator(_make_provider(code))
+    plan = _make_rl_plan()
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-cfgdefault", plan)
+        )
+
+    cfg_path = tmp_path / "missions" / "mission-cfgdefault" / "checkpoints" / "train_config.json"
+    assert cfg_path.exists()
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["algorithm"] == "PPO"
+    assert cfg["env_kwargs"] == {}
 
 
 def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):

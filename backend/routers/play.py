@@ -13,6 +13,7 @@ Streams JSON frames:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -28,10 +29,34 @@ router = APIRouter()
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="snake-play")
 
+# Maps algorithm name → SB3 class import path
+_SB3_ALGO_MAP = {
+    "PPO": ("stable_baselines3", "PPO"),
+    "DQN": ("stable_baselines3", "DQN"),
+    "SAC": ("stable_baselines3", "SAC"),
+    "A2C": ("stable_baselines3", "A2C"),
+}
 
-def _run_episode(model, env) -> list[dict]:
-    """Run one episode synchronously; return list of frame dicts."""
-    import numpy as np
+
+def _load_train_config(ckpt_dir: str) -> dict:
+    """Read train_config.json written by CodeGenerator; fall back to PPO defaults."""
+    config_path = os.path.join(ckpt_dir, "train_config.json")
+    if os.path.exists(config_path):
+        with open(config_path) as f:
+            return json.load(f)
+    return {"algorithm": "PPO", "env_id": "", "env_kwargs": {}}
+
+
+def _get_algo_class(algorithm: str):
+    """Return the SB3 algorithm class for the given name."""
+    import importlib
+    module_name, cls_name = _SB3_ALGO_MAP.get(algorithm.upper(), ("stable_baselines3", "PPO"))
+    module = importlib.import_module(module_name)
+    return getattr(module, cls_name)
+
+
+def _run_episode(model, env) -> tuple[list[dict], float]:
+    """Run one episode synchronously; return list of frame dicts and total reward."""
     obs, _ = env.reset()
     frames = []
     episode_reward = 0.0
@@ -62,16 +87,14 @@ async def play_ws(
 ):
     await ws.accept()
 
-    ckpt_path = os.path.join(
-        settings.data_path, "missions", mission_id, "checkpoints", "best_model.zip"
-    )
+    ckpt_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+    ckpt_path = os.path.join(ckpt_dir, "best_model.zip")
     if not os.path.exists(ckpt_path):
         await ws.send_json({"type": "error", "message": "No best_model.zip found for this mission."})
         await ws.close()
         return
 
     try:
-        # Load model + env in thread pool (SB3/numpy are not async-native)
         loop = asyncio.get_event_loop()
 
         def _load():
@@ -81,18 +104,28 @@ async def play_ws(
                 sys.path.insert(0, project_root)
 
             import gymnasium as gym
-            from stable_baselines3 import PPO
 
-            if env_id == "Snake-v0":
+            # Read algorithm and env_kwargs from the config written at code-gen time
+            cfg = _load_train_config(ckpt_dir)
+            algorithm = cfg.get("algorithm", "PPO")
+            env_kwargs = cfg.get("env_kwargs") or {}
+
+            resolved_env_id = cfg.get("env_id") or env_id
+
+            if resolved_env_id == "Snake-v0":
                 from envs.snake_env import register as _reg
                 _reg()
 
-            env = gym.make(env_id)
-            model = PPO.load(ckpt_path, env=env)
+            env = gym.make(resolved_env_id, **env_kwargs)
+            AlgoClass = _get_algo_class(algorithm)
+            model = AlgoClass.load(ckpt_path, env=env)
+            logger.info(
+                "play_ws: loaded %s model for mission=%s env=%s env_kwargs=%s",
+                algorithm, mission_id, resolved_env_id, env_kwargs,
+            )
             return model, env
 
         model, env = await loop.run_in_executor(_EXECUTOR, _load)
-        logger.info("play_ws: loaded model for mission=%s env=%s", mission_id, env_id)
 
         frame_delay = 1.0 / max(1, min(fps, 30))
         episode = 0
@@ -103,7 +136,7 @@ async def play_ws(
                 _EXECUTOR, _run_episode, model, env
             )
 
-            for i, frame in enumerate(frames):
+            for frame in frames:
                 frame["episode"] = episode
                 try:
                     await ws.send_json(frame)
@@ -120,7 +153,6 @@ async def play_ws(
             except WebSocketDisconnect:
                 return
 
-            # Brief pause between episodes
             await asyncio.sleep(1.0)
 
     except WebSocketDisconnect:

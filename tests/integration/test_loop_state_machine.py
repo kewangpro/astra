@@ -279,7 +279,7 @@ async def test_plateau_triggers_pivot_then_goal_met(seeded_mission, db_session, 
         agent = _MockLeadAgent()
         propose_calls = []
         _orig = agent.propose_pivot
-        async def _track_pivot(m, h):
+        async def _track_pivot(m, h, escalation_level=0, current_algorithm="PPO"):
             propose_calls.append((m, h))
             return await _orig(m, h)
         agent.propose_pivot = _track_pivot

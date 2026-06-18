@@ -67,9 +67,9 @@ The script MUST start with these exact imports (do not omit any):
     from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
-1. Create the environment with EXACTLY these two lines — copy verbatim:
+1. Create the environment with EXACTLY these lines — copy verbatim:
        import gymnasium as gym
-       env = gym.make("{env_id}")
+       env = gym.make("{env_id}"{env_kwargs_str})
    The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
    Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
@@ -244,6 +244,21 @@ class CodeGenerator:
         with open(script_path, "w") as f:
             f.write(code)
 
+        # Write train_config.json so the play endpoint knows the algorithm and env_kwargs
+        if task_type == "rl":
+            import json as _json
+            config_path = os.path.join(checkpoint_dir, "train_config.json")
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            train_cfg = {
+                "algorithm": plan.get("algorithm", "PPO"),
+                "env_id": plan.get("env_id", ""),
+                "env_kwargs": plan.get("env_kwargs", {}),
+            }
+            with open(config_path, "w") as f:
+                _json.dump(train_cfg, f)
+            logger.info("CodeGenerator: wrote train_config.json algorithm=%s env_kwargs=%s",
+                        train_cfg["algorithm"], train_cfg["env_kwargs"])
+
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
 
@@ -268,6 +283,12 @@ class CodeGenerator:
                 if env_id == "Snake-v0" else ""
             )
             policy_kwargs = hp.pop("policy_kwargs", None)
+            # Build env_kwargs_str: ", key=value, ..." for gym.make() call
+            env_kwargs = plan.get("env_kwargs", {})
+            if env_kwargs:
+                env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
+            else:
+                env_kwargs_str = ""
             ctx = {
                 "algorithm": plan.get("algorithm", "PPO"),
                 "env_id": env_id,
@@ -275,6 +296,7 @@ class CodeGenerator:
                 "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "None",
                 "target_reward": target_reward,
                 "snake_setup": snake_setup,
+                "env_kwargs_str": env_kwargs_str,
                 **base,
             }
             return _RL_TEMPLATE.format(**ctx)
