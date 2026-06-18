@@ -47,6 +47,21 @@ def _load_train_config(ckpt_dir: str) -> dict:
     return {"algorithm": "PPO", "env_id": "", "env_kwargs": {}}
 
 
+def _checkpoint_algorithm(ckpt_dir: str, cfg: dict) -> str:
+    """Return the algorithm that actually saved best_model.zip.
+
+    Prefers best_model_algo.txt (written by the training callback at save time)
+    over train_config.json (which reflects the most recently *generated* plan and
+    may differ when the previous algorithm's best_model.zip was never beaten).
+    """
+    algo_file = os.path.join(ckpt_dir, "best_model_algo.txt")
+    if os.path.exists(algo_file):
+        algo = open(algo_file).read().strip()
+        if algo:
+            return algo
+    return cfg.get("algorithm", "PPO")
+
+
 def _get_algo_class(algorithm: str):
     """Return the SB3 algorithm class for the given name."""
     import importlib
@@ -105,11 +120,12 @@ async def play_ws(
 
             import gymnasium as gym
 
-            # Read algorithm and env_kwargs from the config written at code-gen time
             cfg = _load_train_config(ckpt_dir)
-            algorithm = cfg.get("algorithm", "PPO")
+            # Use best_model_algo.txt when available — it records which algorithm
+            # actually saved best_model.zip, which may differ from train_config.json
+            # if a pivot switched algorithms but the previous algo still holds the best score.
+            algorithm = _checkpoint_algorithm(ckpt_dir, cfg)
             env_kwargs = cfg.get("env_kwargs") or {}
-
             resolved_env_id = cfg.get("env_id") or env_id
 
             if resolved_env_id == "Snake-v0":
@@ -117,13 +133,30 @@ async def play_ws(
                 _reg()
 
             env = gym.make(resolved_env_id, **env_kwargs)
-            AlgoClass = _get_algo_class(algorithm)
-            model = AlgoClass.load(ckpt_path, env=env)
-            logger.info(
-                "play_ws: loaded %s model for mission=%s env=%s env_kwargs=%s",
-                algorithm, mission_id, resolved_env_id, env_kwargs,
-            )
-            return model, env
+
+            # Try the detected algorithm first; if it fails with a policy mismatch,
+            # fall back through all known algorithms so stale algo files don't hard-crash.
+            algo_order = [algorithm] + [a for a in _SB3_ALGO_MAP if a != algorithm.upper()]
+            last_exc: Optional[Exception] = None
+            for algo_name in algo_order:
+                try:
+                    AlgoClass = _get_algo_class(algo_name)
+                    model = AlgoClass.load(ckpt_path, env=env)
+                    if algo_name != algorithm:
+                        logger.warning(
+                            "play_ws: %s.load failed — loaded with %s instead (mission=%s)",
+                            algorithm, algo_name, mission_id,
+                        )
+                    logger.info(
+                        "play_ws: loaded %s model for mission=%s env=%s env_kwargs=%s",
+                        algo_name, mission_id, resolved_env_id, env_kwargs,
+                    )
+                    return model, env
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+            raise RuntimeError(f"Could not load best_model.zip with any known algorithm: {last_exc}")
+
 
         model, env = await loop.run_in_executor(_EXECUTOR, _load)
 

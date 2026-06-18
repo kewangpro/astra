@@ -126,6 +126,8 @@ The script must:
                    self.model.save("{checkpoint_dir}/best_model")
                    with open("{checkpoint_dir}/best_score.txt", "w") as _f:
                        _f.write(str(mean_reward))
+                   with open("{checkpoint_dir}/best_model_algo.txt", "w") as _f:
+                       _f.write(self.model.__class__.__name__)
                if mean_reward >= {target_reward}:
                    return False  # stop training — target reached
            return True

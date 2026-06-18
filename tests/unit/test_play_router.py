@@ -69,3 +69,34 @@ def test_get_algo_class_case_insensitive():
     from stable_baselines3 import DQN
 
     assert _get_algo_class("dqn") is DQN
+
+
+# ── _checkpoint_algorithm ─────────────────────────────────────────────────────
+
+def test_checkpoint_algorithm_prefers_algo_file(tmp_path):
+    from backend.routers.play import _checkpoint_algorithm
+
+    (tmp_path / "best_model_algo.txt").write_text("DQN")
+    cfg = {"algorithm": "PPO", "env_kwargs": {}}
+    assert _checkpoint_algorithm(str(tmp_path), cfg) == "DQN"
+
+
+def test_checkpoint_algorithm_falls_back_to_config(tmp_path):
+    from backend.routers.play import _checkpoint_algorithm
+
+    cfg = {"algorithm": "PPO", "env_kwargs": {}}
+    assert _checkpoint_algorithm(str(tmp_path), cfg) == "PPO"
+
+
+def test_checkpoint_algorithm_empty_algo_file_falls_back(tmp_path):
+    from backend.routers.play import _checkpoint_algorithm
+
+    (tmp_path / "best_model_algo.txt").write_text("   ")
+    cfg = {"algorithm": "A2C", "env_kwargs": {}}
+    assert _checkpoint_algorithm(str(tmp_path), cfg) == "A2C"
+
+
+def test_checkpoint_algorithm_no_config_defaults_ppo(tmp_path):
+    from backend.routers.play import _checkpoint_algorithm
+
+    assert _checkpoint_algorithm(str(tmp_path), {}) == "PPO"
