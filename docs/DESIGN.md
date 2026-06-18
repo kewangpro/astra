@@ -88,7 +88,7 @@ The worker agents that interface with diverse training paradigms:
 
 ### 2.5. Secure Execution Sandbox
 The isolation layer where training actually occurs:
-- **Containerized Runtime**: Uses Docker or Podman to isolate the training environment.
+- **Runtime Strategy**: Depends on hardware target. On **Apple Silicon (M4)**, Docker/Podman does not support Metal GPU passthrough so training runs in a `SubprocessSandbox` (restricted host subprocess with memory cap via `resource` module). On **cloud/CUDA** targets, a Docker/Podman container with `nvidia-container-toolkit` is used. See §5.2 for full detail.
 - **Resource Guard**: Enforces memory and compute limits to ensure system stability.
 - **Filesystem Isolation**: Restricts training code access to specific project directories and the Model Registry.
 
@@ -122,7 +122,7 @@ Enhancements for long-running stability:
 
 ### 4.1. The Approval Controller
 A centralized service that intercepts high-risk transitions in the DAG:
-- **Gate: `EXECUTE_CODE`**: Pauses the loop and presents the generated script to the user for a "Safety Check."
+- **Gate: `EXECUTE_CODE`**: Pauses the loop and presents the generated script to the user for a "Safety Check." The `CodeSafetyClassifier` runs a two-stage pre-screen before presenting to the user: (1) a static regex pass that immediately approves scripts whose only network calls target `localhost`/`127.0.0.1` (telemetry), and immediately blocks known-dangerous patterns (subprocess shell injection, broad file deletion, external pip installs); (2) an LLM classification pass for ambiguous cases. Only genuinely risky scripts reach the human approval queue.
 - **Gate: `RESOURCE_ALLOCATION`**: Triggers if the planned iteration exceeds the remaining "Quota" (GPU hours or memory).
 - **Gate: `DEPLOY_MODEL`**: Requires human sign-off before a champion model is moved from the Registry to a production endpoint.
 
@@ -178,6 +178,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
 | `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
 | `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
+| `WS /ws/missions/{id}/play?env_id=&fps=` | Live agent viewer — loads `best_model.zip`, streams 16×16 game frames |
 | `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
 | `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
 | `GET /recipes` | List all recipes (disk + DB merged) |

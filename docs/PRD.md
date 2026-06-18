@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Complete (all 6 phases shipped)  
+**Status:** Phase 9 in progress (9 phases total; Phases 1–8 complete)  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -33,8 +33,8 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Implements "Survival of the Fittest" where underperforming experiments are pruned.
 
 ### 4.3. Dynamic Reward Evolver
-- Tests variations of reward shaping.
-- Uses a "critic" agent to propose reward adjustments based on agent behavior.
+- Tests variations of reward shaping automatically when structural pivots (HP tune, arch change, algo switch) are exhausted.
+- Snake-v0 exposes four configurable reward parameters: `food_reward`, `death_penalty`, `survival_bonus`, `distance_weight`. At escalation level 3 the pivot agent proposes `env_kwargs` overrides (e.g. `distance_weight=0` to disable greedy shaping, `food_reward=20` to amplify food signal). These flow through pivot → plan → code generator → `gym.make()` automatically.
 
 ### 4.4. The Registry & Benchmark Suite
 - Persistent storage for models, weights, and training metadata.

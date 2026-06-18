@@ -20,7 +20,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Live mission HUD** — Next.js dashboard with real-time metric charts (current vs. prior run differentiated by color), log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
 - **Custom RL environments** — `envs/snake_env.py` provides a Gymnasium-compatible Snake-v0 environment for custom environment missions
 - **Live agent viewer** — mission HUD embeds a real-time canvas rendering of the trained Snake-v0 agent playing the game, streamed over WebSocket from `best_model.zip`
-- **316 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping, specialist evaluator, missions router, play router) plus integration tests for the full loop
+- **329 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping, specialist evaluator, missions router, play router, state machine helpers) plus integration tests for the full loop
 
 ### Screenshots
 
@@ -82,7 +82,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 310 unit tests across all core modules
+│   ├── unit/           # 323 unit tests across all core modules
 │   └── integration/    # 6 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (snake_env.py → Snake-v0)
@@ -117,7 +117,7 @@ make ports  # show port status for all services
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 | 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
-| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, guaranteed Snake-v0 registration, classifier false-positive fixes, absolute checkpoint paths, domain dropdown removed, Snake-v0 live HUD viewer, MetricChart windowing, escalating pivot strategy (algo/reward reshape at levels 2–3), play endpoint algo+reward-config awareness, 316 tests | 🔄 In Progress |
+| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, guaranteed Snake-v0 registration, classifier false-positive fixes, absolute checkpoint paths, domain dropdown removed, Snake-v0 live HUD viewer, MetricChart windowing, 4-level escalating pivot strategy (HP/arch/algo/reward), play endpoint algo+reward-config awareness, telemetry peak tracking, pivot change summaries in event stream, best_model_algo.txt watch fix, MetricGap best-vs-current iter redesign, 329 tests | 🔄 In Progress |
 
 ## Hardware Target
 

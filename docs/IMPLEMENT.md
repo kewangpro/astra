@@ -317,8 +317,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 - [x] **Escalating pivot strategy (Step 9.19)**
     - **Problem**: the pivot system always proposed minor hyperparameter tweaks regardless of how many consecutive pivots had failed. The `_PIVOT_SYSTEM` prompt said "the algorithm is fixed", preventing algorithm switches even when the current algorithm (e.g. DQN) was clearly not working.
-    - `backend/loop/pivots.py`: `PivotEngine` now tracks `_pivot_count` (consecutive pivots that didn't improve the best metric). `record_pivot()` increments/resets this counter. `escalation_level()` returns 0 (tune HPs), 1 (change architecture), or 2 (allow algorithm switch) based on thresholds `ESCALATION_ARCH=2` and `ESCALATION_ALGO=4`.
-    - `backend/agent/lead_agent.py`: `_PIVOT_SYSTEM` rewritten — removed "algorithm is fixed", added 3-level escalation instructions with HP ranges for both PPO and DQN. `propose_pivot()` accepts `escalation_level` and `current_algorithm` and includes them verbatim in the user message so the LLM knows exactly what latitude it has.
+    - `backend/loop/pivots.py`: `PivotEngine` now tracks `_pivot_count` (consecutive pivots that didn't improve the best metric). `record_pivot()` increments/resets this counter. `escalation_level()` returns 0 (tune HPs), 1 (change architecture), or 2 (allow algorithm switch) based on thresholds `ESCALATION_ARCH=2` and `ESCALATION_ALGO=4`. Extended to 4 levels in Step 9.20 (`ESCALATION_REWARD=6` → level 3).
+    - `backend/agent/lead_agent.py`: `_PIVOT_SYSTEM` rewritten — removed "algorithm is fixed", added escalation instructions with HP ranges for both PPO and DQN. `propose_pivot()` accepts `escalation_level` and `current_algorithm`.
     - `_PIVOT_SCHEMA`: added optional `"algorithm"` field so the LLM can propose a switch.
     - `backend/loop/state_machine.py`: passes `escalation_level` and `current_algorithm` to `propose_pivot`; calls `pivot_engine.record_pivot()` after each pivot; if the response includes a new `algorithm`, updates `plan["algorithm"]` and resets hyperparameters to the pivot's suggested values.
     - `tests/integration/test_loop_state_machine.py`: `_track_pivot` mock updated to accept new kwargs.
@@ -339,3 +339,28 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/routers/play.py`: reads `train_config.json` at WebSocket open time. Uses `_get_algo_class(algorithm)` to dispatch to the correct SB3 class (PPO/DQN/SAC/A2C via `importlib`). Passes `env_kwargs` to `gym.make()`. Falls back to PPO + empty kwargs if config file is absent (backward compat with existing missions).
     - `tests/unit/test_play_router.py`: 9 new tests covering config loading defaults/values, algorithm dispatch (PPO/DQN/A2C), unknown-algo fallback, and case-insensitive lookup.
     - `tests/unit/test_code_generator.py`: 2 new tests verifying `train_config.json` is written with correct content including env_kwargs and algorithm name.
+
+- [x] **Telemetry metric tracking uses peak not last (Step 9.22)**
+    - **Problem**: `_read_telemetry_metrics` overwrote each metric key with the latest value seen in `telemetry.jsonl`. A training run that peaked at 164 but ended at 116 would record 116 in the pivot engine, persisting a lower-than-actual best to the DB. The gap display then showed the wrong (deflated) metric.
+    - `backend/loop/state_machine.py`: `_read_telemetry_metrics` now tracks `max(value)` per metric key so the state machine always records the iteration's true peak performance.
+    - `_load_persisted_best`: extended to also scan the full telemetry file (offset=0) for the all-time max so existing missions with stale `best_score.txt` or DB values recover correctly on the next server restart.
+    - `tests/unit/test_state_machine_helpers.py`: 5 new tests covering max-wins, multi-metric, offset correctness, empty file, and missing file cases.
+
+- [x] **Pivot event stream shows what changed (Step 9.23)**
+    - **Problem**: the pivot log row only showed the LLM's reason text with no indication of what was actually adjusted.
+    - `backend/loop/state_machine.py`: after applying pivot changes, builds a `changes_summary` string — algorithm switch shown as `algo: DQN→PPO`; each HP as `key: old→new`; `net_arch` from `policy_kwargs`; reward params from `env_kwargs`. Appended to the emitted value: `"<reason> | changes: algo: DQN→PPO | lr: 1e-4→3e-4"`. Falls back to `"hyperparameter adjustment"` when no changes extracted.
+
+- [x] **Watch endpoint uses best_model_algo.txt to select SB3 class (Step 9.24)**
+    - **Problem**: `play.py` hardcoded `PPO.load()`. After a pivot switches algorithms (e.g. DQN→PPO) the previous algorithm's `best_model.zip` often still holds the best score — `train_config.json` would say PPO but the zip was saved by DQN. `PPO.load()` on a DQN zip raises `'ActorCriticPolicy' object has no attribute 'q_net'`.
+    - RL template (`backend/agent/code_generator.py`): when saving `best_model.zip`, also writes `checkpoints/best_model_algo.txt` with `self.model.__class__.__name__` so the checkpoint always records which algorithm saved it.
+    - `backend/routers/play.py`: `_checkpoint_algorithm()` reads `best_model_algo.txt` first (ground truth), falls back to `train_config.json`. If loading still fails with the detected algorithm, tries all known SB3 classes (PPO/DQN/SAC/A2C) in order — prevents any algorithm mismatch from hard-crashing the viewer.
+    - `tests/unit/test_play_router.py`: 4 new tests for `_checkpoint_algorithm` (prefers algo file, fallback to config, empty file, no config).
+
+- [x] **MetricGap redesign — best vs current iteration (Step 9.25)**
+    - **Problem**: the gap widget showed `best_metric_value` labeled with `current_iteration`, making it look like the current iteration achieved the peak score when the peak may have been several iterations earlier.
+    - `backend/models/mission.py` + Alembic migration `a1b2c3d4e5f6`: added `best_metric_iteration` (int, nullable) and `current_metric_value` (str, nullable) columns to the `missions` table.
+    - `backend/loop/pivots.py`: `best_metric_iteration()` returns the iteration index that achieved the best score (seed entry at −1 maps to `None`); refactored via shared `_best_entry()` helper.
+    - `backend/loop/state_machine.py`: persists `best_metric_iteration` alongside `best_metric_value`; saves `current_metric_value` after each eval iteration.
+    - `frontend/src/lib/api.ts`: `Mission` type extended with `best_metric_iteration` and `current_metric_value`.
+    - `frontend/src/components/hud/MetricGap.tsx`: arc gauge shows best-ever value; gap and percentage sit below the arc; right column shows "best at iter X" and current iteration score separately. Current score hidden when it equals the best (no redundancy).
+    - `tests/unit/test_pivot_engine.py`: 4 new tests for `best_metric_iteration` including seed-entry suppression and seed-beaten-by-real-iter cases. Total: 329 tests.

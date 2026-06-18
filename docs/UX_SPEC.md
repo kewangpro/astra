@@ -12,16 +12,17 @@
 ## 2. Core Views
 
 ### 2.1. The "Command Center" (Home)
-- **Goal Input**: A command-line style bar (or structured form) to set training targets.
-- **Active Missions**: A grid of running training loops with status badges (Planning, Implementation, Sandboxed, Training, Evaluating).
+- **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200"). Domain field removed — task type is resolved automatically from the goal text (`taskType: "rl"` hardcoded for current RL-only missions).
+- **Active Missions**: A grid of running training loops with status badges (Planning, Running, Evaluating, Completed, Failed). Each card shows the best metric value and current iteration.
 - **Global Metrics**: Total compute hours, models discovered, and successful recipes crystallized.
 
 ### 2.2. Live Training HUD (The "Loop" View)
-- **The Metric Gap**: A massive visual indicator showing the distance between `current_best` and `user_target`.
+- **The Metric Gap**: An arc gauge showing the all-time best metric value. Gap (`−X to close`) and percentage of target sit directly below the arc. Right column shows two lines: "best at iter N" (which iteration achieved the peak) and the current iteration's score when it differs from the best. This makes it unambiguous whether the displayed score is the historical peak or the latest result.
+- **MetricChart**: Training curve capped to the last 3 iteration runs (current + 2 prior). Run-reset boundaries detected from step counter drops. Earlier runs are excluded to prevent chart compression on long-running missions (50+ iterations).
 - **Resource Monitor**: A real-time gauge showing **Unified Memory** allocation between the Lead Agent, Specialist Trainer, and System. Total capacity is read dynamically from system info (e.g., 24GB on M4, 64GB+ on higher-tier hardware) and displayed alongside the gauge.
-- **Streamed Logs**: Real-time telemetry from the sandbox, filtered by LLM-identified "critical events."
-- **Strategic Pivot Timeline**: A vertical timeline showing the Lead Agent's decisions (e.g., "09:41 - Plateau detected; Retrying with Phase 2 curriculum").
-- **Approval Queue**: Real-time "Pause" state with side-by-side code diffs for user sign-off.
+- **Event Stream**: Real-time telemetry events from the sandbox. Pivot events include a `| changes:` suffix showing exactly what changed (e.g. `algo: DQN→PPO | lr: 1e-4→3e-4 | net_arch: [256,256]`).
+- **Approval Queue**: Real-time "Pause" state with side-by-side code diffs for user sign-off. Scripts targeting only `localhost`/`127.0.0.1` are auto-approved without LLM classification.
+- **Snake-v0 Live Viewer**: For Snake missions, a ▶ Watch button launches a `SnakePlayer` canvas overlay. Connects to `WS /ws/missions/{id}/play`, streams 16×16 grid frames from `best_model.zip` in real time. Displays episode number and cumulative reward. The endpoint reads `best_model_algo.txt` to load the correct SB3 class and passes `env_kwargs` to `gym.make()` so reward configuration matches training.
 
 ### 2.3. The Recipe Library
 - **Gallery View**: Cards for each Golden Recipe (Snake, Tetris, Llama-SFT).
