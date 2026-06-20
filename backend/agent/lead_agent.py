@@ -151,22 +151,38 @@ class LeadAgent:
         history: list[dict],
         escalation_level: int = 0,
         current_algorithm: str = "PPO",
+        algorithm_locked: bool = False,
     ) -> dict:
         """
         Analyze a stalled run and propose a strategic pivot.
-        escalation_level: 0=tune HPs, 1=change arch, 2=allow algorithm switch.
+        escalation_level: 0=tune HPs, 1=change arch, 2=allow algorithm switch (or reward shaping
+        when algorithm_locked=True), 3=reshape rewards.
+        algorithm_locked: when True (goal explicitly names an algorithm), skip level 2 algo switch
+        and use reward shaping instead — levels map as 0=HPs, 1=arch, 2+=env_kwargs.
         Returns the pivot dict.
         """
         self._cache.set_system_prompt(_PIVOT_SYSTEM)
-        escalation_desc = {
-            0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
-            1: "Level 1 — try a larger network architecture in addition to HP tuning.",
-            2: f"Level 2 — the current algorithm ({current_algorithm}) is not working. "
-               "Consider switching to a different algorithm entirely (e.g. PPO if currently DQN).",
-            3: f"Level 3 — algorithm and architecture changes have not worked. "
-               "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
-               "distance shaping (distance_weight=0) and increasing food_reward.",
-        }.get(escalation_level, "Level 0 — tune hyperparameters only.")
+        if algorithm_locked:
+            escalation_desc = {
+                0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
+                1: "Level 1 — try a larger network architecture in addition to HP tuning.",
+                2: f"Level 2 — the algorithm ({current_algorithm}) is fixed by the user. "
+                   "Reshape the reward function via env_kwargs instead. For Snake-v0, try disabling "
+                   "distance shaping (distance_weight=0) and increasing food_reward to 20+.",
+                3: f"Level 3 — prior reward shaping did not help. Try more aggressive env_kwargs: "
+                   "higher food_reward (25–30), lower death_penalty (−3 to −5), survival_bonus 0.02–0.1. "
+                   "Also consider tuning architecture and HPs together.",
+            }.get(escalation_level, "Level 0 — tune hyperparameters only.")
+        else:
+            escalation_desc = {
+                0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
+                1: "Level 1 — try a larger network architecture in addition to HP tuning.",
+                2: f"Level 2 — the current algorithm ({current_algorithm}) is not working. "
+                   "Consider switching to a different algorithm entirely (e.g. PPO if currently DQN).",
+                3: f"Level 3 — algorithm and architecture changes have not worked. "
+                   "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
+                   "distance shaping (distance_weight=0) and increasing food_reward.",
+            }.get(escalation_level, "Level 0 — tune hyperparameters only.")
         query = (
             f"Current algorithm: {current_algorithm}\n"
             f"Current metrics: {json.dumps(current_metrics)}\n"

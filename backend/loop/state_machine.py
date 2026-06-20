@@ -291,11 +291,15 @@ class LoopStateMachine:
                 if pivot_engine.needs_pivot():
                     escalation = pivot_engine.escalation_level()
                     current_algo = plan.get("algorithm", "PPO")
+                    # Detect if the user's goal explicitly names an algorithm.
+                    # If so, never switch algorithms — remap level 2 to reward shaping.
+                    algo_locked = self._is_algorithm_locked(mission.goal, current_algo)
                     pivot = await self._agent.propose_pivot(
                         current_metrics,
                         pivot_engine.history_snapshot(),
                         escalation_level=escalation,
                         current_algorithm=current_algo,
+                        algorithm_locked=algo_locked,
                     )
                     pivot_engine.record_pivot()
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
@@ -319,7 +323,18 @@ class LoopStateMachine:
                         k: v for k, v in adjustments.items()
                         if _hp_changed(k, v)
                     }
-                    algo_changed = bool(pivot.get("algorithm") and pivot["algorithm"] != current_algo)
+                    # Never switch algorithms when the user explicitly named one in the goal.
+                    proposed_algo = pivot.get("algorithm")
+                    algo_changed = bool(
+                        proposed_algo
+                        and proposed_algo != current_algo
+                        and not algo_locked
+                    )
+                    if algo_locked and proposed_algo and proposed_algo != current_algo:
+                        logger.info(
+                            "LoopStateMachine: ignoring algo switch %s→%s — algorithm locked by goal",
+                            current_algo, proposed_algo,
+                        )
                     arch_changed = bool(pivot.get("policy_kwargs"))
                     env_kwargs_changed = bool(
                         pivot.get("env_kwargs") and pivot["env_kwargs"] != plan.get("env_kwargs", {})
@@ -523,6 +538,17 @@ class LoopStateMachine:
                     .where(Mission.id == mission_id)
                     .values(pivot_escalation_count=count)
                 )
+
+    @staticmethod
+    def _is_algorithm_locked(goal: str, current_algorithm: str) -> bool:
+        """Return True if the goal explicitly names the current algorithm.
+
+        When a user writes "Train a Snake-v0 DQN agent …", switching to PPO
+        would violate their intent. We detect this by checking whether the
+        algorithm name appears as a word in the goal string (case-insensitive).
+        """
+        import re
+        return bool(re.search(rf"\b{re.escape(current_algorithm)}\b", goal, re.IGNORECASE))
 
     @staticmethod
     def _normalize_pivot(pivot: dict) -> dict:

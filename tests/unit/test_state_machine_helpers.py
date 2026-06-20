@@ -224,6 +224,36 @@ def test_display_uses_pre_update_value():
     assert "batch_size: 64→128" in hp_strs
 
 
+# ── _is_algorithm_locked ─────────────────────────────────────────────────────
+
+_locked = LoopStateMachine._is_algorithm_locked
+
+
+def test_algo_locked_explicit_name_in_goal():
+    assert _locked("Train a Snake-v0 DQN agent to achieve mean_reward of 100", "DQN")
+
+
+def test_algo_locked_case_insensitive():
+    assert _locked("train a snake dqn agent", "DQN")
+
+
+def test_algo_locked_different_algo_not_locked():
+    assert not _locked("Train a Snake-v0 DQN agent", "PPO")
+
+
+def test_algo_locked_no_algo_in_goal():
+    assert not _locked("Train a Snake-v0 agent to achieve mean_reward of 100", "DQN")
+
+
+def test_algo_locked_partial_word_not_matched():
+    # "DQNX" in goal should not lock "DQN"
+    assert not _locked("Use DQNX strategy", "DQN")
+
+
+def test_algo_locked_ppo_named():
+    assert _locked("Train PPO on CartPole-v1", "PPO")
+
+
 # ── _normalize_pivot ─────────────────────────────────────────────────────────
 
 _normalize = LoopStateMachine._normalize_pivot

@@ -79,7 +79,9 @@ The execution engine that manages the state machine of training:
     - **Level 2** (`count ≥ 4`): allow algorithm switch (e.g. DQN → PPO).
     - **Level 3** (`count ≥ 6`): reshape reward function via `env_kwargs` (e.g. disable distance shaping, increase food reward).
   - `_pivot_count` is persisted to the `missions.pivot_escalation_count` DB column after every pivot and restored on server restart, so escalation survives process crashes and restarts.
-  - No-op pivot detection: if the LLM proposes HP values identical to current values, the change is filtered and `record_pivot()` is called twice (faster escalation) without regenerating code.
+  - No-op pivot detection: if the LLM proposes HP values identical to current values (including string vs. float type mismatches), the change is filtered and `record_pivot()` is called twice (faster escalation) without regenerating code.
+  - **Algorithm-locked missions**: `_is_algorithm_locked(goal, algorithm)` detects when the user's goal names a specific algorithm (whole-word, case-insensitive). When locked: (1) `algo_changed` is forced to False even if the LLM proposes a switch; (2) `propose_pivot()` is called with `algorithm_locked=True`, remapping level 2 from "switch algorithm" to "reshape reward function via env_kwargs", and level 3 to more aggressive env_kwargs tuning. This ensures the user's stated algorithm is never silently replaced.
+  - **LLM schema normalization**: `_normalize_pivot()` corrects common LLM deviations where adjustments are nested as `{hyperparameters: {...}, env_kwargs: {...}}` instead of the expected flat scalar dict + top-level `env_kwargs`. The normalizer flattens HP keys and promotes `env_kwargs` before clamping and change detection run.
 
 ### 2.3. Multi-Tier Memory System
 - **Structured Registry (SQL)**: Tracks every experiment's DNA—hyperparameters, weights, and results.
