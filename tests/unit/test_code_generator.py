@@ -504,6 +504,38 @@ def test_build_user_prompt_rl_callback_init_loads_best_score(tmp_path, monkeypat
     assert "best_score.txt" in prompt
     # hasattr lazy-init pattern must NOT be present (it's defeated by any __init__ that sets _best_reward)
     assert "not hasattr" not in prompt
+    # callback must track per-episode goal metric from info dict
+    assert "_ep_metric_buf" in prompt
+    assert "self.locals" in prompt
+
+
+def test_build_user_prompt_rl_injects_target_metric_name(tmp_path, monkeypatch):
+    """target_metric_name must be injected so callback posts the goal metric."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(env_id="Tetris-v0")
+    plan["target_metric"] = {"lines_cleared": 20}
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert '"name": "lines_cleared"' in prompt
+
+
+def test_build_user_prompt_rl_target_metric_name_defaults_to_mean_reward(tmp_path, monkeypatch):
+    """When target_metric has no keys, target_metric_name defaults to mean_reward."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    plan["target_metric"] = {}
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    # mean_reward block still present; no secondary metric posted
+    assert '"name": "mean_reward"' in prompt
 
 
 def test_build_user_prompt_injects_tetris_setup(tmp_path, monkeypatch):

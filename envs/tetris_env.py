@@ -121,6 +121,7 @@ class TetrisEnv(gym.Env):
         self._current_piece: int = 0
         self._next_piece: int = 0
         self._steps: int = 0
+        self._lines_cleared_episode: int = 0
 
     def reset(self, *, seed: Optional[int] = None, options=None):
         super().reset(seed=seed)
@@ -128,6 +129,7 @@ class TetrisEnv(gym.Env):
         self._current_piece = int(self.np_random.integers(self.N_PIECES))
         self._next_piece = int(self.np_random.integers(self.N_PIECES))
         self._steps = 0
+        self._lines_cleared_episode = 0
         return self._obs(), {}
 
     def step(self, action: int):
@@ -147,13 +149,15 @@ class TetrisEnv(gym.Env):
         placement_row = self._drop(cells, col)
 
         if placement_row < 0:
-            return self._obs(), self.death_penalty, True, False, {}
+            info = {"lines_cleared": self._lines_cleared_episode}
+            return self._obs(), self.death_penalty, True, False, info
 
         # Place cells on board
         for dr, dc in cells:
             self._board[placement_row + dr, col + dc] = 1
 
         lines_cleared = self._clear_lines()
+        self._lines_cleared_episode += lines_cleared
 
         reward = float(self.piece_placement)
         reward += self.line_clear_multiplier * (lines_cleared ** 2)
@@ -166,7 +170,8 @@ class TetrisEnv(gym.Env):
         self._steps += 1
 
         truncated = self._steps >= self.max_steps
-        return self._obs(), reward, False, truncated, {}
+        info = {"lines_cleared": self._lines_cleared_episode}
+        return self._obs(), reward, False, truncated, info
 
     # ── helpers ───────────────────────────────────────────────────────────────
 

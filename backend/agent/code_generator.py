@@ -116,8 +116,15 @@ The script must:
                    self._best_reward = float(open("{checkpoint_dir}/best_score.txt").read().strip())
                except Exception:
                    self._best_reward = float("-inf")
+               self._ep_metric_buf = []  # per-episode values of the goal metric
 
            def _on_step(self) -> bool:
+               # Accumulate goal metric from episode-end info dicts
+               for done, info in zip(self.locals.get("dones", []), self.locals.get("infos", [])):
+                   if done:
+                       val = info.get("{target_metric_name}")
+                       if val is not None:
+                           self._ep_metric_buf.append(float(val))
                if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
                    mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
                    try:
@@ -132,6 +139,19 @@ The script must:
                            logger.warning("Telemetry failed: %s", response.status_code)
                    except Exception as exc:
                        logger.warning("Telemetry error: %s", exc)
+                   if self._ep_metric_buf and "{target_metric_name}" != "mean_reward":
+                       _metric_val = float(np.mean(self._ep_metric_buf))
+                       self._ep_metric_buf.clear()
+                       try:
+                           requests.post(
+                               "{api_url}/telemetry/missions/{mission_id}/metrics",
+                               json={{"mission_id": "{mission_id}", "name": "{target_metric_name}",
+                                      "value": _metric_val, "step": self.n_calls,
+                                      "iteration": {current_iteration}}},
+                               timeout=2,
+                           )
+                       except Exception as exc:
+                           logger.warning("Telemetry error: %s", exc)
                    if mean_reward > self._best_reward:
                        self._best_reward = mean_reward
                        self.model.save("{checkpoint_dir}/best_model")
@@ -306,12 +326,14 @@ class CodeGenerator:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
             else:
                 env_kwargs_str = ""
+            tm_name = next(iter(tm.keys()), "mean_reward") if tm else "mean_reward"
             ctx = {
                 "algorithm": plan.get("algorithm", "PPO"),
                 "env_id": env_id,
                 "hyperparameters": json.dumps(hp, indent=2),
                 "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "None",
                 "target_reward": target_reward,
+                "target_metric_name": tm_name,
                 "env_setup": env_setup,
                 "env_kwargs_str": env_kwargs_str,
                 "current_iteration": current_iteration,

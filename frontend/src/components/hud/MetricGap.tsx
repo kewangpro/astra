@@ -1,9 +1,13 @@
 "use client";
 
-import type { Mission } from "@/lib/api";
+import {
+  LineChart, Line, ResponsiveContainer, Tooltip, ReferenceLine, YAxis,
+} from "recharts";
+import type { Mission, TelemetryEvent } from "@/lib/api";
 
 interface Props {
   mission: Mission;
+  events?: TelemetryEvent[];
 }
 
 function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
@@ -67,7 +71,7 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
   );
 }
 
-export function MetricGap({ mission }: Props) {
+export function MetricGap({ mission, events = [] }: Props) {
   const tm = mission.target_metric;
   const [metricName, targetValue] = tm && Object.keys(tm).length > 0
     ? [Object.keys(tm)[0], Object.values(tm)[0] as number]
@@ -82,6 +86,7 @@ export function MetricGap({ mission }: Props) {
     : null;
   const currentIter = mission.current_iteration;
 
+  // Use best of (best_metric_value over targetName) or fall back to mean_reward best
   const pct = targetValue > 0 ? Math.min(100, (best / targetValue) * 100) : 0;
   const gap = Math.max(0, targetValue - best);
   const achieved = gap <= 0;
@@ -93,8 +98,15 @@ export function MetricGap({ mission }: Props) {
     ? `−${gap.toFixed(1)} to close`
     : `−${(gap * 100).toFixed(2)}% to close`;
 
-  // Show current score only when it differs meaningfully from best
   const showCurrent = current != null && Math.abs(current - best) > 0.05;
+
+  // Build sparkline data from target metric telemetry events
+  const sparkData = events
+    .filter((e) => (e.type === "metric" || e.type === "backfill") && e.name === metricName)
+    .map((e) => ({ step: e.step ?? 0, value: e.value as number }))
+    .sort((a, b) => a.step - b.step);
+
+  const hasSparkData = sparkData.length > 1;
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
@@ -131,7 +143,7 @@ export function MetricGap({ mission }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex-1 min-w-0 space-y-2">
           {/* Best iter */}
           <div className="text-[10px] text-[#64748b]">
             best at iter {bestIter ?? "—"}
@@ -143,6 +155,52 @@ export function MetricGap({ mission }: Props) {
               ? `iter ${currentIter}: ${fmt(current!)}`
               : `current iter: ${currentIter}`}
           </div>
+
+          {/* Sparkline — target metric history */}
+          {hasSparkData && (
+            <div className="pt-1">
+              <div className="text-[9px] text-[#64748b] mb-1 uppercase tracking-widest">
+                {metricName} history
+              </div>
+              <ResponsiveContainer width="100%" height={52}>
+                <LineChart data={sparkData} margin={{ top: 2, right: 4, bottom: 0, left: 0 }}>
+                  <YAxis domain={["auto", "auto"]} hide />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#0f172a",
+                      border: "1px solid rgba(20,184,166,0.2)",
+                      borderRadius: 4,
+                      fontSize: 10,
+                      color: "#94a3b8",
+                      padding: "2px 6px",
+                    }}
+                    formatter={(v: unknown) => [
+                      isRaw
+                        ? (v as number).toFixed(1)
+                        : `${((v as number) * 100).toFixed(1)}%`,
+                      metricName,
+                    ]}
+                    labelFormatter={() => ""}
+                  />
+                  {targetValue > 0 && (
+                    <ReferenceLine
+                      y={targetValue}
+                      stroke="rgba(20,184,166,0.3)"
+                      strokeDasharray="3 3"
+                    />
+                  )}
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#14b8a6"
+                    strokeWidth={1.5}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </div>
     </div>

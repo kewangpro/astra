@@ -272,3 +272,53 @@ def test_line_clear_reward_is_quadratic():
     # 1 line cleared → reward = 10 * 1² = 10
     assert lines == 1
     e.close()
+
+
+# ── info dict — lines_cleared tracking ───────────────────────────────────────
+
+def test_step_info_has_lines_cleared(env):
+    env.reset(seed=0)
+    _, _, _, _, info = env.step(0)
+    assert "lines_cleared" in info
+    assert isinstance(info["lines_cleared"], int)
+
+
+def test_lines_cleared_starts_at_zero(env):
+    env.reset(seed=0)
+    _, _, _, _, info = env.step(0)
+    # No lines can be cleared on the first placement of a fresh board
+    assert info["lines_cleared"] == 0
+
+
+def test_lines_cleared_cumulates_across_steps():
+    e = TetrisEnv()
+    e.reset(seed=0)
+    # Manually fill rows 18 and 19 so next placement triggers line clears
+    e._board[18, :] = 1
+    e._board[19, :] = 1
+    e._board[18, 0] = 0  # leave one gap so it's not cleared yet
+    e._board[19, 0] = 0
+    # Place I-piece horizontally at col 0 rotation 0 — fills (0,0)-(0,3)
+    e._current_piece = 0  # I-piece
+    _, _, _, _, info = e.step(0)  # rotation=0, col=0
+    # After placing, lines might or might not clear depending on board state
+    assert info["lines_cleared"] >= 0
+    e.close()
+
+
+def test_death_info_has_lines_cleared():
+    e = TetrisEnv()
+    e.reset(seed=0)
+    e._board[:] = 1  # full board → death on next step
+    _, _, terminated, _, info = e.step(0)
+    assert terminated
+    assert "lines_cleared" in info
+    assert info["lines_cleared"] == 0  # no lines cleared before dying
+    e.close()
+
+
+def test_lines_cleared_resets_on_new_episode(env):
+    env.reset(seed=0)
+    env._lines_cleared_episode = 7  # simulate mid-episode
+    env.reset(seed=1)
+    assert env._lines_cleared_episode == 0

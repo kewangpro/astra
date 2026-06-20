@@ -129,7 +129,7 @@ export default function MissionHUD({
 
       {/* Metric row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <MetricGap mission={mission} />
+        <MetricGap mission={mission} events={events} />
         <div className="md:col-span-2">
           <MetricChart events={events} targetMetric={mission.target_metric} />
         </div>
