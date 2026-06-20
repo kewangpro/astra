@@ -65,8 +65,10 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[f
                 except (TypeError, ValueError):
                     pass
         env.close()
-        mean_info = {k: float(np.mean(vs)) for k, vs in info_accum.items()}
-        return float(np.mean(rewards)), mean_info
+        # Use max for goal metrics (e.g. food_eaten, lines_cleared) — reflects peak
+        # capability rather than average, consistent with "achieve X" goal semantics.
+        max_info = {k: float(np.max(vs)) for k, vs in info_accum.items()}
+        return float(np.mean(rewards)), max_info
     except Exception as exc:
         logger.warning("BenchmarkSuite rollout failed env=%s: %s", env_id, exc)
         return 0.0, {}

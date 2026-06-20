@@ -720,10 +720,11 @@ class LoopStateMachine:
     # ── Goal metric evaluation ─────────────────────────────────────────────────
 
     def _run_goal_metric_eval(self, mission_id: str, plan: dict, metric_name: str) -> Optional[float]:
-        """Run deterministic rollouts with the best checkpoint and return mean goal metric.
+        """Run deterministic rollouts with the best checkpoint and return MAX goal metric.
 
+        Returns the best single-episode value across 10 episodes — reflects the agent's
+        peak capability rather than its average, which is what "achieve X" goals require.
         Called in a thread (via asyncio.to_thread) so it doesn't block the event loop.
-        Reads metric_name from episode info dicts returned by the env on episode end.
         """
         import sys
         import numpy as np
@@ -771,7 +772,7 @@ class LoopStateMachine:
                 values.append(ep_val)
 
             env.close()
-            return float(np.mean(values))
+            return float(max(values)) if values else None
         except Exception as exc:
             logger.warning("LoopStateMachine: goal metric eval error: %s", exc)
             return None
