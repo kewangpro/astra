@@ -89,11 +89,11 @@ export function MetricChart({ events, targetMetric }: Props) {
       : [null, 0.92];
   const isRaw = targetValue > 1;
 
+  // Scale Y-axis from all live data so the chart is never blank when metric names
+  // don't exactly match target_metric (e.g. target=lines_cleared but data=mean_reward).
   const maxObserved = Math.max(
     0,
-    ...chartEvents
-      .filter((e) => e.name === targetName)
-      .map((e) => e.value)
+    ...chartEvents.filter((e) => e.isLive).map((e) => e.value)
   );
   const yDomain: [number, number] = isRaw
     ? [0, Math.max(targetValue * 1.1, maxObserved)]

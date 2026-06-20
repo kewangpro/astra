@@ -24,12 +24,19 @@ def _parse_target_metric(goal: str) -> dict:
     if m:
         val = float(m.group(1))
         return {"accuracy": val if val <= 1.0 else val / 100}
-    m = re.search(r"reward\s+of\s+(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
+    m = re.search(r"(?:mean_?)?reward\s+of\s+(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
     if m:
         return {"mean_reward": float(m.group(1))}
     m = re.search(r"(?:eval_)?loss\s+(?:of\s+|<=?\s*)(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
     if m:
         return {"eval_loss": float(m.group(1))}
+    # Generic: "achieve {metric_name} of {value}" — catch-all for custom metrics
+    m = re.search(
+        r"achieve\s+([a-zA-Z][a-zA-Z0-9_]*)\s+of\s+(\d+(?:\.\d+)?)",
+        goal, re.IGNORECASE,
+    )
+    if m:
+        return {m.group(1).lower(): float(m.group(2))}
     return {}
 
 

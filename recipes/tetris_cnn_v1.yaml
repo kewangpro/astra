@@ -5,7 +5,7 @@ task_type: rl
 domain: Tetris
 env_id: Tetris-v0
 target_metric:
-  lines_cleared: 20
+  mean_reward: 50
 description: >
   PPO recipe for Tetris-v0 using a flat 224-element observation and MlpPolicy.
   Placement-based action space (Discrete 40 = rotation × column) removes the

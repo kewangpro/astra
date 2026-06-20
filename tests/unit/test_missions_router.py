@@ -71,3 +71,33 @@ def test_parse_empty_string():
 def test_parse_no_numeric_target():
     result = _parse_target_metric("achieve high accuracy")
     assert result == {}
+
+
+# ── Generic "achieve {metric} of {value}" catch-all ──────────────────────────
+
+def test_parse_lines_cleared():
+    result = _parse_target_metric(
+        "Train a Tetris-v0 PPO agent to achieve lines_cleared of 20"
+    )
+    assert result == {"lines_cleared": 20.0}
+
+
+def test_parse_generic_metric_name():
+    result = _parse_target_metric("achieve f1_score of 0.85")
+    assert result == {"f1_score": 0.85}
+
+
+def test_parse_generic_case_insensitive():
+    result = _parse_target_metric("Achieve Mean_Reward of 100")
+    assert result == {"mean_reward": 100.0}
+
+
+def test_parse_generic_integer_value():
+    result = _parse_target_metric("achieve episodes of 500")
+    assert result == {"episodes": 500.0}
+
+
+def test_parse_generic_does_not_match_without_achieve():
+    # Pattern requires "achieve" keyword to avoid greedy false matches
+    result = _parse_target_metric("lines_cleared of 20 is the goal")
+    assert result == {}
