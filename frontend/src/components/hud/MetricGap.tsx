@@ -148,14 +148,14 @@ export function MetricGap({ mission, events = [] }: Props) {
         <div className="flex-1 min-w-0 space-y-2">
           {/* Best iter */}
           <div className="text-[10px] text-[#64748b]">
-            best at iter {bestIter ?? "—"}
+            best at iter {bestIter ? Math.round(Number(bestIter)) : "—"}
           </div>
 
           {/* Current iter — only show score when it differs from best */}
           <div className="text-[10px] text-[#94a3b8]">
             {showCurrent
-              ? `iter ${currentIter}: ${fmt(current!)}`
-              : `current iter: ${currentIter}`}
+              ? `iter ${Number(currentIter).toFixed(1)}: ${fmt(current!)}`
+              : `current iter: ${Number(currentIter).toFixed(1)}`}
           </div>
 
           {/* Sparkline — target metric history */}
