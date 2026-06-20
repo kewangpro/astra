@@ -217,8 +217,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 ---
 
-## Phase 9: Autonomous Approval & Loop Hardening 🔄
-*Goal: Reduce human friction in supervised mode; make the loop more robust against weak LLM output.*
+## Phase 9: Autonomous Approval & Code Robustness ✅
+*Goal: Reduce human friction in supervised mode; make code generation robust against weak LLM output.*
 
 - [x] **Auto-Approve gate (Step 9.1)**
     - `backend/agent/code_safety_classifier.py`: `CodeSafetyClassifier` — two-stage check: (1) static regex pre-filter (subprocess, eval, exec, external HTTP); (2) LLM classification using code inference provider. Returns `SafetyVerdict(safe, reason, classifier)`.
@@ -311,7 +311,12 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/agent/code_safety_classifier.py`: `_static_check` now includes a positive short-circuit: after all danger patterns pass, if every `requests` call in the script targets `127.0.0.1` or `localhost`, return `safe=True` immediately without invoking the LLM. Mixed scripts (any external URL) still go to the LLM.
     - `tests/unit/test_code_safety_classifier.py`: 12 new tests covering safe/unsafe static-check paths including the localhost short-circuit and the mixed-host edge case.
 
-- [x] **MetricChart limited to last 3 runs (Step 9.18)**
+---
+
+## Phase 10: Pivot Intelligence & Live Agent Viewer ✅
+*Goal: Escalating pivot strategy with 4 levels; live agent viewer; MetricChart and play endpoint polish.*
+
+- [x] **MetricChart limited to last 3 runs (Step 10.1)**
     - **Problem**: missions with 50+ iterations accumulated 14k+ datapoints across a huge x-axis range (~25M steps), making the current training run a tiny sliver on the far right of the chart.
     - `frontend/src/components/hud/MetricChart.tsx`: chart now shows only the last 3 iteration runs (current + 2 prior). Run-reset boundaries are detected from step counter drops; the display slice is computed from the last `MAX_RUNS` reset indices. Missions with fewer than 3 runs are unaffected.
 
@@ -356,7 +361,12 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/routers/play.py`: `_checkpoint_algorithm()` reads `best_model_algo.txt` first (ground truth), falls back to `train_config.json`. If loading still fails with the detected algorithm, tries all known SB3 classes (PPO/DQN/SAC/A2C) in order — prevents any algorithm mismatch from hard-crashing the viewer.
     - `tests/unit/test_play_router.py`: 4 new tests for `_checkpoint_algorithm` (prefers algo file, fallback to config, empty file, no config).
 
-- [x] **MetricGap redesign — best vs current iteration (Step 9.25)**
+---
+
+## Phase 11: Resilience, Environments & Dual Metrics ✅
+*Goal: Pivot persistence across restarts; Tetris-v0 environment; dual metric tracking (MetricHistory=mean_reward / MetricGap=goal metric).*
+
+- [x] **MetricGap redesign — best vs current iteration (Step 11.1)**
     - **Problem**: the gap widget showed `best_metric_value` labeled with `current_iteration`, making it look like the current iteration achieved the peak score when the peak may have been several iterations earlier.
     - `backend/models/mission.py` + Alembic migration `a1b2c3d4e5f6`: added `best_metric_iteration` (int, nullable) and `current_metric_value` (str, nullable) columns to the `missions` table.
     - `backend/loop/pivots.py`: `best_metric_iteration()` returns the iteration index that achieved the best score (seed entry at −1 maps to `None`); refactored via shared `_best_entry()` helper.
@@ -429,3 +439,26 @@ This document outlines the phased implementation strategy for `ASTRA`.
         - `_parse_target_metric` generic catch-all upgraded from single-word (`[a-zA-Z][a-zA-Z0-9_]*`) to multi-word (`[\w][\w\s]*?`) with space→underscore conversion (`re.sub(r"\s+", "_", ...)`) so "achieve food eaten of 30" → `{"food_eaten": 30}`.
         - `update_mission` PATCH handler: calls `flag_modified(mission, k)` for dict fields to ensure SQLAlchemy detects JSON column mutations.
     - `tests/unit/test_missions_router.py`: 3 new tests (`test_parse_multi_word_metric_food_eaten`, `test_parse_multi_word_metric_spaces_to_underscores`, `test_parse_multi_word_metric_case_insensitive`). Total: **413 tests**.
+
+---
+
+## Phase 12: Mission Lifecycle & Telemetry Hardening 🔄
+*Goal: Clean mission deletion; robust sandbox error detection; accurate goal metric telemetry; iteration number polish.*
+
+- [x] **MetricGap iteration number formatting (Step 12.1)**
+    - **Problem**: iteration references in MetricGap were shown as raw integers (e.g. `3`), making them indistinguishable from metric values at a glance.
+    - `frontend/src/components/hud/MetricGap.tsx`: "current iter:" label uses `.toFixed(1)` (e.g. `4.0`) to visually distinguish it from iteration index references. "best at iter" and "iter N: value" use `Math.round()` (integer) since they refer to a specific iteration number. `bestIter = 0` is treated as unset (shows "—").
+
+- [x] **DELETE /missions/{id} fully stops running missions (Step 12.2)**
+    - **Problem**: `DELETE /missions/{id}` only removed the DB record. If the mission's asyncio loop was running, it continued as a zombie — consuming memory, posting telemetry to a now-missing mission, and blocking the event loop.
+    - `backend/routers/missions.py`: `delete_mission` now: (1) pops and cancels the asyncio task from `_running_tasks` in the agent router; (2) rejects all `PENDING` approval gates for the mission (so the polling loop sees `REJECTED` and exits); (3) then deletes the DB record.
+    - `tests/unit/test_delete_mission.py`: 7 new tests covering task cancellation, finished-task no-op, gate rejection, no-gates, no-task, task removed from registry, and 404. Total: **420 tests**.
+
+- [x] **Sandbox error detection — ignore benign warnings (Step 12.3)**
+    - **Problem**: `_wait_for_sandbox` matched `"Error"` anywhere in sandbox output. `"Telemetry error: HTTPConnectionPool(...): Read timed out"` (transient, training continues fine) and `"Warm-start skipped (architecture mismatch or load error)"` (expected after architecture pivots) both triggered false healer invocations.
+    - `backend/loop/state_machine.py`: `_wait_for_sandbox` now filters log lines — only counts as fatal if a line contains `"Traceback"` or `"Error"` AND does not match `"Telemetry error"` or `"Warm-start skipped"`. Returns `None` for benign-only output.
+    - `tests/unit/test_state_machine_helpers.py`: 5 new tests — real traceback flagged, telemetry timeout ignored, warm-start mismatch ignored, clean exit returns None, mixed benign+fatal still flagged. Total: **425 tests**.
+
+- [x] **Telemetry event cap preserves goal metric events (Step 12.4)**
+    - **Problem**: `useTelemetry` capped the WS event buffer at 500 total events. With ~244 `mean_reward` posts per iteration, a 7-iteration mission floods the cap and drops early `food_eaten` / `lines_cleared` entries — the MetricGap sparkline showed only 2 of 7 data points.
+    - `frontend/src/lib/hooks/useTelemetry.ts`: when trimming past 500 events, goal metric events (`type === "metric"` and `name !== "mean_reward"`) are always preserved unconditionally. Only high-frequency events (mean_reward, status, info) are trimmed to fill the remaining budget.
