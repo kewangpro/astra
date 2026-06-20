@@ -99,42 +99,46 @@ The script must:
    If the checkpoint architecture differs (e.g. after a net_arch pivot), the except branch silently
    falls back to random weights. `os` and `logging` are already imported.
    The block is MANDATORY — do not remove or skip it.
-4. Implement a custom BaseCallback. Copy this _on_step EXACTLY — do not modify:
+4. Implement a custom BaseCallback. Copy this ENTIRE class EXACTLY — do not add, remove, or
+   modify any line:
 
-       def _on_step(self) -> bool:
-           if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
-               mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
+       class CustomCallback(BaseCallback):
+           def __init__(self, verbose=0):
+               super().__init__(verbose=verbose)
                try:
-                   response = requests.post(
-                       "{api_url}/telemetry/missions/{mission_id}/metrics",
-                       json={{"mission_id": "{mission_id}", "name": "mean_reward",
-                              "value": mean_reward, "step": self.n_calls,
-                              "iteration": {current_iteration}}},
-                       timeout=2,
-                   )
-                   if not response.ok:
-                       logger.warning("Telemetry failed: %s", response.status_code)
-               except Exception as exc:
-                   logger.warning("Telemetry error: %s", exc)
-               if not hasattr(self, "_best_reward"):
-                   _score_file = "{checkpoint_dir}/best_score.txt"
+                   self._best_reward = float(open("{checkpoint_dir}/best_score.txt").read().strip())
+               except Exception:
+                   self._best_reward = float("-inf")
+
+           def _on_step(self) -> bool:
+               if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
+                   mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
                    try:
-                       self._best_reward = float(open(_score_file).read().strip())
-                   except Exception:
-                       self._best_reward = float("-inf")
-               if mean_reward > self._best_reward:
-                   self._best_reward = mean_reward
-                   self.model.save("{checkpoint_dir}/best_model")
-                   with open("{checkpoint_dir}/best_score.txt", "w") as _f:
-                       _f.write(str(mean_reward))
-                   with open("{checkpoint_dir}/best_model_algo.txt", "w") as _f:
-                       _f.write(self.model.__class__.__name__)
-               if mean_reward >= {target_reward}:
-                   return False  # stop training — target reached
-           return True
+                       response = requests.post(
+                           "{api_url}/telemetry/missions/{mission_id}/metrics",
+                           json={{"mission_id": "{mission_id}", "name": "mean_reward",
+                                  "value": mean_reward, "step": self.n_calls,
+                                  "iteration": {current_iteration}}},
+                           timeout=2,
+                       )
+                       if not response.ok:
+                           logger.warning("Telemetry failed: %s", response.status_code)
+                   except Exception as exc:
+                       logger.warning("Telemetry error: %s", exc)
+                   if mean_reward > self._best_reward:
+                       self._best_reward = mean_reward
+                       self.model.save("{checkpoint_dir}/best_model")
+                       with open("{checkpoint_dir}/best_score.txt", "w") as _f:
+                           _f.write(str(mean_reward))
+                       with open("{checkpoint_dir}/best_model_algo.txt", "w") as _f:
+                           _f.write(self.model.__class__.__name__)
+                   if mean_reward >= {target_reward}:
+                       return False  # stop training — target reached
+               return True
 
    The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
    The best_model save block is MANDATORY — it ensures the peak model is preserved.
+   The __init__ loading from best_score.txt is MANDATORY — it preserves peak weights across restarts.
 5. Call model.learn(total_timesteps=500000, callback=callback) — use at least
    500000 timesteps. Do NOT use 10000 or any small number.
 6. After training, save the final model: model.save("{checkpoint_dir}/last_model")

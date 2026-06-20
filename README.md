@@ -22,7 +22,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Live agent viewer** — mission HUD embeds a real-time canvas rendering of the trained Snake-v0 agent playing the game, streamed over WebSocket from `best_model.zip`
 - **Persistent escalating pivot strategy** — `PivotEngine` tracks consecutive failed pivots across restarts (DB-persisted `pivot_escalation_count`) and escalates through 4 levels: HP tuning → architecture change → algorithm switch (or reward shaping for algorithm-locked goals) → aggressive reward shaping. Pivot changes display real old→new diffs in the event stream
 - **Algorithm-locked missions** — when a goal explicitly names an algorithm (e.g. "Train a Snake-v0 DQN agent"), ASTRA never switches to a different algorithm even at high escalation. Level 2 pivots remap to reward shaping instead
-- **363 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers) plus integration tests for the full loop
+- **364 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers) plus integration tests for the full loop
 
 ### Screenshots
 
@@ -84,7 +84,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 357 unit tests across all core modules
+│   ├── unit/           # 358 unit tests across all core modules
 │   └── integration/    # 6 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (snake_env.py → Snake-v0)
@@ -119,7 +119,7 @@ make ports  # show port status for all services
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 | 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
-| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, guaranteed Snake-v0 registration, classifier false-positive fixes, absolute checkpoint paths, domain dropdown removed, Snake-v0 live HUD viewer, MetricChart windowing, 4-level escalating pivot strategy (HP/arch/algo/reward), play endpoint algo+reward-config awareness, telemetry peak tracking, pivot change summaries with real old→new diffs, best_model_algo.txt watch fix, MetricGap best-vs-current iter redesign, no-op pivot detection & LLM schema normalization, pivot escalation persisted across restarts, algorithm-locked mission support, telemetry iteration tracking & "best at iter —" fix, 363 tests | 🔄 In Progress |
+| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, guaranteed Snake-v0 registration, classifier false-positive fixes, absolute checkpoint paths, domain dropdown removed, Snake-v0 live HUD viewer, MetricChart windowing, 4-level escalating pivot strategy (HP/arch/algo/reward), play endpoint algo+reward-config awareness, telemetry peak tracking, pivot change summaries with real old→new diffs, best_model_algo.txt watch fix, MetricGap best-vs-current iter redesign, no-op pivot detection & LLM schema normalization, pivot escalation persisted across restarts, algorithm-locked mission support, telemetry iteration tracking & "best at iter —" fix, callback __init__ peak-weight preservation, 364 tests | 🔄 In Progress |
 
 ## Hardware Target
 

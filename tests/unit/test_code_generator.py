@@ -488,3 +488,19 @@ def test_build_user_prompt_rl_iteration_defaults_to_zero(tmp_path, monkeypatch):
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
     assert '"iteration": 0' in prompt
+
+
+def test_build_user_prompt_rl_callback_init_loads_best_score(tmp_path, monkeypatch):
+    """__init__ must load _best_reward from best_score.txt, not initialize to -inf."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    # __init__ must read from best_score.txt so warm-start score is preserved
+    assert "best_score.txt" in prompt
+    # hasattr lazy-init pattern must NOT be present (it's defeated by any __init__ that sets _best_reward)
+    assert "not hasattr" not in prompt
