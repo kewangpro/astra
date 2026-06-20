@@ -85,7 +85,6 @@ astra/
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
 │   ├── unit/           # 358 unit tests across all core modules
-│   └── integration/    # 8 integration tests for the full loop
 │   └── integration/    # 8 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (snake_env.py → Snake-v0)
