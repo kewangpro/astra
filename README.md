@@ -18,11 +18,11 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Clean handoff protocol** — every iteration writes a `SESSION_SUMMARY.md` capturing the last action, current blocker, and exact next step for reliable warm-restart
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
 - **Live mission HUD** — Next.js dashboard with real-time metric charts (current vs. prior run differentiated by color), log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **Custom RL environments** — `envs/snake_env.py` provides a Gymnasium-compatible Snake-v0 environment for custom environment missions
+- **Custom RL environments** — `envs/snake_env.py` (Snake-v0) and `envs/tetris_env.py` (Tetris-v0) provide Gymnasium-compatible environments for custom environment missions; Tetris-v0 uses a placement-based Discrete(40) action space with a flat 224-element observation
 - **Live agent viewer** — mission HUD embeds a real-time canvas rendering of the trained Snake-v0 agent playing the game, streamed over WebSocket from `best_model.zip`
 - **Persistent escalating pivot strategy** — `PivotEngine` tracks consecutive failed pivots across restarts (DB-persisted `pivot_escalation_count`) and escalates through 4 levels: HP tuning → architecture change → algorithm switch (or reward shaping for algorithm-locked goals) → aggressive reward shaping. Pivot changes display real old→new diffs in the event stream
 - **Algorithm-locked missions** — when a goal explicitly names an algorithm (e.g. "Train a Snake-v0 DQN agent"), ASTRA never switches to a different algorithm even at high escalation. Level 2 pivots remap to reward shaping instead
-- **366 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers) plus integration tests for the full loop
+- **394 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers, Tetris-v0 env) plus integration tests for the full loop
 
 ### Screenshots
 
@@ -84,10 +84,10 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 358 unit tests across all core modules
+│   ├── unit/           # 386 unit tests across all core modules
 │   └── integration/    # 8 integration tests for the loop state machine
 ├── alembic/            # Database migrations
-├── envs/               # Custom Gymnasium environments (snake_env.py → Snake-v0)
+├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
@@ -119,7 +119,7 @@ make ports  # show port status for all services
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 | 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
-| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, guaranteed Snake-v0 registration, classifier false-positive fixes, absolute checkpoint paths, domain dropdown removed, Snake-v0 live HUD viewer, MetricChart windowing, 4-level escalating pivot strategy (HP/arch/algo/reward), play endpoint algo+reward-config awareness, telemetry peak tracking, pivot change summaries with real old→new diffs, best_model_algo.txt watch fix, MetricGap best-vs-current iter redesign, no-op pivot detection & LLM schema normalization, pivot escalation persisted across restarts, algorithm-locked mission support, telemetry iteration tracking & "best at iter —" fix, callback __init__ peak-weight preservation, pivot plan persisted across restarts, 366 tests | 🔄 In Progress |
+| 9 | Autonomous Approval & Loop Hardening — auto-approve classifier, SB3 patching, pivot clamping & architecture pivots, best-model preservation, warm-start from peak weights, manifest reconciliation, MLX inference lock, guaranteed Snake-v0 registration, classifier false-positive fixes, absolute checkpoint paths, domain dropdown removed, Snake-v0 live HUD viewer, MetricChart windowing, 4-level escalating pivot strategy (HP/arch/algo/reward), play endpoint algo+reward-config awareness, telemetry peak tracking, pivot change summaries with real old→new diffs, best_model_algo.txt watch fix, MetricGap best-vs-current iter redesign, no-op pivot detection & LLM schema normalization, pivot escalation persisted across restarts, algorithm-locked mission support, telemetry iteration tracking & "best at iter —" fix, callback __init__ peak-weight preservation, pivot plan persisted across restarts, Tetris-v0 custom env + recipe + code-gen wiring, 394 tests | 🔄 In Progress |
 
 ## Hardware Target
 

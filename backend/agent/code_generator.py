@@ -37,7 +37,7 @@ Requirements:
 - DO NOT use markdown code blocks (```python ... ```).
 - Return ONLY the raw Python script, no explanation, no preamble, no stop tokens."""
 
-# Injected verbatim at the top of Snake training scripts
+# Injected verbatim at the top of custom-env training scripts
 _SNAKE_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
@@ -45,9 +45,16 @@ from envs.snake_env import register as _register_snake
 _register_snake()
 """
 
+_TETRIS_SETUP = """\
+import sys as _sys
+_sys.path.insert(0, "{project_root}")
+from envs.tetris_env import register as _register_tetris
+_register_tetris()
+"""
+
 _RL_TEMPLATE = """\
 Generate a complete RL training script using Stable-Baselines3.
-{snake_setup}
+{env_setup}
 Mission ID: {mission_id}
 Algorithm: {algorithm}
 Environment: {env_id}
@@ -238,12 +245,13 @@ class CodeGenerator:
         if task_type == "rl":
             code = self._patch_rl_imports(code)
             env_id = plan.get("env_id", "")
+            _proj_root = os.path.abspath(os.path.join(settings.data_path, ".."))
             if env_id == "Snake-v0" and "register" not in code:
-                snake_preamble = _SNAKE_SETUP.format(
-                    project_root=os.path.abspath(os.path.join(settings.data_path, ".."))
-                )
-                code = snake_preamble + "\n" + code
+                code = _SNAKE_SETUP.format(project_root=_proj_root) + "\n" + code
                 logger.info("CodeGenerator: injected Snake-v0 registration preamble")
+            elif env_id == "Tetris-v0" and "register" not in code:
+                code = _TETRIS_SETUP.format(project_root=_proj_root) + "\n" + code
+                logger.info("CodeGenerator: injected Tetris-v0 registration preamble")
         # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
         code = self._fix_checkpoint_paths(code, checkpoint_dir)
 
@@ -283,13 +291,14 @@ class CodeGenerator:
             tm = plan.get("target_metric", {})
             target_reward = next(iter(tm.values()), 200) if tm else 200
             env_id = plan.get("env_id", "CartPole-v1")
-            # Inject Snake registration preamble when the env is Snake-v0
-            snake_setup = (
-                _SNAKE_SETUP.format(project_root=os.path.abspath(
-                    os.path.join(settings.data_path, "..")
-                ))
-                if env_id == "Snake-v0" else ""
-            )
+            # Inject custom env registration preamble when needed
+            _project_root = os.path.abspath(os.path.join(settings.data_path, ".."))
+            if env_id == "Snake-v0":
+                env_setup = _SNAKE_SETUP.format(project_root=_project_root)
+            elif env_id == "Tetris-v0":
+                env_setup = _TETRIS_SETUP.format(project_root=_project_root)
+            else:
+                env_setup = ""
             policy_kwargs = hp.pop("policy_kwargs", None)
             # Build env_kwargs_str: ", key=value, ..." for gym.make() call
             env_kwargs = plan.get("env_kwargs", {})
@@ -303,7 +312,7 @@ class CodeGenerator:
                 "hyperparameters": json.dumps(hp, indent=2),
                 "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "None",
                 "target_reward": target_reward,
-                "snake_setup": snake_setup,
+                "env_setup": env_setup,
                 "env_kwargs_str": env_kwargs_str,
                 "current_iteration": current_iteration,
                 **base,

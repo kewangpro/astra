@@ -504,3 +504,51 @@ def test_build_user_prompt_rl_callback_init_loads_best_score(tmp_path, monkeypat
     assert "best_score.txt" in prompt
     # hasattr lazy-init pattern must NOT be present (it's defeated by any __init__ that sets _best_reward)
     assert "not hasattr" not in prompt
+
+
+def test_build_user_prompt_injects_tetris_setup(tmp_path, monkeypatch):
+    """Tetris-v0 env must have registration preamble in the prompt."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(env_id="Tetris-v0")
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "tetris_env" in prompt
+    assert "_register_tetris" in prompt
+
+
+def test_build_user_prompt_tetris_no_snake_setup(tmp_path, monkeypatch):
+    """Tetris-v0 prompt must NOT include the Snake setup preamble."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(env_id="Tetris-v0")
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "snake_env" not in prompt
+
+
+def test_generate_training_script_injects_tetris_preamble(tmp_path, monkeypatch):
+    """Post-generation fallback must inject Tetris registration if missing from LLM output."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    # LLM returns script without registration preamble
+    code = "import gymnasium as gym\nenv = gym.make('Tetris-v0')\n"
+    gen = CodeGenerator(_make_provider(code))
+    plan = _make_rl_plan(env_id="Tetris-v0")
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-tetris", plan)
+        )
+
+    content = open(path).read()
+    assert "tetris_env" in content
+    assert "_register_tetris" in content
