@@ -838,7 +838,15 @@ class LoopStateMachine:
             with open(log_path, "r") as f:
                 f.seek(log_offset)
                 content = f.read()
-            if "Traceback" in content or "Error" in content:
+            # Ignore benign warnings (telemetry timeouts, warm-start mismatches)
+            # and only flag real Python errors with a traceback.
+            fatal_lines = [
+                line for line in content.splitlines()
+                if ("Traceback" in line or "Error" in line)
+                and "Telemetry error" not in line
+                and "Warm-start skipped" not in line
+            ]
+            if fatal_lines:
                 return content
         return None
 

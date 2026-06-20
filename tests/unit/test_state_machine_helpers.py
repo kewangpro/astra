@@ -420,3 +420,68 @@ def test_load_persisted_best_prefers_telemetry_over_negative_db():
     )
     result = sm._load_persisted_best("fake-id", mission)
     assert result == 3.0
+
+
+# ── _wait_for_sandbox error detection ─────────────────────────────────────────
+
+import asyncio
+from unittest.mock import MagicMock, patch
+
+
+def _run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+def _make_sandbox_sm(log_content: str, tmp_path):
+    sm = _make_sm()
+    log_path = tmp_path / "sandbox.log"
+    log_path.write_text(log_content)
+    sandbox = MagicMock()
+    sandbox.is_alive.return_value = False
+    sandbox.get_log_path.return_value = str(log_path)
+    sm._sandbox = sandbox
+    return sm
+
+
+def test_wait_sandbox_real_traceback_returns_content(tmp_path):
+    """A Python Traceback is correctly flagged as a fatal error."""
+    content = "Traceback (most recent call last):\n  File train.py, line 5\nKeyError: 'foo'\n"
+    sm = _make_sandbox_sm(content, tmp_path)
+    result = _run(sm._wait_for_sandbox("mid"))
+    assert result == content
+
+
+def test_wait_sandbox_telemetry_error_not_flagged(tmp_path):
+    """Telemetry timeout warnings do not trigger the healer."""
+    content = "WARNING:root:Telemetry error: HTTPConnectionPool(host='127.0.0.1', port=8200): Read timed out.\n"
+    sm = _make_sandbox_sm(content, tmp_path)
+    result = _run(sm._wait_for_sandbox("mid"))
+    assert result is None
+
+
+def test_wait_sandbox_warm_start_skipped_not_flagged(tmp_path):
+    """Architecture mismatch warm-start warning does not trigger the healer."""
+    content = "WARNING:root:Warm-start skipped (architecture mismatch or load error): Error(s) in loading state_dict\n"
+    sm = _make_sandbox_sm(content, tmp_path)
+    result = _run(sm._wait_for_sandbox("mid"))
+    assert result is None
+
+
+def test_wait_sandbox_clean_exit_returns_none(tmp_path):
+    """Clean sandbox output with no errors returns None."""
+    content = "Training complete. Steps=500000\n"
+    sm = _make_sandbox_sm(content, tmp_path)
+    result = _run(sm._wait_for_sandbox("mid"))
+    assert result is None
+
+
+def test_wait_sandbox_mixed_benign_and_fatal_returns_content(tmp_path):
+    """Benign warnings alongside a real Traceback still flags as fatal."""
+    content = (
+        "WARNING:root:Telemetry error: Read timed out.\n"
+        "WARNING:root:Warm-start skipped (architecture mismatch or load error): ...\n"
+        "Traceback (most recent call last):\nValueError: bad value\n"
+    )
+    sm = _make_sandbox_sm(content, tmp_path)
+    result = _run(sm._wait_for_sandbox("mid"))
+    assert result == content
