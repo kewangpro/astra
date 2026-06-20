@@ -100,6 +100,13 @@ class LoopStateMachine:
             db_best = float(mission.best_metric_value) if mission.best_metric_value else None
             if db_best is None or persisted_best > db_best:
                 await self._save_best_metric(mission_id, persisted_best)
+        # Restore escalation count so restarts don't reset aggressive pivoting
+        if mission.pivot_escalation_count:
+            pivot_engine.restore_pivot_count(mission.pivot_escalation_count)
+            logger.info(
+                "LoopStateMachine: restored pivot_count=%d (escalation=%d) for mission=%s",
+                mission.pivot_escalation_count, pivot_engine.escalation_level(), mission_id,
+            )
 
         manifest = self._load_or_create_manifest(mission_id, mission)
         mission_dir = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
@@ -291,6 +298,7 @@ class LoopStateMachine:
                         current_algorithm=current_algo,
                     )
                     pivot_engine.record_pivot()
+                    await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
                     pivot = self._normalize_pivot(pivot)
                     adjustments = self._clamp_rl_adjustments(
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
@@ -324,6 +332,7 @@ class LoopStateMachine:
                             "escalating pivot count without applying; escalation=%d", escalation,
                         )
                         pivot_engine.record_pivot()  # double-count to escalate faster
+                        await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
                         await emit_status(
                             mission_id, "Pivot skipped — no changes proposed",
                             event_type="warn",
@@ -504,6 +513,15 @@ class LoopStateMachine:
                     update(Mission)
                     .where(Mission.id == mission_id)
                     .values(current_metric_value=str(value))
+                )
+
+    async def _save_pivot_count(self, mission_id: str, count: int) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(Mission)
+                    .where(Mission.id == mission_id)
+                    .values(pivot_escalation_count=count)
                 )
 
     @staticmethod

@@ -13,6 +13,10 @@ logger = get_logger(__name__)
 
 PLATEAU_WINDOW = 3          # iterations with no improvement → plateau
 PLATEAU_THRESHOLD = 0.01    # minimum relative improvement to count as progress
+# A pivot resets the escalation counter only when the best metric improves by
+# this much relative to its value at the last pivot. Raised to 5% so small
+# oscillations in the running average don't keep resetting escalation back to 0.
+ESCALATION_RESET_THRESHOLD = 0.05
 
 # Escalation: how many consecutive failed pivots before stepping up aggressiveness
 ESCALATION_ARCH   = 2  # pivot count → suggest architecture change
@@ -44,12 +48,20 @@ class PivotEngine:
             and current_best is not None
             and self._best_at_last_pivot > 0
             and (current_best - self._best_at_last_pivot) / self._best_at_last_pivot
-               < PLATEAU_THRESHOLD
+               < ESCALATION_RESET_THRESHOLD
         ):
             self._pivot_count += 1
         else:
             self._pivot_count = 0
         self._best_at_last_pivot = current_best
+
+    @property
+    def pivot_count(self) -> int:
+        return self._pivot_count
+
+    def restore_pivot_count(self, count: int) -> None:
+        """Seed pivot_count from persisted state after a server restart."""
+        self._pivot_count = count
 
     def escalation_level(self) -> int:
         """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards."""
