@@ -26,7 +26,16 @@ export function useTelemetry(missionId: string) {
         const evt: TelemetryEvent = JSON.parse(e.data as string);
         setEvents((prev) => {
           const next = [...prev, evt];
-          return next.length > 500 ? next.slice(-500) : next;
+          if (next.length <= 500) return next;
+          // Always preserve goal metric events (non-mean_reward, one per iteration).
+          // Only trim high-frequency events (mean_reward, status, info).
+          const keep = next.filter(
+            (ev) => ev.type === "metric" && ev.name !== "mean_reward"
+          );
+          const trimmable = next.filter(
+            (ev) => !(ev.type === "metric" && ev.name !== "mean_reward")
+          );
+          return [...keep, ...trimmable.slice(-(500 - keep.length))];
         });
       } catch {
         // ignore malformed frames
