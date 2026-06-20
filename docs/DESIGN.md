@@ -70,6 +70,16 @@ The execution engine that manages the state machine of training:
 - **Phase Management**: Handles transitions between curriculum steps.
 - **Retry Logic**: Automatically restarts failed runs with adjusted noise or exploration parameters.
 - **Goal Tracking**: Continuous comparison between current performance and target metrics.
+- **Pivot Engine** (`backend/loop/pivots.py`): Detects plateaus and drives escalating pivot strategy.
+  - `needs_pivot()` triggers when the last `PLATEAU_WINDOW=3` iterations show < 1% relative improvement.
+  - `record_pivot()` increments `_pivot_count` unless the all-time best improved by ≥ 5% (`ESCALATION_RESET_THRESHOLD`) since the previous pivot — preventing small oscillations from resetting escalation.
+  - `escalation_level()` returns the current aggression tier based on `_pivot_count`:
+    - **Level 0** (`count < 2`): tune hyperparameters only.
+    - **Level 1** (`count ≥ 2`): change policy network architecture in addition to HP tuning.
+    - **Level 2** (`count ≥ 4`): allow algorithm switch (e.g. DQN → PPO).
+    - **Level 3** (`count ≥ 6`): reshape reward function via `env_kwargs` (e.g. disable distance shaping, increase food reward).
+  - `_pivot_count` is persisted to the `missions.pivot_escalation_count` DB column after every pivot and restored on server restart, so escalation survives process crashes and restarts.
+  - No-op pivot detection: if the LLM proposes HP values identical to current values, the change is filtered and `record_pivot()` is called twice (faster escalation) without regenerating code.
 
 ### 2.3. Multi-Tier Memory System
 - **Structured Registry (SQL)**: Tracks every experiment's DNA—hyperparameters, weights, and results.

@@ -364,3 +364,19 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `frontend/src/lib/api.ts`: `Mission` type extended with `best_metric_iteration` and `current_metric_value`.
     - `frontend/src/components/hud/MetricGap.tsx`: arc gauge shows best-ever value; gap and percentage sit below the arc; right column shows "best at iter X" and current iteration score separately. Current score hidden when it equals the best (no redundancy).
     - `tests/unit/test_pivot_engine.py`: 4 new tests for `best_metric_iteration` including seed-entry suppression and seed-beaten-by-real-iter cases. Total: 329 tests.
+
+- [x] **Pivot changes display — no-op filtering and correct old→new format (Step 9.26)**
+    - **Problem 1 (no-op pivot)**: the LLM frequently returned HP adjustments identical to current values (e.g. `learning_rate: 0.0005→0.0005`). These were applied, re-generating the training script with no actual changes and wasting an iteration.
+    - **Problem 2 (display X→X)**: even for real changes, the pivot event stream showed `old→new` where both sides were the new value, because `old_v` was read from `plan["hyperparameters"]` *after* `plan["hyperparameters"].update(real_adjustments)` had already mutated it.
+    - **Problem 3 (LLM schema deviation)**: at escalation level 1+ the LLM sometimes returned `adjustments: {hyperparameters: {lr: ...}, env_kwargs: {...}}` (nested) instead of the flat `adjustments: {lr: ...}` + top-level `env_kwargs`. The nested dicts leaked into the event stream as `hyperparameters={...}`.
+    - `backend/loop/state_machine.py`: (1) `_hp_changed()` closure filters `real_adjustments` to only keys where proposed ≠ current (with float coercion to handle LLM string types); (2) `old_hps` snapshot captured *before* `plan["hyperparameters"].update()` so display shows true old→new; (3) `_normalize_pivot()` static method flattens nested `adjustments.hyperparameters` and promotes `adjustments.env_kwargs` to top-level before processing.
+    - `tests/unit/test_state_machine_helpers.py`: 12 new tests covering `_hp_changed` type coercion, `old_hps` snapshot correctness, and `_normalize_pivot` for flat/nested/mixed/top-level-env-kwargs cases. Total: 336 tests.
+
+- [x] **Persist pivot escalation count across server restarts (Step 9.27)**
+    - **Problem**: `PivotEngine._pivot_count` was pure in-memory state. Every server restart reset it to 0, preventing escalation from ever accumulating past level 1 regardless of how many pivots had been attempted. After 23+ pivots across restarts, DQN was still receiving level 0–1 (HP tune + arch change) treatment indefinitely.
+    - **Problem 2 (escalation reset threshold too low)**: `PLATEAU_THRESHOLD = 0.01` (1%) meant any run-to-run oscillation in the all-time best (~1–2% variance is typical) would reset the counter after nearly every pivot.
+    - `backend/models/mission.py` + Alembic migration `b2c3d4e5f6a7`: added `pivot_escalation_count` (int, nullable, default 0) to the `missions` table.
+    - `backend/schemas/mission.py`: `MissionRead` extended with `pivot_escalation_count`.
+    - `backend/loop/pivots.py`: added `ESCALATION_RESET_THRESHOLD = 0.05` (5% required to reset escalation); `pivot_count` property; `restore_pivot_count(count)` to seed state from DB on recovery.
+    - `backend/loop/state_machine.py`: calls `_save_pivot_count()` after every `record_pivot()` (including no-op double-count); on startup restores `pivot_escalation_count` from DB into the engine via `restore_pivot_count()`.
+    - `tests/unit/test_pivot_engine.py`: 11 new tests covering `pivot_count` property, `restore_pivot_count`, escalation level at each threshold, increment vs reset at 2% vs 16% improvement, and level cap at 3. Total: 347 tests.
