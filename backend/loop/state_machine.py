@@ -118,6 +118,17 @@ class LoopStateMachine:
         error_count = 0
         pivot_reason: Optional[str] = None
         current_iteration = mission.current_iteration or 0
+        plan: Optional[dict] = None
+        # skip_replan_from_db: set on startup when restarting mid-pivot — load saved plan from DB.
+        # skip_replan_in_memory: set after every in-loop pivot — plan already updated in memory.
+        # Only one of these can be True at any time.
+        skip_replan_from_db = current_iteration > 0 and mission.current_plan is not None
+        skip_replan_in_memory = False
+        if skip_replan_from_db:
+            logger.info(
+                "LoopStateMachine: resuming from saved plan at iter=%d for mission=%s",
+                current_iteration, mission_id,
+            )
 
         logger.info("LoopStateMachine: starting mission=%s manifest=%d reqs", mission_id, len(manifest.requirements))
 
@@ -125,16 +136,36 @@ class LoopStateMachine:
             try:
                 # ── PLANNING ──────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.PLANNING)
-                await emit_status(mission_id, "Generating training plan…", event_type="info")
-                plan = await self._agent.plan(
-                    mission.goal, mission.task_type, mission.target_metric
-                )
-                await self._save_plan(mission_id, plan)
-                await emit_status(
-                    mission_id, "Plan ready",
-                    event_type="success",
-                    value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
-                )
+                if skip_replan_in_memory:
+                    # Pivot fired last iteration — plan already has the updated values in memory.
+                    skip_replan_in_memory = False
+                    await emit_status(
+                        mission_id, "Continuing with pivoted plan",
+                        event_type="info",
+                        value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",  # type: ignore[union-attr]
+                    )
+                elif skip_replan_from_db:
+                    # Restart after pivot — reload persisted plan from DB.
+                    async with AsyncSessionLocal() as _s:
+                        _m = await _s.get(Mission, mission_id)
+                        plan = dict(_m.current_plan) if _m and _m.current_plan else {}
+                    skip_replan_from_db = False
+                    await emit_status(
+                        mission_id, "Continuing with pivoted plan",
+                        event_type="info",
+                        value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
+                    )
+                else:
+                    await emit_status(mission_id, "Generating training plan…", event_type="info")
+                    plan = await self._agent.plan(
+                        mission.goal, mission.task_type, mission.target_metric
+                    )
+                    await self._save_plan(mission_id, plan)
+                    await emit_status(
+                        mission_id, "Plan ready",
+                        event_type="success",
+                        value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
+                    )
 
                 # Reconcile manifest artifact pattern if plan task_type differs
                 # from the mission's stored task_type (e.g. user left dropdown on "rl")
@@ -379,6 +410,10 @@ class LoopStateMachine:
                                 pivot["env_kwargs"],
                             )
                         pivot_reason = pivot.get("reason", "plateau detected")
+                        # Persist the pivot-modified plan so a restart resumes with
+                        # the new HPs/algo/env_kwargs rather than re-planning fresh.
+                        await self._save_plan(mission_id, plan)
+                        skip_replan_in_memory = True
                         # Build a compact changes summary for the event stream
                         change_parts = []
                         if algo_changed:

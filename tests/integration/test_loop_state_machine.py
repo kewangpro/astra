@@ -38,7 +38,7 @@ class _MockLeadAgent:
             "sandbox_memory_gb": 4.0,
         }
 
-    async def propose_pivot(self, current_metrics, history):
+    async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False):
         return {"reason": "plateau_detected", "adjustments": {"learning_rate": 1e-4}}
 
     def flush_iteration_context(self):
@@ -381,3 +381,68 @@ async def test_supervised_gate_rejected_marks_failed(db_session, patch_db, monke
 
     await db_session.refresh(mission)
     assert mission.status == MissionStatus.FAILED.value
+
+
+@pytest.mark.asyncio
+async def test_pivot_plan_saved_to_db(seeded_mission, db_session, patch_db, monkeypatch):
+    """After a pivot fires the modified plan must be persisted to missions.current_plan."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        evaluator = _SequenceEvaluator([
+            {"mean_reward": 10.0},
+            {"mean_reward": 10.0},
+            {"mean_reward": 10.0},  # plateau → pivot
+            {"mean_reward": 200.0}, # goal met
+        ])
+        sm = _build_sm(_MockLeadAgent(), _MockCodeGen(tmp), _MockHealer(tmp), _MockSandbox(tmp), evaluator)
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(seeded_mission.id)
+
+    await db_session.refresh(seeded_mission)
+    # current_plan must be set and contain the pivot-modified learning_rate
+    assert seeded_mission.current_plan is not None
+    assert seeded_mission.current_plan.get("hyperparameters", {}).get("learning_rate") == 1e-4
+
+
+@pytest.mark.asyncio
+async def test_restart_uses_saved_pivot_plan(db_session, patch_db, monkeypatch):
+    """A mission restarted after a pivot must use the saved plan instead of re-planning."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    pivot_plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "hyperparameters": {"learning_rate": 1e-4, "gamma": 0.99},
+        "sandbox_memory_gb": 4.0,
+    }
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="Train a Snake RL agent",
+        task_type="rl",
+        target_metric={"mean_reward": 100.0},
+        autonomy_mode="full_autonomy",
+        status=MissionStatus.PENDING.value,
+        current_iteration=3,          # simulates restart after 3 iters
+        current_plan=pivot_plan,      # pivoted plan already saved
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    plan_calls = []
+
+    class _TrackingAgent(_MockLeadAgent):
+        async def plan(self, goal, task_type, target_metric):
+            plan_calls.append(True)
+            return await super().plan(goal, task_type, target_metric)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        evaluator = _SequenceEvaluator([{"mean_reward": 200.0}])
+        sm = _build_sm(_TrackingAgent(), _MockCodeGen(tmp), _MockHealer(tmp), _MockSandbox(tmp), evaluator)
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(mission.id)
+
+    # LLM plan() must NOT have been called on restart — saved plan used instead
+    assert plan_calls == [], f"Expected no LLM re-plan on restart, got {len(plan_calls)} call(s)"
+    await db_session.refresh(mission)
+    assert mission.status == MissionStatus.COMPLETED.value
