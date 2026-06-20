@@ -326,3 +326,29 @@ def test_display_does_not_show_noop_arrow():
 
     real_adjustments = {k: v for k, v in adjustments.items() if _hp_changed(k, v)}
     assert real_adjustments == {}, "identical HPs must be filtered out"
+
+
+# ── startup seed iteration ────────────────────────────────────────────────────
+
+def test_seed_uses_best_metric_iteration_when_set():
+    """When mission has a known best_metric_iteration, the pivot engine seed uses that iter."""
+    from backend.loop.pivots import PivotEngine
+
+    # Simulate: DB reports best=164.24 was achieved at iteration 45
+    engine = PivotEngine({"mean_reward": 200})
+    engine.record(45, {"mean_reward": 164.24})
+
+    # The best entry should report iter 45, not None
+    assert engine.best_metric_iteration() == 45
+
+
+def test_seed_falls_back_to_minus_one_when_iteration_none():
+    """When mission.best_metric_iteration is None, seed at -1 → best_metric_iteration returns None."""
+    from backend.loop.pivots import PivotEngine
+
+    # Simulate the old path: seed at -1
+    engine = PivotEngine({"mean_reward": 200})
+    engine.record(-1, {"mean_reward": 164.24})
+
+    # -1 sentinel maps to None in the UI
+    assert engine.best_metric_iteration() is None

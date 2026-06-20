@@ -462,3 +462,29 @@ def test_generate_training_script_injects_lessons(tmp_path, monkeypatch):
 
     assert "avoid actor_lr kwarg" in captured["system"]
     assert "use gymnasium not gym" in captured["system"]
+
+
+def test_build_user_prompt_rl_includes_iteration(tmp_path, monkeypatch):
+    """Telemetry POST in the template must include the current_iteration value."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"), current_iteration=3)
+
+    assert '"iteration": 3' in prompt
+
+
+def test_build_user_prompt_rl_iteration_defaults_to_zero(tmp_path, monkeypatch):
+    """When current_iteration is omitted the template renders iteration 0."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert '"iteration": 0' in prompt

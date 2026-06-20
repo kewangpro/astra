@@ -108,7 +108,8 @@ The script must:
                    response = requests.post(
                        "{api_url}/telemetry/missions/{mission_id}/metrics",
                        json={{"mission_id": "{mission_id}", "name": "mean_reward",
-                              "value": mean_reward, "step": self.n_calls}},
+                              "value": mean_reward, "step": self.n_calls,
+                              "iteration": {current_iteration}}},
                        timeout=2,
                    )
                    if not response.ok:
@@ -195,6 +196,7 @@ class CodeGenerator:
         self,
         mission_id: str,
         plan: dict,
+        current_iteration: int = 0,
     ) -> str:
         """
         Generate a training script and write it to data/missions/{id}/train.py.
@@ -221,7 +223,7 @@ class CodeGenerator:
             lesson_block = "\n".join(f"- {l}" for l in lessons)
             system_prompt += f"\n\nLessons learned from prior failures (avoid repeating these):\n{lesson_block}"
 
-        user_prompt = self._build_user_prompt(task_type, mission_id, plan, checkpoint_dir)
+        user_prompt = self._build_user_prompt(task_type, mission_id, plan, checkpoint_dir, current_iteration)
 
         messages = [
             Message(role="system", content=system_prompt),
@@ -264,7 +266,7 @@ class CodeGenerator:
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
 
-    def _build_user_prompt(self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str) -> str:
+    def _build_user_prompt(self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0) -> str:
         hp = plan.get("hyperparameters", {})
         api_url = f"http://127.0.0.1:{settings.api_port}"
         base = {
@@ -299,6 +301,7 @@ class CodeGenerator:
                 "target_reward": target_reward,
                 "snake_setup": snake_setup,
                 "env_kwargs_str": env_kwargs_str,
+                "current_iteration": current_iteration,
                 **base,
             }
             return _RL_TEMPLATE.format(**ctx)

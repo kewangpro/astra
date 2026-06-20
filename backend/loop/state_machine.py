@@ -94,8 +94,12 @@ class LoopStateMachine:
         # Seed pivot engine with the persisted best so restarts don't lose history
         persisted_best = self._load_persisted_best(mission_id, mission)
         if persisted_best is not None:
-            pivot_engine.record(-1, {next(iter(mission.target_metric), "metric"): persisted_best})
-            logger.info("LoopStateMachine: seeded pivot engine with persisted best=%.2f", persisted_best)
+            seed_iter = mission.best_metric_iteration if mission.best_metric_iteration is not None else -1
+            pivot_engine.record(seed_iter, {next(iter(mission.target_metric), "metric"): persisted_best})
+            logger.info(
+                "LoopStateMachine: seeded pivot engine with persisted best=%.2f at iter=%d",
+                persisted_best, seed_iter,
+            )
             # Sync DB if best_score.txt is higher than DB value
             db_best = float(mission.best_metric_value) if mission.best_metric_value else None
             if db_best is None or persisted_best > db_best:
@@ -175,7 +179,7 @@ class LoopStateMachine:
                 # ── IMPLEMENTING ─────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
                 await emit_status(mission_id, "Generating training script…", event_type="info")
-                script_path = await self._codegen.generate_training_script(mission_id, plan)
+                script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
                 await emit_status(mission_id, "Training script ready", event_type="success")
                 error_history: list[str] = []   # accumulated errors for this script
 
