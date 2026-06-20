@@ -63,6 +63,7 @@ class SnakeEnv(gym.Env):
         self._direction: int = 1  # RIGHT
         self._steps: int = 0
         self._prev_dist: float = 0.0
+        self._food_eaten: int = 0
 
     # ── gymnasium API ──────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ class SnakeEnv(gym.Env):
         self._snake = deque([(mid_r, mid_c - 1), (mid_r, mid_c), (mid_r, mid_c + 1)])
         self._direction = 1  # facing RIGHT
         self._steps = 0
+        self._food_eaten = 0
         self._place_food()
         self._prev_dist = self._dist_to_food()
         return self._obs(), {}
@@ -91,7 +93,7 @@ class SnakeEnv(gym.Env):
             or new_head in self._snake
         )
         if dead:
-            return self._obs(), self.death_penalty, True, False, {}
+            return self._obs(), self.death_penalty, True, False, {"food_eaten": self._food_eaten}
 
         self._snake.append(new_head)
         self._steps += 1
@@ -100,6 +102,7 @@ class SnakeEnv(gym.Env):
 
         if new_head == self._food:
             reward += self.food_reward
+            self._food_eaten += 1
             self._place_food()
         else:
             self._snake.popleft()
@@ -111,7 +114,8 @@ class SnakeEnv(gym.Env):
             self._prev_dist = dist
 
         truncated = self._steps >= self.max_steps
-        return self._obs(), reward, False, truncated, {}
+        info = {"food_eaten": self._food_eaten}
+        return self._obs(), reward, False, truncated, info
 
     # ── helpers ────────────────────────────────────────────────────────────────
 

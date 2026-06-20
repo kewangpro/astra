@@ -210,6 +210,10 @@ class LoopStateMachine:
                 # ── IMPLEMENTING ─────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
                 await emit_status(mission_id, "Generating training script…", event_type="info")
+                # _PLAN_SCHEMA doesn't include target_metric, so the LLM never puts it in the plan.
+                # Inject it from the mission before code generation so the callback template
+                # gets the correct target_metric_name (e.g. "lines_cleared", not "mean_reward").
+                plan["target_metric"] = mission.target_metric or {}
                 script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
                 await emit_status(mission_id, "Training script ready", event_type="success")
                 error_history: list[str] = []   # accumulated errors for this script
@@ -278,11 +282,35 @@ class LoopStateMachine:
                 await emit_status(mission_id, "Evaluating results…", event_type="info")
                 eval_result = await self._evaluator.evaluate(mission_id, plan)
                 current_metrics = eval_result.get("metrics", {})
-                # Merge in metrics the sandbox actually posted to telemetry
+                # Merge in metrics the sandbox actually posted to telemetry (mean_reward)
                 sandbox_metrics = self._read_telemetry_metrics(mission_id, tel_offset)
                 current_metrics = {**current_metrics, **sandbox_metrics}
-                pivot_engine.record(current_iteration, current_metrics)
+
+                # For non-mean_reward goal metrics: run dedicated eval episodes if the
+                # benchmark didn't supply the value, then always write to telemetry so the
+                # MetricGap sparkline receives it.
                 metric_name = next(iter(mission.target_metric), None)
+                if metric_name and metric_name != "mean_reward":
+                    if metric_name not in current_metrics:
+                        await emit_status(
+                            mission_id, f"Evaluating {metric_name}…", event_type="info"
+                        )
+                        goal_val = await asyncio.to_thread(
+                            self._run_goal_metric_eval, mission_id, plan, metric_name
+                        )
+                        if goal_val is not None:
+                            current_metrics[metric_name] = goal_val
+                    goal_val = current_metrics.get(metric_name)
+                    if goal_val is not None:
+                        await self._append_telemetry_metric(
+                            mission_id, metric_name, goal_val, current_iteration
+                        )
+                        logger.info(
+                            "LoopStateMachine: goal metric mission=%s %s=%.3f iter=%d",
+                            mission_id, metric_name, goal_val, current_iteration,
+                        )
+
+                pivot_engine.record(current_iteration, current_metrics)
                 current_val = current_metrics.get(metric_name) if metric_name else None
                 await self._save_best_metric(
                     mission_id,
@@ -532,10 +560,13 @@ class LoopStateMachine:
                 candidates.append(float(open(score_file).read().strip()))
             except Exception:
                 pass
-        # From DB
+        # From DB — for custom (non-mean_reward) targets, negative values indicate
+        # contamination from a prior mean_reward seed; discard them.
         try:
             if mission.best_metric_value:
-                candidates.append(float(mission.best_metric_value))
+                db_val = float(mission.best_metric_value)
+                if metric_name == "mean_reward" or db_val >= 0:
+                    candidates.append(db_val)
         except Exception:
             pass
         # From full telemetry scan — authoritative for the actual target metric key
@@ -685,6 +716,86 @@ class LoopStateMachine:
 
     def _save_manifest(self, mission_id: str, manifest: RequirementManifest) -> None:
         manifest.save(self._manifest_path(mission_id))
+
+    # ── Goal metric evaluation ─────────────────────────────────────────────────
+
+    def _run_goal_metric_eval(self, mission_id: str, plan: dict, metric_name: str) -> Optional[float]:
+        """Run deterministic rollouts with the best checkpoint and return mean goal metric.
+
+        Called in a thread (via asyncio.to_thread) so it doesn't block the event loop.
+        Reads metric_name from episode info dicts returned by the env on episode end.
+        """
+        import sys
+        import numpy as np
+
+        env_id = plan.get("env_id", "")
+        algorithm = plan.get("algorithm", "PPO").upper()
+        checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+        checkpoint_path = os.path.join(checkpoint_dir, "best_model.zip")
+        if not os.path.isfile(checkpoint_path):
+            checkpoint_path = os.path.join(checkpoint_dir, "last_model.zip")
+        if not os.path.isfile(checkpoint_path):
+            logger.warning("LoopStateMachine: no checkpoint for goal metric eval mission=%s", mission_id)
+            return None
+
+        try:
+            project_root = os.path.abspath(os.path.join(settings.data_path, ".."))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+
+            if env_id == "Tetris-v0":
+                from envs.tetris_env import register
+                register()
+            elif env_id == "Snake-v0":
+                from envs.snake_env import register
+                register()
+
+            import gymnasium as gym
+            from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
+
+            algo_cls = {"PPO": PPO, "SAC": SAC, "A2C": A2C, "DQN": DQN, "TD3": TD3}.get(algorithm, PPO)
+            env = gym.make(env_id)
+            model = algo_cls.load(checkpoint_path, env=env)
+
+            values = []
+            for _ in range(10):
+                obs, _ = env.reset()
+                done = False
+                ep_val = 0.0
+                while not done:
+                    action, _ = model.predict(obs, deterministic=True)
+                    obs, _, terminated, truncated, info = env.step(action)
+                    done = terminated or truncated
+                    if done:
+                        ep_val = float(info.get(metric_name, 0))
+                values.append(ep_val)
+
+            env.close()
+            return float(np.mean(values))
+        except Exception as exc:
+            logger.warning("LoopStateMachine: goal metric eval error: %s", exc)
+            return None
+
+    async def _append_telemetry_metric(
+        self, mission_id: str, name: str, value: float, iteration: int
+    ) -> None:
+        """Write a metric event to telemetry.jsonl and broadcast to connected HUD clients."""
+        import json as _json
+        from backend.services.connection_manager import manager
+
+        payload = {
+            "type": "metric",
+            "mission_id": mission_id,
+            "name": name,
+            "value": value,
+            "step": iteration * 500000,  # synthetic step so sparkline orders correctly
+            "iteration": iteration,
+        }
+        path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(_json.dumps(payload) + "\n")
+        await manager.broadcast(mission_id, payload)
 
     # ── Sandbox polling ────────────────────────────────────────────────────────
 

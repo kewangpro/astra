@@ -352,3 +352,71 @@ def test_seed_falls_back_to_minus_one_when_iteration_none():
 
     # -1 sentinel maps to None in the UI
     assert engine.best_metric_iteration() is None
+
+
+# ── _load_persisted_best contamination guard ──────────────────────────────────
+
+class _MockMission:
+    def __init__(self, target_metric, best_metric_value=None, best_metric_iteration=None):
+        self.target_metric = target_metric
+        self.best_metric_value = best_metric_value
+        self.best_metric_iteration = best_metric_iteration
+
+
+def _make_sm():
+    """Return a LoopStateMachine with telemetry stubbed to return empty dict."""
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._read_telemetry_metrics = lambda mission_id, offset: {}
+    return sm
+
+
+def test_load_persisted_best_ignores_negative_db_for_custom_metric():
+    """Negative DB value (mean_reward contamination) must be discarded for non-mean_reward targets."""
+    sm = _make_sm()
+    mission = _MockMission(
+        target_metric={"lines_cleared": 20},
+        best_metric_value="-120.124",
+    )
+    result = sm._load_persisted_best("fake-id", mission)
+    assert result is None
+
+
+def test_load_persisted_best_accepts_positive_db_for_custom_metric():
+    """A positive DB value is a valid best for a custom metric like lines_cleared."""
+    sm = _make_sm()
+    mission = _MockMission(
+        target_metric={"lines_cleared": 20},
+        best_metric_value="5.0",
+    )
+    result = sm._load_persisted_best("fake-id", mission)
+    assert result == 5.0
+
+
+def test_load_persisted_best_accepts_negative_db_for_mean_reward():
+    """Negative DB value is valid when the target metric IS mean_reward."""
+    sm = _make_sm()
+    mission = _MockMission(
+        target_metric={"mean_reward": 200},
+        best_metric_value="-100.5",
+    )
+    result = sm._load_persisted_best("fake-id", mission)
+    assert result == -100.5
+
+
+def test_load_persisted_best_returns_none_when_all_sources_empty():
+    sm = _make_sm()
+    mission = _MockMission(target_metric={"lines_cleared": 20}, best_metric_value=None)
+    result = sm._load_persisted_best("fake-id", mission)
+    assert result is None
+
+
+def test_load_persisted_best_prefers_telemetry_over_negative_db():
+    """Telemetry scan wins over a negative DB value for custom targets."""
+    sm = _make_sm()
+    sm._read_telemetry_metrics = lambda mission_id, offset: {"lines_cleared": 3.0}
+    mission = _MockMission(
+        target_metric={"lines_cleared": 20},
+        best_metric_value="-99.0",
+    )
+    result = sm._load_persisted_best("fake-id", mission)
+    assert result == 3.0

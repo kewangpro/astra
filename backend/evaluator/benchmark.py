@@ -8,12 +8,68 @@ across runs to ensure comparable results.
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
+
+def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[float, dict]:
+    """Load checkpoint, run n_episodes deterministically, return (mean_reward, mean_info).
+
+    Returns info values averaged across episodes. Only collects info at episode end
+    (terminated/truncated step).
+    """
+    import numpy as np
+
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
+    try:
+        from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
+        import gymnasium as gym
+
+        # Try loading with each algo until one succeeds
+        model = None
+        for cls in (PPO, SAC, A2C, DQN, TD3):
+            try:
+                model = cls.load(checkpoint_path)
+                break
+            except Exception:
+                continue
+        if model is None:
+            return 0.0, {}
+
+        env = gym.make(env_id)
+        rewards, info_accum = [], {}
+        for _ in range(n_episodes):
+            obs, _ = env.reset()
+            ep_reward, done = 0.0, False
+            ep_info = {}
+            while not done:
+                action, _ = model.predict(obs, deterministic=True)
+                obs, r, terminated, truncated, info = env.step(action)
+                ep_reward += float(r)
+                done = terminated or truncated
+                if done:
+                    ep_info = info
+            rewards.append(ep_reward)
+            for k, v in ep_info.items():
+                try:
+                    info_accum.setdefault(k, []).append(float(v))
+                except (TypeError, ValueError):
+                    pass
+        env.close()
+        mean_info = {k: float(np.mean(vs)) for k, vs in info_accum.items()}
+        return float(np.mean(rewards)), mean_info
+    except Exception as exc:
+        logger.warning("BenchmarkSuite rollout failed env=%s: %s", env_id, exc)
+        return 0.0, {}
 
 
 @dataclass
@@ -28,35 +84,64 @@ class GoldenChallenge:
 # ── Built-in Golden Sets ───────────────────────────────────────────────────────
 
 def _snake_eval(checkpoint_path: str) -> dict:
-    """Evaluate a Snake RL model on a 16×12 grid (stub: Phase 6 adds real env rollouts)."""
     if not os.path.exists(checkpoint_path):
         logger.warning("BenchmarkSuite: checkpoint not found: %s", checkpoint_path)
         return {"mean_reward": 0.0, "max_length": 0}
+    try:
+        if _PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, _PROJECT_ROOT)
+        from envs.snake_env import register
+        register()
+    except Exception:
+        pass
     logger.info("BenchmarkSuite: running Snake baseline on %s", checkpoint_path)
-    return {"mean_reward": 0.0, "max_length": 0}
+    mean_reward, info = _rollout(checkpoint_path, "Snake-v0", n_episodes=10)
+    return {"mean_reward": mean_reward, "max_length": info.get("max_length", 0.0)}
 
 
 def _snake_hard_eval(checkpoint_path: str) -> dict:
-    """Harder Snake scenario: 32×24 grid, higher reward target."""
     if not os.path.exists(checkpoint_path):
         return {"mean_reward": 0.0, "max_length": 0}
+    try:
+        if _PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, _PROJECT_ROOT)
+        from envs.snake_env import register
+        register()
+    except Exception:
+        pass
     logger.info("BenchmarkSuite: running Snake hard on %s", checkpoint_path)
-    return {"mean_reward": 0.0, "max_length": 0}
+    mean_reward, info = _rollout(checkpoint_path, "Snake-v0", n_episodes=10)
+    return {"mean_reward": mean_reward, "max_length": info.get("max_length", 0.0)}
 
 
 def _tetris_eval(checkpoint_path: str) -> dict:
     if not os.path.exists(checkpoint_path):
-        return {"mean_score": 0.0, "lines_cleared": 0}
+        return {"mean_reward": 0.0, "lines_cleared": 0}
+    try:
+        if _PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, _PROJECT_ROOT)
+        from envs.tetris_env import register
+        register()
+    except Exception:
+        pass
     logger.info("BenchmarkSuite: running Tetris baseline on %s", checkpoint_path)
-    return {"mean_score": 0.0, "lines_cleared": 0}
+    mean_reward, info = _rollout(checkpoint_path, "Tetris-v0", n_episodes=10)
+    return {"mean_reward": mean_reward, "lines_cleared": info.get("lines_cleared", 0.0)}
 
 
 def _tetris_hard_eval(checkpoint_path: str) -> dict:
-    """Harder Tetris: speed mode with faster piece fall."""
     if not os.path.exists(checkpoint_path):
-        return {"mean_score": 0.0, "lines_cleared": 0}
+        return {"mean_reward": 0.0, "lines_cleared": 0}
+    try:
+        if _PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, _PROJECT_ROOT)
+        from envs.tetris_env import register
+        register()
+    except Exception:
+        pass
     logger.info("BenchmarkSuite: running Tetris hard on %s", checkpoint_path)
-    return {"mean_score": 0.0, "lines_cleared": 0}
+    mean_reward, info = _rollout(checkpoint_path, "Tetris-v0", n_episodes=10)
+    return {"mean_reward": mean_reward, "lines_cleared": info.get("lines_cleared", 0.0)}
 
 
 def _nlp_loss_eval(checkpoint_path: str) -> dict:

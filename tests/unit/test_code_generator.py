@@ -504,13 +504,12 @@ def test_build_user_prompt_rl_callback_init_loads_best_score(tmp_path, monkeypat
     assert "best_score.txt" in prompt
     # hasattr lazy-init pattern must NOT be present (it's defeated by any __init__ that sets _best_reward)
     assert "not hasattr" not in prompt
-    # callback must track per-episode goal metric from info dict
-    assert "_ep_metric_buf" in prompt
-    assert "self.locals" in prompt
+    # callback only posts mean_reward — goal metric is measured by post-iteration eval
+    assert '"name": "mean_reward"' in prompt
 
 
-def test_build_user_prompt_rl_injects_target_metric_name(tmp_path, monkeypatch):
-    """target_metric_name must be injected so callback posts the goal metric."""
+def test_build_user_prompt_rl_callback_only_posts_mean_reward(tmp_path, monkeypatch):
+    """Callback must NOT post goal-metric telemetry — that's handled by post-iteration eval."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -520,22 +519,9 @@ def test_build_user_prompt_rl_injects_target_metric_name(tmp_path, monkeypatch):
     plan["target_metric"] = {"lines_cleared": 20}
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert '"name": "lines_cleared"' in prompt
-
-
-def test_build_user_prompt_rl_target_metric_name_defaults_to_mean_reward(tmp_path, monkeypatch):
-    """When target_metric has no keys, target_metric_name defaults to mean_reward."""
-    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
-    monkeypatch.setattr("backend.config.settings.api_port", 8200)
-    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
-
-    gen = CodeGenerator(_make_provider())
-    plan = _make_rl_plan()
-    plan["target_metric"] = {}
-    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
-
-    # mean_reward block still present; no secondary metric posted
+    # Callback posts mean_reward only — no per-episode goal metric buffer
     assert '"name": "mean_reward"' in prompt
+    assert "_ep_metric_buf" not in prompt
 
 
 def test_build_user_prompt_injects_tetris_setup(tmp_path, monkeypatch):

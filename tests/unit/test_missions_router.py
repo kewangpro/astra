@@ -101,3 +101,20 @@ def test_parse_generic_does_not_match_without_achieve():
     # Pattern requires "achieve" keyword to avoid greedy false matches
     result = _parse_target_metric("lines_cleared of 20 is the goal")
     assert result == {}
+
+
+def test_parse_multi_word_metric_food_eaten():
+    result = _parse_target_metric(
+        "Train a Snake-v0 PPO agent to achieve food eaten of 30"
+    )
+    assert result == {"food_eaten": 30.0}
+
+
+def test_parse_multi_word_metric_spaces_to_underscores():
+    result = _parse_target_metric("achieve avg episode length of 200")
+    assert result == {"avg_episode_length": 200.0}
+
+
+def test_parse_multi_word_metric_case_insensitive():
+    result = _parse_target_metric("Achieve Food Eaten of 15")
+    assert result == {"food_eaten": 15.0}

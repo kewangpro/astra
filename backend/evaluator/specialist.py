@@ -29,7 +29,13 @@ class SpecialistEvaluator:
         Returns a dict with metrics, benchmark results, and stress test results.
         """
         task_type = plan.get("task_type", "rl")
-        domain = plan.get("domain", task_type)
+        env_id = plan.get("env_id", "")
+        if "tetris" in env_id.lower():
+            domain = "tetris"
+        elif "snake" in env_id.lower():
+            domain = "snake"
+        else:
+            domain = plan.get("domain", task_type)
         checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
 
         # Find the latest checkpoint

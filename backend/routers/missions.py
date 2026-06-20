@@ -30,13 +30,15 @@ def _parse_target_metric(goal: str) -> dict:
     m = re.search(r"(?:eval_)?loss\s+(?:of\s+|<=?\s*)(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
     if m:
         return {"eval_loss": float(m.group(1))}
-    # Generic: "achieve {metric_name} of {value}" — catch-all for custom metrics
+    # Generic: "achieve {metric name} of {value}" — supports multi-word names like
+    # "food eaten" (→ food_eaten) and single-word names like "lines_cleared".
     m = re.search(
-        r"achieve\s+([a-zA-Z][a-zA-Z0-9_]*)\s+of\s+(\d+(?:\.\d+)?)",
+        r"achieve\s+([\w][\w\s]*?)\s+of\s+(\d+(?:\.\d+)?)",
         goal, re.IGNORECASE,
     )
     if m:
-        return {m.group(1).lower(): float(m.group(2))}
+        metric_name = re.sub(r"\s+", "_", m.group(1).strip().lower())
+        return {metric_name: float(m.group(2))}
     return {}
 
 
@@ -74,11 +76,14 @@ async def update_mission(mission_id: str, payload: MissionUpdate, db: AsyncSessi
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
+    from sqlalchemy.orm.attributes import flag_modified
     for k, v in payload.model_dump(exclude_none=True).items():
         if k == "status" and v is not None:
             setattr(mission, k, v.value if isinstance(v, MissionStatus) else v)
         else:
             setattr(mission, k, v)
+            if isinstance(v, dict):
+                flag_modified(mission, k)
     await db.commit()
     await db.refresh(mission)
     return mission
