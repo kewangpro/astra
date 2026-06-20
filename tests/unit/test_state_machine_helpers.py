@@ -224,6 +224,62 @@ def test_display_uses_pre_update_value():
     assert "batch_size: 64→128" in hp_strs
 
 
+# ── _normalize_pivot ─────────────────────────────────────────────────────────
+
+_normalize = LoopStateMachine._normalize_pivot
+
+
+def test_normalize_flat_adjustments_unchanged():
+    pivot = {"reason": "plateau", "adjustments": {"learning_rate": 0.001, "batch_size": 64}}
+    assert _normalize(pivot) == pivot
+
+
+def test_normalize_nested_hyperparameters_flattened():
+    pivot = {
+        "reason": "plateau",
+        "adjustments": {"hyperparameters": {"learning_rate": 0.0005, "batch_size": 128}},
+    }
+    result = _normalize(pivot)
+    assert result["adjustments"] == {"learning_rate": 0.0005, "batch_size": 128}
+
+
+def test_normalize_nested_env_kwargs_promoted():
+    pivot = {
+        "reason": "plateau",
+        "adjustments": {
+            "hyperparameters": {"learning_rate": 0.0005},
+            "env_kwargs": {"food_reward": 20.0},
+        },
+    }
+    result = _normalize(pivot)
+    assert result["adjustments"] == {"learning_rate": 0.0005}
+    assert result["env_kwargs"] == {"food_reward": 20.0}
+
+
+def test_normalize_top_level_env_kwargs_not_overwritten():
+    """If pivot already has top-level env_kwargs, don't clobber it."""
+    pivot = {
+        "reason": "plateau",
+        "adjustments": {"env_kwargs": {"food_reward": 10.0}},
+        "env_kwargs": {"food_reward": 20.0},
+    }
+    result = _normalize(pivot)
+    assert result["env_kwargs"] == {"food_reward": 20.0}
+
+
+def test_normalize_mixed_flat_and_nested():
+    """Flat HP keys alongside nested hyperparameters dict are all merged."""
+    pivot = {
+        "reason": "plateau",
+        "adjustments": {
+            "batch_size": 64,
+            "hyperparameters": {"learning_rate": 0.0005, "gamma": 0.99},
+        },
+    }
+    result = _normalize(pivot)
+    assert result["adjustments"] == {"batch_size": 64, "learning_rate": 0.0005, "gamma": 0.99}
+
+
 def test_display_does_not_show_noop_arrow():
     """A key that passes through unchanged (filtered by _hp_changed) never appears."""
     plan_hps = {"learning_rate": 0.0005, "batch_size": 128}

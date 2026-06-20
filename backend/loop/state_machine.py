@@ -291,6 +291,7 @@ class LoopStateMachine:
                         current_algorithm=current_algo,
                     )
                     pivot_engine.record_pivot()
+                    pivot = self._normalize_pivot(pivot)
                     adjustments = self._clamp_rl_adjustments(
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
@@ -504,6 +505,31 @@ class LoopStateMachine:
                     .where(Mission.id == mission_id)
                     .values(current_metric_value=str(value))
                 )
+
+    @staticmethod
+    def _normalize_pivot(pivot: dict) -> dict:
+        """Fix common LLM schema deviations in pivot responses.
+
+        The LLM sometimes nests HP adjustments under adjustments.hyperparameters
+        and env_kwargs under adjustments.env_kwargs instead of as flat scalars
+        in adjustments and a top-level env_kwargs key. Flatten those here so
+        the rest of the pipeline always sees a consistent structure.
+        """
+        raw = pivot.get("adjustments", {})
+        nested_hps = raw.get("hyperparameters") if isinstance(raw.get("hyperparameters"), dict) else None
+        nested_env = raw.get("env_kwargs") if isinstance(raw.get("env_kwargs"), dict) else None
+
+        if nested_hps is not None or nested_env is not None:
+            # Rebuild adjustments: scalar HP keys + flattened nested HPs
+            flat = {k: v for k, v in raw.items() if k not in ("hyperparameters", "env_kwargs")}
+            if nested_hps:
+                flat.update(nested_hps)
+            pivot = {**pivot, "adjustments": flat}
+            # Promote nested env_kwargs to top-level if not already set
+            if nested_env and not pivot.get("env_kwargs"):
+                pivot = {**pivot, "env_kwargs": nested_env}
+
+        return pivot
 
     @staticmethod
     def _clamp_rl_adjustments(adjustments: dict, task_type: str) -> dict:
