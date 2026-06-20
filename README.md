@@ -122,10 +122,10 @@ make ports  # show port status for all services
 | 6 | Validation — Test suite, multi-GPU | ✅ Complete |
 | 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
 | 8 | Autonomous Learning & HUD Polish — error learning, metric display, 223 tests | ✅ Complete |
-| 9 | Autonomous Approval & Code Robustness — auto-approve classifier, SB3 patching, checkpoint preservation, warm-start, MLX inference lock, guaranteed env registration, classifier false-positive fixes, absolute checkpoint paths, Snake-v0 live HUD viewer, 394 tests | ✅ Complete |
-| 10 | Pivot Intelligence & Live Agent Viewer — 4-level escalating pivot strategy (HP/arch/algo/reward), MetricChart windowing, play endpoint algo+env_kwargs awareness, telemetry peak tracking, pivot change summaries, best_model_algo.txt watch fix | ✅ Complete |
-| 11 | Resilience, Environments & Dual Metrics — MetricGap best-vs-current iter, pivot persistence across restarts, no-op pivot filtering, algorithm-locked missions, Tetris-v0 custom env, dual metric tracking (MetricHistory=mean_reward / MetricGap=goal metric), post-iteration eval rollouts, food_eaten tracking, multi-word goal metric parsing, 413 tests | ✅ Complete |
-| 12 | Mission Lifecycle & Telemetry Hardening — clean mission deletion (cancel loop + reject gates), benign sandbox warning filtering, goal metric event cap preservation, iteration number formatting, 425 tests | 🔄 In Progress |
+| 9 | Autonomous Approval & Code Robustness — auto-approve, SB3 patching, checkpoint/warm-start, Snake-v0 viewer | ✅ Complete |
+| 10 | Pivot Intelligence & Live Viewer — 4-level escalation (HP/arch/algo/reward), MetricChart windowing, play endpoint | ✅ Complete |
+| 11 | Resilience & Dual Metrics — Tetris-v0, dual metric tracking, pivot persistence, algorithm-locked missions | ✅ Complete |
+| 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, 425 tests | 🔄 In Progress |
 
 ## Hardware Target
 
