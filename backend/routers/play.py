@@ -131,6 +131,9 @@ async def play_ws(
             if resolved_env_id == "Snake-v0":
                 from envs.snake_env import register as _reg
                 _reg()
+            elif resolved_env_id == "Tetris-v0":
+                from envs.tetris_env import register as _reg
+                _reg()
 
             env = gym.make(resolved_env_id, **env_kwargs)
 

@@ -10,6 +10,7 @@ import { LogStream } from "@/components/hud/LogStream";
 import { PivotTimeline } from "@/components/hud/PivotTimeline";
 import { CritiqueTrace } from "@/components/hud/CritiqueTrace";
 import { SnakePlayer } from "@/components/hud/SnakePlayer";
+import { TetrisPlayer } from "@/components/hud/TetrisPlayer";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
 import type { TelemetryEvent } from "@/lib/api";
 
@@ -134,9 +135,12 @@ export default function MissionHUD({
         </div>
       </div>
 
-      {/* Snake live player — shown for Snake-v0 missions */}
+      {/* Live agent viewer — shown for custom env missions */}
       {mission.goal.includes("Snake-v0") && (
         <SnakePlayer missionId={missionId} envId="Snake-v0" />
+      )}
+      {mission.goal.includes("Tetris-v0") && (
+        <TetrisPlayer missionId={missionId} envId="Tetris-v0" />
       )}
 
       {/* Log + Critic Trace + Pivots */}
