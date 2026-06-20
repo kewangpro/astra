@@ -520,21 +520,25 @@ class LoopStateMachine:
     def _load_persisted_best(self, mission_id: str, mission) -> Optional[float]:
         """Return the highest known best metric from all available sources."""
         candidates = []
-        # From best_score.txt (written by training callback)
-        score_file = os.path.join(settings.data_path, "missions", mission_id, "checkpoints", "best_score.txt")
-        try:
-            candidates.append(float(open(score_file).read().strip()))
-        except Exception:
-            pass
+        metric_name = next(iter(mission.target_metric), None) if mission.target_metric else None
+        # best_score.txt is written by the training callback and always stores mean_reward.
+        # Only use it when the target metric IS mean_reward; otherwise it would corrupt
+        # custom targets like lines_cleared with a negative reward value.
+        if metric_name in (None, "mean_reward"):
+            score_file = os.path.join(
+                settings.data_path, "missions", mission_id, "checkpoints", "best_score.txt"
+            )
+            try:
+                candidates.append(float(open(score_file).read().strip()))
+            except Exception:
+                pass
         # From DB
         try:
             if mission.best_metric_value:
                 candidates.append(float(mission.best_metric_value))
         except Exception:
             pass
-        # From full telemetry scan — catches cases where best_score.txt or DB lagged behind
-        # the true training peak (e.g. if the callback used a different eval window).
-        metric_name = next(iter(mission.target_metric), None) if mission.target_metric else None
+        # From full telemetry scan — authoritative for the actual target metric key
         if metric_name:
             all_telem = self._read_telemetry_metrics(mission_id, offset=0)
             if metric_name in all_telem:

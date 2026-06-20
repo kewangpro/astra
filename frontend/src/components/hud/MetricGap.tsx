@@ -86,9 +86,11 @@ export function MetricGap({ mission, events = [] }: Props) {
     : null;
   const currentIter = mission.current_iteration;
 
-  // Use best of (best_metric_value over targetName) or fall back to mean_reward best
-  const pct = targetValue > 0 ? Math.min(100, (best / targetValue) * 100) : 0;
-  const gap = Math.max(0, targetValue - best);
+  // For raw positive targets (e.g. lines_cleared=20), clamp best to [0, ∞) so a
+  // contaminated mean_reward seed doesn't show -600% of target.
+  const displayBest = isRaw ? Math.max(0, best) : best;
+  const pct = targetValue > 0 ? Math.min(100, (displayBest / targetValue) * 100) : 0;
+  const gap = Math.max(0, targetValue - displayBest);
   const achieved = gap <= 0;
 
   const fmt = (v: number) =>
@@ -128,7 +130,7 @@ export function MetricGap({ mission, events = [] }: Props) {
                 className="text-2xl font-semibold leading-none"
                 style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}
               >
-                {fmt(best)}
+                {fmt(displayBest)}
               </span>
             </div>
           </div>
