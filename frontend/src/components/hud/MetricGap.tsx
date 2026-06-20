@@ -154,7 +154,7 @@ export function MetricGap({ mission, events = [] }: Props) {
           {/* Current iter — only show score when it differs from best */}
           <div className="text-[10px] text-[#94a3b8]">
             {showCurrent
-              ? `iter ${Number(currentIter).toFixed(1)}: ${fmt(current!)}`
+              ? `iter ${Math.round(Number(currentIter))}: ${fmt(current!)}`
               : `current iter: ${Number(currentIter).toFixed(1)}`}
           </div>
 
