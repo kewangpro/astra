@@ -22,6 +22,8 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
   const autoApprove = useAutoApprove(missionId);
   const [verdicts, setVerdicts] = useState<Record<string, AutoApproveResult>>({});
   const [classifyingGates, setClassifyingGates] = useState<Set<string>>(new Set());
+  // Gates that were just auto-approved — keep visible briefly so user can see the result
+  const [approvedGates, setApprovedGates] = useState<Map<string, AutoApproveResult>>(new Map());
   const triggeredRef = useRef<Set<string>>(new Set());
 
   const runAutoApprove = (gateId: string) => {
@@ -29,6 +31,12 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
     autoApprove.mutateAsync(gateId).then((result) => {
       if (result.action === "blocked") {
         setVerdicts((v) => ({ ...v, [gateId]: result }));
+      } else {
+        // Show "Auto-approved" flash for 2s before letting the panel disappear
+        setApprovedGates((m) => new Map(m).set(gateId, result));
+        setTimeout(() => {
+          setApprovedGates((m) => { const n = new Map(m); n.delete(gateId); return n; });
+        }, 2000);
       }
     }).catch(() => {}).finally(() => {
       setClassifyingGates((s) => { const n = new Set(s); n.delete(gateId); return n; });
@@ -46,7 +54,8 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
     }
   }, [autoApproveMode, approvals]);
 
-  if (!approvals?.length) return null;
+  const pendingGates = approvals ?? [];
+  if (!pendingGates.length && !approvedGates.size) return null;
 
   const handleAutoApprove = (gateId: string) => {
     onAutoApproveModeChange?.(true);
@@ -58,12 +67,24 @@ export function ApprovalPanel({ missionId, autoApproveMode = false, onAutoApprov
       <div className="flex items-center gap-2 px-4 py-2.5 bg-[#fbbf24]/10 border-b border-[#fbbf24]/20">
         <span className="text-[#fbbf24] text-sm">▲</span>
         <span className="text-[#fbbf24] text-xs font-semibold tracking-widest uppercase">
-          {approvals.length} Approval{approvals.length !== 1 ? "s" : ""} Required
+          {pendingGates.length > 0
+            ? `${pendingGates.length} Approval${pendingGates.length !== 1 ? "s" : ""} Required`
+            : "Approval Gate"}
         </span>
       </div>
 
+      {/* Recently auto-approved — flash green briefly */}
+      {Array.from(approvedGates.entries()).map(([gateId, result]) => (
+        <div key={gateId} className="px-4 py-3 flex items-center gap-2 bg-[#4ade80]/5 border-b border-[#4ade80]/20">
+          <span className="text-[#4ade80] text-xs">✓</span>
+          <span className="text-[#4ade80] text-xs font-semibold">Auto-approved</span>
+          <span className="text-[10px] text-[#64748b] ml-1">via {result.classifier}</span>
+          <span className="text-[10px] text-[#94a3b8] ml-auto">#{gateId.slice(0, 8)}</span>
+        </div>
+      ))}
+
       <div className="divide-y divide-[rgba(20,184,166,0.08)]">
-        {approvals.map((gate) => {
+        {pendingGates.map((gate) => {
           const code =
             typeof gate.payload?.code === "string" ? gate.payload.code : null;
           const resources =
