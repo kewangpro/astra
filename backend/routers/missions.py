@@ -10,6 +10,7 @@ from backend.config import settings
 from backend.database import get_db
 from backend.models.mission import Mission, MissionStatus
 from backend.models.manifest import RequirementManifest
+from backend.models.approval import ApprovalGate, ApprovalStatus
 from backend.schemas.mission import MissionCreate, MissionRead, MissionUpdate
 
 router = APIRouter(prefix="/missions", tags=["missions"])
@@ -106,5 +107,23 @@ async def delete_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
+
+    # Cancel running loop task
+    from backend.routers.agent import _running_tasks
+    task = _running_tasks.pop(mission_id, None)
+    if task and not task.done():
+        task.cancel()
+
+    # Reject all pending approval gates so the loop (if still polling) unblocks and exits
+    result = await db.execute(
+        select(ApprovalGate).where(
+            ApprovalGate.mission_id == mission_id,
+            ApprovalGate.status == ApprovalStatus.PENDING.value,
+        )
+    )
+    for gate in result.scalars().all():
+        gate.status = ApprovalStatus.REJECTED.value
+        gate.reviewer_note = "mission deleted"
+
     await db.delete(mission)
     await db.commit()
