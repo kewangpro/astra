@@ -71,7 +71,7 @@ export function MetricChart({ events, targetMetric }: Props) {
     if (i > 0) {
       const prev = visibleEvents[i - 1].step ?? 0;
       const curr = e.step ?? 0;
-      if (curr < prev) runOffset += 500000;
+      if (curr < prev) runOffset += prev;
     }
     chartEvents.push({
       x: (e.step ?? 0) + runOffset,
