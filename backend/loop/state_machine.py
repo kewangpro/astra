@@ -494,10 +494,11 @@ class LoopStateMachine:
                                 logger.warning("LoopStateMachine: could not reset best_score.txt: %s", _e)
                         if env_kwargs_changed:
                             _cur_env = plan.get("env_kwargs") or {}
-                            plan["env_kwargs"] = dict(_cur_env, **pivot["env_kwargs"])
+                            _merged = dict(_cur_env, **pivot["env_kwargs"])
+                            plan["env_kwargs"] = self._clamp_env_kwargs(_merged)
                             logger.info(
                                 "LoopStateMachine: reward reshape applied: %s",
-                                pivot["env_kwargs"],
+                                plan["env_kwargs"],
                             )
                         pivot_reason = pivot.get("reason", "plateau detected")
                         # Persist the pivot-modified plan so a restart resumes with
@@ -708,6 +709,18 @@ class LoopStateMachine:
         """
         import re
         return bool(re.search(rf"\b{re.escape(current_algorithm)}\b", goal, re.IGNORECASE))
+
+    @staticmethod
+    def _clamp_env_kwargs(env_kwargs: dict) -> dict:
+        """Clamp LLM-proposed env_kwargs to sane ranges.
+
+        distance_weight=0 removes the navigation shaping signal entirely and
+        causes the agent to get stuck after eating the first food item.
+        """
+        out = dict(env_kwargs)
+        if "distance_weight" in out:
+            out["distance_weight"] = max(0.1, float(out["distance_weight"]))
+        return out
 
     @staticmethod
     def _normalize_pivot(pivot: dict) -> dict:

@@ -570,3 +570,32 @@ def test_generate_training_script_injects_tetris_preamble(tmp_path, monkeypatch)
     content = open(path).read()
     assert "tetris_env" in content
     assert "_register_tetris" in content
+
+
+# ── target_reward early-stop threshold ───────────────────────────────────────
+
+def test_target_reward_uses_value_when_target_is_mean_reward(tmp_path, monkeypatch):
+    """When target metric IS mean_reward, its value is used as the early-stop threshold."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(target_metric={"mean_reward": 475})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "475" in prompt
+
+
+def test_target_reward_uses_200_when_target_is_custom_metric(tmp_path, monkeypatch):
+    """When target metric is NOT mean_reward (e.g. food_eaten=20), early-stop uses 200
+    so training doesn't bail out when mean_reward happens to cross 20."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(target_metric={"food_eaten": 20})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "mean_reward >= 200" in prompt
+    # The food_eaten target value (20) must NOT be used as the threshold
+    assert "mean_reward >= 20:" not in prompt

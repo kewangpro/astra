@@ -651,6 +651,31 @@ def test_env_kwargs_merge_when_plan_has_none():
     assert plan["env_kwargs"] == {"food_reward": 25.0}
 
 
+# ── _clamp_env_kwargs ─────────────────────────────────────────────────────────
+
+def test_clamp_env_kwargs_distance_weight_zero_raised_to_min():
+    """distance_weight=0 must be clamped to 0.1 — zeroing disables navigation shaping."""
+    result = LoopStateMachine._clamp_env_kwargs({"distance_weight": 0.0, "food_reward": 20.0})
+    assert result["distance_weight"] == 0.1
+    assert result["food_reward"] == 20.0  # other keys unchanged
+
+
+def test_clamp_env_kwargs_distance_weight_negative_raised_to_min():
+    result = LoopStateMachine._clamp_env_kwargs({"distance_weight": -1.0})
+    assert result["distance_weight"] == 0.1
+
+
+def test_clamp_env_kwargs_distance_weight_valid_unchanged():
+    result = LoopStateMachine._clamp_env_kwargs({"distance_weight": 1.5})
+    assert result["distance_weight"] == 1.5
+
+
+def test_clamp_env_kwargs_no_distance_weight_passthrough():
+    """Keys other than distance_weight pass through without modification."""
+    result = LoopStateMachine._clamp_env_kwargs({"food_reward": 25.0, "survival_bonus": 0.05})
+    assert result == {"food_reward": 25.0, "survival_bonus": 0.05}
+
+
 def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
     """When multiple entries exist for the same iteration, last one wins."""
     import json as _json
