@@ -17,13 +17,14 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-async def recover_interrupted_missions() -> int:
+async def recover_interrupted_missions() -> list:
     """
     Called once on application startup. For each RUNNING/PAUSED mission:
-      - If sandbox is still alive → keep RUNNING, re-attach telemetry back-fill.
-      - If sandbox is gone        → reset to PENDING; caller re-launches from checkpoint.
+      - If sandbox is still alive → terminate it and reset to PENDING so the
+        loop can restart cleanly from the last saved checkpoint.
+      - If sandbox is gone        → reset to PENDING; loop re-launches from checkpoint.
 
-    Returns the number of missions that were acted upon.
+    Returns the list of mission IDs that need their loop restarted.
     """
     from backend.sandbox.manager import sandbox_manager   # late import to avoid circular dep
 
@@ -43,7 +44,7 @@ async def recover_interrupted_missions() -> int:
 
             if not missions:
                 logger.info("State recovery: no interrupted missions found.")
-                return 0
+                return []
 
             reattached_ids = []
             reset_ids = []
@@ -55,14 +56,18 @@ async def recover_interrupted_missions() -> int:
                     mission.container_id,
                 )
                 if outcome == "reattached":
+                    # Terminate the still-running subprocess so the loop can
+                    # restart it cleanly from the last checkpoint.
+                    sandbox_manager.terminate(mission.id)
                     reattached_ids.append(mission.id)
                 else:
                     reset_ids.append(mission.id)
 
-            if reset_ids:
+            all_ids = reattached_ids + reset_ids
+            if all_ids:
                 await session.execute(
                     update(Mission)
-                    .where(Mission.id.in_(reset_ids))
+                    .where(Mission.id.in_(all_ids))
                     .values(
                         status=MissionStatus.PENDING.value,
                         container_id=None,
@@ -72,13 +77,13 @@ async def recover_interrupted_missions() -> int:
 
         if reattached_ids:
             logger.info(
-                "State recovery: %d mission(s) reattached (sandbox still alive): %s",
+                "State recovery: %d mission(s) sandbox terminated + reset to PENDING: %s",
                 len(reattached_ids), reattached_ids,
             )
         if reset_ids:
-            logger.warning(
+            logger.info(
                 "State recovery: %d mission(s) reset to PENDING (sandbox gone): %s",
                 len(reset_ids), reset_ids,
             )
 
-        return len(missions)
+        return all_ids
