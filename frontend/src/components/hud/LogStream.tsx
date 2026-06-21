@@ -46,9 +46,10 @@ const STATUS_LABEL: Record<string, string> = {
 export function LogStream({ events, connected, missionStatus, className }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   // metric events are shown in MetricHistory — exclude them from the stream
-  const visible = events.filter(
+  const allVisible = events.filter(
     (e) => e.type !== "backfill_complete" && e.type !== "metric"
   );
+  const visible = allVisible.slice(-100);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -68,8 +69,10 @@ export function LogStream({ events, connected, missionStatus, className }: Props
           <span className="text-[10px] text-[#64748b] tracking-widest uppercase">
             event stream
           </span>
-          {visible.length > 0 && (
-            <span className="text-[10px] text-[#64748b]">({visible.length})</span>
+          {allVisible.length > 0 && (
+            <span className="text-[10px] text-[#64748b]">
+              {allVisible.length > 100 ? `last 100 of ${allVisible.length}` : allVisible.length}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
