@@ -23,6 +23,10 @@ ESCALATION_ARCH   = 2  # pivot count → suggest architecture change
 ESCALATION_ALGO   = 4  # pivot count → allow algorithm switch
 ESCALATION_REWARD = 6  # pivot count → allow reward shaping changes
 
+# After an arch/algo pivot, if the new config's best is still this much below
+# the pre-pivot best after PLATEAU_WINDOW iters, revert to the old checkpoint.
+PIVOT_REGRESSION_THRESHOLD = 0.20
+
 
 class PivotEngine:
     """
@@ -36,9 +40,19 @@ class PivotEngine:
         self._history: list[dict] = []   # [{iteration, metric_name, value}]
         self._pivot_count: int = 0       # consecutive pivots without breakthrough
         self._best_at_last_pivot: Optional[float] = None
+        # Post-pivot regression tracking (arch/algo pivots only)
+        self._pivot_applied: bool = False
+        self._pre_pivot_best: Optional[float] = None
+        self._post_pivot_best: Optional[float] = None
+        self._iters_since_pivot: int = 0
 
     def record(self, iteration: int, metrics: dict) -> None:
         self._history.append({"iteration": iteration, **metrics})
+        if self._pivot_applied:
+            self._iters_since_pivot += 1
+            v = self._resolve_metric(self._metric_name, metrics)
+            if v is not None and (self._post_pivot_best is None or v > self._post_pivot_best):
+                self._post_pivot_best = v
 
     def record_pivot(self) -> None:
         """Call each time a pivot is applied to track escalation."""
@@ -78,6 +92,60 @@ class PivotEngine:
             if entry.get("iteration") not in existing_iters:
                 self._history.append(entry)
                 existing_iters.add(entry.get("iteration"))
+
+    def record_arch_pivot_baseline(self) -> None:
+        """Call before applying an arch or algo pivot to arm regression detection."""
+        self._pre_pivot_best = self.best_metric_value()
+        self._post_pivot_best = None
+        self._iters_since_pivot = 0
+        self._pivot_applied = True
+        logger.info(
+            "PivotEngine: arch/algo pivot armed — pre_pivot_best=%.3f",
+            self._pre_pivot_best if self._pre_pivot_best is not None else float("nan"),
+        )
+
+    def should_revert_pivot(self) -> bool:
+        """True if the new config is still materially worse after PLATEAU_WINDOW iters.
+
+        Clears the regression window if the new config is performing adequately so that
+        future arch changes can be tracked independently.
+        """
+        if not self._pivot_applied:
+            return False
+        if self._iters_since_pivot < PLATEAU_WINDOW:
+            return False
+        pre = self._pre_pivot_best
+        post = self._post_pivot_best
+        if pre is None or pre <= 0 or post is None:
+            # Not enough info — don't revert, just clear tracking
+            self._pivot_applied = False
+            return False
+        regression = (pre - post) / pre
+        if regression > PIVOT_REGRESSION_THRESHOLD:
+            logger.info(
+                "PivotEngine: post-pivot regression detected — pre=%.3f post=%.3f regression=%.1f%% > threshold=%.0f%%",
+                pre, post, regression * 100, PIVOT_REGRESSION_THRESHOLD * 100,
+            )
+            return True
+        # New config recovered — clear tracking without reverting
+        logger.info(
+            "PivotEngine: post-pivot recovery confirmed — pre=%.3f post=%.3f regression=%.1f%%",
+            pre, post, regression * 100,
+        )
+        self._pivot_applied = False
+        self._pre_pivot_best = None
+        self._post_pivot_best = None
+        self._iters_since_pivot = 0
+        return False
+
+    def revert_escalation(self) -> None:
+        """De-escalate after reverting a bad arch/algo pivot."""
+        self._pivot_count = max(0, self._pivot_count - 1)
+        self._pivot_applied = False
+        self._pre_pivot_best = None
+        self._post_pivot_best = None
+        self._iters_since_pivot = 0
+        logger.info("PivotEngine: escalation reverted — pivot_count=%d", self._pivot_count)
 
     def escalation_level(self) -> int:
         """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards."""

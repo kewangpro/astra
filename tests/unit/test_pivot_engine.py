@@ -270,3 +270,91 @@ def test_arch_changed_no_policy_kwargs_is_false():
         None != {"net_arch": [256, 256]}
     )
     assert not arch_changed
+
+
+# ── post-pivot regression detection ───────────────────────────────────────────
+
+def _regressing_engine():
+    """Engine with pre-pivot best=16, then 3 post-pivot iters at 2."""
+    e = PivotEngine({"food_eaten": 20.0})
+    for i in range(10):
+        e.record(i, {"food_eaten": float(i + 6)})  # history up to 15
+    e.record(10, {"food_eaten": 16.0})              # best = 16
+    e.record_arch_pivot_baseline()                  # arm regression detector
+    e.record(11, {"food_eaten": 2.0})
+    e.record(12, {"food_eaten": 2.0})
+    e.record(13, {"food_eaten": 2.0})               # 3 post-pivot iters at 2
+    return e
+
+
+def test_should_revert_pivot_detects_regression():
+    e = _regressing_engine()
+    assert e.should_revert_pivot()
+
+
+def test_should_revert_pivot_false_before_window():
+    e = PivotEngine({"food_eaten": 20.0})
+    e.record(0, {"food_eaten": 16.0})
+    e.record_arch_pivot_baseline()
+    e.record(1, {"food_eaten": 2.0})
+    e.record(2, {"food_eaten": 2.0})
+    # Only 2 post-pivot iters — below PLATEAU_WINDOW=3
+    assert not e.should_revert_pivot()
+
+
+def test_should_revert_pivot_false_when_not_armed():
+    e = PivotEngine({"food_eaten": 20.0})
+    e.record(0, {"food_eaten": 16.0})
+    # No record_arch_pivot_baseline call
+    e.record(1, {"food_eaten": 2.0})
+    e.record(2, {"food_eaten": 2.0})
+    e.record(3, {"food_eaten": 2.0})
+    assert not e.should_revert_pivot()
+
+
+def test_should_revert_pivot_false_when_recovering():
+    e = PivotEngine({"food_eaten": 20.0})
+    e.record(0, {"food_eaten": 16.0})
+    e.record_arch_pivot_baseline()
+    # Post-pivot best recovers to 14 — only 12.5% regression, below 20% threshold
+    e.record(1, {"food_eaten": 14.0})
+    e.record(2, {"food_eaten": 13.0})
+    e.record(3, {"food_eaten": 14.0})
+    assert not e.should_revert_pivot()
+
+
+def test_should_revert_pivot_clears_state_on_recovery():
+    e = PivotEngine({"food_eaten": 20.0})
+    e.record(0, {"food_eaten": 16.0})
+    e.record_arch_pivot_baseline()
+    e.record(1, {"food_eaten": 14.0})
+    e.record(2, {"food_eaten": 14.0})
+    e.record(3, {"food_eaten": 14.0})
+    e.should_revert_pivot()  # clears _pivot_applied
+    # A further call should not revert
+    e.record(4, {"food_eaten": 1.0})
+    e.record(5, {"food_eaten": 1.0})
+    e.record(6, {"food_eaten": 1.0})
+    assert not e.should_revert_pivot()
+
+
+def test_revert_escalation_decrements_pivot_count():
+    e = _regressing_engine()
+    e.restore_pivot_count(3)
+    e.revert_escalation()
+    assert e.pivot_count == 2
+
+
+def test_revert_escalation_clamps_at_zero():
+    e = _regressing_engine()
+    # pivot_count is 0 by default; revert should not go negative
+    e.revert_escalation()
+    assert e.pivot_count == 0
+
+
+def test_revert_escalation_clears_regression_state():
+    e = _regressing_engine()
+    e.revert_escalation()
+    # After revert, should_revert_pivot must be False
+    e.record(14, {"food_eaten": 1.0})
+    assert not e.should_revert_pivot()

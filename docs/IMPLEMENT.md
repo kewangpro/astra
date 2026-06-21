@@ -571,7 +571,33 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - **Problem**: if a mid-loop error retry called `launch()` while an existing sandbox was still registered in `self._sandboxes`, the old entry was silently overwritten without termination — leaking the old subprocess.
     - `backend/sandbox/manager.py`: `launch()` now pops any existing sandbox for the mission from `self._sandboxes` before creating the new one; calls `terminate()` on it if `is_alive()` returns True.
 
+- [x] **Sandbox terminate on shutdown cancel (Step 15.4)**
+    - **Problem**: when uvicorn's watchfiles hot-reload triggers a `CancelledError` in the mission loop, the state machine caught it and reset the mission to `PENDING` — but never terminated the running sandbox subprocess. On the next server start, `recover_interrupted_missions()` looks for `RUNNING`/`PAUSED`/`PLANNING`/`EVALUATING` missions, so it skipped the `PENDING` mission entirely. The sandbox continued running orphaned, writing telemetry without any evaluation or pivot supervision.
+    - `backend/loop/state_machine.py`: `CancelledError` handler now calls `self._sandbox.terminate(mission_id)` before transitioning to `PENDING`. Exceptions from terminate are caught and logged as warnings (don't block the reset).
+
 - [x] **Test coverage (Step 15.3)**
     - `tests/unit/test_subprocess_sandbox.py`: 4 new tests — `test_terminate_via_reattach_pid_kills_process` (psutil.Process called with stored pid), `test_terminate_via_reattach_pid_force_kills_on_timeout` (SIGKILL on TimeoutExpired), `test_terminate_via_reattach_pid_handles_already_gone` (NoSuchProcess swallowed), `test_terminate_via_reattach_pid_clears_pid` (field reset to None after kill).
     - `tests/unit/test_sandbox_manager.py` (new file): 5 tests — `test_reattach_sets_reattach_pid` (recover sets field), `test_reattach_returns_dead_when_pid_gone`, `test_recover_no_pid_no_container_returns_dead`, `test_launch_terminates_alive_existing_sandbox`, `test_launch_skips_terminate_when_existing_sandbox_dead`.
     - Total: **464 tests** (455 unit + 9 integration).
+
+---
+
+## Phase 16: Post-Pivot Regression Detection ✅
+*Goal: Prevent arch/algo pivots from permanently abandoning a good checkpoint when the new configuration trains poorly. Detect the regression automatically and revert to the pre-pivot best.*
+
+- [x] **Regression detector in PivotEngine (Step 16.1)**
+    - **Root cause**: after an arch or algorithm pivot, the new configuration starts with randomised weights (warm-start is skipped due to shape mismatch). If the new arch trains poorly for several iterations, the system keeps escalating (proposing yet more arch changes) without ever reverting to the best-known checkpoint from before the pivot.
+    - `backend/loop/pivots.py`: added `PIVOT_REGRESSION_THRESHOLD = 0.20` constant. New fields: `_pivot_applied: bool`, `_pre_pivot_best: Optional[float]`, `_post_pivot_best: Optional[float]`, `_iters_since_pivot: int`. `record()` now increments `_iters_since_pivot` and tracks `_post_pivot_best` whenever `_pivot_applied` is True. New methods:
+        - `record_arch_pivot_baseline()`: arms the detector — saves current best as `_pre_pivot_best`, resets post-pivot tracking.
+        - `should_revert_pivot()`: after `PLATEAU_WINDOW` post-pivot iters, returns True if `_post_pivot_best < _pre_pivot_best * (1 - PIVOT_REGRESSION_THRESHOLD)`. Clears tracking silently if the new config recovered adequately.
+        - `revert_escalation()`: decrements `_pivot_count` by 1 (clamped to 0) and clears all regression state.
+
+- [x] **Checkpoint backup and revert in LoopStateMachine (Step 16.2)**
+    - `backend/loop/state_machine.py`: before applying any arch or algo pivot — copies `best_model.zip` → `best_model_pre_pivot.zip`; saves `plan["_pre_pivot_hps"]` (full hyperparameters snapshot) and `plan["_pre_pivot_best_score"]` (current best score); calls `pivot_engine.record_arch_pivot_baseline()`.
+    - After `pivot_engine.record()` each iteration, checks `pivot_engine.should_revert_pivot()`. On True: restores `best_model_pre_pivot.zip` → `best_model.zip`; restores `best_score.txt` to pre-pivot value; restores `plan["hyperparameters"]` from `_pre_pivot_hps` snapshot; calls `pivot_engine.revert_escalation()`; saves plan to DB; emits a `warn` status event; sets `_pivot_reverted = True`.
+    - `needs_pivot()` is skipped for the remainder of the iteration when `_pivot_reverted` is True, preventing an immediate re-pivot on the same iteration.
+    - `import shutil` added for file copy operations.
+
+- [x] **Test coverage (Step 16.3)**
+    - `tests/unit/test_pivot_engine.py`: 8 new tests — `test_should_revert_pivot_detects_regression`, `test_should_revert_pivot_false_before_window`, `test_should_revert_pivot_false_when_not_armed`, `test_should_revert_pivot_false_when_recovering`, `test_should_revert_pivot_clears_state_on_recovery`, `test_revert_escalation_decrements_pivot_count`, `test_revert_escalation_clamps_at_zero`, `test_revert_escalation_clears_regression_state`.
+    - Total: **472 tests** (463 unit + 9 integration).

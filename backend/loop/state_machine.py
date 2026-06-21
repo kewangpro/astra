@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 from enum import Enum
 from typing import Optional
 
@@ -340,6 +341,48 @@ class LoopStateMachine:
                 )
                 await self._save_current_metric(mission_id, current_val)
 
+                # ── POST-PIVOT REGRESSION CHECK ───────────────────────────
+                # If an arch/algo pivot made things materially worse after
+                # PLATEAU_WINDOW iters, restore the pre-pivot checkpoint and
+                # de-escalate so HP tuning resumes from the good baseline.
+                _pivot_reverted = False
+                if pivot_engine.should_revert_pivot():
+                    _checkpoint_dir = os.path.join(
+                        settings.data_path, "missions", mission_id, "checkpoints"
+                    )
+                    _backup_zip = os.path.join(_checkpoint_dir, "best_model_pre_pivot.zip")
+                    _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
+                    _pre_hps = plan.pop("_pre_pivot_hps", None)
+                    _pre_score = plan.pop("_pre_pivot_best_score", None)
+                    if os.path.exists(_backup_zip):
+                        try:
+                            shutil.copy2(_backup_zip, _best_zip)
+                            logger.info(
+                                "LoopStateMachine: restored pre-pivot checkpoint for mission=%s",
+                                mission_id,
+                            )
+                        except Exception as _e:
+                            logger.warning("LoopStateMachine: could not restore checkpoint: %s", _e)
+                    if _pre_score is not None:
+                        try:
+                            with open(os.path.join(_checkpoint_dir, "best_score.txt"), "w") as _f:
+                                _f.write(str(_pre_score))
+                        except Exception as _e:
+                            logger.warning("LoopStateMachine: could not restore best_score.txt: %s", _e)
+                    if _pre_hps is not None:
+                        plan["hyperparameters"] = _pre_hps
+                    pivot_engine.revert_escalation()
+                    await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
+                    await self._save_plan(mission_id, plan)
+                    skip_replan_in_memory = False
+                    await emit_status(
+                        mission_id,
+                        "Pivot reverted — restored pre-pivot checkpoint, resuming HP tuning",
+                        event_type="warn",
+                        iteration=current_iteration,
+                    )
+                    _pivot_reverted = True
+
                 # ── MANIFEST CHECK ────────────────────────────────────────
                 manifest = self._manifest_evaluator.evaluate(
                     manifest, current_metrics, mission_dir, sandbox_ok=True,
@@ -372,7 +415,7 @@ class LoopStateMachine:
 
                 # ── REFINING ─────────────────────────────────────────────
                 pivot_reason = None
-                if pivot_engine.needs_pivot():
+                if not _pivot_reverted and pivot_engine.needs_pivot():
                     escalation = pivot_engine.escalation_level()
                     current_algo = plan.get("algorithm", "PPO")
                     # Detect if the user's goal explicitly names an algorithm.
@@ -461,6 +504,25 @@ class LoopStateMachine:
                     else:
                         # Snapshot before mutating so display shows old→new correctly
                         old_hps = {k: plan["hyperparameters"].get(k) for k in real_adjustments}
+                        # Before any arch/algo change: back up checkpoint + arm regression detector
+                        if arch_changed or algo_changed:
+                            _checkpoint_dir = os.path.join(
+                                settings.data_path, "missions", mission_id, "checkpoints"
+                            )
+                            _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
+                            _backup_zip = os.path.join(_checkpoint_dir, "best_model_pre_pivot.zip")
+                            if os.path.exists(_best_zip):
+                                try:
+                                    shutil.copy2(_best_zip, _backup_zip)
+                                    logger.info(
+                                        "LoopStateMachine: backed up best_model.zip before pivot for mission=%s",
+                                        mission_id,
+                                    )
+                                except Exception as _e:
+                                    logger.warning("LoopStateMachine: could not back up checkpoint: %s", _e)
+                            plan["_pre_pivot_hps"] = dict(plan.get("hyperparameters", {}))
+                            plan["_pre_pivot_best_score"] = pivot_engine.best_metric_value()
+                            pivot_engine.record_arch_pivot_baseline()
                         plan["hyperparameters"].update(real_adjustments)
                         if arch_changed:
                             # Track the outgoing arch so future pivots back to it are suppressed
@@ -578,7 +640,11 @@ class LoopStateMachine:
                 current_iteration += 1
 
             except asyncio.CancelledError:
-                logger.info("LoopStateMachine: mission=%s cancelled (shutdown) — resetting to pending", mission_id)
+                logger.info("LoopStateMachine: mission=%s cancelled (shutdown) — terminating sandbox and resetting to pending", mission_id)
+                try:
+                    self._sandbox.terminate(mission_id)
+                except Exception as _term_e:
+                    logger.warning("LoopStateMachine: sandbox terminate on cancel failed for mission=%s: %s", mission_id, _term_e)
                 await self._transition(mission_id, MissionStatus.PENDING)
                 raise  # propagate so asyncio knows the task is done
 
