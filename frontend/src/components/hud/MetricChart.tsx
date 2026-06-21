@@ -193,6 +193,7 @@ export function MetricChart({ events, targetMetric }: Props) {
             tick={{ fontSize: 10, fill: "#334155" }}
             axisLine={false}
             tickLine={false}
+            tickCount={6}
             tickFormatter={(v: number) =>
               v >= 1_000_000
                 ? `${(v / 1_000_000).toFixed(1)}M`
