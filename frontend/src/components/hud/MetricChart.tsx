@@ -182,7 +182,7 @@ export function MetricChart({ events, targetMetric }: Props) {
       </svg>
 
       <ResponsiveContainer width="100%" height={200}>
-        <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+        <AreaChart data={data} margin={{ top: 4, right: 10, bottom: 0, left: -16 }}>
           <CartesianGrid
             strokeDasharray="2 4"
             stroke="rgba(255,255,255,0.03)"
@@ -221,17 +221,23 @@ export function MetricChart({ events, targetMetric }: Props) {
             formatter={tooltipFormatter}
             cursor={{ stroke: "rgba(20,184,166,0.2)", strokeWidth: 1 }}
           />
-          <ReferenceLine
-            y={targetValue}
-            stroke="rgba(20,184,166,0.35)"
-            strokeDasharray="3 5"
-            label={{
-              value: targetLabel,
-              position: "right",
-              fontSize: 9,
-              fill: "rgba(20,184,166,0.5)",
-            }}
-          />
+          {/* Only draw the target line when the chart is showing the goal metric
+              directly (mean_reward missions). When the chart shows mean_reward as a
+              proxy for a different goal (food_eaten, lines_cleared, etc.) the target
+              value is on a different scale and the line is misleading. */}
+          {!excludeGoalMetric && (
+            <ReferenceLine
+              y={targetValue}
+              stroke="rgba(20,184,166,0.35)"
+              strokeDasharray="3 5"
+              label={{
+                value: targetLabel,
+                position: "right",
+                fontSize: 9,
+                fill: "rgba(20,184,166,0.5)",
+              }}
+            />
+          )}
           {/* Historical series — same color as current but dimmed */}
           {names.map((name, i) => (
             <Area
