@@ -7,6 +7,7 @@ interface Props {
   events: TelemetryEvent[];
   connected: boolean;
   missionStatus?: string;
+  className?: string;
 }
 
 const LEVEL_STYLES: Record<string, { dot: string; text: string; label: string }> = {
@@ -42,7 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
   completed:  "MISSION COMPLETE",
 };
 
-export function LogStream({ events, connected, missionStatus }: Props) {
+export function LogStream({ events, connected, missionStatus, className }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   // metric events are shown in MetricHistory — exclude them from the stream
   const visible = events.filter(
@@ -55,11 +56,11 @@ export function LogStream({ events, connected, missionStatus }: Props) {
 
   return (
     <div
-      className="rounded-lg flex flex-col"
+      className={`rounded-lg flex flex-col ${className ?? ""}`}
       style={{
         background: "#1e293b",
         border: "1px solid rgba(20,184,166,0.12)",
-        height: "24rem",
+        minHeight: "24rem",
       }}
     >
       {/* Header */}
