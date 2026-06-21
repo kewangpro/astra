@@ -549,6 +549,12 @@ class LoopStateMachine:
                             iteration=current_iteration,
                         )
 
+                # Preserve current plan for next iteration — only re-plan when a
+                # pivot fires (skip_replan_in_memory already True in that path)
+                # or on the very first iteration (plan freshly generated above).
+                if not skip_replan_in_memory:
+                    skip_replan_in_memory = True
+
                 # ── SESSION SUMMARY (Step 7.3) ────────────────────────────
                 session_summary.write_session_summary(
                     mission_id=mission_id,

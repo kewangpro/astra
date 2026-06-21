@@ -446,3 +446,33 @@ async def test_restart_uses_saved_pivot_plan(db_session, patch_db, monkeypatch):
     assert plan_calls == [], f"Expected no LLM re-plan on restart, got {len(plan_calls)} call(s)"
     await db_session.refresh(mission)
     assert mission.status == MissionStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_plan_reused_across_iterations_without_pivot(seeded_mission, db_session, patch_db, monkeypatch):
+    """Without a pivot, the plan (including env_kwargs) must carry forward across
+    iterations — the LLM must NOT be called again after the first planning step."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    plan_calls = []
+
+    class _TrackingAgent(_MockLeadAgent):
+        async def plan(self, goal, task_type, target_metric):
+            plan_calls.append(True)
+            p = await super().plan(goal, task_type, target_metric)
+            p["env_kwargs"] = {"distance_weight": 0.5, "food_reward": 20.0}
+            return p
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # Three iterations with improving metrics — no plateau, no pivot
+        evaluator = _SequenceEvaluator([
+            {"mean_reward": 50.0},
+            {"mean_reward": 100.0},
+            {"mean_reward": 200.0},  # goal met
+        ])
+        sm = _build_sm(_TrackingAgent(), _MockCodeGen(tmp), _MockHealer(tmp), _MockSandbox(tmp), evaluator)
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(seeded_mission.id)
+
+    # LLM plan() must be called exactly once (first iteration only)
+    assert len(plan_calls) == 1, f"Expected 1 LLM plan call, got {len(plan_calls)}"
