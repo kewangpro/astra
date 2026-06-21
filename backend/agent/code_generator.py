@@ -146,8 +146,8 @@ The script must:
    The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
    The best_model save block is MANDATORY — it ensures the peak model is preserved.
    The __init__ loading from best_score.txt is MANDATORY — it preserves peak weights across restarts.
-5. Call model.learn(total_timesteps=500000, callback=callback) — use at least
-   500000 timesteps. Do NOT use 10000 or any small number.
+5. Call model.learn(total_timesteps=2000000, callback=callback) — use at least
+   2000000 timesteps. Do NOT use 500000 or any smaller number.
 6. After training, save the final model: model.save("{checkpoint_dir}/last_model")
 7. Exit cleanly when target mean_reward is reached."""
 

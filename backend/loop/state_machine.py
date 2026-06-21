@@ -454,23 +454,6 @@ class LoopStateMachine:
                         plan["hyperparameters"].update(real_adjustments)
                         if arch_changed:
                             plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
-                            # Reset best_score.txt so the new architecture can establish
-                            # its own baseline. Without this, the old peak score blocks
-                            # best_model.zip from ever being saved by the new architecture,
-                            # and warm-start keeps failing on every subsequent iteration.
-                            best_score_path = os.path.join(
-                                settings.data_path, "missions", mission_id,
-                                "checkpoints", "best_score.txt",
-                            )
-                            try:
-                                with open(best_score_path, "w") as _f:
-                                    _f.write("-inf")
-                                logger.info(
-                                    "LoopStateMachine: reset best_score.txt after net_arch pivot for mission=%s",
-                                    mission_id,
-                                )
-                            except Exception as _e:
-                                logger.warning("LoopStateMachine: could not reset best_score.txt: %s", _e)
                         if algo_changed:
                             logger.info(
                                 "LoopStateMachine: algorithm switch %s → %s",
