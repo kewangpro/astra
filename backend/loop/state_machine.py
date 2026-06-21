@@ -467,7 +467,7 @@ class LoopStateMachine:
                             _recent = list(plan.get("recent_arches", []))
                             if _current_pky is not None and _current_pky not in _recent:
                                 _recent.append(_current_pky)
-                            plan["recent_arches"] = _recent[-3:]
+                            plan["recent_arches"] = _recent[-5:]
                             plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
                             # Reset best_score.txt so the new architecture can save its own
                             # checkpoint. Without this, the old peak score blocks best_model.zip

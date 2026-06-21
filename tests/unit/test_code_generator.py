@@ -586,9 +586,9 @@ def test_target_reward_uses_value_when_target_is_mean_reward(tmp_path, monkeypat
     assert "475" in prompt
 
 
-def test_target_reward_uses_200_when_target_is_custom_metric(tmp_path, monkeypatch):
-    """When target metric is NOT mean_reward (e.g. food_eaten=20), early-stop uses 200
-    so training doesn't bail out when mean_reward happens to cross 20."""
+def test_target_reward_uses_9999_when_target_is_custom_metric(tmp_path, monkeypatch):
+    """When target metric is NOT mean_reward (e.g. food_eaten=20), early-stop uses 9999
+    so training never bails out early on mean_reward — the full timestep budget runs."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -596,6 +596,6 @@ def test_target_reward_uses_200_when_target_is_custom_metric(tmp_path, monkeypat
     gen = CodeGenerator(_make_provider())
     plan = _make_rl_plan(target_metric={"food_eaten": 20})
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "mean_reward >= 200" in prompt
+    assert "mean_reward >= 9999" in prompt
     # The food_eaten target value (20) must NOT be used as the threshold
     assert "mean_reward >= 20:" not in prompt

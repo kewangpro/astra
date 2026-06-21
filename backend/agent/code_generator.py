@@ -294,8 +294,9 @@ class CodeGenerator:
             tm_value = next(iter(tm.values()), 200) if tm else 200
             # Only use the target value as the mean_reward threshold when the
             # target metric IS mean_reward; for custom goals (food_eaten, etc.)
-            # the numeric target has nothing to do with mean_reward scale.
-            target_reward = tm_value if tm_name in (None, "mean_reward") else 200
+            # mean_reward scale is unrelated to the target — use a sentinel that
+            # never triggers so the full timestep budget always runs.
+            target_reward = tm_value if tm_name in (None, "mean_reward") else 9999
             env_id = plan.get("env_id", "CartPole-v1")
             # Inject custom env registration preamble when needed
             _project_root = os.path.abspath(os.path.join(settings.data_path, ".."))
