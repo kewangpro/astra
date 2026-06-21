@@ -105,7 +105,7 @@ export function MetricGap({ mission, events = [] }: Props) {
   // Build sparkline data from target metric telemetry events
   const sparkData = events
     .filter((e) => (e.type === "metric" || e.type === "backfill") && e.name === metricName)
-    .map((e) => ({ step: e.step ?? 0, value: e.value as number }))
+    .map((e) => ({ step: e.step ?? 0, value: e.value as number, iteration: e.iteration ?? null }))
     .sort((a, b) => a.step - b.step);
 
   const hasSparkData = sparkData.length > 1;
@@ -182,7 +182,10 @@ export function MetricGap({ mission, events = [] }: Props) {
                         : `${((v as number) * 100).toFixed(1)}%`,
                       metricName,
                     ]}
-                    labelFormatter={() => ""}
+                    labelFormatter={(_label, payload) => {
+                      const iter = payload?.[0]?.payload?.iteration;
+                      return iter != null ? `iter ${iter}` : "";
+                    }}
                   />
                   {targetValue > 0 && (
                     <ReferenceLine
