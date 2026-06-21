@@ -40,6 +40,15 @@ def _parse_target_metric(goal: str) -> dict:
     if m:
         metric_name = re.sub(r"\s+", "_", m.group(1).strip().lower())
         return {metric_name: float(m.group(2))}
+    # Generic: "achieve {value} {metric name}" — number-first phrasing like
+    # "achieve 20 food eaten" or "achieve 30 lines cleared in one game".
+    m = re.search(
+        r"achieve\s+(\d+(?:\.\d+)?)\s+([\w][\w\s]*?)(?:\s+(?:in|per|on|within)\b|$)",
+        goal, re.IGNORECASE,
+    )
+    if m:
+        metric_name = re.sub(r"\s+", "_", m.group(2).strip().lower())
+        return {metric_name: float(m.group(1))}
     return {}
 
 

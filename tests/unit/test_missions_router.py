@@ -118,3 +118,28 @@ def test_parse_multi_word_metric_spaces_to_underscores():
 def test_parse_multi_word_metric_case_insensitive():
     result = _parse_target_metric("Achieve Food Eaten of 15")
     assert result == {"food_eaten": 15.0}
+
+
+def test_parse_number_first_food_eaten_in_game():
+    result = _parse_target_metric(
+        "Train a Snake-v0 PPO agent to achieve 20 food eaten in one game"
+    )
+    assert result == {"food_eaten": 20.0}
+
+
+def test_parse_number_first_lines_cleared():
+    result = _parse_target_metric(
+        "Train a Tetris PPO agent to achieve 30 lines cleared per episode"
+    )
+    assert result == {"lines_cleared": 30.0}
+
+
+def test_parse_number_first_no_trailing_clause():
+    result = _parse_target_metric("achieve 50 food eaten")
+    assert result == {"food_eaten": 50.0}
+
+
+def test_parse_number_first_does_not_clobber_metric_of_value():
+    # "achieve food eaten of 30" should still use the existing pattern (metric-first)
+    result = _parse_target_metric("achieve food eaten of 30")
+    assert result == {"food_eaten": 30.0}

@@ -468,3 +468,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/agent/lead_agent.py`: `propose_pivot()` gains three optional parameters — `current_policy_kwargs`, `current_hyperparameters`, `current_env_kwargs`. These are prepended to the query so the LLM can see exactly what is already in place. The prompt instructs it to avoid repeating already-applied changes.
     - `backend/loop/state_machine.py`: call site passes `plan["hyperparameters"]["policy_kwargs"]`, the remaining hyperparameters, and `plan["env_kwargs"]` to `propose_pivot()`.
     - `tests/unit/test_state_machine_helpers.py`: 1 new test — `test_propose_pivot_passes_current_plan_context` verifies that policy_kwargs, hyperparameters, and env_kwargs from the current plan are forwarded to `propose_pivot`. Total: **426 tests**.
+
+- [x] **Goal metric parser handles number-first phrasing (Step 12.6)**
+    - **Problem**: `_parse_target_metric` only matched "achieve {metric} of {value}" word order. Goals like "achieve 20 food eaten in one game" (number before metric name) returned `{}`, so `mission.target_metric` was empty and MetricGap fell back to the default 92% accuracy target.
+    - `backend/routers/missions.py`: added a second generic pattern `r"achieve\s+(\d+...)\s+([\w\s]+?)(?:\s+(?:in|per|on|within)\b|$)"` that captures number-first goals; the metric name is snake-cased the same way as the existing pattern.
+    - `tests/unit/test_missions_router.py`: 4 new tests — "achieve 20 food eaten in one game", "achieve 30 lines cleared per episode", "achieve 50 food eaten" (no trailing clause), and regression check that "achieve food eaten of 30" still uses the metric-first path. Total: **430 tests**.
