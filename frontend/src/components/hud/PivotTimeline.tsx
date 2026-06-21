@@ -16,6 +16,7 @@ export function PivotTimeline({ events }: Props) {
       <div className="text-xs text-[#94a3b8] tracking-widest uppercase mb-4">
         Pivot History
       </div>
+      <div className="overflow-y-auto max-h-64 pr-1">
       <ol className="relative border-l border-[rgba(20,184,166,0.15)] space-y-5 pl-6">
         {pivots.map((p, i) => (
           <li key={i} className="relative">
@@ -32,6 +33,7 @@ export function PivotTimeline({ events }: Props) {
           </li>
         ))}
       </ol>
+      </div>
     </div>
   );
 }
