@@ -485,3 +485,76 @@ def test_wait_sandbox_mixed_benign_and_fatal_returns_content(tmp_path):
     sm = _make_sandbox_sm(content, tmp_path)
     result = _run(sm._wait_for_sandbox("mid"))
     assert result == content
+
+
+# ── propose_pivot current plan context ───────────────────────────────────────
+
+def test_propose_pivot_passes_current_plan_context(monkeypatch):
+    """propose_pivot receives current policy_kwargs, hyperparameters, and env_kwargs
+    so the LLM can avoid re-proposing already-applied changes."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    captured = {}
+
+    async def _fake_propose(
+        self,
+        current_metrics,
+        history,
+        escalation_level=0,
+        current_algorithm="PPO",
+        algorithm_locked=False,
+        current_policy_kwargs=None,
+        current_hyperparameters=None,
+        current_env_kwargs=None,
+    ):
+        captured["policy_kwargs"] = current_policy_kwargs
+        captured["hyperparameters"] = current_hyperparameters
+        captured["env_kwargs"] = current_env_kwargs
+        return {"reason": "test", "adjustments": {}}
+
+    from backend.agent.lead_agent import LeadAgent
+    monkeypatch.setattr(LeadAgent, "propose_pivot", _fake_propose)
+
+    from backend.loop.pivots import PivotEngine
+    engine = PivotEngine({"food_eaten": 30})
+    # seed 3 identical values to trigger plateau
+    for i in range(3):
+        engine.record(i, {"food_eaten": 1.0})
+
+    assert engine.needs_pivot()
+
+    plan = {
+        "algorithm": "PPO",
+        "hyperparameters": {
+            "policy_kwargs": {"net_arch": [256, 256]},
+            "learning_rate": 3e-4,
+            "n_steps": 2048,
+        },
+        "env_kwargs": {"food_reward": 15.0, "death_penalty": -2.0},
+    }
+
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._agent = LeadAgent.__new__(LeadAgent)
+
+    async def _run_pivot():
+        current_algo = plan.get("algorithm", "PPO")
+        return await sm._agent.propose_pivot(
+            {"food_eaten": 1.0},
+            engine.history_snapshot(),
+            escalation_level=engine.escalation_level(),
+            current_algorithm=current_algo,
+            algorithm_locked=False,
+            current_policy_kwargs=plan.get("hyperparameters", {}).get("policy_kwargs"),
+            current_hyperparameters={
+                k: v for k, v in plan.get("hyperparameters", {}).items()
+                if k != "policy_kwargs"
+            } or None,
+            current_env_kwargs=plan.get("env_kwargs") or None,
+        )
+
+    asyncio.get_event_loop().run_until_complete(_run_pivot())
+
+    assert captured["policy_kwargs"] == {"net_arch": [256, 256]}
+    assert captured["hyperparameters"] == {"learning_rate": 3e-4, "n_steps": 2048}
+    assert captured["env_kwargs"] == {"food_reward": 15.0, "death_penalty": -2.0}

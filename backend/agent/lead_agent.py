@@ -152,6 +152,9 @@ class LeadAgent:
         escalation_level: int = 0,
         current_algorithm: str = "PPO",
         algorithm_locked: bool = False,
+        current_policy_kwargs: Optional[dict] = None,
+        current_hyperparameters: Optional[dict] = None,
+        current_env_kwargs: Optional[dict] = None,
     ) -> dict:
         """
         Analyze a stalled run and propose a strategic pivot.
@@ -183,12 +186,19 @@ class LeadAgent:
                    "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
                    "distance shaping (distance_weight=0) and increasing food_reward.",
             }.get(escalation_level, "Level 0 — tune hyperparameters only.")
+        current_state_lines = [f"Current algorithm: {current_algorithm}"]
+        if current_policy_kwargs:
+            current_state_lines.append(f"Current policy_kwargs (net_arch etc): {json.dumps(current_policy_kwargs)}")
+        if current_hyperparameters:
+            current_state_lines.append(f"Current hyperparameters: {json.dumps(current_hyperparameters)}")
+        if current_env_kwargs:
+            current_state_lines.append(f"Current env_kwargs: {json.dumps(current_env_kwargs)}")
         query = (
-            f"Current algorithm: {current_algorithm}\n"
+            "\n".join(current_state_lines) + "\n"
             f"Current metrics: {json.dumps(current_metrics)}\n"
             f"Recent history (last {min(len(history), 5)} iterations): {json.dumps(history[-5:])}\n"
             f"Escalation: {escalation_desc}\n\n"
-            "Propose a strategic pivot. Return JSON."
+            "Propose a strategic pivot. Avoid repeating changes that are already applied above. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PIVOT_SCHEMA)

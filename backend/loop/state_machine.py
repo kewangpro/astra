@@ -363,6 +363,12 @@ class LoopStateMachine:
                         escalation_level=escalation,
                         current_algorithm=current_algo,
                         algorithm_locked=algo_locked,
+                        current_policy_kwargs=plan.get("hyperparameters", {}).get("policy_kwargs"),
+                        current_hyperparameters={
+                            k: v for k, v in plan.get("hyperparameters", {}).items()
+                            if k != "policy_kwargs"
+                        } or None,
+                        current_env_kwargs=plan.get("env_kwargs") or None,
                     )
                     pivot_engine.record_pivot()
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
