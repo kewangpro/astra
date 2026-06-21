@@ -17,8 +17,8 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket from `best_model.zip`
 - **Persistent escalating pivot strategy** — PivotEngine escalates through 4 levels (HP tuning → architecture change → algorithm switch → reward shaping) across server restarts via DB-persisted `pivot_escalation_count`; pivot event stream shows real old→new diffs
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
-- **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated, and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **456 tests** — 447 unit + 9 integration tests covering all core services
+- **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
+- **464 tests** — 455 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -121,6 +121,7 @@ make ports  # show port status for all services
 | 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, pivot context, resume hardening | ✅ Complete |
 | 13 | Training Continuity & Loop Recovery — env_kwargs merge/clamp, distance_weight floor, early-stop threshold fix, 2M timestep floor, arch oscillation detection, MetricChart adaptive x-axis, state recovery auto-restart loop, plan reuse across iterations, 456 tests | ✅ Complete |
 | 14 | HUD Polish & Telemetry Performance — WS batch backfill, event stream capped at 100, sidebar height alignment, pivot history scrollable, MetricChart x-axis tickCount, integer iteration labels | ✅ Complete |
+| 15 | Sandbox Lifecycle Hardening — orphaned subprocess fix (reattach kill-by-pid), stale sandbox eviction before launch, 464 tests | ✅ Complete |
 
 ## Hardware Target
 

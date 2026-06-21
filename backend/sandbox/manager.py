@@ -117,6 +117,13 @@ class SandboxManager:
         else:
             sandbox = ContainerSandbox(config, image=image)
 
+        # Kill any existing sandbox for this mission before registering the new one.
+        # Guards against leaking processes when retrying after errors.
+        existing = self._sandboxes.pop(mission_id, None)
+        if existing and existing.is_alive():
+            logger.warning("SandboxManager: terminating stale sandbox for mission=%s before new launch", mission_id)
+            existing.terminate()
+
         sandbox.launch()
         self._sandboxes[mission_id] = sandbox
 
@@ -154,7 +161,8 @@ class SandboxManager:
                     "Recovery: subprocess pid=%d still alive for mission=%s — reattaching",
                     subprocess_pid, mission_id,
                 )
-                # Reconstruct a minimal sandbox object so is_alive() works
+                # Reconstruct a minimal sandbox so terminate() works.
+                # Store the pid so terminate() can kill it by pid (no Popen handle).
                 data_dir = self._mission_data_dir(mission_id)
                 config = SandboxConfig(
                     mission_id=mission_id,
@@ -162,6 +170,7 @@ class SandboxManager:
                     data_dir=data_dir,
                 )
                 sandbox = SubprocessSandbox(config)
+                sandbox._reattach_pid = subprocess_pid
                 sandbox.status = SandboxStatus.RUNNING
                 self._sandboxes[mission_id] = sandbox
                 return "reattached"

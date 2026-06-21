@@ -38,6 +38,7 @@ class SubprocessSandbox(BaseSandbox):
     def __init__(self, config: SandboxConfig) -> None:
         super().__init__(config)
         self._process: Optional[subprocess.Popen] = None
+        self._reattach_pid: Optional[int] = None  # set when recovering a live process by pid
 
     def launch(self) -> None:
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
@@ -86,6 +87,22 @@ class SubprocessSandbox(BaseSandbox):
                 self._process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self._process.kill()
+        elif self._reattach_pid is not None:
+            # Reattached after service restart — no Popen handle, kill by stored pid.
+            try:
+                proc = psutil.Process(self._reattach_pid)
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                logger.info(
+                    "SubprocessSandbox terminated reattached pid=%d: mission=%s",
+                    self._reattach_pid, self.config.mission_id,
+                )
+            except psutil.NoSuchProcess:
+                pass
+            self._reattach_pid = None
         self.status = SandboxStatus.STOPPED
         logger.info("SubprocessSandbox terminated: mission=%s", self.config.mission_id)
 

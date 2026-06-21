@@ -145,7 +145,7 @@ This document outlines the phased implementation strategy for `ASTRA`.
       - `test_mission_state.py` (17) — `_primary_score`, `load`, `update` state transitions.
       - `test_crystallizer.py` (28) — `_slugify`, `_next_version`, `_build_recipe_content`.
       - `test_preflight.py` (16) — `PreflightResult.summary`, package checks, dir writability.
-      - `test_subprocess_sandbox.py` (13) — resource limits, PID tracking, lifecycle.
+      - `test_subprocess_sandbox.py` (17) — resource limits, PID tracking, lifecycle, reattach-pid terminate paths.
       - `test_state_recovery.py` (8) — all recoverable status variants, mixed reattach/reset.
       - `test_error_analyzer.py` (17) — `_extract_error_type`, `_extract_traceback`, `fix_script` with prior errors, `_store_lesson`, fence stripping.
       - `test_code_generator.py` (15) — `_build_user_prompt` per task type, telemetry guard, lesson injection, `_query_lessons` edge cases, `_strip_fences`.
@@ -556,3 +556,22 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **MetricGap displays integer iteration numbers (Step 14.6)**
     - **Problem**: `currentIter` was displayed with `.toFixed(1)`, showing "27.0" instead of "27".
     - `frontend/src/components/hud/MetricGap.tsx`: changed to `Math.round(Number(currentIter))` so iteration labels read "current iter: 27" rather than "current iter: 27.0".
+
+---
+
+## Phase 15: Sandbox Lifecycle Hardening ✅
+*Goal: Eliminate orphaned sandbox subprocesses that survive `make stop` + `make run` cycles, causing two training processes to write interleaved telemetry to the same file.*
+
+- [x] **Reattached sandbox terminate-by-pid (Step 15.1)**
+    - **Root cause**: on service restart, `SandboxManager.recover()` constructed a fresh `SubprocessSandbox` with no `_process` handle (only the stored PID). When `terminate()` was subsequently called, its `if self._process` guard was `False`, so the process was never actually killed — it kept running and writing telemetry concurrently with the newly launched sandbox for the same mission. Two processes writing `iteration=N` events with different step sequences caused 566 false "run resets" in telemetry, making MetricChart display a zigzag line.
+    - `backend/sandbox/subprocess_sandbox.py`: added `self._reattach_pid: Optional[int] = None` field. `terminate()` gains an `elif self._reattach_pid is not None` branch that kills by `psutil.Process(pid)` (SIGTERM → 10 s wait → SIGKILL) and clears `_reattach_pid`. `psutil.NoSuchProcess` is swallowed (process already gone).
+    - `backend/sandbox/manager.py`: `recover()` sets `sandbox._reattach_pid = subprocess_pid` on the reconstructed sandbox so `terminate()` has the pid available.
+
+- [x] **Stale sandbox eviction before launch (Step 15.2)**
+    - **Problem**: if a mid-loop error retry called `launch()` while an existing sandbox was still registered in `self._sandboxes`, the old entry was silently overwritten without termination — leaking the old subprocess.
+    - `backend/sandbox/manager.py`: `launch()` now pops any existing sandbox for the mission from `self._sandboxes` before creating the new one; calls `terminate()` on it if `is_alive()` returns True.
+
+- [x] **Test coverage (Step 15.3)**
+    - `tests/unit/test_subprocess_sandbox.py`: 4 new tests — `test_terminate_via_reattach_pid_kills_process` (psutil.Process called with stored pid), `test_terminate_via_reattach_pid_force_kills_on_timeout` (SIGKILL on TimeoutExpired), `test_terminate_via_reattach_pid_handles_already_gone` (NoSuchProcess swallowed), `test_terminate_via_reattach_pid_clears_pid` (field reset to None after kill).
+    - `tests/unit/test_sandbox_manager.py` (new file): 5 tests — `test_reattach_sets_reattach_pid` (recover sets field), `test_reattach_returns_dead_when_pid_gone`, `test_recover_no_pid_no_container_returns_dead`, `test_launch_terminates_alive_existing_sandbox`, `test_launch_skips_terminate_when_existing_sandbox_dead`.
+    - Total: **464 tests** (455 unit + 9 integration).

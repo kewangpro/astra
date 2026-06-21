@@ -154,3 +154,39 @@ class TestTerminate:
         sandbox._process = mock_process
         sandbox.terminate()
         mock_process.kill.assert_called_once()
+
+    def test_terminate_via_reattach_pid_kills_process(self):
+        """When _process is None but _reattach_pid is set, terminate() kills by pid."""
+        import psutil
+        sandbox = self._sandbox()
+        sandbox._reattach_pid = 99999
+        mock_proc = MagicMock()
+        with patch("backend.sandbox.subprocess_sandbox.psutil.Process", return_value=mock_proc) as mock_cls:
+            sandbox.terminate()
+        mock_cls.assert_called_once_with(99999)
+        mock_proc.terminate.assert_called_once()
+        assert sandbox.status == SandboxStatus.STOPPED
+        assert sandbox._reattach_pid is None
+
+    def test_terminate_via_reattach_pid_force_kills_on_timeout(self):
+        """When the reattached process doesn't die in time, SIGKILL is sent."""
+        import psutil
+        sandbox = self._sandbox()
+        sandbox._reattach_pid = 99999
+        mock_proc = MagicMock()
+        mock_proc.wait.side_effect = psutil.TimeoutExpired(99999, 10)
+        with patch("backend.sandbox.subprocess_sandbox.psutil.Process", return_value=mock_proc):
+            sandbox.terminate()
+        mock_proc.kill.assert_called_once()
+        assert sandbox.status == SandboxStatus.STOPPED
+
+    def test_terminate_via_reattach_pid_handles_already_gone(self):
+        """NoSuchProcess is swallowed — process was already dead."""
+        import psutil
+        sandbox = self._sandbox()
+        sandbox._reattach_pid = 99999
+        mock_proc = MagicMock()
+        mock_proc.terminate.side_effect = psutil.NoSuchProcess(99999)
+        with patch("backend.sandbox.subprocess_sandbox.psutil.Process", return_value=mock_proc):
+            sandbox.terminate()   # must not raise
+        assert sandbox.status == SandboxStatus.STOPPED
