@@ -71,7 +71,7 @@ export function LogStream({ events, connected, missionStatus, className }: Props
           </span>
           {allVisible.length > 0 && (
             <span className="text-[10px] text-[#64748b]">
-              {allVisible.length > 100 ? "last 100" : allVisible.length}
+              {allVisible.length > 100 ? "100+" : allVisible.length}
             </span>
           )}
         </div>
