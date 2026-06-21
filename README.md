@@ -8,24 +8,17 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 - **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, driven by an LLM planner with no human intervention required
 - **GAN-style self-critique** — a CriticAgent scores every plan on safety, complexity, and overfitting risk before code is written; the LeadAgent revises on low scores
-- **Smart KV cache** — three-bucket context window (system / code / history) with sliding-window eviction so long runs never blow the token budget
 - **Recipe crystallization & evolution** — completed missions are distilled into versioned YAML recipes; recipes can be mutated, selected, and promoted to "Golden" status after consecutive wins
-- **Semantic warm-start** — ChromaDB recipe library retrieves the closest prior strategy before each new plan, reducing wasted iterations
-- **Atomic requirement manifests** — structured pass/fail requirements (stability, artifacts, metric thresholds) replace free-text goals; the loop only completes when all are green
-- **Autonomous error learning** — ErrorAnalyzer scans the entire script for all instances of an error class per healing pass; each fix is stored as a ChromaDB lesson so the CodeGenerator avoids the same mistake on future missions
-- **Deterministic SB3 patching** — post-generation pass in CodeGenerator and ErrorAnalyzer injects missing stable-baselines3 imports, fixes callback class inheritance, and strips invalid constructor kwargs so weak LLM output never blocks training
-- **Auto-approve with LLM classification** — `execute_code` gates can be auto-approved via a two-stage classifier: static regex pre-filter (subprocess, eval, external HTTP) followed by LLM review; unsafe scripts are flagged for manual review with a reason
-- **Clean handoff protocol** — every iteration writes a `SESSION_SUMMARY.md` capturing the last action, current blocker, and exact next step for reliable warm-restart
+- **Autonomous error learning** — ErrorAnalyzer stores each fix as a ChromaDB lesson so CodeGenerator avoids repeating the same mistake on future missions
+- **Auto-approve with LLM classification** — `execute_code` gates are auto-approved via a two-stage classifier (static regex → LLM review); unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
-- **Live mission HUD** — Next.js dashboard with real-time metric charts (current vs. prior run differentiated by color), log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **Custom RL environments** — `envs/snake_env.py` (Snake-v0) and `envs/tetris_env.py` (Tetris-v0) provide Gymnasium-compatible environments; Snake-v0 tracks `food_eaten` in episode info, Tetris-v0 uses a placement-based Discrete(40) action space with a flat 224-element observation and tracks `lines_cleared` per episode
-- **Live agent viewer** — mission HUD embeds a real-time canvas rendering of the trained agent playing (Snake-v0 and Tetris-v0), streamed over WebSocket from `best_model.zip`
-- **Persistent escalating pivot strategy** — `PivotEngine` tracks consecutive failed pivots across restarts (DB-persisted `pivot_escalation_count`) and escalates through 4 levels: HP tuning → architecture change → algorithm switch (or reward shaping for algorithm-locked goals) → aggressive reward shaping. Pivot changes display real old→new diffs in the event stream
-- **Algorithm-locked missions** — when a goal explicitly names an algorithm (e.g. "Train a Snake-v0 DQN agent"), ASTRA never switches to a different algorithm even at high escalation. Level 2 pivots remap to reward shaping instead
-- **Dual metric tracking** — MetricHistory always shows `mean_reward` (training signal); MetricGap tracks the goal metric separately (e.g. `lines_cleared`, `food_eaten`) via post-iteration eval rollouts. Custom goal metrics are parsed from free-text goals including multi-word names ("food eaten" → `food_eaten`)
-- **Post-iteration goal metric eval** — after each training iteration, `LoopStateMachine` runs 10 deterministic rollout episodes with the best checkpoint to measure the goal metric directly; results are written to telemetry for live MetricGap sparkline updates
-- **Real benchmark rollouts** — `BenchmarkSuite` runs actual PPO/SAC episodes against Tetris-v0 and Snake-v0 checkpoints (not stubs), domain inferred from `env_id`
-- **455 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers, delete mission lifecycle, Tetris-v0 env, Snake-v0 env) plus integration tests for the full loop
+- **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
+- **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments with configurable reward shaping; Snake-v0 tracks `food_eaten`, Tetris-v0 uses a placement-based action space and tracks `lines_cleared`
+- **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket from `best_model.zip`
+- **Persistent escalating pivot strategy** — PivotEngine escalates through 4 levels (HP tuning → architecture change → algorithm switch → reward shaping) across server restarts via DB-persisted `pivot_escalation_count`; pivot event stream shows real old→new diffs
+- **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
+- **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated, and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
+- **455 tests** — 447 unit + 8 integration tests covering all core services
 
 ### Screenshots
 
@@ -87,7 +80,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 433 unit tests across all core modules
+│   ├── unit/           # 447 unit tests across all core modules
 │   └── integration/    # 8 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -125,7 +118,8 @@ make ports  # show port status for all services
 | 9 | Autonomous Approval & Code Robustness — auto-approve, SB3 patching, checkpoint/warm-start, Snake-v0 viewer | ✅ Complete |
 | 10 | Pivot Intelligence & Live Viewer — 4-level escalation (HP/arch/algo/reward), MetricChart windowing, play endpoint | ✅ Complete |
 | 11 | Resilience & Dual Metrics — Tetris-v0, dual metric tracking, pivot persistence, algorithm-locked missions | ✅ Complete |
-| 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, pivot context, resume hardening, env_kwargs merge/clamp, early-stop threshold fix, arch oscillation detection, 455 tests | ✅ Complete |
+| 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, pivot context, resume hardening | ✅ Complete |
+| 13 | Training Continuity & Loop Recovery — env_kwargs merge/clamp, distance_weight floor, early-stop threshold fix, 2M timestep floor, arch oscillation detection, MetricChart adaptive x-axis, state recovery auto-restart loop, 455 tests | ✅ Complete |
 
 ## Hardware Target
 

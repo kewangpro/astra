@@ -442,8 +442,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 ---
 
-## Phase 12: Mission Lifecycle & Telemetry Hardening 🔄
-*Goal: Clean mission deletion; robust sandbox error detection; accurate goal metric telemetry; iteration number polish.*
+## Phase 12: Mission Lifecycle & Telemetry Hardening ✅
+*Goal: Clean mission deletion; robust sandbox error detection; accurate goal metric telemetry; iteration number polish; resume hardening.*
 
 - [x] **MetricGap iteration number formatting (Step 12.1)**
     - **Problem**: iteration references in MetricGap were shown as raw integers (e.g. `3`), making them indistinguishable from metric values at a glance.
@@ -483,3 +483,40 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/loop/state_machine.py`: (1) `arch_changed` now compares `pivot["policy_kwargs"] != plan["hyperparameters"].get("policy_kwargs")`; (2) startup calls `restore_best_at_last_pivot(persisted_best)` and `restore_history(_load_goal_metric_history(...))`; (3) critic gated on `did_replan` — skipped on resume (`skip_replan_from_db`) and pivot continuation (`skip_replan_in_memory`); (4) `_load_goal_metric_history` reads `telemetry.jsonl` for all goal metric events, returning one entry per iteration.
     - `tests/unit/test_pivot_engine.py`: 7 new tests — `restore_best_at_last_pivot` prevents reset, None resets (regression), `restore_history` enables immediate plateau detection, skips duplicates, partial below window, `arch_changed` same value is no-op, `arch_changed` different value is True.
     - `tests/unit/test_state_machine_helpers.py`: 3 new tests — `_load_goal_metric_history` reads per-iter values, returns empty for missing file, last-value-per-iter wins. Total: **441 tests**.
+
+---
+
+## Phase 13: Training Continuity & Loop Recovery ✅
+*Goal: Eliminate training pathologies on Snake-v0 (env_kwargs destructive replace, navigation shaping disabled by LLM, early stop at wrong scale, arch oscillation, insufficient timesteps); adaptive MetricChart x-axis; robust loop restart on service recovery.*
+
+- [x] **env_kwargs merge (not replace) + distance_weight floor clamp (Step 13.1)**
+    - **Problem 1 (destructive replace)**: when a pivot dict included `env_kwargs`, `state_machine.py` did `plan["env_kwargs"] = pivot["env_kwargs"]`, discarding all previously applied reward-shaping keys. E.g. a pivot proposing only `food_reward=20.0` would silently zero out `distance_weight` that had been set by an earlier pivot.
+    - **Problem 2 (LLM disabling navigation shaping)**: at escalation level 2 (reward shaping), the LLM set `distance_weight=0.0`, killing the navigation incentive. The agent immediately lost the ability to find food after the first eat, trapping `food_eaten` at 1–2 indefinitely.
+    - `backend/loop/state_machine.py`: env_kwargs pivot block now merges instead of replacing — existing keys from `plan["env_kwargs"]` are preserved; only explicitly proposed keys are overwritten. Calls new `_clamp_env_kwargs()` static method after merge.
+    - `_clamp_env_kwargs` static method: enforces `distance_weight >= 0.1` (floor) so the LLM can reshape but cannot fully disable navigation shaping. Additional reward params can be clamped here in the future.
+    - `tests/unit/test_state_machine_helpers.py`: 7 new tests — 3 for merge semantics (preserves existing keys, only changes proposed keys, merge into empty plan), 4 for `_clamp_env_kwargs` (zero clamped, below floor clamped, above floor preserved, unrelated key untouched). Total: **448 tests**.
+
+- [x] **Early-stop threshold uses correct scale for custom goal metrics (Step 13.2)**
+    - **Problem**: `generate_training_script()` extracted `target_reward = next(iter(tm.values()), 200)` from `target_metric`, then used that number as the `mean_reward` stop threshold. For a mission with `target_metric = {"food_eaten": 20}`, the generated train.py stopped training as soon as `mean_reward >= 20` — typically reached within 40 seconds, far too early for the agent to learn. The food_eaten count never had a chance to improve.
+    - `backend/agent/code_generator.py`: added `tm_name = next(iter(tm), None)`. `target_reward` uses the actual target value only when `tm_name in (None, "mean_reward")`; for any other goal metric, it falls back to `200` (a sensible default mean_reward threshold for Snake-v0 / Tetris-v0 scale).
+    - `tests/unit/test_code_generator.py`: 2 new tests — `test_target_reward_uses_value_when_target_is_mean_reward` and `test_target_reward_uses_200_when_target_is_custom_metric` (asserts `"mean_reward >= 20:"` not in prompt). Total: **450 tests**.
+
+- [x] **Training timesteps increased to 2 M in RL template (Step 13.3)**
+    - **Problem**: the RL template instructed the LLM to call `model.learn(total_timesteps=500000)`. For Snake-v0 with a 16×16 grid and `max_steps=500`, this gave the agent fewer than 1000 episodes — insufficient to learn any meaningful policy at escalation level 2+.
+    - `backend/agent/code_generator.py`: `_RL_TEMPLATE` instructions updated: `total_timesteps=2000000`; comment explicitly says "Do NOT use 500000 or any smaller number."
+
+- [x] **Arch oscillation detection — suppress cycling net_arch proposals (Step 13.4)**
+    - **Problem**: after several failed pivots the LLM alternated between `[256,256]` and `[256,256,128]` on successive iterations. Each arch change reset `best_score.txt` to `-inf`, so the new architecture had to beat the all-time peak just to save a checkpoint. This cycle meant the agent perpetually trained from scratch for 3 minutes, failed to beat peak `food_eaten=1`, triggered another plateau pivot, and repeated.
+    - `backend/loop/state_machine.py`: introduced `recent_arches` sliding window (last 3 entries) stored in the plan. Before accepting an arch pivot, checks if `proposed_policy_kwargs` is already in `recent_arches`. If so, logs a warning and forces `arch_changed = False`, suppressing the reset. When an arch change is accepted, the *previous* arch is appended to `recent_arches` (capped at 3).
+    - `tests/unit/test_state_machine_helpers.py`: 5 new tests — oscillation suppressed when proposed arch is in recent history, not suppressed when genuinely new, window capped at 3, no-op when arch identical to current regardless of history, recent_arches updated on accepted arch change. Total: **455 tests**.
+
+- [x] **MetricChart adaptive x-axis offset between runs (Step 13.5)**
+    - **Problem**: when a run reset, `MetricChart` added a hardcoded `runOffset += 500000` to prevent step-counter collisions between runs. For 2M-timestep runs this offset was 4× too small — the current run's x-axis started inside the prior run's range, causing the chart to jump back and forth visually.
+    - `frontend/src/components/hud/MetricChart.tsx`: changed `runOffset += 500000` to `runOffset += prev` where `prev` is the last step value of the preceding run. The offset now scales exactly to however many steps the prior run actually logged.
+
+- [x] **State recovery auto-restarts loop on service restart (Step 13.6)**
+    - **Problem**: `recover_interrupted_missions()` reset RUNNING missions to PENDING but never launched their `LoopStateMachine`. On service restart the mission showed as PENDING in the UI but training never resumed — the event stream showed "AWAITING EVENTS" indefinitely.
+    - **Problem 2 (reattached sandbox)**: if the sandbox subprocess was still alive after a restart, the mission was left RUNNING with an orphaned subprocess — the loop had no supervisor so no evaluation or pivoting occurred.
+    - `backend/services/state_recovery.py`: reattached sandboxes are now explicitly terminated via `sandbox_manager.terminate()` before being reset to PENDING, so the loop can restart cleanly from the last checkpoint.
+    - `backend/main.py`: after `recover_interrupted_missions()` returns the list of recovered mission IDs, the lifespan handler builds a `LoopStateMachine` per mission, creates an asyncio task for `loop.run(mission_id)`, registers it in `agent._running_tasks`, and attaches a done-callback for cleanup. Training resumes from `current_iteration` and the saved plan in DB.
+    - `tests/unit/test_state_recovery.py`: rewritten to match new behavior — all tests now assert `list` return type; `test_reattached_mission_stays_running` replaced with `test_reattached_mission_terminated_and_reset_to_pending` (asserts `terminate()` called); `test_mixed_outcomes_both_reset_to_pending` asserts both reattached and gone missions end as PENDING with only the reattached one terminated. Total count unchanged at **455 tests**.
