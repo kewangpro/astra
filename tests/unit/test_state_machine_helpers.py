@@ -611,6 +611,46 @@ def test_load_goal_metric_history_missing_file_returns_empty(tmp_path):
     assert result == []
 
 
+# ── env_kwargs merge (not replace) ───────────────────────────────────────────
+
+def _apply_env_kwargs(plan, pivot_env_kwargs):
+    """Mirror the merge logic from state_machine._step."""
+    current = plan.get("env_kwargs") or {}
+    plan["env_kwargs"] = dict(current, **pivot_env_kwargs)
+
+
+def test_env_kwargs_pivot_merges_not_replaces():
+    """A pivot that only specifies one env_kwarg must not erase others already in the plan."""
+    plan = {
+        "algorithm": "PPO",
+        "env_kwargs": {"food_reward": 22.0, "distance_weight": 1.0, "survival_bonus": 0.05},
+    }
+    _apply_env_kwargs(plan, {"survival_bonus": 0.07})
+
+    assert plan["env_kwargs"]["food_reward"] == 22.0      # preserved
+    assert plan["env_kwargs"]["distance_weight"] == 1.0   # preserved — was destroyed by old bug
+    assert plan["env_kwargs"]["survival_bonus"] == 0.07   # updated
+
+
+def test_env_kwargs_pivot_replaces_specific_key():
+    """A pivot that sets distance_weight=0.0 does override that specific key."""
+    plan = {
+        "env_kwargs": {"food_reward": 22.0, "distance_weight": 1.0},
+    }
+    _apply_env_kwargs(plan, {"distance_weight": 0.0})
+
+    assert plan["env_kwargs"]["food_reward"] == 22.0      # preserved
+    assert plan["env_kwargs"]["distance_weight"] == 0.0   # overridden
+
+
+def test_env_kwargs_merge_when_plan_has_none():
+    """Merge still works when plan has no prior env_kwargs (None or missing)."""
+    plan = {}  # type: dict
+    _apply_env_kwargs(plan, {"food_reward": 25.0})
+
+    assert plan["env_kwargs"] == {"food_reward": 25.0}
+
+
 def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
     """When multiple entries exist for the same iteration, last one wins."""
     import json as _json

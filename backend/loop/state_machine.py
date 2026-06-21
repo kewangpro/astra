@@ -493,7 +493,8 @@ class LoopStateMachine:
                             except Exception as _e:
                                 logger.warning("LoopStateMachine: could not reset best_score.txt: %s", _e)
                         if env_kwargs_changed:
-                            plan["env_kwargs"] = pivot["env_kwargs"]
+                            _cur_env = plan.get("env_kwargs") or {}
+                            plan["env_kwargs"] = dict(_cur_env, **pivot["env_kwargs"])
                             logger.info(
                                 "LoopStateMachine: reward reshape applied: %s",
                                 pivot["env_kwargs"],
