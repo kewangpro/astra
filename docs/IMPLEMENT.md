@@ -520,3 +520,39 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/services/state_recovery.py`: reattached sandboxes are now explicitly terminated via `sandbox_manager.terminate()` before being reset to PENDING, so the loop can restart cleanly from the last checkpoint.
     - `backend/main.py`: after `recover_interrupted_missions()` returns the list of recovered mission IDs, the lifespan handler builds a `LoopStateMachine` per mission, creates an asyncio task for `loop.run(mission_id)`, registers it in `agent._running_tasks`, and attaches a done-callback for cleanup. Training resumes from `current_iteration` and the saved plan in DB.
     - `tests/unit/test_state_recovery.py`: rewritten to match new behavior — all tests now assert `list` return type; `test_reattached_mission_stays_running` replaced with `test_reattached_mission_terminated_and_reset_to_pending` (asserts `terminate()` called); `test_mixed_outcomes_both_reset_to_pending` asserts both reattached and gone missions end as PENDING with only the reattached one terminated. Total count unchanged at **455 tests**.
+
+- [x] **Plan preserved across iterations — LLM not re-called after first iteration (Step 13.7)**
+    - **Problem**: `skip_replan_in_memory` was only set to `True` after a pivot fired. For all non-pivot iterations, `LoopStateMachine` called `LeadAgent.plan()` fresh on every loop cycle. This produced a new plan with empty `env_kwargs`, silently discarding `distance_weight`, `food_reward`, and other shaping values that had been set by earlier pivots.
+    - **Evidence**: backend logs showed `env_kwargs={'food_reward': 25.0, 'distance_weight': 0.1}` at iteration 26 (where the service restart used the DB-persisted plan), then `env_kwargs={}` for iterations 27–28 (fresh LLM re-plan).
+    - `backend/loop/state_machine.py`: added `if not skip_replan_in_memory: skip_replan_in_memory = True` at the end of each iteration, after the first plan is generated. This ensures LLM planning happens exactly once per run (at iteration 0 or immediately after a pivot), and the plan — including all `env_kwargs` — is reused for all subsequent iterations.
+    - `tests/integration/test_loop_state_machine.py`: new test `test_plan_reused_across_iterations_without_pivot` — TrackingAgent counts `plan()` calls; SequenceEvaluator returns 50 → 100 → 200 (goal met, no plateau, no pivot); asserts `len(plan_calls) == 1`. Total: **456 tests** (447 unit + 9 integration).
+
+---
+
+## Phase 14: HUD Polish & Telemetry Performance ✅
+*Goal: Eliminate UI lag on long-running missions (7000+ telemetry events); fix event stream height alignment with sidebar; cap visible log rows; clean up metric display labels.*
+
+- [x] **WebSocket backfill as single batch message (Step 14.1)**
+    - **Problem**: the backfill loop sent one WebSocket frame per event. A mission with 7000+ events triggered 7000 individual `setEvents` React state updates — several seconds of UI re-renders before the HUD became usable.
+    - `backend/routers/telemetry.py`: `_backfill()` now collects all JSONL lines into a list and sends a single `{"type": "backfill_batch", "events": [...]}` frame. The per-event loop is gone.
+    - `frontend/src/lib/hooks/useTelemetry.ts`: `onmessage` handler checks `msg.type === "backfill_batch"` and calls `setEvents(msg.events)` once. All subsequent live events still append individually. React processes the entire history in a single render cycle.
+
+- [x] **Event stream capped at last 100 non-metric events (Step 14.2)**
+    - **Problem**: with 7000+ events backfilled, `LogStream` rendered all of them — slow initial paint and overwhelming scroll depth.
+    - `frontend/src/components/hud/LogStream.tsx`: `allVisible` filters out `metric` and `backfill_complete` events; `visible = allVisible.slice(-100)` caps the rendered list. The header badge shows the raw count up to 100, then "100+" — indicating more events exist without displaying a distracting total.
+
+- [x] **Event stream height aligned to sidebar panels (Step 14.3)**
+    - **Problem**: `LogStream` had a fixed `h-96` height regardless of whether the sidebar (CritiqueTrace + PivotTimeline) was taller or shorter, causing vertical misalignment and unwanted whitespace.
+    - `frontend/src/app/missions/[id]/page.tsx`: computed `logMaxH` from sidebar visibility — `max-h-[45rem]` when both CritiqueTrace (24rem) and PivotTimeline (20rem + 1rem gap) are present; `max-h-[24rem]` when only CritiqueTrace is visible; `max-h-[20rem]` when only PivotTimeline; falls back to `h-96` when no sidebar. `LogStream` accepts a `className` prop so the parent controls height.
+
+- [x] **Pivot History scrollable with max height (Step 14.4)**
+    - **Problem**: missions with many pivots caused `PivotTimeline` to grow without bound, pushing `LogStream` far below the fold.
+    - `frontend/src/components/hud/PivotTimeline.tsx`: pivot list wrapped in `<div className="overflow-y-auto max-h-64 pr-1">` — scrolls internally at 16rem, never expanding the sidebar beyond its design height.
+
+- [x] **MetricChart x-axis: limited tick count and M/K formatter (Step 14.5)**
+    - **Problem**: with 2M-step runs, Recharts generated ~20 ticks in the visible x range, all rounding to "2.0M" — visually indistinguishable and space-wasting.
+    - `frontend/src/components/hud/MetricChart.tsx`: `<XAxis tickCount={6} />` limits the axis to 6 labels. `tickFormatter` formats values as `1.7M`, `200K`, or raw integer depending on magnitude.
+
+- [x] **MetricGap displays integer iteration numbers (Step 14.6)**
+    - **Problem**: `currentIter` was displayed with `.toFixed(1)`, showing "27.0" instead of "27".
+    - `frontend/src/components/hud/MetricGap.tsx`: changed to `Math.round(Number(currentIter))` so iteration labels read "current iter: 27" rather than "current iter: 27.0".

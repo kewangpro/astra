@@ -18,7 +18,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Persistent escalating pivot strategy** — PivotEngine escalates through 4 levels (HP tuning → architecture change → algorithm switch → reward shaping) across server restarts via DB-persisted `pivot_escalation_count`; pivot event stream shows real old→new diffs
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated, and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **455 tests** — 447 unit + 8 integration tests covering all core services
+- **456 tests** — 447 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -81,7 +81,7 @@ astra/
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
 │   ├── unit/           # 447 unit tests across all core modules
-│   └── integration/    # 8 integration tests for the loop state machine
+│   └── integration/    # 9 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
@@ -119,7 +119,8 @@ make ports  # show port status for all services
 | 10 | Pivot Intelligence & Live Viewer — 4-level escalation (HP/arch/algo/reward), MetricChart windowing, play endpoint | ✅ Complete |
 | 11 | Resilience & Dual Metrics — Tetris-v0, dual metric tracking, pivot persistence, algorithm-locked missions | ✅ Complete |
 | 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, pivot context, resume hardening | ✅ Complete |
-| 13 | Training Continuity & Loop Recovery — env_kwargs merge/clamp, distance_weight floor, early-stop threshold fix, 2M timestep floor, arch oscillation detection, MetricChart adaptive x-axis, state recovery auto-restart loop, 455 tests | ✅ Complete |
+| 13 | Training Continuity & Loop Recovery — env_kwargs merge/clamp, distance_weight floor, early-stop threshold fix, 2M timestep floor, arch oscillation detection, MetricChart adaptive x-axis, state recovery auto-restart loop, plan reuse across iterations, 456 tests | ✅ Complete |
+| 14 | HUD Polish & Telemetry Performance — WS batch backfill, event stream capped at 100, sidebar height alignment, pivot history scrollable, MetricChart x-axis tickCount, integer iteration labels | ✅ Complete |
 
 ## Hardware Target
 
