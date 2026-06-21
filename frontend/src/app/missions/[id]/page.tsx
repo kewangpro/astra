@@ -28,13 +28,13 @@ function SidebarLayout({
   const hasSidebar = hasPivots || hasCritiques;
 
   return (
-    <div className={`grid grid-cols-1 gap-4 ${hasSidebar ? "lg:grid-cols-3 items-stretch" : ""}`}>
-      <div className={`${hasSidebar ? "lg:col-span-2 flex flex-col" : ""}`}>
+    <div className={`grid grid-cols-1 gap-4 ${hasSidebar ? "lg:grid-cols-3" : ""}`}>
+      <div className={hasSidebar ? "lg:col-span-2" : ""}>
         <LogStream
           events={events}
           connected={connected}
           missionStatus={missionStatus}
-          className={hasSidebar ? "flex-1" : ""}
+          className={hasSidebar ? "h-[36rem]" : ""}
         />
       </div>
       {hasSidebar && (

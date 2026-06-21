@@ -56,11 +56,10 @@ export function LogStream({ events, connected, missionStatus, className }: Props
 
   return (
     <div
-      className={`rounded-lg flex flex-col ${className ?? ""}`}
+      className={`rounded-lg flex flex-col ${className || "h-96"}`}
       style={{
         background: "#1e293b",
         border: "1px solid rgba(20,184,166,0.12)",
-        minHeight: "24rem",
       }}
     >
       {/* Header */}
