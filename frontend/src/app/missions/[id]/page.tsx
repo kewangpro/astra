@@ -27,14 +27,24 @@ function SidebarLayout({
   const hasCritiques = events.some((e) => e.type === "critique");
   const hasSidebar = hasPivots || hasCritiques;
 
+  // Max height of the sidebar: CritiqueTrace caps at 24rem, PivotTimeline at
+  // ~20rem (header + max-h-64 list). Gap between them is 1rem (space-y-4).
+  const logMaxH = !hasSidebar
+    ? "h-96"
+    : hasCritiques && hasPivots
+    ? "max-h-[45rem]"
+    : hasCritiques
+    ? "max-h-[24rem]"
+    : "max-h-[20rem]";
+
   return (
-    <div className={`grid grid-cols-1 gap-4 ${hasSidebar ? "lg:grid-cols-3 items-stretch" : ""}`}>
-      <div className={hasSidebar ? "lg:col-span-2 h-full" : ""}>
+    <div className={`grid grid-cols-1 gap-4 ${hasSidebar ? "lg:grid-cols-3" : ""}`}>
+      <div className={hasSidebar ? "lg:col-span-2" : ""}>
         <LogStream
           events={events}
           connected={connected}
           missionStatus={missionStatus}
-          className={hasSidebar ? "h-full" : ""}
+          className={logMaxH}
         />
       </div>
       {hasSidebar && (
