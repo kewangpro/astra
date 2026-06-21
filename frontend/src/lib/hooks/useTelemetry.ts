@@ -6,6 +6,21 @@ const WS_BASE =
     ? `ws://${window.location.hostname}:8200`
     : "ws://localhost:8200";
 
+function trimEvents(next: TelemetryEvent[]): TelemetryEvent[] {
+  if (next.length <= 500) return next;
+  // Only trim high-frequency mean_reward metrics; always preserve
+  // goal-metric events (food_eaten, lines_cleared) and all non-metric
+  // events (info, pivot, status, critique) so the event stream log
+  // never goes blank after a long run.
+  const keep = next.filter(
+    (ev) => !(ev.type === "metric" && ev.name === "mean_reward")
+  );
+  const trimmable = next.filter(
+    (ev) => ev.type === "metric" && ev.name === "mean_reward"
+  );
+  return [...keep, ...trimmable.slice(-Math.max(0, 500 - keep.length))];
+}
+
 export function useTelemetry(missionId: string) {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -23,22 +38,13 @@ export function useTelemetry(missionId: string) {
 
     ws.onmessage = (e) => {
       try {
-        const evt: TelemetryEvent = JSON.parse(e.data as string);
-        setEvents((prev) => {
-          const next = [...prev, evt];
-          if (next.length <= 500) return next;
-          // Only trim high-frequency mean_reward metrics; always preserve
-          // goal-metric events (food_eaten, lines_cleared) and all non-metric
-          // events (info, pivot, status, critique) so the event stream log
-          // never goes blank after a long run.
-          const keep = next.filter(
-            (ev) => !(ev.type === "metric" && ev.name === "mean_reward")
-          );
-          const trimmable = next.filter(
-            (ev) => ev.type === "metric" && ev.name === "mean_reward"
-          );
-          return [...keep, ...trimmable.slice(-Math.max(0, 500 - keep.length))];
-        });
+        const msg = JSON.parse(e.data as string);
+        if (msg.type === "backfill_batch") {
+          // All historical events arrive as one batch — single state update.
+          setEvents(trimEvents(msg.events as TelemetryEvent[]));
+        } else {
+          setEvents((prev) => trimEvents([...prev, msg as TelemetryEvent]));
+        }
       } catch {
         // ignore malformed frames
       }

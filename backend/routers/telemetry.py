@@ -44,22 +44,24 @@ def _telemetry_path(mission_id: str) -> str:
 
 
 async def _backfill(mission_id: str, ws: WebSocket) -> int:
-    """Replay all historical metric events from the JSONL log to a newly connected client."""
+    """Replay all historical events as a single batch so the client processes
+    them in one state update instead of one per message."""
     path = _telemetry_path(mission_id)
     if not os.path.isfile(path):
         return 0
-    count = 0
+    events = []
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                await ws.send_json({"type": "backfill", **json.loads(line)})
-                count += 1
+                events.append(json.loads(line))
             except Exception:
-                break
-    return count
+                continue
+    if events:
+        await ws.send_json({"type": "backfill_batch", "events": events})
+    return len(events)
 
 
 # ── HTTP: sandbox → FastAPI ────────────────────────────────────────────────────
