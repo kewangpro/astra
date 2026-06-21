@@ -305,6 +305,7 @@ class CodeGenerator:
                 env_setup = _TETRIS_SETUP.format(project_root=_project_root)
             else:
                 env_setup = ""
+            hp = dict(hp)  # copy so we don't mutate the plan's hyperparameters dict
             policy_kwargs = hp.pop("policy_kwargs", None)
             # Build env_kwargs_str: ", key=value, ..." for gym.make() call
             env_kwargs = plan.get("env_kwargs", {})

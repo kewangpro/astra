@@ -555,6 +555,13 @@ class LoopStateMachine:
                 if not skip_replan_in_memory:
                     skip_replan_in_memory = True
 
+                # Always persist the current plan so a service restart loads the
+                # most recent state (including env_kwargs from prior pivots).
+                # Pivot iterations already call _save_plan above; this covers the
+                # non-pivot case where env_kwargs / HPs haven't changed.
+                if plan is not None:
+                    await self._save_plan(mission_id, plan)
+
                 # ── SESSION SUMMARY (Step 7.3) ────────────────────────────
                 session_summary.write_session_summary(
                     mission_id=mission_id,
