@@ -425,9 +425,19 @@ class LoopStateMachine:
                             "LoopStateMachine: ignoring algo switch %s→%s — algorithm locked by goal",
                             current_algo, proposed_algo,
                         )
+                    _proposed_pky = pivot.get("policy_kwargs")
+                    _current_pky = plan.get("hyperparameters", {}).get("policy_kwargs")
+                    _recent_arches = plan.get("recent_arches", [])
+                    _arch_oscillation = bool(_proposed_pky and _proposed_pky in _recent_arches)
+                    if _arch_oscillation:
+                        logger.warning(
+                            "LoopStateMachine: arch oscillation detected — proposed %s already in recent history %s; suppressing",
+                            _proposed_pky, _recent_arches,
+                        )
                     arch_changed = bool(
-                        pivot.get("policy_kwargs") and
-                        pivot["policy_kwargs"] != plan.get("hyperparameters", {}).get("policy_kwargs")
+                        _proposed_pky and
+                        _proposed_pky != _current_pky and
+                        not _arch_oscillation
                     )
                     env_kwargs_changed = bool(
                         pivot.get("env_kwargs") and pivot["env_kwargs"] != plan.get("env_kwargs", {})
@@ -453,7 +463,28 @@ class LoopStateMachine:
                         old_hps = {k: plan["hyperparameters"].get(k) for k in real_adjustments}
                         plan["hyperparameters"].update(real_adjustments)
                         if arch_changed:
+                            # Track the outgoing arch so future pivots back to it are suppressed
+                            _recent = list(plan.get("recent_arches", []))
+                            if _current_pky is not None and _current_pky not in _recent:
+                                _recent.append(_current_pky)
+                            plan["recent_arches"] = _recent[-3:]
                             plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
+                            # Reset best_score.txt so the new architecture can save its own
+                            # checkpoint. Without this, the old peak score blocks best_model.zip
+                            # from ever being written by the new architecture.
+                            best_score_path = os.path.join(
+                                settings.data_path, "missions", mission_id,
+                                "checkpoints", "best_score.txt",
+                            )
+                            try:
+                                with open(best_score_path, "w") as _f:
+                                    _f.write("-inf")
+                                logger.info(
+                                    "LoopStateMachine: reset best_score.txt after net_arch pivot for mission=%s",
+                                    mission_id,
+                                )
+                            except Exception as _e:
+                                logger.warning("LoopStateMachine: could not reset best_score.txt: %s", _e)
                         if algo_changed:
                             logger.info(
                                 "LoopStateMachine: algorithm switch %s → %s",

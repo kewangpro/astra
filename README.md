@@ -25,7 +25,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Dual metric tracking** — MetricHistory always shows `mean_reward` (training signal); MetricGap tracks the goal metric separately (e.g. `lines_cleared`, `food_eaten`) via post-iteration eval rollouts. Custom goal metrics are parsed from free-text goals including multi-word names ("food eaten" → `food_eaten`)
 - **Post-iteration goal metric eval** — after each training iteration, `LoopStateMachine` runs 10 deterministic rollout episodes with the best checkpoint to measure the goal metric directly; results are written to telemetry for live MetricGap sparkline updates
 - **Real benchmark rollouts** — `BenchmarkSuite` runs actual PPO/SAC episodes against Tetris-v0 and Snake-v0 checkpoints (not stubs), domain inferred from `env_id`
-- **450 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers, delete mission lifecycle, Tetris-v0 env, Snake-v0 env) plus integration tests for the full loop
+- **455 tests** — unit coverage across all core services (evolution, KV cache, crystallizer, preflight, state recovery, error analyzer, code generator, safety classifier, pivot clamping/escalation, specialist evaluator, missions router, play router, state machine helpers, delete mission lifecycle, Tetris-v0 env, Snake-v0 env) plus integration tests for the full loop
 
 ### Screenshots
 
@@ -125,7 +125,7 @@ make ports  # show port status for all services
 | 9 | Autonomous Approval & Code Robustness — auto-approve, SB3 patching, checkpoint/warm-start, Snake-v0 viewer | ✅ Complete |
 | 10 | Pivot Intelligence & Live Viewer — 4-level escalation (HP/arch/algo/reward), MetricChart windowing, play endpoint | ✅ Complete |
 | 11 | Resilience & Dual Metrics — Tetris-v0, dual metric tracking, pivot persistence, algorithm-locked missions | ✅ Complete |
-| 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, pivot context, resume hardening, env_kwargs merge/clamp, early-stop threshold fix, 450 tests | ✅ Complete |
+| 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, goal metric cap, pivot context, resume hardening, env_kwargs merge/clamp, early-stop threshold fix, arch oscillation detection, 455 tests | ✅ Complete |
 
 ## Hardware Target
 

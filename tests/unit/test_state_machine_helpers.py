@@ -611,6 +611,71 @@ def test_load_goal_metric_history_missing_file_returns_empty(tmp_path):
     assert result == []
 
 
+# ── arch oscillation detection ────────────────────────────────────────────────
+
+def _arch_changed(pivot_pky, current_pky, recent_arches):
+    """Mirror the oscillation-aware arch_changed logic from state_machine._step."""
+    oscillation = bool(pivot_pky and pivot_pky in recent_arches)
+    return bool(pivot_pky and pivot_pky != current_pky and not oscillation), oscillation
+
+
+def test_arch_oscillation_suppressed_when_in_recent_history():
+    """Proposing an arch that was used 1-2 pivots ago must be suppressed."""
+    current = {"net_arch": [256, 256, 128]}
+    recent = [{"net_arch": [256, 256]}]  # LLM oscillating back to [256,256]
+    proposed = {"net_arch": [256, 256]}
+    changed, oscillation = _arch_changed(proposed, current, recent)
+    assert not changed
+    assert oscillation
+
+
+def test_arch_not_suppressed_when_not_in_recent_history():
+    """A genuinely new arch (not in recent_arches) proceeds normally."""
+    current = {"net_arch": [256, 256]}
+    recent = [{"net_arch": [64, 64]}]
+    proposed = {"net_arch": [512, 512]}
+    changed, oscillation = _arch_changed(proposed, current, recent)
+    assert changed
+    assert not oscillation
+
+
+def test_arch_oscillation_window_is_three():
+    """recent_arches is capped at 3 — oldest entry falls off."""
+    recent = [{"net_arch": [64, 64]}, {"net_arch": [128, 128]}, {"net_arch": [256, 256]}]
+    # [64,64] is in the window — still blocked
+    changed, osc = _arch_changed({"net_arch": [64, 64]}, {"net_arch": [512, 512]}, recent)
+    assert not changed and osc
+    # After sliding window drops [64,64] (4th entry added), it would no longer block
+    new_recent = (recent + [{"net_arch": [512, 512]}])[-3:]
+    assert {"net_arch": [64, 64]} not in new_recent
+
+
+def test_arch_unchanged_when_same_as_current_regardless_of_history():
+    """Proposing the same arch as current is already filtered by != check, not oscillation."""
+    current = {"net_arch": [256, 256]}
+    changed, oscillation = _arch_changed(current, current, [])
+    assert not changed
+    assert not oscillation  # not oscillation — just a no-op
+
+
+def test_recent_arches_updated_on_arch_change():
+    """When arch changes, the outgoing arch is prepended to recent_arches (capped at 3)."""
+    plan = {
+        "hyperparameters": {"policy_kwargs": {"net_arch": [256, 256]}},
+        "recent_arches": [{"net_arch": [64, 64]}],
+    }
+    outgoing = plan["hyperparameters"]["policy_kwargs"]
+    _recent = list(plan.get("recent_arches", []))
+    if outgoing not in _recent:
+        _recent.append(outgoing)
+    plan["recent_arches"] = _recent[-3:]
+    plan["hyperparameters"]["policy_kwargs"] = {"net_arch": [512, 512]}
+
+    assert {"net_arch": [256, 256]} in plan["recent_arches"]
+    assert {"net_arch": [64, 64]} in plan["recent_arches"]
+    assert plan["hyperparameters"]["policy_kwargs"] == {"net_arch": [512, 512]}
+
+
 # ── env_kwargs merge (not replace) ───────────────────────────────────────────
 
 def _apply_env_kwargs(plan, pivot_env_kwargs):
