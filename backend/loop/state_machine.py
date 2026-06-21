@@ -8,6 +8,7 @@ Respects autonomy mode (guided/supervised/full_autonomy) for approval gates.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from enum import Enum
 from typing import Optional
@@ -111,6 +112,21 @@ class LoopStateMachine:
                 "LoopStateMachine: restored pivot_count=%d (escalation=%d) for mission=%s",
                 mission.pivot_escalation_count, pivot_engine.escalation_level(), mission_id,
             )
+        # Restore _best_at_last_pivot so the first post-restart record_pivot() call
+        # doesn't see None and incorrectly reset pivot_count to 0.
+        if persisted_best is not None:
+            pivot_engine.restore_best_at_last_pivot(persisted_best)
+        # Replay per-iteration goal metric history from telemetry so needs_pivot()
+        # has full context immediately rather than waiting for PLATEAU_WINDOW fresh iters.
+        metric_name_for_history = next(iter(mission.target_metric), None)
+        if metric_name_for_history:
+            history_entries = self._load_goal_metric_history(mission_id, metric_name_for_history)
+            if history_entries:
+                pivot_engine.restore_history(history_entries)
+                logger.info(
+                    "LoopStateMachine: replayed %d goal metric history entries for mission=%s",
+                    len(history_entries), mission_id,
+                )
 
         manifest = self._load_or_create_manifest(mission_id, mission)
         mission_dir = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
@@ -136,6 +152,7 @@ class LoopStateMachine:
             try:
                 # ── PLANNING ──────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.PLANNING)
+                did_replan = False
                 if skip_replan_in_memory:
                     # Pivot fired last iteration — plan already has the updated values in memory.
                     skip_replan_in_memory = False
@@ -145,7 +162,7 @@ class LoopStateMachine:
                         value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",  # type: ignore[union-attr]
                     )
                 elif skip_replan_from_db:
-                    # Restart after pivot — reload persisted plan from DB.
+                    # Restart with saved plan — reload persisted plan from DB.
                     async with AsyncSessionLocal() as _s:
                         _m = await _s.get(Mission, mission_id)
                         plan = dict(_m.current_plan) if _m and _m.current_plan else {}
@@ -161,6 +178,7 @@ class LoopStateMachine:
                         mission.goal, mission.task_type, mission.target_metric
                     )
                     await self._save_plan(mission_id, plan)
+                    did_replan = True
                     await emit_status(
                         mission_id, "Plan ready",
                         event_type="success",
@@ -185,7 +203,10 @@ class LoopStateMachine:
                         )
 
                 # ── CRITIC REVIEW (Step 7.1) ──────────────────────────────
-                if self._critic is not None:
+                # Only run on genuine replans (iter 0, or after algo switch that
+                # generates a wholly new plan). Skip on resume/pivot — the plan was
+                # already reviewed and the change is targeted, not a full replan.
+                if self._critic is not None and did_replan:
                     critique = await self._critic.review(plan, mission.goal, revision=0)
                     await emit_critique(mission_id, critique.to_dict())
                     for rev in range(1, CRITIC_MAX_REVISIONS + 1):
@@ -404,7 +425,10 @@ class LoopStateMachine:
                             "LoopStateMachine: ignoring algo switch %s→%s — algorithm locked by goal",
                             current_algo, proposed_algo,
                         )
-                    arch_changed = bool(pivot.get("policy_kwargs"))
+                    arch_changed = bool(
+                        pivot.get("policy_kwargs") and
+                        pivot["policy_kwargs"] != plan.get("hyperparameters", {}).get("policy_kwargs")
+                    )
                     env_kwargs_changed = bool(
                         pivot.get("env_kwargs") and pivot["env_kwargs"] != plan.get("env_kwargs", {})
                     )
@@ -612,6 +636,29 @@ class LoopStateMachine:
             if metric_name in all_telem:
                 candidates.append(all_telem[metric_name])
         return max(candidates) if candidates else None
+
+    def _load_goal_metric_history(self, mission_id: str, metric_name: str) -> list[dict]:
+        """Read per-iteration goal metric values from telemetry.jsonl for history replay."""
+        tel_path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
+        if not os.path.isfile(tel_path):
+            return []
+        entries: dict[int, float] = {}
+        try:
+            with open(tel_path) as f:
+                for line in f:
+                    try:
+                        e = json.loads(line)
+                    except Exception:
+                        continue
+                    if e.get("type") == "metric" and e.get("name") == metric_name:
+                        it = e.get("iteration")
+                        val = e.get("value")
+                        if it is not None and val is not None:
+                            # Keep the value from the last entry per iteration
+                            entries[int(it)] = float(val)
+        except Exception:
+            return []
+        return [{"iteration": it, metric_name: val} for it, val in sorted(entries.items())]
 
     async def _save_best_metric(
         self,

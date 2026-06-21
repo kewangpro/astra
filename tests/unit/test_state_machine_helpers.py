@@ -558,3 +558,77 @@ def test_propose_pivot_passes_current_plan_context(monkeypatch):
     assert captured["policy_kwargs"] == {"net_arch": [256, 256]}
     assert captured["hyperparameters"] == {"learning_rate": 3e-4, "n_steps": 2048}
     assert captured["env_kwargs"] == {"food_reward": 15.0, "death_penalty": -2.0}
+
+
+# ── _load_goal_metric_history ──────────────────────────────────────────────────
+
+def test_load_goal_metric_history_reads_per_iter_values(tmp_path):
+    """Reads food_eaten events from telemetry.jsonl and returns one entry per iteration."""
+    import json as _json
+    from unittest.mock import patch
+
+    tel = tmp_path / "telemetry.jsonl"
+    events = [
+        {"type": "metric", "name": "food_eaten", "value": 1.0, "iteration": 0},
+        {"type": "metric", "name": "mean_reward", "value": 30.0, "iteration": 0},
+        {"type": "metric", "name": "food_eaten", "value": 3.0, "iteration": 1},
+        {"type": "metric", "name": "food_eaten", "value": 2.0, "iteration": 2},
+    ]
+    tel.write_text("\n".join(_json.dumps(e) for e in events))
+
+    with patch("backend.config.settings") as mock_settings:
+        mock_settings.data_path = str(tmp_path.parent)
+        # Patch the path to point at our tmp file
+        import backend.loop.state_machine as sm_mod
+        original = sm_mod.settings
+        sm_mod.settings = mock_settings
+        mock_settings.data_path = str(tmp_path)
+        # Use the actual method via a bare instance (no __init__ needed for static-style call)
+        sm = LoopStateMachine.__new__(LoopStateMachine)
+
+        import os
+        with patch.object(sm_mod.os.path, "join", side_effect=lambda *a: str(tel) if "telemetry" in str(a) else os.path.join(*a)):
+            result = sm._load_goal_metric_history("any-id", "food_eaten")
+
+        sm_mod.settings = original
+
+    assert result == [
+        {"iteration": 0, "food_eaten": 1.0},
+        {"iteration": 1, "food_eaten": 3.0},
+        {"iteration": 2, "food_eaten": 2.0},
+    ]
+
+
+def test_load_goal_metric_history_missing_file_returns_empty(tmp_path):
+    """Returns empty list when telemetry file does not exist."""
+    from unittest.mock import patch
+    import backend.loop.state_machine as sm_mod
+
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    with patch("backend.loop.state_machine.settings") as mock_settings:
+        mock_settings.data_path = str(tmp_path / "nonexistent")
+        result = sm._load_goal_metric_history("any-id", "food_eaten")
+    assert result == []
+
+
+def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
+    """When multiple entries exist for the same iteration, last one wins."""
+    import json as _json
+    from unittest.mock import patch
+    import backend.loop.state_machine as sm_mod
+
+    tel = tmp_path / "telemetry.jsonl"
+    events = [
+        {"type": "metric", "name": "food_eaten", "value": 1.0, "iteration": 0},
+        {"type": "metric", "name": "food_eaten", "value": 5.0, "iteration": 0},
+    ]
+    tel.write_text("\n".join(_json.dumps(e) for e in events))
+
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    import os
+    with patch("backend.loop.state_machine.settings") as mock_settings:
+        mock_settings.data_path = str(tmp_path)
+        with patch.object(sm_mod.os.path, "join", side_effect=lambda *a: str(tel) if "telemetry" in str(a) else os.path.join(*a)):
+            result = sm._load_goal_metric_history("any-id", "food_eaten")
+
+    assert result == [{"iteration": 0, "food_eaten": 5.0}]

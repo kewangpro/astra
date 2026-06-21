@@ -63,6 +63,22 @@ class PivotEngine:
         """Seed pivot_count from persisted state after a server restart."""
         self._pivot_count = count
 
+    def restore_best_at_last_pivot(self, value: float) -> None:
+        """Seed _best_at_last_pivot so record_pivot() doesn't reset escalation on restart."""
+        self._best_at_last_pivot = value
+
+    def restore_history(self, entries: list[dict]) -> None:
+        """Replay per-iteration goal metric entries so needs_pivot() has full context on restart.
+
+        Each entry must be {iteration: int, <metric_name>: float}.
+        Entries are appended in iteration order; duplicates (from the startup seed) are skipped.
+        """
+        existing_iters = {h.get("iteration") for h in self._history}
+        for entry in entries:
+            if entry.get("iteration") not in existing_iters:
+                self._history.append(entry)
+                existing_iters.add(entry.get("iteration"))
+
     def escalation_level(self) -> int:
         """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards."""
         if self._pivot_count >= ESCALATION_REWARD:

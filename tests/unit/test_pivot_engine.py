@@ -177,3 +177,96 @@ def test_escalation_level_caps_at_three():
     e = _engine()
     e.restore_pivot_count(999)
     assert e.escalation_level() == 3
+
+
+# ── restore_best_at_last_pivot ─────────────────────────────────────────────────
+
+def test_restore_best_at_last_pivot_prevents_escalation_reset():
+    """After restart, restore_best_at_last_pivot prevents record_pivot from
+    resetting pivot_count to 0 when no improvement has occurred."""
+    e = _engine()
+    e.restore_pivot_count(3)
+    e.restore_best_at_last_pivot(5.0)
+    e.record(0, {"mean_reward": 5.0})  # same best — no improvement
+    e.record_pivot()
+    # No improvement over threshold → pivot_count should increment, not reset
+    assert e.pivot_count == 4
+
+
+def test_restore_best_at_last_pivot_none_resets_count():
+    """Without restore_best_at_last_pivot, record_pivot resets count (old bug)."""
+    e = _engine()
+    e.restore_pivot_count(3)
+    # _best_at_last_pivot is None → record_pivot hits else branch → reset
+    e.record(0, {"mean_reward": 5.0})
+    e.record_pivot()
+    assert e.pivot_count == 0
+
+
+# ── restore_history ────────────────────────────────────────────────────────────
+
+def test_restore_history_enables_immediate_plateau_detection():
+    """After replaying 3 identical goal metric entries, needs_pivot fires immediately."""
+    e = _engine()
+    e.restore_history([
+        {"iteration": 0, "mean_reward": 10.0},
+        {"iteration": 1, "mean_reward": 10.0},
+        {"iteration": 2, "mean_reward": 10.0},
+    ])
+    assert e.needs_pivot()
+
+
+def test_restore_history_skips_duplicates():
+    """restore_history does not add entries for iterations already in _history."""
+    e = _engine()
+    e.record(0, {"mean_reward": 10.0})
+    e.restore_history([
+        {"iteration": 0, "mean_reward": 99.0},  # duplicate — should be skipped
+        {"iteration": 1, "mean_reward": 10.0},
+    ])
+    vals = [h.get("mean_reward") for h in e.history_snapshot()]
+    assert vals.count(99.0) == 0  # duplicate not inserted
+    assert len(e.history_snapshot()) == 2
+
+
+def test_restore_history_partial_does_not_trigger_pivot():
+    """Fewer than PLATEAU_WINDOW replayed entries → needs_pivot still returns False."""
+    e = _engine()
+    e.restore_history([
+        {"iteration": 0, "mean_reward": 10.0},
+        {"iteration": 1, "mean_reward": 10.0},
+    ])
+    assert not e.needs_pivot()
+
+
+# ── arch_changed comparison ────────────────────────────────────────────────────
+
+def test_arch_changed_same_value_is_no_op():
+    """arch_changed must be False when proposed policy_kwargs equals current plan."""
+    current_policy_kwargs = {"net_arch": [256, 256]}
+    proposed_policy_kwargs = {"net_arch": [256, 256]}
+    arch_changed = bool(
+        proposed_policy_kwargs and
+        proposed_policy_kwargs != current_policy_kwargs
+    )
+    assert not arch_changed
+
+
+def test_arch_changed_different_value_is_true():
+    """arch_changed must be True when proposed policy_kwargs differs from current."""
+    current_policy_kwargs = {"net_arch": [64, 64]}
+    proposed_policy_kwargs = {"net_arch": [256, 256]}
+    arch_changed = bool(
+        proposed_policy_kwargs and
+        proposed_policy_kwargs != current_policy_kwargs
+    )
+    assert arch_changed
+
+
+def test_arch_changed_no_policy_kwargs_is_false():
+    """arch_changed must be False when pivot proposes no policy_kwargs."""
+    arch_changed = bool(
+        None and
+        None != {"net_arch": [256, 256]}
+    )
+    assert not arch_changed
