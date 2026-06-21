@@ -155,7 +155,7 @@ export function MetricGap({ mission, events = [] }: Props) {
           <div className="text-[10px] text-[#94a3b8]">
             {showCurrent
               ? `iter ${Math.round(Number(currentIter))}: ${fmt(current!)}`
-              : `current iter: ${Number(currentIter).toFixed(1)}`}
+              : `current iter: ${Math.round(Number(currentIter))}`}
           </div>
 
           {/* Sparkline — target metric history */}

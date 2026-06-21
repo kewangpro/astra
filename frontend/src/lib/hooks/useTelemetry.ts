@@ -27,15 +27,17 @@ export function useTelemetry(missionId: string) {
         setEvents((prev) => {
           const next = [...prev, evt];
           if (next.length <= 500) return next;
-          // Always preserve goal metric events (non-mean_reward, one per iteration).
-          // Only trim high-frequency events (mean_reward, status, info).
+          // Only trim high-frequency mean_reward metrics; always preserve
+          // goal-metric events (food_eaten, lines_cleared) and all non-metric
+          // events (info, pivot, status, critique) so the event stream log
+          // never goes blank after a long run.
           const keep = next.filter(
-            (ev) => ev.type === "metric" && ev.name !== "mean_reward"
+            (ev) => !(ev.type === "metric" && ev.name === "mean_reward")
           );
           const trimmable = next.filter(
-            (ev) => !(ev.type === "metric" && ev.name !== "mean_reward")
+            (ev) => ev.type === "metric" && ev.name === "mean_reward"
           );
-          return [...keep, ...trimmable.slice(-(500 - keep.length))];
+          return [...keep, ...trimmable.slice(-Math.max(0, 500 - keep.length))];
         });
       } catch {
         // ignore malformed frames
