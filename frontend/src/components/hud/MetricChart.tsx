@@ -18,11 +18,29 @@ interface Props {
 }
 
 const COLORS = ["#14b8a6", "#60a5fa", "#a78bfa", "#fbbf24", "#4ade80"];
-const COLORS_DIM = ["#1e4a47", "#1e3356", "#3b2e56", "#4a3a10", "#1a4030"];
 
 export function MetricChart({ events, targetMetric }: Props) {
+  // MetricHistory shows the training signal only.
+  // For RL tasks the training signal is mean_reward; the goal metric (food_eaten,
+  // lines_cleared, etc.) is a separate series shown in MetricGap — exclude it here.
+  // For ML/SFT tasks the goal metric (accuracy, eval_loss) IS the training signal,
+  // so we keep everything.
+  const goalMetricName = targetMetric && Object.keys(targetMetric).length > 0
+    ? Object.keys(targetMetric)[0]
+    : null;
+  const hasMeanReward = events.some(
+    (e) => (e.type === "metric" || e.type === "backfill") && e.name === "mean_reward"
+  );
+  // Only exclude goal metric when mean_reward is present (RL) and the goal metric
+  // differs from mean_reward (i.e. it is a secondary eval metric, not the signal).
+  const excludeGoalMetric =
+    hasMeanReward && goalMetricName && goalMetricName !== "mean_reward";
   const metricEvents = events.filter(
-    (e) => (e.type === "metric" || e.type === "backfill") && e.name != null && e.value != null
+    (e) =>
+      (e.type === "metric" || e.type === "backfill") &&
+      e.name != null &&
+      e.value != null &&
+      !(excludeGoalMetric && e.name === goalMetricName)
   );
 
   // Find all run-reset boundaries (step counter drops back to low value).
@@ -135,12 +153,12 @@ export function MetricChart({ events, targetMetric }: Props) {
         <div className="flex items-center gap-4">
           {hasLive && (
             <div className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-px bg-[#14b8a6]" />
+              <span className="inline-block w-3 h-px" style={{ background: COLORS[0] }} />
               <span className="text-[10px] text-[#94a3b8]">current</span>
             </div>
           )}
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-px bg-[#334155]" />
+            <span className="inline-block w-3 h-px" style={{ background: COLORS[0], opacity: 0.35 }} />
             <span className="text-[10px] text-[#64748b]">prior</span>
           </div>
         </div>
@@ -156,8 +174,8 @@ export function MetricChart({ events, targetMetric }: Props) {
           ))}
           {names.map((name, i) => (
             <linearGradient key={`${name}-hist`} id={`grad-hist-${i}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS_DIM[i % COLORS_DIM.length]} stopOpacity={0.4} />
-              <stop offset="100%" stopColor={COLORS_DIM[i % COLORS_DIM.length]} stopOpacity={0} />
+              <stop offset="0%" stopColor={COLORS[i % COLORS.length]} stopOpacity={0.07} />
+              <stop offset="100%" stopColor={COLORS[i % COLORS.length]} stopOpacity={0} />
             </linearGradient>
           ))}
         </defs>
@@ -175,6 +193,13 @@ export function MetricChart({ events, targetMetric }: Props) {
             tick={{ fontSize: 10, fill: "#334155" }}
             axisLine={false}
             tickLine={false}
+            tickFormatter={(v: number) =>
+              v >= 1_000_000
+                ? `${(v / 1_000_000).toFixed(1)}M`
+                : v >= 1_000
+                ? `${Math.round(v / 1_000)}K`
+                : String(v)
+            }
           />
           <YAxis
             domain={yDomain}
@@ -206,14 +231,15 @@ export function MetricChart({ events, targetMetric }: Props) {
               fill: "rgba(20,184,166,0.5)",
             }}
           />
-          {/* Historical series — muted */}
+          {/* Historical series — same color as current but dimmed */}
           {names.map((name, i) => (
             <Area
               key={`${name}_hist`}
               type="monotone"
               dataKey={`${name}_hist`}
-              stroke={COLORS_DIM[i % COLORS_DIM.length]}
+              stroke={COLORS[i % COLORS.length]}
               strokeWidth={1.5}
+              strokeOpacity={0.35}
               fill={`url(#grad-hist-${i})`}
               dot={false}
               connectNulls={false}
