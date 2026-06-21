@@ -32,7 +32,7 @@ function SidebarLayout({
   const logMaxH = !hasSidebar
     ? "h-96"
     : hasCritiques && hasPivots
-    ? "max-h-[45rem]"
+    ? "max-h-[46rem]"
     : hasCritiques
     ? "max-h-[24rem]"
     : "max-h-[20rem]";
