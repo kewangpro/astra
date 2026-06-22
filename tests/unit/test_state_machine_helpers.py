@@ -823,6 +823,32 @@ def test_save_iteration_checkpoint_no_pre_pivot_backup_created(tmp_path, monkeyp
     assert not (ckpt_dir / "best_model_pre_pivot.zip").exists()
 
 
+def test_normalize_pivot_promotes_nested_policy_kwargs():
+    """policy_kwargs nested inside adjustments must be promoted to top-level."""
+    pivot = {
+        "reason": "test",
+        "adjustments": {
+            "policy_kwargs": {"net_arch": [512, 512]},
+            "learning_rate": 0.0001,
+        },
+    }
+    result = LoopStateMachine._normalize_pivot(pivot)
+    assert result["policy_kwargs"] == {"net_arch": [512, 512]}
+    assert "policy_kwargs" not in result["adjustments"]
+    assert result["adjustments"]["learning_rate"] == 0.0001
+
+
+def test_normalize_pivot_does_not_overwrite_existing_top_level_policy_kwargs():
+    """If top-level policy_kwargs already exists, nested one is discarded."""
+    pivot = {
+        "reason": "test",
+        "policy_kwargs": {"net_arch": [256, 256]},
+        "adjustments": {"policy_kwargs": {"net_arch": [512, 512]}},
+    }
+    result = LoopStateMachine._normalize_pivot(pivot)
+    assert result["policy_kwargs"] == {"net_arch": [256, 256]}
+
+
 def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
     """When multiple entries exist for the same iteration, last one wins."""
     import json as _json

@@ -19,7 +19,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **485 tests** — 476 unit + 9 integration tests covering all core services
+- **487 tests** — 478 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -81,7 +81,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 476 unit tests across all core modules
+│   ├── unit/           # 478 unit tests across all core modules
 │   └── integration/    # 9 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -123,7 +123,7 @@ make ports  # show port status for all services
 | 13 | Training Continuity & Loop Recovery — env_kwargs merge/clamp, distance_weight floor, early-stop threshold fix, 2M timestep floor, arch oscillation detection, MetricChart adaptive x-axis, state recovery auto-restart loop, plan reuse across iterations, 456 tests | ✅ Complete |
 | 14 | HUD Polish & Telemetry Performance — WS batch backfill, event stream capped at 100, sidebar height alignment, pivot history scrollable, MetricChart x-axis tickCount, integer iteration labels | ✅ Complete |
 | 15 | Sandbox Lifecycle Hardening — orphaned subprocess fix (reattach kill-by-pid), stale sandbox eviction before launch, sandbox terminate on shutdown cancel, 464 tests | ✅ Complete |
-| 16 | Post-Pivot Regression Detection, Checkpoint Recovery & Best-Architecture Memory — 20% regression threshold, per-iteration rolling checkpoint window (last 10), revert targets true best-ever iter, de-escalation; PivotEngine tracks `best_policy_kwargs` at peak goal metric and injects it into pivot prompt so LLM reuses proven architecture at Level 1 instead of thrashing; persisted to DB and restored on restart; 485 tests | ✅ Complete |
+| 16 | Post-Pivot Regression Detection, Checkpoint Recovery & Best-Architecture Memory — 20% regression threshold, per-iteration rolling checkpoint window (last 10), revert targets true best-ever iter, de-escalation; PivotEngine tracks `best_policy_kwargs` at peak goal metric and injects it into pivot prompt so LLM reuses proven architecture at Level 1 instead of thrashing; persisted to DB and restored on restart; `_normalize_pivot` promotes `policy_kwargs` nested inside `adjustments` to prevent arch-changing LLM responses from bypassing best-arch guard and corrupting `best_model.zip`; 487 tests | ✅ Complete |
 
 ## Hardware Target
 

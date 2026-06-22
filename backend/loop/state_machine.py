@@ -877,16 +877,23 @@ class LoopStateMachine:
         raw = pivot.get("adjustments", {})
         nested_hps = raw.get("hyperparameters") if isinstance(raw.get("hyperparameters"), dict) else None
         nested_env = raw.get("env_kwargs") if isinstance(raw.get("env_kwargs"), dict) else None
+        # LLM sometimes puts policy_kwargs inside adjustments instead of top-level.
+        # Promote it so the arch-change path sees it and best_model.zip is not
+        # overwritten with a mismatched architecture.
+        nested_pky = raw.get("policy_kwargs") if isinstance(raw.get("policy_kwargs"), dict) else None
 
-        if nested_hps is not None or nested_env is not None:
-            # Rebuild adjustments: scalar HP keys + flattened nested HPs
-            flat = {k: v for k, v in raw.items() if k not in ("hyperparameters", "env_kwargs")}
+        if nested_hps is not None or nested_env is not None or nested_pky is not None:
+            # Rebuild adjustments: scalar HP keys only — no nested dicts
+            flat = {k: v for k, v in raw.items() if k not in ("hyperparameters", "env_kwargs", "policy_kwargs")}
             if nested_hps:
                 flat.update(nested_hps)
             pivot = {**pivot, "adjustments": flat}
             # Promote nested env_kwargs to top-level if not already set
             if nested_env and not pivot.get("env_kwargs"):
                 pivot = {**pivot, "env_kwargs": nested_env}
+            # Promote nested policy_kwargs to top-level if not already set
+            if nested_pky and not pivot.get("policy_kwargs"):
+                pivot = {**pivot, "policy_kwargs": nested_pky}
 
         return pivot
 
