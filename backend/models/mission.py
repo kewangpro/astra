@@ -34,6 +34,7 @@ class Mission(Base):
     current_metric_value: Mapped[Optional[str]] = mapped_column(String(100))
     pivot_escalation_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     best_policy_kwargs: Mapped[Optional[dict]] = mapped_column(JSON)
+    pivot_pre_best: Mapped[Optional[str]] = mapped_column(String(100))
     current_plan: Mapped[Optional[dict]] = mapped_column(JSON)
     container_id: Mapped[Optional[str]] = mapped_column(String(255))
     subprocess_pid: Mapped[Optional[int]] = mapped_column(Integer)

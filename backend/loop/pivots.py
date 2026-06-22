@@ -114,6 +114,13 @@ class PivotEngine:
         self._post_pivot_best = None
         self._iters_since_pivot = 0
         self._pivot_applied = True
+
+    def restore_arch_pivot_baseline(self, pre_pivot_best: float) -> None:
+        """Re-arm regression detector after a restart using the persisted pre-pivot best."""
+        self._pre_pivot_best = pre_pivot_best
+        self._post_pivot_best = None
+        self._iters_since_pivot = 0
+        self._pivot_applied = True
         logger.info(
             "PivotEngine: arch/algo pivot armed — pre_pivot_best=%.3f",
             self._pre_pivot_best if self._pre_pivot_best is not None else float("nan"),

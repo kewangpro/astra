@@ -126,6 +126,16 @@ class LoopStateMachine:
                 "LoopStateMachine: restored best_policy_kwargs=%s for mission=%s",
                 mission.best_policy_kwargs, mission_id,
             )
+        # Re-arm regression detector if a pivot was in-flight before the restart.
+        if mission.pivot_pre_best is not None:
+            try:
+                pivot_engine.restore_arch_pivot_baseline(float(mission.pivot_pre_best))
+                logger.info(
+                    "LoopStateMachine: re-armed regression detector with pre_pivot_best=%.4f for mission=%s",
+                    float(mission.pivot_pre_best), mission_id,
+                )
+            except (ValueError, TypeError):
+                pass
         # Replay per-iteration goal metric history from telemetry so needs_pivot()
         # has full context immediately rather than waiting for PLATEAU_WINDOW fresh iters.
         metric_name_for_history = next(iter(mission.target_metric), None)
@@ -358,6 +368,7 @@ class LoopStateMachine:
                 # PLATEAU_WINDOW iters, restore the pre-pivot checkpoint and
                 # de-escalate so HP tuning resumes from the good baseline.
                 _pivot_reverted = False
+                _was_pivot_applied = pivot_engine._pivot_applied
                 if pivot_engine.should_revert_pivot():
                     _checkpoint_dir = os.path.join(
                         settings.data_path, "missions", mission_id, "checkpoints"
@@ -394,6 +405,7 @@ class LoopStateMachine:
                         plan["hyperparameters"] = _pre_hps
                     pivot_engine.revert_escalation()
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
+                    await self._save_pivot_pre_best(mission_id, None)
                     await self._save_plan(mission_id, plan)
                     skip_replan_in_memory = False
                     _revert_label = (
@@ -406,6 +418,9 @@ class LoopStateMachine:
                         iteration=current_iteration,
                     )
                     _pivot_reverted = True
+                elif _was_pivot_applied and not pivot_engine._pivot_applied:
+                    # Recovery confirmed — should_revert_pivot cleared _pivot_applied
+                    await self._save_pivot_pre_best(mission_id, None)
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
                 manifest = self._manifest_evaluator.evaluate(
@@ -536,6 +551,7 @@ class LoopStateMachine:
                             plan["_pre_pivot_hps"] = dict(plan.get("hyperparameters", {}))
                             plan["_pre_pivot_best_score"] = pivot_engine.best_metric_value()
                             pivot_engine.record_arch_pivot_baseline()
+                            await self._save_pivot_pre_best(mission_id, pivot_engine._pre_pivot_best)
                         plan["hyperparameters"].update(real_adjustments)
                         if arch_changed:
                             # Track the outgoing arch so future pivots back to it are suppressed
@@ -833,6 +849,15 @@ class LoopStateMachine:
                     update(Mission)
                     .where(Mission.id == mission_id)
                     .values(pivot_escalation_count=count)
+                )
+
+    async def _save_pivot_pre_best(self, mission_id: str, value: Optional[float]) -> None:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(Mission)
+                    .where(Mission.id == mission_id)
+                    .values(pivot_pre_best=str(value) if value is not None else None)
                 )
 
     async def _save_best_policy_kwargs(self, mission_id: str, kwargs: Optional[dict]) -> None:
