@@ -45,12 +45,16 @@ class PivotEngine:
         self._pre_pivot_best: Optional[float] = None
         self._post_pivot_best: Optional[float] = None
         self._iters_since_pivot: int = 0
+        self._best_policy_kwargs: Optional[dict] = None
 
-    def record(self, iteration: int, metrics: dict) -> None:
+    def record(self, iteration: int, metrics: dict, policy_kwargs: Optional[dict] = None) -> None:
         self._history.append({"iteration": iteration, **metrics})
+        v = self._resolve_metric(self._metric_name, metrics)
+        current_best = self.best_metric_value()
+        if v is not None and (current_best is None or v >= current_best) and policy_kwargs is not None:
+            self._best_policy_kwargs = policy_kwargs
         if self._pivot_applied:
             self._iters_since_pivot += 1
-            v = self._resolve_metric(self._metric_name, metrics)
             if v is not None and (self._post_pivot_best is None or v > self._post_pivot_best):
                 self._post_pivot_best = v
 
@@ -206,6 +210,14 @@ class PivotEngine:
             return None
         iteration = best_entry[0]
         return None if iteration == -1 else iteration  # -1 is the seed entry
+
+    def best_policy_kwargs(self) -> Optional[dict]:
+        """Return the policy_kwargs (net_arch etc.) that produced the best metric value."""
+        return self._best_policy_kwargs
+
+    def restore_best_policy_kwargs(self, kwargs: Optional[dict]) -> None:
+        """Seed _best_policy_kwargs from persisted state after a server restart."""
+        self._best_policy_kwargs = kwargs
 
     def _best_entry(self) -> Optional[tuple]:
         """Return (iteration, value) for the history entry with the highest metric."""

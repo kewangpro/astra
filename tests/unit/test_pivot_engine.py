@@ -358,3 +358,69 @@ def test_revert_escalation_clears_regression_state():
     # After revert, should_revert_pivot must be False
     e.record(14, {"food_eaten": 1.0})
     assert not e.should_revert_pivot()
+
+
+# ── best_policy_kwargs tracking ───────────────────────────────────────────────
+
+def test_best_policy_kwargs_none_initially():
+    e = _engine()
+    assert e.best_policy_kwargs() is None
+
+
+def test_best_policy_kwargs_none_when_no_kwargs_passed():
+    """If policy_kwargs is never provided, best_policy_kwargs stays None."""
+    e = _engine()
+    e.record(0, {"mean_reward": 50.0})
+    e.record(1, {"mean_reward": 80.0})
+    assert e.best_policy_kwargs() is None
+
+
+def test_best_policy_kwargs_set_on_first_record():
+    e = _engine()
+    arch = {"net_arch": [256, 256, 128]}
+    e.record(0, {"mean_reward": 50.0}, policy_kwargs=arch)
+    assert e.best_policy_kwargs() == arch
+
+
+def test_best_policy_kwargs_updates_to_arch_at_new_best():
+    e = _engine()
+    e.record(0, {"mean_reward": 10.0}, policy_kwargs={"net_arch": [64, 64]})
+    e.record(1, {"mean_reward": 50.0}, policy_kwargs={"net_arch": [256, 256, 128]})
+    e.record(2, {"mean_reward": 30.0}, policy_kwargs={"net_arch": [512, 512]})
+    assert e.best_policy_kwargs() == {"net_arch": [256, 256, 128]}
+
+
+def test_best_policy_kwargs_not_overwritten_by_lower_metric():
+    e = _engine()
+    e.record(0, {"mean_reward": 50.0}, policy_kwargs={"net_arch": [256, 256, 128]})
+    e.record(1, {"mean_reward": 20.0}, policy_kwargs={"net_arch": [512, 512]})
+    assert e.best_policy_kwargs() == {"net_arch": [256, 256, 128]}
+
+
+def test_best_policy_kwargs_mixed_kwargs_and_no_kwargs():
+    """Iterations without policy_kwargs don't overwrite the best even if they score higher."""
+    e = _engine()
+    e.record(0, {"mean_reward": 50.0}, policy_kwargs={"net_arch": [256, 256, 128]})
+    e.record(1, {"mean_reward": 80.0})  # no policy_kwargs — should not clear best arch
+    assert e.best_policy_kwargs() == {"net_arch": [256, 256, 128]}
+
+
+# ── restore_best_policy_kwargs (restart persistence) ─────────────────────────
+
+def test_restore_best_policy_kwargs_seeds_value():
+    """Restored value is returned by best_policy_kwargs() immediately after restart."""
+    e = _engine()
+    arch = {"net_arch": [256, 256, 128]}
+    e.restore_best_policy_kwargs(arch)
+    assert e.best_policy_kwargs() == arch
+
+
+def test_restore_best_policy_kwargs_not_overwritten_by_lower_metric_after_restore():
+    """A lower-scoring record after restore does not clear the restored arch."""
+    e = _engine()
+    e.restore_best_policy_kwargs({"net_arch": [256, 256, 128]})
+    # seed with the persisted best so the engine has a baseline
+    e.record(-1, {"mean_reward": 80.0})
+    # new iteration scores lower — best_policy_kwargs must stay from restore
+    e.record(0, {"mean_reward": 30.0}, policy_kwargs={"net_arch": [512, 512]})
+    assert e.best_policy_kwargs() == {"net_arch": [256, 256, 128]}

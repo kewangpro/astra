@@ -118,6 +118,14 @@ class LoopStateMachine:
         # doesn't see None and incorrectly reset pivot_count to 0.
         if persisted_best is not None:
             pivot_engine.restore_best_at_last_pivot(persisted_best)
+        # Restore best_policy_kwargs so Level 1 pivots after restart still prefer
+        # the proven architecture.
+        if mission.best_policy_kwargs:
+            pivot_engine.restore_best_policy_kwargs(mission.best_policy_kwargs)
+            logger.info(
+                "LoopStateMachine: restored best_policy_kwargs=%s for mission=%s",
+                mission.best_policy_kwargs, mission_id,
+            )
         # Replay per-iteration goal metric history from telemetry so needs_pivot()
         # has full context immediately rather than waiting for PLATEAU_WINDOW fresh iters.
         metric_name_for_history = next(iter(mission.target_metric), None)
@@ -333,7 +341,9 @@ class LoopStateMachine:
                             mission_id, metric_name, goal_val, current_iteration,
                         )
 
-                pivot_engine.record(current_iteration, current_metrics)
+                _current_policy_kwargs = plan.get("hyperparameters", {}).get("policy_kwargs")
+                pivot_engine.record(current_iteration, current_metrics, policy_kwargs=_current_policy_kwargs)
+                await self._save_best_policy_kwargs(mission_id, pivot_engine.best_policy_kwargs())
                 current_val = current_metrics.get(metric_name) if metric_name else None
                 await self._save_best_metric(
                     mission_id,
@@ -443,6 +453,9 @@ class LoopStateMachine:
                             if k != "policy_kwargs"
                         } or None,
                         current_env_kwargs=plan.get("env_kwargs") or None,
+                        best_policy_kwargs=pivot_engine.best_policy_kwargs(),
+                        best_metric_value=pivot_engine.best_metric_value(),
+                        best_metric_iteration=pivot_engine.best_metric_iteration(),
                     )
                     pivot_engine.record_pivot()
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
@@ -816,6 +829,17 @@ class LoopStateMachine:
                     update(Mission)
                     .where(Mission.id == mission_id)
                     .values(pivot_escalation_count=count)
+                )
+
+    async def _save_best_policy_kwargs(self, mission_id: str, kwargs: Optional[dict]) -> None:
+        if kwargs is None:
+            return
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(Mission)
+                    .where(Mission.id == mission_id)
+                    .values(best_policy_kwargs=kwargs)
                 )
 
     @staticmethod

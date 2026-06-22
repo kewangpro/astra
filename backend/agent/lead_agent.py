@@ -49,7 +49,9 @@ Escalation levels — follow the level provided in the user message:
   Level 0 (first plateau): tune hyperparameters only. Small changes — adjust learning_rate,
     batch_size, gamma, ent_coef, etc. Keep the same algorithm and architecture.
   Level 1 (repeated plateau): change the policy network architecture in addition to HPs.
-    Use "policy_kwargs" with a larger "net_arch": [256, 256], [400, 300], or [256, 256, 128].
+    Use "policy_kwargs" with a "net_arch" from: [256, 256], [400, 300], or [256, 256, 128].
+    IMPORTANT: if a "Best performing architecture" is listed below, reuse it — do NOT switch
+    to a different architecture. Only deviate if the best arch is identical to the current one.
   Level 2 (stuck for many pivots): switch to a fundamentally different algorithm if the
     current one is not working. Set "algorithm" to "PPO", "SAC", "A2C", or "DQN".
     For Snake-v0, PPO with [256, 256] net_arch is strongly recommended over DQN.
@@ -155,6 +157,9 @@ class LeadAgent:
         current_policy_kwargs: Optional[dict] = None,
         current_hyperparameters: Optional[dict] = None,
         current_env_kwargs: Optional[dict] = None,
+        best_policy_kwargs: Optional[dict] = None,
+        best_metric_value: Optional[float] = None,
+        best_metric_iteration: Optional[int] = None,
     ) -> dict:
         """
         Analyze a stalled run and propose a strategic pivot.
@@ -193,6 +198,18 @@ class LeadAgent:
             current_state_lines.append(f"Current hyperparameters: {json.dumps(current_hyperparameters)}")
         if current_env_kwargs:
             current_state_lines.append(f"Current env_kwargs: {json.dumps(current_env_kwargs)}")
+        if best_policy_kwargs is not None:
+            best_arch_desc = json.dumps(best_policy_kwargs)
+            _metric_label = self._metric_name_from_history(history)
+            if best_metric_value is not None and best_metric_iteration is not None:
+                best_context = f" (best {_metric_label}={best_metric_value:.4f} at iteration {best_metric_iteration})"
+            elif best_metric_value is not None:
+                best_context = f" (best {_metric_label}={best_metric_value:.4f})"
+            else:
+                best_context = ""
+            current_state_lines.append(
+                f"Best performing architecture so far: {best_arch_desc}{best_context} — prefer this at Level 1"
+            )
         query = (
             "\n".join(current_state_lines) + "\n"
             f"Current metrics: {json.dumps(current_metrics)}\n"
@@ -277,6 +294,15 @@ class LeadAgent:
     def flush_iteration_context(self) -> None:
         """Call between training iterations to clear stale code context."""
         self._cache.flush_code_context()
+
+    @staticmethod
+    def _metric_name_from_history(history: list[dict]) -> str:
+        """Infer the goal metric name from history entries (any non-iteration key)."""
+        for entry in history:
+            for k in entry:
+                if k != "iteration":
+                    return k
+        return "metric"
 
     # ── Warm-start ────────────────────────────────────────────────────────────
 

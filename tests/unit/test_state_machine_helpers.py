@@ -490,8 +490,9 @@ def test_wait_sandbox_mixed_benign_and_fatal_returns_content(tmp_path):
 # ── propose_pivot current plan context ───────────────────────────────────────
 
 def test_propose_pivot_passes_current_plan_context(monkeypatch):
-    """propose_pivot receives current policy_kwargs, hyperparameters, and env_kwargs
-    so the LLM can avoid re-proposing already-applied changes."""
+    """propose_pivot receives current policy_kwargs, hyperparameters, env_kwargs,
+    and best_policy_kwargs so the LLM can avoid re-proposing already-applied changes
+    and knows which architecture performed best."""
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -507,10 +508,16 @@ def test_propose_pivot_passes_current_plan_context(monkeypatch):
         current_policy_kwargs=None,
         current_hyperparameters=None,
         current_env_kwargs=None,
+        best_policy_kwargs=None,
+        best_metric_value=None,
+        best_metric_iteration=None,
     ):
         captured["policy_kwargs"] = current_policy_kwargs
         captured["hyperparameters"] = current_hyperparameters
         captured["env_kwargs"] = current_env_kwargs
+        captured["best_policy_kwargs"] = best_policy_kwargs
+        captured["best_metric_value"] = best_metric_value
+        captured["best_metric_iteration"] = best_metric_iteration
         return {"reason": "test", "adjustments": {}}
 
     from backend.agent.lead_agent import LeadAgent
@@ -518,11 +525,15 @@ def test_propose_pivot_passes_current_plan_context(monkeypatch):
 
     from backend.loop.pivots import PivotEngine
     engine = PivotEngine({"food_eaten": 30})
-    # seed 3 identical values to trigger plateau
-    for i in range(3):
-        engine.record(i, {"food_eaten": 1.0})
+    best_arch = {"net_arch": [256, 256, 128]}
+    # iter 0: best so far with the arch we want to track
+    engine.record(0, {"food_eaten": 16.0}, policy_kwargs=best_arch)
+    # iters 1–3: plateau at 6 to trigger needs_pivot
+    for i in range(1, 4):
+        engine.record(i, {"food_eaten": 6.0}, policy_kwargs={"net_arch": [256, 256]})
 
     assert engine.needs_pivot()
+    assert engine.best_policy_kwargs() == best_arch
 
     plan = {
         "algorithm": "PPO",
@@ -540,7 +551,7 @@ def test_propose_pivot_passes_current_plan_context(monkeypatch):
     async def _run_pivot():
         current_algo = plan.get("algorithm", "PPO")
         return await sm._agent.propose_pivot(
-            {"food_eaten": 1.0},
+            {"food_eaten": 6.0},
             engine.history_snapshot(),
             escalation_level=engine.escalation_level(),
             current_algorithm=current_algo,
@@ -551,6 +562,9 @@ def test_propose_pivot_passes_current_plan_context(monkeypatch):
                 if k != "policy_kwargs"
             } or None,
             current_env_kwargs=plan.get("env_kwargs") or None,
+            best_policy_kwargs=engine.best_policy_kwargs(),
+            best_metric_value=engine.best_metric_value(),
+            best_metric_iteration=engine.best_metric_iteration(),
         )
 
     asyncio.get_event_loop().run_until_complete(_run_pivot())
@@ -558,6 +572,9 @@ def test_propose_pivot_passes_current_plan_context(monkeypatch):
     assert captured["policy_kwargs"] == {"net_arch": [256, 256]}
     assert captured["hyperparameters"] == {"learning_rate": 3e-4, "n_steps": 2048}
     assert captured["env_kwargs"] == {"food_reward": 15.0, "death_penalty": -2.0}
+    assert captured["best_policy_kwargs"] == {"net_arch": [256, 256, 128]}
+    assert captured["best_metric_value"] == 16.0
+    assert captured["best_metric_iteration"] == 0
 
 
 # ── _load_goal_metric_history ──────────────────────────────────────────────────
