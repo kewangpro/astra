@@ -11,9 +11,9 @@ interface Props {
 }
 
 function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
-  const R = 52;
-  const cx = 64;
-  const cy = 68;
+  const R = 40;
+  const cx = 58;
+  const cy = 47;
   const startAngle = 195;
   const totalAngle = 210;
 
@@ -136,7 +136,7 @@ export function MetricGap({ mission, events = [] }: Props) {
         <div className="shrink-0 flex flex-col items-center gap-1">
           <div className="relative">
             <ArcGauge pct={pct} achieved={achieved} />
-            <div className="absolute inset-0 flex flex-col items-center justify-center pt-6">
+            <div className="absolute inset-0 flex flex-col items-center justify-center pt-1">
               <span
                 className="text-2xl font-semibold leading-none"
                 style={{ color: achieved ? "#4ade80" : "#e2e8f0" }}
