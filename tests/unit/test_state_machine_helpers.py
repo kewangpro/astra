@@ -797,6 +797,15 @@ def test_save_iteration_checkpoint_noop_when_best_model_missing(tmp_path, monkey
     assert not iter_dir.exists()
 
 
+def test_save_iteration_checkpoint_no_pre_pivot_backup_created(tmp_path, monkeypatch):
+    """best_model_pre_pivot.zip must never be created — iter window replaces it."""
+    monkeypatch.setattr("backend.loop.state_machine.settings.data_path", str(tmp_path))
+    ckpt_dir = _make_checkpoint_dir(tmp_path)
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._save_iteration_checkpoint("test-mission", 5)
+    assert not (ckpt_dir / "best_model_pre_pivot.zip").exists()
+
+
 def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
     """When multiple entries exist for the same iteration, last one wins."""
     import json as _json

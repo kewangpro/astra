@@ -609,8 +609,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
       ```
 
 - [x] **Checkpoint backup and smart revert in LoopStateMachine (Step 16.3)**
-    - Before applying any arch or algo pivot: copies `best_model.zip` → `best_model_pre_pivot.zip` (backwards-compat fallback); saves `plan["_pre_pivot_hps"]` and `plan["_pre_pivot_best_score"]`; calls `pivot_engine.record_arch_pivot_baseline()`.
-    - After `pivot_engine.record()` each iteration, checks `pivot_engine.should_revert_pivot()`. On True: looks up `iter/checkpoint_iter_{best_iter}.zip` (the true best-ever iter) first, falls back to `best_model_pre_pivot.zip`; restores `best_score.txt`; restores `plan["hyperparameters"]`; calls `pivot_engine.revert_escalation()`; saves plan to DB; emits a named `warn` status event (`"Pivot reverted — restored checkpoint from iter 47, resuming HP tuning"`); sets `_pivot_reverted = True` to skip `needs_pivot()` on this iteration.
+    - Before applying any arch or algo pivot: saves `plan["_pre_pivot_hps"]` and `plan["_pre_pivot_best_score"]`; calls `pivot_engine.record_arch_pivot_baseline()`. No separate `best_model_pre_pivot.zip` is written — the iter rolling window makes it redundant.
+    - After `pivot_engine.record()` each iteration, checks `pivot_engine.should_revert_pivot()`. On True: restores `iter/checkpoint_iter_{best_iter}.zip` (the true best-ever iter); restores `best_score.txt`; restores `plan["hyperparameters"]`; calls `pivot_engine.revert_escalation()`; saves plan to DB; emits a named `warn` status event (`"Pivot reverted — restored checkpoint from iter 47, resuming HP tuning"`); sets `_pivot_reverted = True` to skip `needs_pivot()` on this iteration.
     - `import shutil` added for file copy operations.
 
 - [x] **Test coverage (Step 16.4)**

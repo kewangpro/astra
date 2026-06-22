@@ -355,19 +355,12 @@ class LoopStateMachine:
                     _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
                     _pre_hps = plan.pop("_pre_pivot_hps", None)
                     _pre_score = plan.pop("_pre_pivot_best_score", None)
-                    # Prefer the best-ever per-iteration checkpoint; fall back to the
-                    # single pre-pivot backup kept for backwards compatibility.
                     _best_iter = pivot_engine.best_metric_iteration()
                     _iter_ckpt = (
                         os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}.zip")
                         if _best_iter is not None else None
                     )
-                    _backup_zip = os.path.join(_checkpoint_dir, "best_model_pre_pivot.zip")
-                    _restore_src = None
-                    if _iter_ckpt and os.path.exists(_iter_ckpt):
-                        _restore_src = _iter_ckpt
-                    elif os.path.exists(_backup_zip):
-                        _restore_src = _backup_zip
+                    _restore_src = _iter_ckpt if _iter_ckpt and os.path.exists(_iter_ckpt) else None
                     if _restore_src:
                         try:
                             shutil.copy2(_restore_src, _best_zip)
@@ -521,22 +514,8 @@ class LoopStateMachine:
                     else:
                         # Snapshot before mutating so display shows old→new correctly
                         old_hps = {k: plan["hyperparameters"].get(k) for k in real_adjustments}
-                        # Before any arch/algo change: back up checkpoint + arm regression detector
+                        # Before any arch/algo change: arm regression detector
                         if arch_changed or algo_changed:
-                            _checkpoint_dir = os.path.join(
-                                settings.data_path, "missions", mission_id, "checkpoints"
-                            )
-                            _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
-                            _backup_zip = os.path.join(_checkpoint_dir, "best_model_pre_pivot.zip")
-                            if os.path.exists(_best_zip):
-                                try:
-                                    shutil.copy2(_best_zip, _backup_zip)
-                                    logger.info(
-                                        "LoopStateMachine: backed up best_model.zip before pivot for mission=%s",
-                                        mission_id,
-                                    )
-                                except Exception as _e:
-                                    logger.warning("LoopStateMachine: could not back up checkpoint: %s", _e)
                             plan["_pre_pivot_hps"] = dict(plan.get("hyperparameters", {}))
                             plan["_pre_pivot_best_score"] = pivot_engine.best_metric_value()
                             pivot_engine.record_arch_pivot_baseline()
