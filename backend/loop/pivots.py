@@ -12,6 +12,9 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 PLATEAU_WINDOW = 3          # iterations with no improvement → plateau
+# Don't pivot when the window's best is within this fraction of the all-time peak.
+# A brief dip (e.g. iter scores 151→127→126 while peak=164) should self-correct.
+PIVOT_COMPETITIVE_THRESHOLD = 0.85
 # A pivot resets the escalation counter only when the best metric improves by
 # this much relative to its value at the last pivot. Raised to 5% so small
 # oscillations in the running average don't keep resetting escalation back to 0.
@@ -196,13 +199,28 @@ class PivotEngine:
         if len(values) < PLATEAU_WINDOW:
             return False
         stalled = values[-1] <= values[0]
-        if stalled:
-            logger.info(
-                "PivotEngine: plateau detected over %d iterations "
-                "(latest=%.4f <= earliest=%.4f, no improvement)",
-                PLATEAU_WINDOW, values[-1], values[0],
-            )
-        return stalled
+        if not stalled:
+            return False
+        # Guard: if the window's best is a competitive dip BELOW the all-time peak,
+        # this is likely temporary variance, not a real plateau. Don't pivot yet.
+        # Only applies when window_best < all_time_best (i.e., we're in a dip).
+        # Stuck-at-peak (window_best == all_time_best) still triggers a pivot.
+        all_time_best = self.best_metric_value()
+        if all_time_best is not None and all_time_best > 0:
+            window_best = max(values)
+            if 0 < window_best < all_time_best and window_best >= all_time_best * PIVOT_COMPETITIVE_THRESHOLD:
+                logger.info(
+                    "PivotEngine: dip detected but window_best=%.4f is within %.0f%% of "
+                    "all-time best=%.4f — suppressing pivot",
+                    window_best, PIVOT_COMPETITIVE_THRESHOLD * 100, all_time_best,
+                )
+                return False
+        logger.info(
+            "PivotEngine: plateau detected over %d iterations "
+            "(latest=%.4f <= earliest=%.4f, no improvement)",
+            PLATEAU_WINDOW, values[-1], values[0],
+        )
+        return True
 
     def best_metric_value(self) -> Optional[float]:
         best_entry = self._best_entry()

@@ -366,6 +366,10 @@ class LoopStateMachine:
                     _pre_hps = plan.pop("_pre_pivot_hps", None)
                     _pre_score = plan.pop("_pre_pivot_best_score", None)
                     _best_iter = pivot_engine.best_metric_iteration()
+                    # Ignore the synthetic seed iteration (-1) used on restart when
+                    # best_metric_iteration was not persisted — there is no checkpoint for it.
+                    if _best_iter is not None and _best_iter < 0:
+                        _best_iter = None
                     _iter_ckpt = (
                         os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}.zip")
                         if _best_iter is not None else None
