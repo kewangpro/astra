@@ -100,7 +100,6 @@ export function MetricGap({ mission, events = [] }: Props) {
     ? `−${gap.toFixed(1)} to close`
     : `−${(gap * 100).toFixed(2)}% to close`;
 
-  const showCurrent = current != null && Math.abs(current - best) > 0.05;
 
   // Build sparkline: one point per iteration (max value within that iteration).
   // Raw mean_reward telemetry posts every 2048 steps (~1000 pts/iter), which
@@ -162,11 +161,8 @@ export function MetricGap({ mission, events = [] }: Props) {
             best at iter {bestIter ? Math.round(Number(bestIter)) : "—"}
           </div>
 
-          {/* Current iter — only show score when it differs from best */}
           <div className="text-[10px] text-[#94a3b8]">
-            {showCurrent
-              ? `iter ${Math.round(Number(currentIter))}: ${fmt(current!)}`
-              : `current iter: ${Math.round(Number(currentIter))}`}
+            {`current iter: ${Math.round(Number(currentIter))}`}
           </div>
 
           {/* Sparkline — target metric history */}
