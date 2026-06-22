@@ -119,8 +119,8 @@ class LoopStateMachine:
         if persisted_best is not None:
             pivot_engine.restore_best_at_last_pivot(persisted_best)
         # Restore best_policy_kwargs so Level 1 pivots after restart still prefer
-        # the proven architecture.
-        if mission.best_policy_kwargs:
+        # the proven architecture. Use `is not None` — {} (default arch sentinel) is falsy.
+        if mission.best_policy_kwargs is not None:
             pivot_engine.restore_best_policy_kwargs(mission.best_policy_kwargs)
             logger.info(
                 "LoopStateMachine: restored best_policy_kwargs=%s for mission=%s",

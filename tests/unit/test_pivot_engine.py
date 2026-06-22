@@ -367,12 +367,12 @@ def test_best_policy_kwargs_none_initially():
     assert e.best_policy_kwargs() is None
 
 
-def test_best_policy_kwargs_none_when_no_kwargs_passed():
-    """If policy_kwargs is never provided, best_policy_kwargs stays None."""
+def test_best_policy_kwargs_empty_dict_when_no_kwargs_passed():
+    """If policy_kwargs is never provided, best_policy_kwargs is {} (default arch sentinel)."""
     e = _engine()
     e.record(0, {"mean_reward": 50.0})
     e.record(1, {"mean_reward": 80.0})
-    assert e.best_policy_kwargs() is None
+    assert e.best_policy_kwargs() == {}
 
 
 def test_best_policy_kwargs_set_on_first_record():

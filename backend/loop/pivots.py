@@ -50,8 +50,17 @@ class PivotEngine:
         self._history.append({"iteration": iteration, **metrics})
         v = self._resolve_metric(self._metric_name, metrics)
         current_best = self.best_metric_value()
-        if v is not None and (current_best is None or v >= current_best) and policy_kwargs is not None:
-            self._best_policy_kwargs = policy_kwargs
+        if v is not None and (current_best is None or v >= current_best):
+            if policy_kwargs is not None:
+                # Explicit arch at new best — always record it.
+                self._best_policy_kwargs = policy_kwargs
+            elif self._best_policy_kwargs is None:
+                # First best ever seen with no explicit arch: record {} as "default MLP" sentinel
+                # so the pivot prompt can tell the LLM to stick with the default rather than
+                # cycling through arbitrary net_arch values.
+                self._best_policy_kwargs = {}
+            # else: keep existing explicit arch — don't overwrite it with {} just because
+            # a higher-scoring iter happened to have no policy_kwargs.
         if self._pivot_applied:
             self._iters_since_pivot += 1
             if v is not None and (self._post_pivot_best is None or v > self._post_pivot_best):

@@ -199,7 +199,7 @@ class LeadAgent:
         if current_env_kwargs:
             current_state_lines.append(f"Current env_kwargs: {json.dumps(current_env_kwargs)}")
         if best_policy_kwargs is not None:
-            best_arch_desc = json.dumps(best_policy_kwargs)
+            best_arch_desc = json.dumps(best_policy_kwargs) if best_policy_kwargs else "default MLP (no net_arch override)"
             _metric_label = self._metric_name_from_history(history)
             if best_metric_value is not None and best_metric_iteration is not None:
                 best_context = f" (best {_metric_label}={best_metric_value:.4f} at iteration {best_metric_iteration})"
