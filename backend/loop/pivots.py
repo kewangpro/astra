@@ -12,7 +12,6 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 PLATEAU_WINDOW = 3          # iterations with no improvement → plateau
-PLATEAU_THRESHOLD = 0.01    # minimum relative improvement to count as progress
 # A pivot resets the escalation counter only when the best metric improves by
 # this much relative to its value at the last pivot. Raised to 5% so small
 # oscillations in the running average don't keep resetting escalation back to 0.
@@ -179,7 +178,7 @@ class PivotEngine:
         return None
 
     def needs_pivot(self) -> bool:
-        """Return True if the last PLATEAU_WINDOW iterations show no meaningful improvement."""
+        """Return True only if the metric has not improved at all over the last PLATEAU_WINDOW iterations."""
         values = [
             self._resolve_metric(self._metric_name, h)
             for h in self._history[-PLATEAU_WINDOW:]
@@ -187,15 +186,12 @@ class PivotEngine:
         ]
         if len(values) < PLATEAU_WINDOW:
             return False
-        if values[0] == 0:
-            return True
-        relative_improvement = (values[-1] - values[0]) / abs(values[0])
-        stalled = relative_improvement < PLATEAU_THRESHOLD
+        stalled = values[-1] <= values[0]
         if stalled:
             logger.info(
                 "PivotEngine: plateau detected over %d iterations "
-                "(improvement=%.4f < threshold=%.4f)",
-                PLATEAU_WINDOW, relative_improvement, PLATEAU_THRESHOLD,
+                "(latest=%.4f <= earliest=%.4f, no improvement)",
+                PLATEAU_WINDOW, values[-1], values[0],
             )
         return stalled
 
