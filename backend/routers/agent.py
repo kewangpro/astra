@@ -105,6 +105,21 @@ async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     return {"mission_id": mission_id, "status": "loop_started"}
 
 
+@router.post("/missions/{mission_id}/cancel", status_code=202)
+async def cancel_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
+    """Cancel a running mission loop, terminating the sandbox and reverting to pending."""
+    mission = await db.get(Mission, mission_id)
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    if mission.status not in ("running", "planning", "evaluating"):
+        raise HTTPException(status_code=409, detail=f"Mission is not running (status='{mission.status}')")
+
+    task = _running_tasks.get(mission_id)
+    if task and not task.done():
+        task.cancel()
+    return {"mission_id": mission_id, "status": "cancelling"}
+
+
 @router.get("/missions/{mission_id}/plan")
 async def get_plan(mission_id: str, db: AsyncSession = Depends(get_db)):
     mission = await db.get(Mission, mission_id)

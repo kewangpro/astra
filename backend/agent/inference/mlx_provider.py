@@ -107,17 +107,21 @@ class MLXProvider(InferenceProvider):
         # mlx_lm 0.29+: temperature/top_p go through make_sampler, not generate() kwargs
         sampler = make_sampler(temp=cfg.temperature, top_p=cfg.top_p)
 
-        # mlx_lm.generate is synchronous — run in thread pool to avoid blocking
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: mlx_lm.generate(
-                self._model,
-                self._tokenizer,
-                prompt=prompt,
-                max_tokens=cfg.max_tokens,
-                sampler=sampler,
-                verbose=False,
-            ),
+        # mlx_lm.generate is synchronous — run in thread pool to avoid blocking.
+        # asyncio.shield prevents task cancellation from interrupting mid-flight Metal
+        # command buffers (which causes _MTLCommandBuffer assertion crashes on macOS).
+        response = await asyncio.shield(
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: mlx_lm.generate(
+                    self._model,
+                    self._tokenizer,
+                    prompt=prompt,
+                    max_tokens=cfg.max_tokens,
+                    sampler=sampler,
+                    verbose=False,
+                ),
+            )
         )
 
         if cfg.json_schema:

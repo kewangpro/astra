@@ -646,3 +646,16 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Recovery: once the bug triggered for mission `be61cbe2`, `best_model.zip` was restored from the last clean `[256, 256, 128]` checkpoint (`checkpoint_iter_82.zip`); `best_score.txt` was reset to the historical peak (246.35) to prevent immediate overwrite.
     - `tests/unit/test_state_machine_helpers.py`: 2 new tests — `test_normalize_pivot_promotes_nested_policy_kwargs` and `test_normalize_pivot_does_not_overwrite_existing_top_level_policy_kwargs`.
     - Total: **487 tests** (478 unit + 9 integration).
+
+- [x] **Stop button on mission cards (Step 16.8)**
+    - **Feature**: mission cards on the home page now show a stop button for running/planning/evaluating missions, matching the existing run button for pending missions.
+    - `backend/routers/agent.py`: new `POST /agent/missions/{id}/cancel` endpoint — checks the mission is in a cancellable state (running/planning/evaluating), calls `task.cancel()` on the asyncio loop task, returns 202. The existing `CancelledError` handler in `LoopStateMachine` terminates the sandbox and transitions the mission to pending.
+    - `frontend/src/lib/api.ts`: `cancelMission(id)` calling the new endpoint.
+    - `frontend/src/lib/hooks/useMissions.ts`: `useCancelMission()` mutation hook.
+    - `frontend/src/components/command-center/MissionsGrid.tsx`: converted card wrapper from `<Link>` to `<div onClick>` (so `stopPropagation` on the button reliably intercepts before card navigation fires); added `pointer-events-none` to the running shimmer overlay (it was an `absolute inset-0` div that intercepted all pointer events including the stop button click); stop button uses a direct `fetch()` call to avoid react-query cancellation interference.
+    - `tests/unit/test_cancel_mission.py`: 6 new tests — running task cancelled, finished task skipped, no tracked task (idempotent), 404 on missing mission, 409 on non-cancellable status, planning mission cancellable.
+
+- [x] **MLX Metal crash on task cancel (Step 16.9)**
+    - **Root cause**: `task.cancel()` raised `CancelledError` at the `await run_in_executor(...)` line in `MLXProvider.complete()` while Metal GPU ops were mid-flight in the thread pool. The thread continued running but its Python-level asyncio future was cancelled, causing a `_MTLCommandBuffer addCompletedHandler` assertion that hung the backend event loop.
+    - `backend/agent/inference/mlx_provider.py`: wrapped `run_in_executor` with `asyncio.shield()` so Metal operations complete before `CancelledError` propagates to the caller.
+    - Total: **493 tests** (484 unit + 9 integration).

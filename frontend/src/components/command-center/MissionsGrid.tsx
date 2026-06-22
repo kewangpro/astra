@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMissions, useRunMission } from "@/lib/hooks/useMissions";
+import { useMissions, useRunMission, useCancelMission } from "@/lib/hooks/useMissions";
 import type { Mission } from "@/lib/api";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -34,12 +33,24 @@ function SkeletonCard() {
 
 function MissionCard({ m }: { m: Mission }) {
   const run = useRunMission();
+  const cancel = useCancelMission();
   const router = useRouter();
   const color = STATUS_COLOR[m.status] ?? STATUS_COLOR.pending;
-  const isRunning = m.status === "running";
+  const isRunning = m.status === "running" || m.status === "planning" || m.status === "evaluating";
+
+  function handleStop(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    fetch(`/api/agent/missions/${m.id}/cancel`, { method: "POST" })
+      .then(() => cancel.reset())
+      .catch(() => null);
+  }
 
   return (
-    <Link href={`/missions/${m.id}`} className="block group">
+    <div
+      className="group cursor-pointer"
+      onClick={() => router.push(`/missions/${m.id}`)}
+    >
       <div
         className="relative rounded-lg p-4 transition-all duration-200 overflow-hidden"
         style={{
@@ -51,7 +62,7 @@ function MissionCard({ m }: { m: Mission }) {
         {/* Running shimmer */}
         {isRunning && (
           <div
-            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
             style={{
               background: `linear-gradient(135deg, transparent 40%, ${color}06 100%)`,
             }}
@@ -87,12 +98,13 @@ function MissionCard({ m }: { m: Mission }) {
         {m.status === "pending" && (
           <button
             onClick={(e) => {
-              e.preventDefault();
+              e.stopPropagation();
               run.mutate(m.id, {
                 onSuccess: () => router.push(`/missions/${m.id}`),
               });
             }}
-            className="mt-3 w-full text-[11px] py-1.5 rounded-sm border transition-colors"
+            disabled={run.isPending}
+            className="mt-3 w-full text-[11px] py-1.5 rounded-sm border transition-colors disabled:opacity-40"
             style={{
               borderColor: `${color}30`,
               color,
@@ -107,8 +119,26 @@ function MissionCard({ m }: { m: Mission }) {
             run
           </button>
         )}
+        {isRunning && (
+          <button
+            onClick={handleStop}
+            className="mt-3 w-full text-[11px] py-1.5 rounded-sm border transition-colors"
+            style={{
+              borderColor: `${color}30`,
+              color,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = `${color}10`;
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+            }}
+          >
+            stop
+          </button>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 

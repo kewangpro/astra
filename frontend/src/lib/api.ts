@@ -61,6 +61,8 @@ export const api = {
     }),
   runMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/run`, { method: "POST" }),
+  cancelMission: (id: string) =>
+    req<{ status: string }>(`/agent/missions/${id}/cancel`, { method: "POST" }),
   getPendingApprovals: (missionId: string) =>
     req<ApprovalGate[]>(`/approvals?pending_only=true`).then((gates) =>
       gates.filter((g) => g.mission_id === missionId)

@@ -187,6 +187,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `GET/POST/PATCH/DELETE /missions` | Mission CRUD |
 | `GET /missions/{id}/manifest` | Live requirement manifest state |
 | `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
+| `POST /agent/missions/{id}/cancel` | Cancel a running mission loop; terminates sandbox and resets to pending |
 | `GET/POST /approvals` | Approval gate CRUD |
 | `POST /approvals/{id}/approve\|reject` | Approve or reject a pending gate |
 | `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
