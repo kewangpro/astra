@@ -659,3 +659,9 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - **Root cause**: `task.cancel()` raised `CancelledError` at the `await run_in_executor(...)` line in `MLXProvider.complete()` while Metal GPU ops were mid-flight in the thread pool. The thread continued running but its Python-level asyncio future was cancelled, causing a `_MTLCommandBuffer addCompletedHandler` assertion that hung the backend event loop.
     - `backend/agent/inference/mlx_provider.py`: wrapped `run_in_executor` with `asyncio.shield()` so Metal operations complete before `CancelledError` propagates to the caller.
     - Total: **493 tests** (484 unit + 9 integration).
+
+- [x] **Auto-approve classifier: variable URL resolution (Step 16.10)**
+    - **Root cause**: `_static_check` only matched `requests.post("http://...")` with a literal string. Generated train.py scripts use `TELEMETRY_URL = "http://127.0.0.1:..."` then `requests.post(TELEMETRY_URL, ...)`. No literal URL found → fell through to `static_ambiguous` → LLM called → LLM hallucinated a file-read risk from `_sys.path.insert(0, "/Users/.../astra")` and flagged the script as unsafe.
+    - `backend/agent/code_safety_classifier.py`: (1) `_static_check` now resolves URL variable definitions (`VAR = "http://..."`) into `localhost_url_vars` and `external_url_vars` sets; (2) fails fast if any `requests.post(VAR, ...)` uses a variable resolving to a non-localhost URL; (3) short-circuits to safe if all request calls (literal or variable) resolve to localhost; (4) LLM system prompt clarifications strengthened — explicitly states `_sys.path.insert` is not a file read, absolute paths in strings are not inherently unsafe.
+    - `tests/unit/test_code_safety_classifier.py`: 3 new tests — `test_variable_url_localhost_is_safe`, `test_variable_url_with_sys_path_insert_is_safe` (full ASTRA template pattern), `test_variable_url_external_is_unsafe`.
+    - Total: **496 tests** (487 unit + 9 integration).
