@@ -849,6 +849,28 @@ def test_normalize_pivot_does_not_overwrite_existing_top_level_policy_kwargs():
     assert result["policy_kwargs"] == {"net_arch": [256, 256]}
 
 
+def test_normalize_pivot_unwraps_doubly_nested_net_arch():
+    """LLM sometimes returns policy_kwargs: {net_arch: {net_arch: [...]}} — must flatten."""
+    pivot = {
+        "reason": "test",
+        "policy_kwargs": {"net_arch": {"net_arch": [256, 256, 128]}},
+        "adjustments": {},
+    }
+    result = LoopStateMachine._normalize_pivot(pivot)
+    assert result["policy_kwargs"] == {"net_arch": [256, 256, 128]}
+
+
+def test_normalize_pivot_leaves_correct_net_arch_unchanged():
+    """Correctly-formatted policy_kwargs must not be modified."""
+    pivot = {
+        "reason": "test",
+        "policy_kwargs": {"net_arch": [256, 256]},
+        "adjustments": {},
+    }
+    result = LoopStateMachine._normalize_pivot(pivot)
+    assert result["policy_kwargs"] == {"net_arch": [256, 256]}
+
+
 def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
     """When multiple entries exist for the same iteration, last one wins."""
     import json as _json

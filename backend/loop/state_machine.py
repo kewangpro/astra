@@ -895,6 +895,14 @@ class LoopStateMachine:
             if nested_pky and not pivot.get("policy_kwargs"):
                 pivot = {**pivot, "policy_kwargs": nested_pky}
 
+        # Unwrap doubly-nested net_arch: LLM sometimes returns
+        # policy_kwargs: {net_arch: {net_arch: [...]}} instead of {net_arch: [...]}.
+        pky = pivot.get("policy_kwargs")
+        if isinstance(pky, dict):
+            inner = pky.get("net_arch")
+            if isinstance(inner, dict) and "net_arch" in inner:
+                pivot = {**pivot, "policy_kwargs": {"net_arch": inner["net_arch"]}}
+
         return pivot
 
     @staticmethod
