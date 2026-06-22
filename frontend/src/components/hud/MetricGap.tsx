@@ -102,11 +102,22 @@ export function MetricGap({ mission, events = [] }: Props) {
 
   const showCurrent = current != null && Math.abs(current - best) > 0.05;
 
-  // Build sparkline data from target metric telemetry events
-  const sparkData = events
-    .filter((e) => (e.type === "metric" || e.type === "backfill") && e.name === metricName)
-    .map((e) => ({ step: e.step ?? 0, value: e.value as number, iteration: e.iteration ?? null }))
-    .sort((a, b) => a.step - b.step);
+  // Build sparkline: one point per iteration (max value within that iteration).
+  // Raw mean_reward telemetry posts every 2048 steps (~1000 pts/iter), which
+  // makes the line look like a filled area. Strict per-iteration aggregation
+  // keeps the sparkline clean regardless of metric type.
+  const sparkData = (() => {
+    const byIter = new Map<number, { step: number; value: number; iteration: number }>();
+    for (const e of events) {
+      if ((e.type !== "metric" && e.type !== "backfill") || e.name !== metricName) continue;
+      if (e.iteration == null || e.value == null) continue;
+      const iter = e.iteration;
+      const existing = byIter.get(iter);
+      if (!existing || (e.value as number) > existing.value)
+        byIter.set(iter, { step: e.step ?? iter, value: e.value as number, iteration: iter });
+    }
+    return Array.from(byIter.values()).sort((a, b) => a.iteration - b.iteration);
+  })();
 
   const hasSparkData = sparkData.length > 1;
 
