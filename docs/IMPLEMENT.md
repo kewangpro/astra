@@ -582,8 +582,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 ---
 
-## Phase 16: Post-Pivot Regression Detection ✅
-*Goal: Prevent arch/algo pivots from permanently abandoning a good checkpoint when the new configuration trains poorly. Detect the regression automatically and revert to the pre-pivot best.*
+## Phase 16: Post-Pivot Regression Detection & Checkpoint Recovery ✅
+*Goal: Prevent arch/algo pivots from permanently abandoning a good checkpoint. Detect regression automatically, maintain a rolling per-iteration checkpoint window, and revert to the true best-ever iteration.*
 
 - [x] **Regression detector in PivotEngine (Step 16.1)**
     - **Root cause**: after an arch or algorithm pivot, the new configuration starts with randomised weights (warm-start is skipped due to shape mismatch). If the new arch trains poorly for several iterations, the system keeps escalating (proposing yet more arch changes) without ever reverting to the best-known checkpoint from before the pivot.
@@ -592,12 +592,28 @@ This document outlines the phased implementation strategy for `ASTRA`.
         - `should_revert_pivot()`: after `PLATEAU_WINDOW` post-pivot iters, returns True if `_post_pivot_best < _pre_pivot_best * (1 - PIVOT_REGRESSION_THRESHOLD)`. Clears tracking silently if the new config recovered adequately.
         - `revert_escalation()`: decrements `_pivot_count` by 1 (clamped to 0) and clears all regression state.
 
-- [x] **Checkpoint backup and revert in LoopStateMachine (Step 16.2)**
-    - `backend/loop/state_machine.py`: before applying any arch or algo pivot — copies `best_model.zip` → `best_model_pre_pivot.zip`; saves `plan["_pre_pivot_hps"]` (full hyperparameters snapshot) and `plan["_pre_pivot_best_score"]` (current best score); calls `pivot_engine.record_arch_pivot_baseline()`.
-    - After `pivot_engine.record()` each iteration, checks `pivot_engine.should_revert_pivot()`. On True: restores `best_model_pre_pivot.zip` → `best_model.zip`; restores `best_score.txt` to pre-pivot value; restores `plan["hyperparameters"]` from `_pre_pivot_hps` snapshot; calls `pivot_engine.revert_escalation()`; saves plan to DB; emits a `warn` status event; sets `_pivot_reverted = True`.
-    - `needs_pivot()` is skipped for the remainder of the iteration when `_pivot_reverted` is True, preventing an immediate re-pivot on the same iteration.
+- [x] **Per-iteration checkpoint rolling window (Step 16.2)**
+    - **Problem**: `best_model.zip` is a single file; an arch pivot immediately resets `best_score.txt` to `-inf`, causing the new arch's first training run to overwrite the previous best. A single pre-pivot backup (`best_model_pre_pivot.zip`) only captures whatever was best at the moment of the last pivot — not necessarily the true best-ever iteration.
+    - `backend/loop/state_machine.py`: added `ITER_CHECKPOINT_WINDOW = 10` constant. New method `_save_iteration_checkpoint(mission_id, iteration)` called after every evaluation: copies `best_model.zip` → `checkpoints/iter/checkpoint_iter_{N}.zip`, creates the `iter/` subdirectory on first call, then prunes any files beyond the rolling window. New checkpoint layout:
+      ```
+      checkpoints/
+        best_model.zip          ← best mean_reward across all iters
+        best_model_algo.txt
+        best_score.txt
+        last_model.zip
+        train_config.json
+        iter/
+          checkpoint_iter_57.zip  ← rolling window, oldest pruned
+          ...
+          checkpoint_iter_66.zip
+      ```
+
+- [x] **Checkpoint backup and smart revert in LoopStateMachine (Step 16.3)**
+    - Before applying any arch or algo pivot: copies `best_model.zip` → `best_model_pre_pivot.zip` (backwards-compat fallback); saves `plan["_pre_pivot_hps"]` and `plan["_pre_pivot_best_score"]`; calls `pivot_engine.record_arch_pivot_baseline()`.
+    - After `pivot_engine.record()` each iteration, checks `pivot_engine.should_revert_pivot()`. On True: looks up `iter/checkpoint_iter_{best_iter}.zip` (the true best-ever iter) first, falls back to `best_model_pre_pivot.zip`; restores `best_score.txt`; restores `plan["hyperparameters"]`; calls `pivot_engine.revert_escalation()`; saves plan to DB; emits a named `warn` status event (`"Pivot reverted — restored checkpoint from iter 47, resuming HP tuning"`); sets `_pivot_reverted = True` to skip `needs_pivot()` on this iteration.
     - `import shutil` added for file copy operations.
 
-- [x] **Test coverage (Step 16.3)**
+- [x] **Test coverage (Step 16.4)**
     - `tests/unit/test_pivot_engine.py`: 8 new tests — `test_should_revert_pivot_detects_regression`, `test_should_revert_pivot_false_before_window`, `test_should_revert_pivot_false_when_not_armed`, `test_should_revert_pivot_false_when_recovering`, `test_should_revert_pivot_clears_state_on_recovery`, `test_revert_escalation_decrements_pivot_count`, `test_revert_escalation_clamps_at_zero`, `test_revert_escalation_clears_regression_state`.
-    - Total: **472 tests** (463 unit + 9 integration).
+    - `tests/unit/test_state_machine_helpers.py`: 4 new tests — `test_save_iteration_checkpoint_creates_iter_subdir`, `test_save_iteration_checkpoint_content_matches_best_model`, `test_save_iteration_checkpoint_prunes_beyond_window`, `test_save_iteration_checkpoint_noop_when_best_model_missing`.
+    - Total: **476 tests** (467 unit + 9 integration).

@@ -741,6 +741,62 @@ def test_clamp_env_kwargs_no_distance_weight_passthrough():
     assert result == {"food_reward": 25.0, "survival_bonus": 0.05}
 
 
+# ── _save_iteration_checkpoint ───────────────────────────────────────────────
+
+def _make_checkpoint_dir(tmp_path, mission_id="test-mission"):
+    ckpt_dir = tmp_path / "missions" / mission_id / "checkpoints"
+    ckpt_dir.mkdir(parents=True)
+    best_zip = ckpt_dir / "best_model.zip"
+    best_zip.write_bytes(b"fake-model-weights")
+    return ckpt_dir
+
+
+def test_save_iteration_checkpoint_creates_iter_subdir(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.loop.state_machine.settings.data_path", str(tmp_path))
+    ckpt_dir = _make_checkpoint_dir(tmp_path)
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._save_iteration_checkpoint("test-mission", 47)
+    assert (ckpt_dir / "iter" / "checkpoint_iter_47.zip").exists()
+
+
+def test_save_iteration_checkpoint_content_matches_best_model(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.loop.state_machine.settings.data_path", str(tmp_path))
+    ckpt_dir = _make_checkpoint_dir(tmp_path)
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._save_iteration_checkpoint("test-mission", 47)
+    content = (ckpt_dir / "iter" / "checkpoint_iter_47.zip").read_bytes()
+    assert content == b"fake-model-weights"
+
+
+def test_save_iteration_checkpoint_prunes_beyond_window(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.loop.state_machine.settings.data_path", str(tmp_path))
+    from backend.loop.state_machine import ITER_CHECKPOINT_WINDOW
+    ckpt_dir = _make_checkpoint_dir(tmp_path)
+    iter_dir = ckpt_dir / "iter"
+    iter_dir.mkdir()
+    # Pre-create ITER_CHECKPOINT_WINDOW existing checkpoints (iters 0..9)
+    for i in range(ITER_CHECKPOINT_WINDOW):
+        (iter_dir / f"checkpoint_iter_{i}.zip").write_bytes(b"old")
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._save_iteration_checkpoint("test-mission", ITER_CHECKPOINT_WINDOW)
+    remaining = sorted(iter_dir.glob("checkpoint_iter_*.zip"),
+                       key=lambda p: int(p.stem.replace("checkpoint_iter_", "")))
+    # Should have exactly WINDOW files; oldest (iter 0) pruned
+    assert len(remaining) == ITER_CHECKPOINT_WINDOW
+    assert not (iter_dir / "checkpoint_iter_0.zip").exists()
+    assert (iter_dir / f"checkpoint_iter_{ITER_CHECKPOINT_WINDOW}.zip").exists()
+
+
+def test_save_iteration_checkpoint_noop_when_best_model_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.loop.state_machine.settings.data_path", str(tmp_path))
+    # No best_model.zip created
+    (tmp_path / "missions" / "test-mission" / "checkpoints").mkdir(parents=True)
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._save_iteration_checkpoint("test-mission", 5)
+    iter_dir = tmp_path / "missions" / "test-mission" / "checkpoints" / "iter"
+    assert not iter_dir.exists()
+
+
 def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
     """When multiple entries exist for the same iteration, last one wins."""
     import json as _json

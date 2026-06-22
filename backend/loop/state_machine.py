@@ -40,6 +40,7 @@ logger = get_logger(__name__)
 
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
+ITER_CHECKPOINT_WINDOW = 10  # per-iteration checkpoints to keep (rolling)
 
 
 class LoopState(str, Enum):
@@ -340,6 +341,7 @@ class LoopStateMachine:
                     best_iteration=pivot_engine.best_metric_iteration(),
                 )
                 await self._save_current_metric(mission_id, current_val)
+                self._save_iteration_checkpoint(mission_id, current_iteration)
 
                 # ── POST-PIVOT REGRESSION CHECK ───────────────────────────
                 # If an arch/algo pivot made things materially worse after
@@ -350,16 +352,28 @@ class LoopStateMachine:
                     _checkpoint_dir = os.path.join(
                         settings.data_path, "missions", mission_id, "checkpoints"
                     )
-                    _backup_zip = os.path.join(_checkpoint_dir, "best_model_pre_pivot.zip")
                     _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
                     _pre_hps = plan.pop("_pre_pivot_hps", None)
                     _pre_score = plan.pop("_pre_pivot_best_score", None)
-                    if os.path.exists(_backup_zip):
+                    # Prefer the best-ever per-iteration checkpoint; fall back to the
+                    # single pre-pivot backup kept for backwards compatibility.
+                    _best_iter = pivot_engine.best_metric_iteration()
+                    _iter_ckpt = (
+                        os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}.zip")
+                        if _best_iter is not None else None
+                    )
+                    _backup_zip = os.path.join(_checkpoint_dir, "best_model_pre_pivot.zip")
+                    _restore_src = None
+                    if _iter_ckpt and os.path.exists(_iter_ckpt):
+                        _restore_src = _iter_ckpt
+                    elif os.path.exists(_backup_zip):
+                        _restore_src = _backup_zip
+                    if _restore_src:
                         try:
-                            shutil.copy2(_backup_zip, _best_zip)
+                            shutil.copy2(_restore_src, _best_zip)
                             logger.info(
-                                "LoopStateMachine: restored pre-pivot checkpoint for mission=%s",
-                                mission_id,
+                                "LoopStateMachine: restored checkpoint from %s for mission=%s",
+                                os.path.basename(_restore_src), mission_id,
                             )
                         except Exception as _e:
                             logger.warning("LoopStateMachine: could not restore checkpoint: %s", _e)
@@ -375,9 +389,12 @@ class LoopStateMachine:
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
                     await self._save_plan(mission_id, plan)
                     skip_replan_in_memory = False
+                    _revert_label = (
+                        f"iter {_best_iter}" if _best_iter is not None else "pre-pivot backup"
+                    )
                     await emit_status(
                         mission_id,
-                        "Pivot reverted — restored pre-pivot checkpoint, resuming HP tuning",
+                        f"Pivot reverted — restored checkpoint from {_revert_label}, resuming HP tuning",
                         event_type="warn",
                         iteration=current_iteration,
                     )
@@ -754,6 +771,36 @@ class LoopStateMachine:
         except Exception:
             return []
         return [{"iteration": it, metric_name: val} for it, val in sorted(entries.items())]
+
+    def _save_iteration_checkpoint(self, mission_id: str, iteration: int) -> None:
+        """Copy best_model.zip → iter/checkpoint_iter_{N}.zip and prune old ones."""
+        import glob
+        checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+        best_zip = os.path.join(checkpoint_dir, "best_model.zip")
+        if not os.path.exists(best_zip):
+            return
+        iter_dir = os.path.join(checkpoint_dir, "iter")
+        os.makedirs(iter_dir, exist_ok=True)
+        dest = os.path.join(iter_dir, f"checkpoint_iter_{iteration}.zip")
+        try:
+            shutil.copy2(best_zip, dest)
+            logger.info(
+                "LoopStateMachine: saved checkpoint_iter_%d for mission=%s", iteration, mission_id
+            )
+        except Exception as _e:
+            logger.warning("LoopStateMachine: could not save iter checkpoint: %s", _e)
+            return
+        # Prune checkpoints beyond the rolling window
+        try:
+            all_iter = sorted(
+                glob.glob(os.path.join(iter_dir, "checkpoint_iter_*.zip")),
+                key=lambda p: int(os.path.basename(p).replace("checkpoint_iter_", "").replace(".zip", "")),
+            )
+            for old in all_iter[:-ITER_CHECKPOINT_WINDOW]:
+                os.remove(old)
+                logger.info("LoopStateMachine: pruned %s", os.path.basename(old))
+        except Exception as _e:
+            logger.warning("LoopStateMachine: could not prune iter checkpoints: %s", _e)
 
     async def _save_best_metric(
         self,
