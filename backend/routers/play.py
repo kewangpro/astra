@@ -157,6 +157,20 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
     return frames, round(episode_reward, 2)
 
 
+def _snake_viewer_grid(base_env) -> list:
+    """Build the flat 256-element grid from live SnakeEnv state for the canvas renderer."""
+    h, w = base_env.grid_h, base_env.grid_w
+    grid = [0.0] * (h * w)
+    snake = list(base_env._snake)
+    for r, c in snake[:-1]:
+        grid[r * w + c] = 0.5   # body
+    head_r, head_c = snake[-1]
+    grid[head_r * w + head_c] = 1.0  # head
+    fr, fc = base_env._food
+    grid[fr * w + fc] = -1.0   # food
+    return grid
+
+
 def _run_episode(model, env) -> tuple[list[dict], float]:
     """Run one episode synchronously; return list of frame dicts and total reward."""
     obs, _ = env.reset()
@@ -167,12 +181,18 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     truncated = False
     base_env = env.unwrapped
     is_tetris = hasattr(base_env, '_board')
+    is_snake = hasattr(base_env, '_snake')
     while not done and not truncated:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, _ = env.step(action)
         episode_reward += float(reward)
         step += 1
-        grid = _tetris_viewer_grid(base_env) if is_tetris else obs.tolist()
+        if is_tetris:
+            grid = _tetris_viewer_grid(base_env)
+        elif is_snake:
+            grid = _snake_viewer_grid(base_env)
+        else:
+            grid = obs.tolist()
         frames.append({
             "type": "frame",
             "grid": grid,
