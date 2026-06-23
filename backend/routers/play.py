@@ -70,6 +70,28 @@ def _get_algo_class(algorithm: str):
     return getattr(module, cls_name)
 
 
+def _tetris_viewer_grid(base_env) -> list:
+    """Build the 224-element viewer grid from live TetrisEnv state.
+
+    The training obs is a compact 4-feature vector, but TetrisPlayer.tsx
+    expects the old 224-element layout so it can render the board visually:
+      [0..199]   20×10 board (0/1)
+      [200..206] current-piece one-hot (7 pieces)
+      [207..213] next-piece one-hot (7 pieces)
+      [214..223] column heights (10)
+    """
+    board = base_env._board.flatten().tolist()          # 200
+    cur_oh = [0.0] * 7
+    nxt_oh = [0.0] * 7
+    cur, nxt = base_env._current_piece, base_env._next_piece
+    if 0 <= cur < 7:
+        cur_oh[cur] = 1.0
+    if 0 <= nxt < 7:
+        nxt_oh[nxt] = 1.0
+    heights = [float(h) for h in base_env._column_heights()]  # 10
+    return board + cur_oh + nxt_oh + heights                   # 224
+
+
 def _run_episode(model, env) -> tuple[list[dict], float]:
     """Run one episode synchronously; return list of frame dicts and total reward."""
     obs, _ = env.reset()
@@ -78,14 +100,17 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     step = 0
     done = False
     truncated = False
+    base_env = env.unwrapped
+    is_tetris = hasattr(base_env, '_board')
     while not done and not truncated:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, _ = env.step(action)
         episode_reward += float(reward)
         step += 1
+        grid = _tetris_viewer_grid(base_env) if is_tetris else obs.tolist()
         frames.append({
             "type": "frame",
-            "grid": obs.tolist(),
+            "grid": grid,
             "step": step,
             "episode_reward": round(episode_reward, 2),
             "done": bool(done or truncated),
