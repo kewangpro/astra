@@ -756,3 +756,10 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 - [x] **Tests**: 7 new tests in `test_snake_env.py` — shape, all-finite, danger detection, food direction bits, observation space membership, grid mode unchanged.
     - Total: **540 tests** (531 unit + 9 integration).
+
+- [x] **`backend/agent/code_generator.py`: `_resolve_env_kwargs` helper**
+    - Extracted `_resolve_env_kwargs(env_id, plan_env_kwargs)` — applies per-env defaults before any code is generated.
+    - Snake-v0: always injects `obs_type="features"` and `max_steps=2000` via `setdefault`, so plans that omit `env_kwargs` still get the compact obs. Explicit plan values are never overridden.
+    - Called from both `_build_user_prompt` (generates `gym.make(...)` kwargs string) and `generate_training_script` (writes `train_config.json`), keeping the two in sync.
+    - 4 new tests: `_resolve_env_kwargs` unit tests + prompt-level assertion that `obs_type='features'` appears when plan has no env_kwargs.
+    - Total: **544 tests** (535 unit + 9 integration).

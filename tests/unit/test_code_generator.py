@@ -750,3 +750,48 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, 
 
     assert "(episode + 1) % 50 == 0" in prompt
     assert "ep_rewards[-50:]" in prompt
+
+
+# ── _resolve_env_kwargs tests ──────────────────────────────────────────────────
+
+def test_resolve_env_kwargs_snake_injects_obs_type():
+    """Snake-v0 always gets obs_type=features when not specified."""
+    from backend.agent.code_generator import _resolve_env_kwargs
+    result = _resolve_env_kwargs("Snake-v0", None)
+    assert result["obs_type"] == "features"
+    assert result["max_steps"] == 2000
+
+
+def test_resolve_env_kwargs_snake_does_not_override_explicit():
+    """Explicit obs_type in plan_env_kwargs is preserved."""
+    from backend.agent.code_generator import _resolve_env_kwargs
+    result = _resolve_env_kwargs("Snake-v0", {"obs_type": "grid", "max_steps": 500})
+    assert result["obs_type"] == "grid"
+    assert result["max_steps"] == 500
+
+
+def test_resolve_env_kwargs_non_snake_unchanged():
+    """Non-Snake envs are returned as-is."""
+    from backend.agent.code_generator import _resolve_env_kwargs
+    result = _resolve_env_kwargs("CartPole-v1", {"foo": "bar"})
+    assert result == {"foo": "bar"}
+    assert "obs_type" not in result
+
+
+def test_build_user_prompt_snake_injects_obs_type_features(tmp_path, monkeypatch):
+    """Snake-v0 prompt includes obs_type='features' even when plan has no env_kwargs."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "env_id": "Snake-v0",
+        "hyperparameters": {"learning_rate": 0.0003},
+        "target_metric": {"food_eaten": 20},
+    }
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "obs_type='features'" in prompt
+    assert "max_steps=2000" in prompt

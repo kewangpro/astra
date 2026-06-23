@@ -296,6 +296,17 @@ The script must:
 6. Exit cleanly (exit(0) on success, exit(1) on error with traceback)."""
 
 
+def _resolve_env_kwargs(env_id: str, plan_env_kwargs: Optional[dict]) -> dict:
+    """Merge plan env_kwargs with per-env hardcoded defaults."""
+    kw = dict(plan_env_kwargs or {})
+    if env_id == "Snake-v0":
+        # Always use compact feature obs — the flat 256D grid is a poor inductive
+        # bias for MLP policies; 25D feature obs learns faster and generalises better.
+        kw.setdefault("obs_type", "features")
+        kw.setdefault("max_steps", 2000)
+    return kw
+
+
 class CodeGenerator:
     def __init__(self, provider: InferenceProvider) -> None:
         self._provider = provider
@@ -363,10 +374,11 @@ class CodeGenerator:
             import json as _json
             config_path = os.path.join(checkpoint_dir, "train_config.json")
             os.makedirs(checkpoint_dir, exist_ok=True)
+            _env_id = plan.get("env_id", "")
             train_cfg = {
                 "algorithm": plan.get("algorithm", "PPO"),
-                "env_id": plan.get("env_id", ""),
-                "env_kwargs": plan.get("env_kwargs", {}),
+                "env_id": _env_id,
+                "env_kwargs": _resolve_env_kwargs(_env_id, plan.get("env_kwargs")),
                 "trainer_type": plan.get("trainer_type", ""),
             }
             with open(config_path, "w") as f:
@@ -407,7 +419,7 @@ class CodeGenerator:
             hp = dict(hp)  # copy so we don't mutate the plan's hyperparameters dict
             policy_kwargs = hp.pop("policy_kwargs", None)
             # Build env_kwargs_str: ", key=value, ..." for gym.make() call
-            env_kwargs = plan.get("env_kwargs", {})
+            env_kwargs = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
             if env_kwargs:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
             else:
