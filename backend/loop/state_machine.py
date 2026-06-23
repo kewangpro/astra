@@ -1068,6 +1068,13 @@ class LoopStateMachine:
                 register()
 
             import gymnasium as gym
+            import json as _json
+
+            _cfg_path = os.path.join(checkpoint_dir, "train_config.json")
+            _env_kwargs: dict = {}
+            if os.path.isfile(_cfg_path):
+                with open(_cfg_path) as _f:
+                    _env_kwargs = _json.load(_f).get("env_kwargs") or {}
 
             # Actor-critic path: use get_next_states() greedy eval
             if checkpoint_path.endswith(".pth"):
@@ -1076,7 +1083,7 @@ class LoopStateMachine:
                 sys.modules["__main__"].ActorCriticNet = ActorCriticNet
                 model = torch.load(checkpoint_path, weights_only=False)
                 model.eval()
-                env = gym.make(env_id)
+                env = gym.make(env_id, **_env_kwargs)
                 values = []
                 for _ in range(eval_episodes):
                     obs, _ = env.reset()
@@ -1105,7 +1112,7 @@ class LoopStateMachine:
             # SB3 path
             from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
             algo_cls = {"PPO": PPO, "SAC": SAC, "A2C": A2C, "DQN": DQN, "TD3": TD3}.get(algorithm, PPO)
-            env = gym.make(env_id)
+            env = gym.make(env_id, **_env_kwargs)
             model = algo_cls.load(checkpoint_path, env=env)
 
             values = []
