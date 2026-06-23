@@ -600,7 +600,7 @@ class LoopStateMachine:
                         if env_kwargs_changed:
                             _cur_env = plan.get("env_kwargs") or {}
                             _merged = dict(_cur_env, **pivot["env_kwargs"])
-                            plan["env_kwargs"] = self._clamp_env_kwargs(_merged)
+                            plan["env_kwargs"] = self._clamp_env_kwargs(_merged, plan.get("env_id", ""))
                             logger.info(
                                 "LoopStateMachine: reward reshape applied: %s",
                                 plan["env_kwargs"],
@@ -883,13 +883,18 @@ class LoopStateMachine:
         return bool(re.search(rf"\b{re.escape(current_algorithm)}\b", goal, re.IGNORECASE))
 
     @staticmethod
-    def _clamp_env_kwargs(env_kwargs: dict) -> dict:
-        """Clamp LLM-proposed env_kwargs to sane ranges.
-
-        distance_weight=0 removes the navigation shaping signal entirely and
-        causes the agent to get stuck after eating the first food item.
+    def _clamp_env_kwargs(env_kwargs: dict, env_id: str = "") -> dict:
+        """Clamp LLM-proposed env_kwargs to sane ranges and strip keys unknown
+        to the target env so LLM cross-env hallucinations (e.g. Snake kwargs
+        appearing in a Tetris plan) are silently dropped before they reach
+        train_config.json.
         """
-        out = dict(env_kwargs)
+        _KNOWN: dict = {
+            "Snake-v0": {"food_reward", "death_penalty", "distance_weight", "survival_bonus"},
+            "Tetris-v0": {"max_steps", "line_clear_multiplier", "piece_placement", "death_penalty"},
+        }
+        allowed = _KNOWN.get(env_id)
+        out = {k: v for k, v in env_kwargs.items() if allowed is None or k in allowed}
         if "distance_weight" in out:
             out["distance_weight"] = max(0.1, float(out["distance_weight"]))
         return out
