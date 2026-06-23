@@ -752,18 +752,18 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, 
     assert "ep_rewards[-50:]" in prompt
 
 
-# ── _resolve_env_kwargs tests ──────────────────────────────────────────────────
+# ── recipe-driven env_kwargs and hyperparams tests ────────────────────────────
 
-def test_resolve_env_kwargs_snake_injects_obs_type():
-    """Snake-v0 always gets obs_type=features when not specified."""
+def test_resolve_env_kwargs_snake_reads_from_recipe():
+    """Snake-v0 gets obs_type and max_steps from snake_ppo_v1.yaml when plan omits them."""
     from backend.agent.code_generator import _resolve_env_kwargs
     result = _resolve_env_kwargs("Snake-v0", None)
     assert result["obs_type"] == "features"
     assert result["max_steps"] == 2000
 
 
-def test_resolve_env_kwargs_snake_does_not_override_explicit():
-    """Explicit obs_type in plan_env_kwargs is preserved."""
+def test_resolve_env_kwargs_plan_overrides_recipe():
+    """Explicit plan env_kwargs override recipe defaults."""
     from backend.agent.code_generator import _resolve_env_kwargs
     result = _resolve_env_kwargs("Snake-v0", {"obs_type": "grid", "max_steps": 500})
     assert result["obs_type"] == "grid"
@@ -771,15 +771,29 @@ def test_resolve_env_kwargs_snake_does_not_override_explicit():
 
 
 def test_resolve_env_kwargs_non_snake_unchanged():
-    """Non-Snake envs are returned as-is."""
+    """Envs with no recipe are returned as-is."""
     from backend.agent.code_generator import _resolve_env_kwargs
     result = _resolve_env_kwargs("CartPole-v1", {"foo": "bar"})
     assert result == {"foo": "bar"}
     assert "obs_type" not in result
 
 
-def test_build_user_prompt_snake_injects_obs_type_features(tmp_path, monkeypatch):
-    """Snake-v0 prompt includes obs_type='features' even when plan has no env_kwargs."""
+def test_resolve_hyperparams_snake_uses_recipe_total_timesteps():
+    """Snake-v0 gets total_timesteps=3_000_000 from snake_ppo_v1.yaml when plan omits it."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("Snake-v0", {"learning_rate": 0.0003})
+    assert result["total_timesteps"] == 3_000_000
+
+
+def test_resolve_hyperparams_plan_overrides_recipe():
+    """Explicit plan total_timesteps overrides recipe value."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("Snake-v0", {"total_timesteps": 500_000})
+    assert result["total_timesteps"] == 500_000
+
+
+def test_build_user_prompt_snake_uses_recipe_env_kwargs(tmp_path, monkeypatch):
+    """Snake-v0 prompt includes obs_type='features' and max_steps=2000 from recipe."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -795,3 +809,4 @@ def test_build_user_prompt_snake_injects_obs_type_features(tmp_path, monkeypatch
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
     assert "obs_type='features'" in prompt
     assert "max_steps=2000" in prompt
+    assert "total_timesteps=3000000" in prompt

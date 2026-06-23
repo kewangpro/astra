@@ -763,3 +763,12 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Called from both `_build_user_prompt` (generates `gym.make(...)` kwargs string) and `generate_training_script` (writes `train_config.json`), keeping the two in sync.
     - 4 new tests: `_resolve_env_kwargs` unit tests + prompt-level assertion that `obs_type='features'` appears when plan has no env_kwargs.
     - Total: **544 tests** (535 unit + 9 integration).
+
+- [x] **`backend/agent/code_generator.py`: recipe-driven defaults for all task types**
+    - `_ENV_RECIPE` maps `env_id` / `task_type` → recipe filename: `Snake-v0 → snake_ppo_v1.yaml`, `Tetris-v0 → tetris_ppo_v1.yaml`, `sft → sft_llama_lora_v1.yaml`.
+    - `_load_recipe_for_env(key)` loads and parses the YAML; returns `{}` on any error so missing recipes are safe.
+    - `_resolve_hyperparams(key, plan_hp)` applies recipe `hyperparameters` as `setdefault` fallbacks — plan values win, recipe fills gaps. `_build_user_prompt` calls this at the top for all task types (RL uses `env_id`, SFT uses `"sft"`).
+    - `_resolve_env_kwargs(env_id, plan_env_kwargs)` similarly applies recipe `env_kwargs` as defaults. No hardcoded values remain in the generator for known envs.
+    - SFT context dict removed its 8 hardcoded fields (`base_model`, `lora_r`, `batch_size`, etc.); they now come from `sft_llama_lora_v1.yaml` via `hp`.
+    - Tests updated: replaced hardcoded-value assertions with recipe-value assertions; added `test_resolve_hyperparams_snake_uses_recipe_total_timesteps`, `test_resolve_hyperparams_plan_overrides_recipe`, `test_build_user_prompt_snake_uses_recipe_env_kwargs`.
+    - Total: **546 tests** (537 unit + 9 integration).

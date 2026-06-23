@@ -297,14 +297,44 @@ The script must:
 
 
 def _resolve_env_kwargs(env_id: str, plan_env_kwargs: Optional[dict]) -> dict:
-    """Merge plan env_kwargs with per-env hardcoded defaults."""
+    """Merge plan env_kwargs with recipe env_kwargs defaults."""
     kw = dict(plan_env_kwargs or {})
-    if env_id == "Snake-v0":
-        # Always use compact feature obs — the flat 256D grid is a poor inductive
-        # bias for MLP policies; 25D feature obs learns faster and generalises better.
-        kw.setdefault("obs_type", "features")
-        kw.setdefault("max_steps", 2000)
+    recipe_kw = _load_recipe_for_env(env_id).get("env_kwargs", {}) or {}
+    for k, v in recipe_kw.items():
+        kw.setdefault(k, v)
     return kw
+
+
+# Canonical recipe file per env_id or task_type — hyperparameters and env_kwargs
+# from these files are used as defaults when the LLM plan omits a value.
+_ENV_RECIPE: dict = {
+    "Snake-v0": "snake_ppo_v1.yaml",
+    "Tetris-v0": "tetris_ppo_v1.yaml",
+    "sft": "sft_llama_lora_v1.yaml",   # keyed by task_type for non-RL tasks
+}
+
+
+def _load_recipe_for_env(env_id: str) -> dict:
+    """Return the parsed recipe dict for env_id, or {} if not found."""
+    filename = _ENV_RECIPE.get(env_id)
+    if not filename:
+        return {}
+    try:
+        import yaml as _yaml
+        path = os.path.join(settings.recipes_path, filename)
+        with open(path) as f:
+            return _yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def _resolve_hyperparams(env_id: str, plan_hp: dict) -> dict:
+    """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
+    recipe_hp = _load_recipe_for_env(env_id).get("hyperparameters", {})
+    hp = dict(plan_hp)
+    for k, v in recipe_hp.items():
+        hp.setdefault(k, v)
+    return hp
 
 
 class CodeGenerator:
@@ -390,7 +420,8 @@ class CodeGenerator:
         return script_path
 
     def _build_user_prompt(self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0) -> str:
-        hp = plan.get("hyperparameters", {})
+        recipe_key = plan.get("env_id", "") if task_type == "rl" else task_type
+        hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
         api_url = f"http://127.0.0.1:{settings.api_port}"
         base = {
             "mission_id": mission_id,
@@ -462,16 +493,7 @@ class CodeGenerator:
             return _RL_TEMPLATE.format(**ctx)
         if task_type == "sft":
             ctx = {
-                "base_model": "meta-llama/Llama-3.1-8B",
-                "dataset_path": "dataset.jsonl",
-                "lora_r": 16,
-                "lora_alpha": 32,
-                "lora_dropout": 0.05,
-                "batch_size": 4,
-                "learning_rate": 2e-4,
-                "num_epochs": 3,
-                "save_steps": 200,
-                **hp,
+                **hp,   # recipe + plan hyperparameters (base_model, lora_r, batch_size, etc.)
                 **base,
             }
             return _SFT_TEMPLATE.format(**ctx)
