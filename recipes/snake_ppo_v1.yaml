@@ -12,6 +12,8 @@ hyperparameters:
   clip_range: 0.2
   entropy_coef: 0.02
   total_timesteps: 300000
+  telemetry_interval: 2048
+  eval_episodes: 10
 
 curriculum:
   phases:

@@ -21,16 +21,28 @@ architecture:
   net_arch: [256, 256]
 
 hyperparameters:
+  # shared
   learning_rate: 0.0003
-  n_steps: 2048
-  batch_size: 64
-  n_epochs: 10
   gamma: 0.99
+  batch_size: 64
+  # SB3 PPO
+  n_steps: 2048
+  n_epochs: 10
   gae_lambda: 0.95
   clip_range: 0.2
   ent_coef: 0.01
   vf_coef: 0.5
   max_grad_norm: 0.5
+  total_timesteps: 2000000
+  telemetry_interval: 2048
+  # actor_critic
+  episodes: 50000
+  replay_buffer_size: 10000
+  epsilon_min: 0.01
+  epsilon_decay: 0.9995
+  ac_telemetry_interval: 50
+  # eval
+  eval_episodes: 10
 
 reward_shaping:
   # Reference formula: +1 placement + lines² × 10 − 2 game_over

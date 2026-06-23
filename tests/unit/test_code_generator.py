@@ -693,3 +693,60 @@ def test_build_user_prompt_no_trainer_type_uses_sb3(tmp_path, monkeypatch):
 
     assert "PPO" in prompt
     assert "get_next_states" not in prompt
+
+
+# ── hardcode → recipe wiring ──────────────────────────────────────────────────
+
+def test_build_user_prompt_rl_telemetry_interval_from_hyperparameters(tmp_path, monkeypatch):
+    """telemetry_interval in hyperparameters overrides the default 2048."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(hyperparameters={"learning_rate": 0.001, "telemetry_interval": 4096})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "n_calls % 4096 == 0" in prompt
+
+
+def test_build_user_prompt_rl_total_timesteps_from_hyperparameters(tmp_path, monkeypatch):
+    """total_timesteps in hyperparameters is substituted into model.learn() call."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(hyperparameters={"learning_rate": 0.001, "total_timesteps": 500000})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "total_timesteps=500000" in prompt
+
+
+def test_build_user_prompt_actor_critic_ac_telemetry_interval_from_hyperparameters(tmp_path, monkeypatch):
+    """ac_telemetry_interval in hyperparameters replaces the hardcoded 50-episode window."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan(hyperparameters={"learning_rate": 0.0001, "episodes": 5000,
+                                                     "ac_telemetry_interval": 100})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "(episode + 1) % 100 == 0" in prompt
+    assert "ep_rewards[-100:]" in prompt
+
+
+def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, monkeypatch):
+    """ac_telemetry_interval defaults to 50 when not in hyperparameters."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "(episode + 1) % 50 == 0" in prompt
+    assert "ep_rewards[-50:]" in prompt

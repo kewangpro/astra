@@ -119,7 +119,7 @@ The script must:
                    self._best_reward = float("-inf")
 
            def _on_step(self) -> bool:
-               if self.n_calls % 2048 == 0 and len(self.model.ep_info_buffer) > 0:
+               if self.n_calls % {telemetry_interval} == 0 and len(self.model.ep_info_buffer) > 0:
                    mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
                    try:
                        response = requests.post(
@@ -144,11 +144,10 @@ The script must:
                        return False  # stop training — target reached
                return True
 
-   The `self.n_calls % 2048 == 0` guard is MANDATORY. Never remove it.
+   The `self.n_calls % {telemetry_interval} == 0` guard is MANDATORY. Never remove it.
    The best_model save block is MANDATORY — it ensures the peak model is preserved.
    The __init__ loading from best_score.txt is MANDATORY — it preserves peak weights across restarts.
-5. Call model.learn(total_timesteps=2000000, callback=callback) — use at least
-   2000000 timesteps. Do NOT use 500000 or any smaller number.
+5. Call model.learn(total_timesteps={total_timesteps}, callback=callback).
 6. After training, save the final model: model.save("{checkpoint_dir}/last_model")
 7. Exit cleanly when target mean_reward is reached."""
 
@@ -171,7 +170,7 @@ This ensures torch.load can resolve the class in any process (play, benchmark, e
 model = ActorCriticNet()  # shared MLP [4→64→64] + critic head Linear(64,1)
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
-BUFFER = collections.deque(maxlen=10000)
+BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
 epsilon = 1.0
 best_reward = float("-inf")
@@ -205,25 +204,25 @@ for episode in range({episodes}):
         if done:
             ep_lines_cleared = info.get("lines_cleared", 0)
 
-        if len(BUFFER) >= 512:
-            batch = random.sample(BUFFER, 512)
+        if len(BUFFER) >= {batch_size}:
+            batch = random.sample(BUFFER, {batch_size})
             s, _, r, ns, d = zip(*batch)
             s  = torch.tensor(s,  dtype=torch.float32)
             ns = torch.tensor(ns, dtype=torch.float32)
             r  = torch.tensor(r,  dtype=torch.float32).unsqueeze(1)
             d  = torch.tensor(d,  dtype=torch.float32).unsqueeze(1)
             with torch.no_grad():
-                td_target = r + 0.99 * model(ns) * (1 - d)
+                td_target = r + {gamma} * model(ns) * (1 - d)
             loss = nn.MSELoss()(model(s), td_target)
             optimizer.zero_grad(); loss.backward(); optimizer.step()
 
-    epsilon = max(0.01, epsilon * 0.9995)
+    epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
     ep_rewards.append(ep_reward)
     ep_lines.append(ep_lines_cleared)
 
-    if len(ep_rewards) >= 50 and episode % 50 == 49:
-        mean_reward_50 = float(np.mean(ep_rewards[-50:]))
-        mean_lines_50  = float(np.mean(ep_lines[-50:]))
+    if len(ep_rewards) >= {ac_telemetry_interval} and (episode + 1) % {ac_telemetry_interval} == 0:
+        mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
+        mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
         # telemetry POSTs here (catch all exceptions)
         if mean_reward_50 > best_reward:
             best_reward = mean_reward_50
@@ -234,12 +233,12 @@ for episode in range({episodes}):
      open("{checkpoint_dir}/trainer_type.txt", "w").write("actor_critic")
 2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists load with:
      model = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
-3. Track rolling mean_reward over last 50 episodes.
-   Every 50 episodes POST to telemetry:
+3. Track rolling mean_reward over last {ac_telemetry_interval} episodes.
+   Every {ac_telemetry_interval} episodes POST to telemetry:
      POST {api_url}/telemetry/missions/{mission_id}/metrics
      json={{"mission_id": "{mission_id}", "name": "mean_reward",
             "value": mean_reward_50, "step": episode, "iteration": {current_iteration}}}
-     AND post lines_cleared (mean over last 50 episodes) with name "lines_cleared".
+     AND post lines_cleared (mean over last {ac_telemetry_interval} episodes) with name "lines_cleared".
    Use timeout=2, catch all exceptions (telemetry is non-critical).
 4. When rolling mean_reward improves over best seen so far:
      torch.save(model, "{checkpoint_dir}/best_model.pth")
@@ -425,6 +424,12 @@ class CodeGenerator:
                     "hyperparameters": json.dumps(hp, indent=2),
                     "lr": lr,
                     "episodes": episodes,
+                    "replay_buffer_size": hp.get("replay_buffer_size", 10000),
+                    "batch_size": hp.get("batch_size", 64),
+                    "gamma": hp.get("gamma", 0.99),
+                    "epsilon_min": hp.get("epsilon_min", 0.01),
+                    "epsilon_decay": hp.get("epsilon_decay", 0.9995),
+                    "ac_telemetry_interval": hp.get("ac_telemetry_interval", 50),
                     "current_iteration": current_iteration,
                     **base,
                 }
@@ -438,6 +443,8 @@ class CodeGenerator:
                 "env_setup": env_setup,
                 "env_kwargs_str": env_kwargs_str,
                 "current_iteration": current_iteration,
+                "total_timesteps": hp.get("total_timesteps", 2000000),
+                "telemetry_interval": hp.get("telemetry_interval", 2048),
                 **base,
             }
             return _RL_TEMPLATE.format(**ctx)

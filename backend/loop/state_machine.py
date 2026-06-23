@@ -1053,6 +1053,8 @@ class LoopStateMachine:
             logger.warning("LoopStateMachine: no checkpoint for goal metric eval mission=%s", mission_id)
             return None
 
+        eval_episodes = int(plan.get("hyperparameters", {}).get("eval_episodes", 10))
+
         try:
             project_root = os.path.abspath(os.path.join(settings.data_path, ".."))
             if project_root not in sys.path:
@@ -1076,7 +1078,7 @@ class LoopStateMachine:
                 model.eval()
                 env = gym.make(env_id)
                 values = []
-                for _ in range(10):
+                for _ in range(eval_episodes):
                     obs, _ = env.reset()
                     done = False
                     ep_val = 0.0
@@ -1107,7 +1109,7 @@ class LoopStateMachine:
             model = algo_cls.load(checkpoint_path, env=env)
 
             values = []
-            for _ in range(10):
+            for _ in range(eval_episodes):
                 obs, _ = env.reset()
                 done = False
                 ep_val = 0.0

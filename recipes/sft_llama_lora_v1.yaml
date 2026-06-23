@@ -5,21 +5,12 @@ task_type: SFT
 domain: NLP
 description: "Standard QLoRA fine-tuning recipe for Llama-3 class models."
 
-method: QLoRA
-config:
-  r: 16
+hyperparameters:
+  base_model: meta-llama/Llama-3.1-8B
+  lora_r: 16
   lora_alpha: 32
-  target_modules: ["q_proj", "v_proj"]
   lora_dropout: 0.05
-  bias: "none"
-  task_type: "CAUSAL_LM"
-
-training_params:
-  per_device_train_batch_size: 4
-  gradient_accumulation_steps: 4
+  batch_size: 4
   learning_rate: 0.0002
-  num_train_epochs: 3
-  logging_steps: 10
-  save_strategy: "steps"
+  num_epochs: 3
   save_steps: 200
-  fp16: true

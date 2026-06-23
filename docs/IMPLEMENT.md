@@ -719,3 +719,20 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/services/crystallizer.py`: added `_VALID_AC_KWARGS`; `_clean_rl_hyperparams` accepts `trainer_type` and uses actor_critic-appropriate keys instead of PPO-only ones; `algorithm` field set to `"actor_critic"` when `trainer_type == "actor_critic"`; `trainer_type` surfaced as top-level recipe field.
     - New tests: 3 tests for `_last_cleared_rows` / `_pre_clear_board` in `test_tetris_env.py`; 3 tests for actor_critic crystallizer behaviour in `test_crystallizer.py`.
     - Total: **529 tests** (520 unit + 9 integration).
+
+    - Total: **529 tests** (520 unit + 9 integration).
+
+## Phase 18 — Hardcode Removal: Drive All Training Knobs from Recipe
+
+*Goal: Eliminate every magic number from the code generator templates and state machine eval loop. All training hyperparameters are read from `plan["hyperparameters"]` with documented defaults, so the optimizer and recipes have full control without touching code.*
+
+- [x] **Remove hardcoded training constants from templates and eval loop**
+    - **Problem**: `_RL_TEMPLATE` hardcoded `total_timesteps=2000000` and `n_calls % 2048`; `_ACTOR_CRITIC_CONTRACT` hardcoded replay buffer size (10000), batch size (512), gamma (0.99), epsilon schedule (min 0.01, decay 0.9995), and 50-episode telemetry window; `_run_goal_metric_eval` hardcoded 10 eval episodes for both trainer paths.
+    - `backend/agent/code_generator.py`: all template literals replaced with `{…}` format variables; PPO context adds `total_timesteps` and `telemetry_interval`; AC context adds `replay_buffer_size`, `batch_size`, `gamma`, `epsilon_min`, `epsilon_decay`, `ac_telemetry_interval`; all read from `plan["hyperparameters"]` with sensible defaults. AC telemetry condition changed to cleaner `(episode + 1) % {ac_telemetry_interval} == 0`.
+    - `backend/loop/state_machine.py`: `_run_goal_metric_eval` reads `eval_episodes` from `plan["hyperparameters"]` (default 10); both actor_critic and SB3 eval paths use it.
+    - `recipes/tetris_ppo_v1.yaml`: added `total_timesteps`, `telemetry_interval`, `episodes`, `replay_buffer_size`, `epsilon_min`, `epsilon_decay`, `ac_telemetry_interval`, `eval_episodes` under `hyperparameters:`.
+    - `recipes/snake_ppo_v1.yaml`: added `telemetry_interval`, `eval_episodes`.
+    - `recipes/sft_llama_lora_v1.yaml`: restructured from `config:` / `training_params:` to flat `hyperparameters:` block matching what `_build_user_prompt` reads via `**hp`.
+    - Deleted 9 stale crystallized recipes (`train_rl_v1–6`, `train_ml_v1–3`).
+    - New tests: 4 tests verifying `telemetry_interval`, `total_timesteps`, `ac_telemetry_interval` substitution in `test_code_generator.py`.
+    - Total: **533 tests** (524 unit + 9 integration).
