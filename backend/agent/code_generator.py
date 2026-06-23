@@ -48,6 +48,7 @@ _register_snake()
 _TETRIS_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
+import gymnasium as gym
 from envs.tetris_env import register as _register_tetris
 _register_tetris()
 """
@@ -164,23 +165,76 @@ Target: lines_cleared >= {target_lines}
 Hyperparameters: {hyperparameters}
 
 == Architecture ==
-ActorCriticNetwork: shared MLP [4 → 64 → 64] with ReLU, then two heads:
-  - critic head: Linear(64, 1) → scalar state value
-  - (action selection uses critic values over get_next_states(), no actor head needed)
-Xavier uniform weight init.
+class ActorCriticNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.shared = nn.Sequential(nn.Linear(4, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU())
+        self.critic = nn.Linear(64, 1)
+        for layer in self.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+    def forward(self, x):  # x: Tensor[batch, 4]
+        h = self.shared(x)
+        return self.critic(h)  # returns Tensor[batch, 1]
 
-== Training loop ==
-- Run {episodes} episodes total.
-- Each step: call env.unwrapped.get_next_states() → dict of {{action: state_4f}}.
-  If empty (no valid moves), step with action=0 and handle termination.
-  Epsilon-greedy: with prob epsilon pick a random action from the dict keys,
-  otherwise pick the action whose resulting state has the highest critic value.
-  Decay epsilon: epsilon = max(0.01, epsilon * 0.9995), starting from 1.0.
-- Store (state, reward, next_state, done) in a replay buffer (capacity 10000).
-- Every step (if buffer has >= 512 samples): sample batch of 512, compute
-  TD target = reward + 0.99 * critic(next_state) * (1 - done),
-  loss = MSELoss(critic(state), td_target.detach()), backprop with Adam lr={lr}.
-- Track episode reward and lines_cleared from info dict.
+== Training skeleton (follow exactly — do NOT deviate from these API calls) ==
+BUFFER = collections.deque(maxlen=10000)
+ep_rewards, ep_lines = [], []
+epsilon = 1.0
+best_reward = float("-inf")
+
+for episode in range({episodes}):
+    obs, _ = env.reset()          # gymnasium reset → (obs, info); unpack both
+    ep_reward = 0.0
+    ep_lines_cleared = 0
+    done = False
+
+    while not done:
+        next_states = env.unwrapped.get_next_states()  # dict{{action: np.array(4,)}}
+        if not next_states:
+            action = 0
+        elif random.random() < epsilon:
+            action = random.choice(list(next_states.keys()))
+        else:
+            with torch.no_grad():
+                action = max(
+                    next_states,
+                    key=lambda a: model(
+                        torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)
+                    ).item()
+                )
+
+        next_obs, reward, terminated, truncated, info = env.step(action)  # 5-tuple
+        done = terminated or truncated
+        BUFFER.append((obs, action, reward, next_obs, float(done)))
+        obs = next_obs
+        ep_reward += reward
+        if done:
+            ep_lines_cleared = info.get("lines_cleared", 0)
+
+        if len(BUFFER) >= 512:
+            batch = random.sample(BUFFER, 512)
+            s, _, r, ns, d = zip(*batch)
+            s  = torch.tensor(s,  dtype=torch.float32)
+            ns = torch.tensor(ns, dtype=torch.float32)
+            r  = torch.tensor(r,  dtype=torch.float32).unsqueeze(1)
+            d  = torch.tensor(d,  dtype=torch.float32).unsqueeze(1)
+            with torch.no_grad():
+                td_target = r + 0.99 * model(ns) * (1 - d)
+            loss = nn.MSELoss()(model(s), td_target)
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+    epsilon = max(0.01, epsilon * 0.9995)
+    ep_rewards.append(ep_reward)
+    ep_lines.append(ep_lines_cleared)
+
+    if len(ep_rewards) >= 50 and episode % 50 == 49:
+        mean_reward_50 = float(np.mean(ep_rewards[-50:]))
+        mean_lines_50  = float(np.mean(ep_lines[-50:]))
+        # telemetry POSTs here (catch all exceptions)
+        if mean_reward_50 > best_reward:
+            best_reward = mean_reward_50
+            # save best model here
 
 == ASTRA integration contract (ALL items MANDATORY) ==
 1. Write this file once at startup (so play/eval endpoints detect the trainer):
