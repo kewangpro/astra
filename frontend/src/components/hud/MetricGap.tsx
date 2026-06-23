@@ -119,7 +119,7 @@ export function MetricGap({ mission, events = [] }: Props) {
     return Array.from(byIter.values()).sort((a, b) => a.iteration - b.iteration);
   })();
 
-  const hasSparkData = sparkData.length > 1;
+  const hasSparkData = sparkData.length >= 1;
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
