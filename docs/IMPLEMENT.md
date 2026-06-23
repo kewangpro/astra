@@ -736,3 +736,23 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Deleted 9 stale crystallized recipes (`train_rl_v1–6`, `train_ml_v1–3`).
     - New tests: 4 tests verifying `telemetry_interval`, `total_timesteps`, `ac_telemetry_interval` substitution in `test_code_generator.py`.
     - Total: **533 tests** (524 unit + 9 integration).
+
+## Phase 19 — Snake Feature Observation + Recipe v2
+
+*Goal: Replace the flat 256-element grid observation with a compact 25D hand-crafted feature vector so MLP-based PPO policies have the right inductive bias. The flat grid is too sparse and high-dimensional for an MLP to extract spatial structure efficiently.*
+
+- [x] **`envs/snake_env.py`: add `obs_type` parameter**
+    - `obs_type="grid"` (default): existing flat grid — no behaviour change.
+    - `obs_type="features"`: 25D compact vector encoding immediate danger (3), 5-step path clearance (3), direction one-hot (4), food direction bits (4), food distance (2), spatial scalars — manhattan distance, snake length, space around head (3), wall distances (4), food accessibility + tail distance (2).
+    - `observation_space` is set to `Box(-1, 1, (25,))` when `obs_type="features"`.
+    - `_FEATURES_DIM = 25` constant exported for tests.
+    - Inspired by the `advanced_dqn_snake` reference implementation (28D state).
+
+- [x] **`recipes/snake_ppo_v1.yaml` v2.0.0**
+    - `env_kwargs.obs_type: features` — switches to 25D compact obs.
+    - `env_kwargs.max_steps: 2000` — long enough for a 20-food episode (~100 steps/food).
+    - `env_kwargs.food_reward: 20.0, death_penalty: -10.0, distance_weight: 0.3, survival_bonus: 0.01` — food signal dominates, no distance-chasing incentive.
+    - PPO: `n_steps: 2048, total_timesteps: 3000000`, `net_arch: [256, 256]` — smaller net sufficient with compact obs.
+
+- [x] **Tests**: 7 new tests in `test_snake_env.py` — shape, all-finite, danger detection, food direction bits, observation space membership, grid mode unchanged.
+    - Total: **540 tests** (531 unit + 9 integration).

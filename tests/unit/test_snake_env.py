@@ -149,3 +149,78 @@ def test_distance_weight_zero_disables_shaping():
     if not done and not truncated:
         # Only survival bonus — no distance component
         assert reward == 0.1
+
+
+# ── feature obs tests ──────────────────────────────────────────────────────────
+
+def test_feature_obs_shape():
+    from envs.snake_env import SnakeEnv, _FEATURES_DIM
+    env = SnakeEnv(grid_h=8, grid_w=8, obs_type="features")
+    obs, _ = env.reset(seed=0)
+    assert obs.shape == (_FEATURES_DIM,)
+    assert obs.dtype == np.float32
+
+
+def test_feature_obs_all_finite():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(obs_type="features")
+    obs, _ = env.reset(seed=0)
+    assert np.all(np.isfinite(obs))
+
+
+def test_feature_obs_danger_straight_when_wall_ahead():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(grid_h=4, grid_w=4, obs_type="features")
+    env.reset(seed=0)
+    # Place head one step from the right wall, facing right
+    env._snake = __import__("collections").deque([(2, 2)])
+    env._direction = 1  # RIGHT — wall is at col 3, next step col 3 is fine, col 4 is OOB
+    env._snake = __import__("collections").deque([(2, 3)])  # head at right edge
+    env._food = (0, 0)
+    obs = env._feature_obs()
+    # danger_straight is obs[0] — should be 1 (wall directly ahead)
+    assert obs[0] == 1.0
+
+
+def test_feature_obs_no_danger_in_open_field():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(grid_h=16, grid_w=16, obs_type="features")
+    env.reset(seed=0)
+    # Head is in the middle; immediate straight/right/left should be clear
+    env._snake = __import__("collections").deque([(8, 8)])
+    env._direction = 1  # RIGHT
+    env._food = (0, 0)
+    obs = env._feature_obs()
+    # No immediate danger
+    assert obs[0] == 0.0 and obs[1] == 0.0 and obs[2] == 0.0
+
+
+def test_feature_obs_food_direction_bits():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(grid_h=16, grid_w=16, obs_type="features")
+    env.reset(seed=0)
+    env._snake = __import__("collections").deque([(8, 8)])
+    env._direction = 1  # RIGHT
+    env._food = (5, 10)  # food is up and to the right
+    obs = env._feature_obs()
+    # food_up=obs[10], food_right=obs[11], food_down=obs[12], food_left=obs[13]
+    assert obs[10] == 1.0   # food is above (fr=5 < hr=8)
+    assert obs[11] == 1.0   # food is to the right (fc=10 > hc=8)
+    assert obs[12] == 0.0
+    assert obs[13] == 0.0
+
+
+def test_feature_obs_observation_space_matches():
+    from envs.snake_env import SnakeEnv, _FEATURES_DIM
+    env = SnakeEnv(obs_type="features")
+    obs, _ = env.reset(seed=0)
+    assert env.observation_space.shape == (_FEATURES_DIM,)
+    assert obs in env.observation_space
+
+
+def test_grid_obs_unchanged_by_obs_type_param():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(grid_h=8, grid_w=8, obs_type="grid")
+    obs, _ = env.reset(seed=0)
+    assert obs.shape == (64,)
+    assert set(np.unique(obs)) <= {-1.0, 0.0, 0.5, 1.0}

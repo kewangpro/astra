@@ -1,35 +1,38 @@
 name: snake_ppo_v1
-version: "1.0.0"
-created_at: "2026-06-14"
+version: "2.0.0"
+created_at: "2026-06-22"
 task_type: RL
 domain: Snake
-description: "Optimized PPO recipe for Snake with curriculum learning and distance-based rewards."
+description: >
+  PPO recipe for Snake-v0 using the compact 25D feature observation (obs_type=features).
+  The feature obs encodes immediate danger, 5-step path clearance, food direction/distance,
+  wall distances, and spatial features — far better inductive bias for MLP policies than
+  the flat 256-element grid. Reward shaping targets food collection over distance chasing.
 
 hyperparameters:
+  # PPO
   learning_rate: 0.0003
   gamma: 0.99
+  gae_lambda: 0.95
+  n_steps: 2048
   batch_size: 64
+  n_epochs: 10
   clip_range: 0.2
-  entropy_coef: 0.02
-  total_timesteps: 300000
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  # Architecture — compact obs means smaller net is sufficient
+  policy_kwargs:
+    net_arch: [256, 256]
+  # Training budget
+  total_timesteps: 3000000
   telemetry_interval: 2048
   eval_episodes: 10
 
-curriculum:
-  phases:
-    - name: phase_1_small
-      env_config: { grid_size: [16, 12] }
-      success_threshold: { mean_reward: 20 }
-    - name: phase_2_medium
-      env_config: { grid_size: [24, 18] }
-      success_threshold: { mean_reward: 50 }
-    - name: phase_3_large
-      env_config: { grid_size: [32, 24] }
-      success_threshold: { mean_reward: 100 }
-
-reward_shaping:
-  food_reward: 25.0
-  collision_penalty: -15.0
-  closer_to_food: 0.5
-  away_from_food: -0.2
-  survival_bonus: 0.01
+env_kwargs:
+  obs_type: features          # 25D compact feature vector (key change vs v1.0)
+  max_steps: 2000             # long enough for a 20-food run (~100 steps/food)
+  food_reward: 20.0           # strong food signal
+  death_penalty: -10.0        # clear death signal
+  distance_weight: 0.3        # light distance shaping — food reward dominates
+  survival_bonus: 0.01        # minimal; avoid incentivizing stalling

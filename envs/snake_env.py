@@ -1,8 +1,20 @@
 """
 Snake-v0: A gymnasium-compatible Snake environment for ASTRA training missions.
 
-Observation: flattened (grid_h * grid_w,) float32 array
+Observation (obs_type="grid", default):
+  Flattened (grid_h * grid_w,) float32 array.
   0.0 = empty, 0.5 = snake body, 1.0 = snake head, -1.0 = food
+
+Observation (obs_type="features"):
+  25D compact feature vector — better inductive bias for MLP policies.
+  [danger_straight, danger_right, danger_left,        # 3 — immediate collision
+   clear_straight, clear_right, clear_left,           # 3 — 5-step path clearance
+   dir_up, dir_right, dir_down, dir_left,             # 4 — direction one-hot
+   food_up, food_right, food_down, food_left,         # 4 — food quadrant binary
+   food_dist_r, food_dist_c,                          # 2 — normalized food offset
+   manhattan_dist, snake_len, space_around,           # 3 — spatial scalars
+   wall_top, wall_bottom, wall_left, wall_right,      # 4 — wall distances
+   food_accessibility, tail_dist]                     # 2 — advanced spatial
 
 Action space: Discrete(4) — 0=UP, 1=RIGHT, 2=DOWN, 3=LEFT
 
@@ -24,6 +36,8 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+_FEATURES_DIM = 25
+
 
 class SnakeEnv(gym.Env):
     metadata = {"render_modes": []}
@@ -38,6 +52,7 @@ class SnakeEnv(gym.Env):
         death_penalty: float = -10.0,
         survival_bonus: float = 0.1,
         distance_weight: float = 1.0,
+        obs_type: str = "grid",
     ):
         super().__init__()
         self.grid_h = grid_h
@@ -48,13 +63,21 @@ class SnakeEnv(gym.Env):
         self.death_penalty = death_penalty
         self.survival_bonus = survival_bonus
         self.distance_weight = distance_weight
+        self.obs_type = obs_type
 
         self.action_space = spaces.Discrete(4)  # UP RIGHT DOWN LEFT
-        self.observation_space = spaces.Box(
-            low=-1.0, high=1.0,
-            shape=(grid_h * grid_w,),
-            dtype=np.float32,
-        )
+        if obs_type == "features":
+            self.observation_space = spaces.Box(
+                low=-1.0, high=1.0,
+                shape=(_FEATURES_DIM,),
+                dtype=np.float32,
+            )
+        else:
+            self.observation_space = spaces.Box(
+                low=-1.0, high=1.0,
+                shape=(grid_h * grid_w,),
+                dtype=np.float32,
+            )
 
         # Direction deltas: UP, RIGHT, DOWN, LEFT
         self._deltas = [(-1, 0), (0, 1), (1, 0), (0, -1)]
@@ -119,6 +142,70 @@ class SnakeEnv(gym.Env):
 
     # ── helpers ────────────────────────────────────────────────────────────────
 
+    def _obs(self) -> np.ndarray:
+        if self.obs_type == "features":
+            return self._feature_obs()
+        return self._grid_obs()
+
+    def _feature_obs(self) -> np.ndarray:
+        hr, hc = self._snake[-1]
+        snake_set = set(self._snake)
+        dr_list = [-1, 0, 1, 0]
+        dc_list = [0, 1, 0, -1]
+
+        def is_collision(r: int, c: int) -> bool:
+            return not (0 <= r < self.grid_h and 0 <= c < self.grid_w) or (r, c) in snake_set
+
+        def path_clearance(ddr: int, ddc: int, steps: int = 5) -> float:
+            for i in range(1, steps + 1):
+                if is_collision(hr + i * ddr, hc + i * ddc):
+                    return (i - 1) / steps
+            return 1.0
+
+        cur = self._direction
+        right_dir = (cur + 1) % 4
+        left_dir = (cur - 1) % 4
+        dr, dc = dr_list[cur], dc_list[cur]
+        rdr, rdc = dr_list[right_dir], dc_list[right_dir]
+        ldr, ldc = dr_list[left_dir], dc_list[left_dir]
+
+        dir_oh = [0.0, 0.0, 0.0, 0.0]
+        dir_oh[cur] = 1.0
+
+        fr, fc = self._food
+        tail_r, tail_c = self._snake[0]
+
+        food_neighbors = [(fr - 1, fc), (fr + 1, fc), (fr, fc - 1), (fr, fc + 1)]
+        blocked = sum(1 for r2, c2 in food_neighbors if is_collision(r2, c2))
+
+        space_around = sum(
+            1 for dr2, dc2 in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+            if not is_collision(hr + dr2, hc + dc2)
+        ) / 8.0
+
+        return np.array([
+            float(is_collision(hr + dr, hc + dc)),           # danger straight
+            float(is_collision(hr + rdr, hc + rdc)),         # danger right
+            float(is_collision(hr + ldr, hc + ldc)),         # danger left
+            path_clearance(dr, dc),                          # clearance straight
+            path_clearance(rdr, rdc),                        # clearance right
+            path_clearance(ldr, ldc),                        # clearance left
+            *dir_oh,                                         # direction one-hot
+            float(fr < hr), float(fc > hc),                  # food up / right
+            float(fr > hr), float(fc < hc),                  # food down / left
+            (fr - hr) / self.grid_h,                         # food row offset
+            (fc - hc) / self.grid_w,                         # food col offset
+            (abs(hr - fr) + abs(hc - fc)) / (self.grid_h + self.grid_w),  # manhattan
+            len(self._snake) / (self.grid_h * self.grid_w),  # snake length norm
+            space_around,                                    # space around head
+            hr / self.grid_h,                                # dist to top wall
+            (self.grid_h - hr - 1) / self.grid_h,           # dist to bottom wall
+            hc / self.grid_w,                                # dist to left wall
+            (self.grid_w - hc - 1) / self.grid_w,           # dist to right wall
+            (4 - blocked) / 4.0,                             # food accessibility
+            (abs(hr - tail_r) + abs(hc - tail_c)) / (self.grid_h + self.grid_w),  # tail dist
+        ], dtype=np.float32)
+
     def _place_food(self):
         snake_set = set(self._snake)
         empty = [
@@ -136,7 +223,7 @@ class SnakeEnv(gym.Env):
         fr, fc = self._food
         return float(abs(hr - fr) + abs(hc - fc))
 
-    def _obs(self) -> np.ndarray:
+    def _grid_obs(self) -> np.ndarray:
         grid = np.zeros((self.grid_h, self.grid_w), dtype=np.float32)
         for r, c in self._snake:
             grid[r, c] = 0.5
