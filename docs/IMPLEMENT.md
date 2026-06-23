@@ -665,3 +665,35 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `backend/agent/code_safety_classifier.py`: (1) `_static_check` now resolves URL variable definitions (`VAR = "http://..."`) into `localhost_url_vars` and `external_url_vars` sets; (2) fails fast if any `requests.post(VAR, ...)` uses a variable resolving to a non-localhost URL; (3) short-circuits to safe if all request calls (literal or variable) resolve to localhost; (4) LLM system prompt clarifications strengthened — explicitly states `_sys.path.insert` is not a file read, absolute paths in strings are not inherently unsafe.
     - `tests/unit/test_code_safety_classifier.py`: 3 new tests — `test_variable_url_localhost_is_safe`, `test_variable_url_with_sys_path_insert_is_safe` (full ASTRA template pattern), `test_variable_url_external_is_unsafe`.
     - Total: **496 tests** (487 unit + 9 integration).
+
+- [x] **Competitive-dip pivot suppression (Step 16.11)**
+    - **Problem**: `needs_pivot()` triggered on a 3-iteration dip (151→127→126) while the all-time best was 164.24, causing a destructive architecture pivot that tanked performance to ~40 mean_reward.
+    - **Root cause**: the plateau check (`values[-1] <= values[0]`) correctly detected no improvement in the window, but did not distinguish between a genuine plateau (stuck far below peak) and temporary variance (brief dip near the peak).
+    - `backend/loop/pivots.py`: added `PIVOT_COMPETITIVE_THRESHOLD = 0.85`. In `needs_pivot()`, after the stall check, if `0 < window_best < all_time_best` and `window_best >= all_time_best * 0.85`, suppress the pivot with a log message. Guard only fires during dips — stuck-at-peak (window_best == all_time_best) still triggers.
+    - `tests/unit/test_pivot_engine.py`: updated `test_pivot_triggered_on_plateau` and `test_restore_history_enables_immediate_plateau_detection` — stuck-at-peak cases are no longer suppressed by the guard since `window_best < all_time_best` is False when values are equal.
+
+- [x] **Regression detector persistence across restarts (Step 16.12)**
+    - **Problem**: `_pivot_applied` and `_pre_pivot_best` were in-memory only. A service restart reset them to `False`/`None`, silently disabling the post-pivot regression check. After a restart mid-regression-window, `should_revert_pivot()` always returned False.
+    - `backend/models/mission.py`: added `pivot_pre_best` column (`VARCHAR(100)`, nullable).
+    - `backend/loop/pivots.py`: added `restore_arch_pivot_baseline(pre_pivot_best)` — re-arms `_pivot_applied=True`, `_pre_pivot_best`, and resets post-pivot tracking counters.
+    - `backend/loop/state_machine.py`: (1) new `_save_pivot_pre_best()` async helper writes `pivot_pre_best` to DB; (2) called immediately after `record_arch_pivot_baseline()` when an arch/algo pivot fires; (3) cleared to `None` on revert or recovery; (4) startup block restores via `restore_arch_pivot_baseline()` and logs `re-armed regression detector with pre_pivot_best=…`; (5) `_was_pivot_applied` snapshotted before `should_revert_pivot()` to detect recovery (when `_pivot_applied` transitions True→False without a revert).
+    - DB migration: `ALTER TABLE missions ADD COLUMN pivot_pre_best VARCHAR(100)`.
+    - Total: **498 tests** (489 unit + 9 integration).
+
+- [x] **`mean_reward` inflation fix in `_load_persisted_best` (Step 16.13)**
+    - **Problem**: `_load_persisted_best` performed a full telemetry scan (`offset=0`) and took the MAX value. For `mean_reward` missions, the SB3 training callback posts peak training scores (e.g. 164.24) which are higher than the actual eval score. `max(candidates)` always picked the training peak, overwriting the correct DB value on every restart.
+    - `backend/loop/state_machine.py`: skip the full telemetry scan when `metric_name == "mean_reward"`. `best_score.txt` and the DB are the authoritative sources for `mean_reward`; the telemetry scan remains active for custom metrics (`food_eaten`, `lines_cleared`) which are only written by the eval path.
+    - Total: **498 tests** (489 unit + 9 integration).
+
+---
+
+## Phase 17 — Tetris Obs Refactor
+
+*Goal: Replace the 224-element flat board observation with the proven 4-feature compact representation from the reference project, enabling the PPO MLP to achieve 45+ lines cleared.*
+
+- [x] **Tetris-v0 4-feature observation (Step 17.1)**
+    - **Problem**: the 224-element flat board observation made learning extremely difficult. The reference project (`tetris_ppo_cnn`) achieved 45+ lines cleared with a plain PPO MLP using only a 4-feature obs; the flat board approach yielded ~10 lines.
+    - `envs/tetris_env.py`: replaced flat 224-element obs (`200 board + 7 current-one-hot + 7 next-one-hot + 10 heights`) with compact 4-feature vector `[lines_cleared_last/4, holes/200, bumpiness/180, sum_height/200]` (all normalized to `[0, 1]`). Simplified reward to `+1 placement + lines²×10 − 2 death` (reference formula); removed hole/bumpiness/height penalty params from reward (board quality is encoded in obs, not reward). Legacy shaping kwargs (`hole_penalty`, `bumpiness_penalty`, `height_penalty`) silently absorbed via `**kwargs` for backwards compatibility. `max_steps` default raised 500→1000. Added `get_board_props()` helper for inspection.
+    - `recipes/tetris_ppo_v1.yaml`: renamed from `tetris_mlp_v1.yaml`; updated `name`, `version` → 2.0.0, `target_metric` → `lines_cleared: 20`, `reward_shaping` → reference formula only, `env_kwargs.max_steps` → 1000.
+    - `tests/unit/test_tetris_env.py`: rewrote all 33 tests for new obs shape `(4,)`, reward structure, and legacy-kwargs compatibility.
+    - Total: **501 tests** (492 unit + 9 integration).

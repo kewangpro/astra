@@ -1,0 +1,42 @@
+name: tetris_ppo_v1
+version: "2.0.0"
+created_at: "2026-06-22"
+task_type: rl
+domain: Tetris
+env_id: Tetris-v0
+target_metric:
+  lines_cleared: 20
+description: >
+  PPO recipe for Tetris-v0 using a compact 4-feature observation and MlpPolicy.
+  Observation: [lines_cleared_last, holes, bumpiness, sum_height] (all normalized
+  to [0,1]). This matches the reference implementation (tetris_ppo_cnn) which
+  achieved 45+ lines cleared with a plain PPO MLP — vs ~10 lines with a flat
+  224-element board observation. Placement-based action space (Discrete 40 =
+  rotation × column). Reward is quadratic on lines cleared; no auxiliary shaping
+  penalties needed since board quality is already encoded in the observation.
+
+architecture:
+  type: MLP
+  net_arch: [256, 256]
+
+hyperparameters:
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+reward_shaping:
+  # Reference formula: +1 placement + lines² × 10 − 2 game_over
+  # No hole/bumpiness/height penalties — board quality is in the obs, not reward.
+  line_clear_multiplier: 10.0
+  piece_placement: 1.0
+  death_penalty: -2.0
+
+env_kwargs:
+  max_steps: 1000

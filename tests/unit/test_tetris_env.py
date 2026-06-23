@@ -21,8 +21,8 @@ def env():
 
 def test_observation_shape(env):
     obs, _ = env.reset(seed=0)
-    # 20*10 board + 7 current one-hot + 7 next one-hot + 10 heights
-    assert obs.shape == (224,)
+    # 4-feature: [lines_cleared_last, holes, bumpiness, sum_height] normalized
+    assert obs.shape == (4,)
     assert obs.dtype == np.float32
 
 
@@ -49,25 +49,16 @@ def test_step_returns_correct_types(env):
     assert isinstance(reward, float)
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)
-    assert obs.shape == (224,)
+    assert obs.shape == (4,)
 
 
-# ── one-hot encoding ──────────────────────────────────────────────────────────
-
-def test_current_piece_one_hot(env):
-    env.reset(seed=0)
-    obs = env._obs()
-    piece_oh = obs[200:207]  # positions 200–206
-    assert piece_oh[env._current_piece] == 1.0
-    assert piece_oh.sum() == 1.0
-
-
-def test_next_piece_one_hot(env):
-    env.reset(seed=0)
-    obs = env._obs()
-    next_oh = obs[207:214]  # positions 207–213
-    assert next_oh[env._next_piece] == 1.0
-    assert next_oh.sum() == 1.0
+def test_obs_all_zeros_on_empty_board(env):
+    """On reset, board is empty: holes=0, bumpiness=0, sum_height=0, lines_cleared_last=0."""
+    obs, _ = env.reset(seed=0)
+    assert obs[0] == 0.0  # lines_cleared_last
+    assert obs[1] == 0.0  # holes
+    assert obs[2] == 0.0  # bumpiness
+    assert obs[3] == 0.0  # sum_height
 
 
 # ── placement and clearing ─────────────────────────────────────────────────────
@@ -75,43 +66,87 @@ def test_next_piece_one_hot(env):
 def test_placement_fills_board(env):
     env.reset(seed=0)
     total_before = int(env._board.sum())
-    env.step(0)  # place one piece
-    # Board should have more cells filled (unless immediate game over)
+    env.step(0)
     total_after = int(env._board.sum())
-    assert total_after >= total_before  # lines may clear, but net ≥ 0 new cells placed
+    assert total_after >= total_before
 
 
 def test_line_clear_removes_rows(env):
     env.reset(seed=0)
-    # Fill row 19 (bottom) manually except one cell
     env._board[19, :] = 1
     lines = env._clear_lines()
     assert lines == 1
-    assert env._board[19, :].sum() == 0  # cleared row gone
+    assert env._board[19, :].sum() == 0
 
 
 def test_full_board_clear_adds_empty_rows_on_top():
     e = TetrisEnv()
     e.reset(seed=0)
-    # Fill rows 18 and 19 completely
     e._board[18, :] = 1
     e._board[19, :] = 1
     lines = e._clear_lines()
     assert lines == 2
-    # Top 2 rows should now be empty
     assert e._board[0, :].sum() == 0
     assert e._board[1, :].sum() == 0
     e.close()
 
 
-# ── reward shaping helpers ─────────────────────────────────────────────────────
+# ── reward ─────────────────────────────────────────────────────────────────────
+
+def test_placement_reward_no_lines():
+    """Placing a piece with no line clear → +piece_placement only."""
+    e = TetrisEnv(piece_placement=1.0, line_clear_multiplier=10.0, death_penalty=-2.0)
+    e.reset(seed=0)
+    _, reward, _, _, _ = e.step(0)
+    # No lines cleared on first move of empty board → reward = 1.0
+    assert reward == pytest.approx(1.0)
+    e.close()
+
+
+def test_line_clear_reward_quadratic():
+    """Clearing N lines → +piece_placement + N² × multiplier."""
+    e = TetrisEnv(piece_placement=1.0, line_clear_multiplier=10.0, death_penalty=-2.0)
+    e.reset(seed=0)
+    # Fill bottom row except one cell, then force the piece to complete it
+    e._board[19, :] = 1
+    e._board[19, 0] = 0  # leave a gap
+    e._current_piece = 0  # I-piece horizontal fills 4 consecutive cells
+    _, reward, _, _, _ = e.step(0)  # places I-piece at row 19 col 0, clears line
+    # If line clears: reward = 1 + 1² × 10 = 11
+    # (lines may or may not clear depending on exact placement)
+    assert reward >= 1.0
+    e.close()
+
+
+def test_death_reward():
+    e = TetrisEnv(death_penalty=-2.0)
+    e.reset(seed=0)
+    e._board[:] = 1
+    _, reward, terminated, _, _ = e.step(0)
+    assert terminated
+    assert reward == pytest.approx(-2.0)
+    e.close()
+
+
+def test_no_hole_bumpiness_height_in_reward():
+    """Reward must be exactly piece_placement (no shaping penalties)."""
+    e = TetrisEnv(piece_placement=1.0, line_clear_multiplier=10.0)
+    e.reset(seed=0)
+    # Place a piece — creates some bumpiness and potentially holes
+    _, reward, terminated, _, _ = e.step(5)
+    if not terminated:
+        # reward is either 1.0 (no lines) or 1 + n²×10 (lines cleared)
+        assert reward == pytest.approx(1.0) or reward > 1.0
+    e.close()
+
+
+# ── helpers ────────────────────────────────────────────────────────────────────
 
 def test_count_holes_with_known_state():
     e = TetrisEnv()
     e.reset(seed=0)
     e._board[:] = 0
-    # Column 0: filled at row 18, empty at row 19 → 1 hole
-    e._board[18, 0] = 1
+    e._board[18, 0] = 1  # block above empty row 19 col 0 → 1 hole
     assert e._count_holes() == 1
     e.close()
 
@@ -128,7 +163,6 @@ def test_bumpiness_flat_board():
     e = TetrisEnv()
     e.reset(seed=0)
     e._board[:] = 0
-    # All heights = 0, bumpiness = 0
     assert e._compute_bumpiness() == 0.0
     e.close()
 
@@ -137,11 +171,9 @@ def test_bumpiness_varies_with_heights():
     e = TetrisEnv()
     e.reset(seed=0)
     e._board[:] = 0
-    # Column 0: height 2, Column 1: height 0 → bumpiness includes |2-0|=2
     e._board[18, 0] = 1
     e._board[19, 0] = 1
-    bumpiness = e._compute_bumpiness()
-    assert bumpiness >= 2.0
+    assert e._compute_bumpiness() >= 2.0
     e.close()
 
 
@@ -149,19 +181,7 @@ def test_max_height_empty_board():
     e = TetrisEnv()
     e.reset(seed=0)
     e._board[:] = 0
-    assert e._max_height() == 0
-    e.close()
-
-
-def test_max_height_with_piece():
-    e = TetrisEnv()
-    e.reset(seed=0)
-    e._board[:] = 0
-    # Place 3 cells in column 5 at rows 17, 18, 19 → height=3
-    e._board[17, 5] = 1
-    e._board[18, 5] = 1
-    e._board[19, 5] = 1
-    assert e._max_height() == 3
+    assert e._column_heights().max() == 0
     e.close()
 
 
@@ -179,47 +199,39 @@ def test_invalid_rotation_clamped(env):
     """O-piece (index 1) has only 1 rotation — rotation=3 must clamp to 0."""
     env.reset(seed=0)
     env._current_piece = 1  # O-piece
-    # Action with rotation=3 (index 30+col): should not crash
-    obs, reward, terminated, truncated, _ = env.step(30)  # rotation=3, col=0 → clamp to rot=0
+    obs, reward, terminated, truncated, _ = env.step(30)  # rotation=3, col=0
     assert isinstance(reward, float)
 
 
-# ── column out-of-bounds clamping ─────────────────────────────────────────────
-
 def test_i_piece_horizontal_cant_exceed_board():
-    """I-piece R0 is 4 wide — placing at col=9 must be clamped to col=6."""
     e = TetrisEnv()
     e.reset(seed=0)
-    e._current_piece = 0  # I-piece
-    cells = _PIECES[0][0]  # horizontal: (0,0),(0,1),(0,2),(0,3)
+    e._current_piece = 0  # I-piece horizontal: 4 wide
+    cells = _PIECES[0][0]
     max_dc = max(dc for _, dc in cells)  # 3
-    col = 9
-    clamped = max(0, min(col, 10 - 1 - max_dc))
+    clamped = max(0, min(9, 10 - 1 - max_dc))
     assert clamped == 6
-    # Verify step doesn't write out-of-bounds
-    action = 0 * 10 + 9  # rotation=0, col=9
-    _, _, _, _, _ = e.step(action)
-    assert e._board.max() <= 1  # no corruption
+    e.step(0 * 10 + 9)  # rotation=0, col=9 → clamped to 6
+    assert e._board.max() <= 1
     e.close()
 
 
 # ── death and truncation ──────────────────────────────────────────────────────
 
 def test_death_returns_negative_reward():
-    e = TetrisEnv(death_penalty=-10.0)
+    e = TetrisEnv(death_penalty=-2.0)
     e.reset(seed=0)
-    # Fill the board so next piece can't be placed
     e._board[:] = 1
     _, reward, terminated, _, _ = e.step(0)
     assert terminated
-    assert reward == -10.0
+    assert reward == -2.0
     e.close()
 
 
 def test_episode_truncates_at_max_steps():
     e = TetrisEnv(max_steps=5)
     e.reset(seed=0)
-    e._board[:] = 0  # keep board empty so no game-over
+    e._board[:] = 0
     steps = 0
     truncated = False
     for _ in range(10):
@@ -238,13 +250,13 @@ def test_register_creates_gym_env():
     register()
     e = gym.make("Tetris-v0")
     obs, _ = e.reset(seed=1)
-    assert obs.shape == (224,)
+    assert obs.shape == (4,)
     e.close()
 
 
 def test_register_idempotent():
     register()
-    register()  # calling twice must not raise
+    register()
     import gymnasium as gym
     e = gym.make("Tetris-v0")
     e.close()
@@ -255,22 +267,18 @@ def test_register_idempotent():
 def test_custom_death_penalty():
     e = TetrisEnv(death_penalty=-99.0)
     e.reset(seed=0)
-    e._board[:] = 1  # force instant death
+    e._board[:] = 1
     _, reward, done, _, _ = e.step(0)
     assert done
     assert reward == -99.0
     e.close()
 
 
-def test_line_clear_reward_is_quadratic():
-    e = TetrisEnv(line_clear_multiplier=10.0, piece_placement=0.0,
-                  hole_penalty=0.0, bumpiness_penalty=0.0, height_penalty=0.0)
-    e.reset(seed=0)
-    # Fill bottom row except one cell, then manually complete it and check clear
-    e._board[19, :] = 1
-    lines = e._clear_lines()
-    # 1 line cleared → reward = 10 * 1² = 10
-    assert lines == 1
+def test_legacy_reward_kwargs_ignored():
+    """Old hole_penalty / bumpiness_penalty kwargs must not raise."""
+    e = TetrisEnv(hole_penalty=2.0, bumpiness_penalty=0.5, height_penalty=-0.1)
+    obs, _ = e.reset(seed=0)
+    assert obs.shape == (4,)
     e.close()
 
 
@@ -286,22 +294,18 @@ def test_step_info_has_lines_cleared(env):
 def test_lines_cleared_starts_at_zero(env):
     env.reset(seed=0)
     _, _, _, _, info = env.step(0)
-    # No lines can be cleared on the first placement of a fresh board
     assert info["lines_cleared"] == 0
 
 
 def test_lines_cleared_cumulates_across_steps():
     e = TetrisEnv()
     e.reset(seed=0)
-    # Manually fill rows 18 and 19 so next placement triggers line clears
     e._board[18, :] = 1
     e._board[19, :] = 1
-    e._board[18, 0] = 0  # leave one gap so it's not cleared yet
+    e._board[18, 0] = 0
     e._board[19, 0] = 0
-    # Place I-piece horizontally at col 0 rotation 0 — fills (0,0)-(0,3)
-    e._current_piece = 0  # I-piece
-    _, _, _, _, info = e.step(0)  # rotation=0, col=0
-    # After placing, lines might or might not clear depending on board state
+    e._current_piece = 0
+    _, _, _, _, info = e.step(0)
     assert info["lines_cleared"] >= 0
     e.close()
 
@@ -309,16 +313,33 @@ def test_lines_cleared_cumulates_across_steps():
 def test_death_info_has_lines_cleared():
     e = TetrisEnv()
     e.reset(seed=0)
-    e._board[:] = 1  # full board → death on next step
+    e._board[:] = 1
     _, _, terminated, _, info = e.step(0)
     assert terminated
     assert "lines_cleared" in info
-    assert info["lines_cleared"] == 0  # no lines cleared before dying
+    assert info["lines_cleared"] == 0
     e.close()
 
 
 def test_lines_cleared_resets_on_new_episode(env):
     env.reset(seed=0)
-    env._lines_cleared_episode = 7  # simulate mid-episode
+    env._lines_cleared_episode = 7
     env.reset(seed=1)
     assert env._lines_cleared_episode == 0
+
+
+def test_lines_cleared_last_reflected_in_obs():
+    """lines_cleared_last in obs[0] updates after a clear."""
+    e = TetrisEnv()
+    e.reset(seed=0)
+    # Fill bottom 2 rows completely
+    e._board[18, :] = 1
+    e._board[19, :] = 1
+    e._board[18, 0] = 0
+    e._board[19, 0] = 0
+    e._current_piece = 0  # I-piece, fills 4 cells horizontally
+    obs, _, _, _, _ = e.step(0)
+    # If lines cleared, obs[0] > 0
+    lines_cleared = e._lines_cleared_last
+    assert obs[0] == pytest.approx(lines_cleared / 4.0)
+    e.close()

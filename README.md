@@ -13,13 +13,13 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Auto-approve with LLM classification** — `execute_code` gates are auto-approved via a two-stage classifier (static regex → LLM review); unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
 - **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments with configurable reward shaping; Snake-v0 tracks `food_eaten`, Tetris-v0 uses a placement-based action space and tracks `lines_cleared`
+- **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments; Snake-v0 tracks `food_eaten`; Tetris-v0 uses a placement-based `Discrete(40)` action space and a compact 4-feature observation `[lines_cleared_last, holes, bumpiness, sum_height]` (normalized) matching the reference approach that achieved 45+ lines cleared vs ~10 with a flat 224-element board
 - **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket from `best_model.zip`
 - **Persistent escalating pivot strategy** — PivotEngine escalates through 4 levels (HP tuning → architecture change → algorithm switch → reward shaping) across server restarts via DB-persisted `pivot_escalation_count`; pivot event stream shows real old→new diffs
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **496 tests** — 487 unit + 9 integration tests covering all core services
+- **501 tests** — 492 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -81,7 +81,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 487 unit tests across all core modules
+│   ├── unit/           # 492 unit tests across all core modules
 │   └── integration/    # 9 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -123,7 +123,8 @@ make ports  # show port status for all services
 | 13 | Training Continuity & Loop Recovery — env_kwargs merge/clamp, distance_weight floor, early-stop threshold fix, 2M timestep floor, arch oscillation detection, MetricChart adaptive x-axis, state recovery auto-restart loop, plan reuse across iterations, 456 tests | ✅ Complete |
 | 14 | HUD Polish & Telemetry Performance — WS batch backfill, event stream capped at 100, sidebar height alignment, pivot history scrollable, MetricChart x-axis tickCount, integer iteration labels | ✅ Complete |
 | 15 | Sandbox Lifecycle Hardening — orphaned subprocess fix (reattach kill-by-pid), stale sandbox eviction before launch, sandbox terminate on shutdown cancel, 464 tests | ✅ Complete |
-| 16 | Post-Pivot Regression Detection, Checkpoint Recovery & Best-Architecture Memory — 20% regression threshold, per-iteration rolling checkpoint window (last 10), revert targets true best-ever iter, de-escalation; PivotEngine tracks `best_policy_kwargs` at peak goal metric and injects it into pivot prompt so LLM reuses proven architecture at Level 1 instead of thrashing; persisted to DB and restored on restart; `_normalize_pivot` promotes `policy_kwargs` nested inside `adjustments` to prevent arch-changing LLM responses from bypassing best-arch guard and corrupting `best_model.zip`; stop button on mission cards (`POST /agent/missions/{id}/cancel`); `asyncio.shield` on MLX `run_in_executor` to prevent Metal crash when stop fires mid-inference; 493 tests | ✅ Complete |
+| 16 | Post-Pivot Regression Detection, Checkpoint Recovery & Best-Architecture Memory — 20% regression threshold, per-iteration rolling checkpoint window (last 10), revert targets true best-ever iter, de-escalation; best-architecture memory persisted to DB; `_normalize_pivot` policy_kwargs promotion; stop button + MLX shield; auto-approve variable URL fix; competitive-dip guard (15% tolerance) prevents false pivots on variance; `pivot_pre_best` persisted so regression detector survives restarts; `mean_reward` inflation fix in `_load_persisted_best`; 498 tests | ✅ Complete |
+| 17 | Tetris Obs Refactor — observation replaced from 224-element flat board to compact 4-feature vector `[lines_cleared_last, holes, bumpiness, sum_height]` matching reference project that achieved 45+ lines; reward simplified to `+1 + lines²×10 − 2`; recipe renamed `tetris_mlp_v1` → `tetris_ppo_v1`; 501 tests | ✅ Complete |
 
 ## Hardware Target
 

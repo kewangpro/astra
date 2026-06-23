@@ -1,27 +1,29 @@
 """
 Tetris-v0: A gymnasium-compatible Tetris environment for ASTRA training missions.
 
-Observation: flat float32 array of length 224
-  - Board: 200 floats (20×10, 0=empty, 1=filled)
-  - Current piece: 7 floats (one-hot over pieces I, O, T, S, Z, J, L)
-  - Next piece: 7 floats (one-hot)
-  - Column heights: 10 floats (height of each column, normalized to [0, 1])
+Observation: float32 array of shape (4,)
+  [lines_cleared_last, holes, bumpiness, sum_height]  — normalized to [0, 1]
+  lines_cleared_last : lines cleared by the previous move   / 4
+  holes              : empty cells with a filled cell above  / 200
+  bumpiness          : sum of |height diff| between adj cols / 180
+  sum_height         : sum of all column heights             / 200
+
+  This compact 4-feature representation matches the approach used by the
+  reference project (tetris_ppo_cnn) which achieved 45+ lines with a plain
+  PPO MLP — versus only ~10 with a flat 224-element board observation.
 
 Action: Discrete(40) — rotation(0–3) × 10 + column(0–9)
   Invalid rotations are clamped to the piece's maximum rotation count.
-  Invalid columns (piece extends past board edge) are clamped to the nearest valid column.
-  Every action maps to a valid placement attempt; -1 row from _drop means game over.
+  Invalid columns (piece extends past board edge) are clamped to the nearest
+  valid column.  Every action maps to a valid placement.
 
-Reward (all configurable via constructor kwargs):
-  +piece_placement                    for every successfully placed piece
-  +line_clear_multiplier × lines²     quadratic — clearing 4 >> clearing 1×4
-  −hole_penalty × holes               holes below the topmost filled cell per column
-  −bumpiness_penalty × bumpiness      sum of |height differences| between adjacent columns
-  +height_penalty × max_height        penalty (height_penalty should be ≤ 0) for tall stacks
-  +death_penalty                      on game over (death_penalty should be < 0)
+Reward:
+  +1                        for every successfully placed piece
+  +lines_cleared² × 10     quadratic — clearing 4 lines >> clearing 1×4 times
+  −2                        on game over
 
 Episode terminates when no valid placement exists for the current piece.
-Episode truncates after max_steps placements.
+Episode truncates after max_steps placements (default 1000).
 """
 from __future__ import annotations
 
@@ -48,36 +50,41 @@ _PIECES: List[List[List[Tuple[int, int]]]] = [
     ],
     # 2 — T
     [
-        [(0, 0), (0, 1), (0, 2), (1, 1)],  # ███ / _█_
-        [(0, 0), (1, 0), (1, 1), (2, 0)],  # █_ / ██ / █_
-        [(0, 1), (1, 0), (1, 1), (1, 2)],  # _█_ / ███
-        [(0, 1), (1, 0), (1, 1), (2, 1)],  # _█ / ██ / _█
+        [(0, 0), (0, 1), (0, 2), (1, 1)],
+        [(0, 0), (1, 0), (1, 1), (2, 0)],
+        [(0, 1), (1, 0), (1, 1), (1, 2)],
+        [(0, 1), (1, 0), (1, 1), (2, 1)],
     ],
     # 3 — S
     [
-        [(0, 1), (0, 2), (1, 0), (1, 1)],  # _██ / ██_
-        [(0, 0), (1, 0), (1, 1), (2, 1)],  # █_ / ██ / _█
+        [(0, 1), (0, 2), (1, 0), (1, 1)],
+        [(0, 0), (1, 0), (1, 1), (2, 1)],
     ],
     # 4 — Z
     [
-        [(0, 0), (0, 1), (1, 1), (1, 2)],  # ██_ / _██
-        [(0, 1), (1, 0), (1, 1), (2, 0)],  # _█ / ██ / █_
+        [(0, 0), (0, 1), (1, 1), (1, 2)],
+        [(0, 1), (1, 0), (1, 1), (2, 0)],
     ],
     # 5 — J
     [
-        [(0, 0), (1, 0), (1, 1), (1, 2)],  # █__ / ███
-        [(0, 0), (0, 1), (1, 0), (2, 0)],  # ██ / █_ / █_
-        [(0, 0), (0, 1), (0, 2), (1, 2)],  # ███ / __█
-        [(0, 1), (1, 1), (2, 0), (2, 1)],  # _█ / _█ / ██
+        [(0, 0), (1, 0), (1, 1), (1, 2)],
+        [(0, 0), (0, 1), (1, 0), (2, 0)],
+        [(0, 0), (0, 1), (0, 2), (1, 2)],
+        [(0, 1), (1, 1), (2, 0), (2, 1)],
     ],
     # 6 — L
     [
-        [(0, 2), (1, 0), (1, 1), (1, 2)],  # __█ / ███
-        [(0, 0), (1, 0), (2, 0), (2, 1)],  # █_ / █_ / ██
-        [(0, 0), (0, 1), (0, 2), (1, 0)],  # ███ / █__
-        [(0, 0), (0, 1), (1, 1), (2, 1)],  # ██ / _█ / _█
+        [(0, 2), (1, 0), (1, 1), (1, 2)],
+        [(0, 0), (1, 0), (2, 0), (2, 1)],
+        [(0, 0), (0, 1), (0, 2), (1, 0)],
+        [(0, 0), (0, 1), (1, 1), (2, 1)],
     ],
 ]
+
+_MAX_LINES_PER_STEP = 4
+_MAX_HOLES = 200        # 10 cols × 20 rows
+_MAX_BUMPINESS = 180    # worst case adjacent height diffs
+_MAX_SUM_HEIGHT = 200   # all 10 cols at height 20
 
 
 class TetrisEnv(gym.Env):
@@ -86,34 +93,30 @@ class TetrisEnv(gym.Env):
     ROWS = 20
     COLS = 10
     N_PIECES = 7
-    N_ROTATIONS = 4  # max rotations; actual per piece may be less
+    N_ROTATIONS = 4  # max rotations; actual per piece may be fewer
 
     def __init__(
         self,
-        max_steps: int = 500,
+        max_steps: int = 1000,
         render_mode: Optional[str] = None,
+        # kept for backwards-compat with recipe kwargs — not used in reward
         line_clear_multiplier: float = 10.0,
-        hole_penalty: float = 2.0,
-        bumpiness_penalty: float = 0.5,
         piece_placement: float = 1.0,
-        height_penalty: float = -0.1,
-        death_penalty: float = -10.0,
+        death_penalty: float = -2.0,
+        **kwargs,  # absorb legacy reward-shaping kwargs silently
     ):
         super().__init__()
         self.max_steps = max_steps
         self.render_mode = render_mode
         self.line_clear_multiplier = line_clear_multiplier
-        self.hole_penalty = hole_penalty
-        self.bumpiness_penalty = bumpiness_penalty
         self.piece_placement = piece_placement
-        self.height_penalty = height_penalty
         self.death_penalty = death_penalty
 
         self.action_space = spaces.Discrete(self.N_ROTATIONS * self.COLS)
-        obs_len = self.ROWS * self.COLS + self.N_PIECES + self.N_PIECES + self.COLS
+        # 4-feature obs: [lines_cleared_last, holes, bumpiness, sum_height] (normalized)
         self.observation_space = spaces.Box(
             low=0.0, high=1.0,
-            shape=(obs_len,),
+            shape=(4,),
             dtype=np.float32,
         )
 
@@ -122,6 +125,7 @@ class TetrisEnv(gym.Env):
         self._next_piece: int = 0
         self._steps: int = 0
         self._lines_cleared_episode: int = 0
+        self._lines_cleared_last: int = 0
 
     def reset(self, *, seed: Optional[int] = None, options=None):
         super().reset(seed=seed)
@@ -130,13 +134,14 @@ class TetrisEnv(gym.Env):
         self._next_piece = int(self.np_random.integers(self.N_PIECES))
         self._steps = 0
         self._lines_cleared_episode = 0
+        self._lines_cleared_last = 0
         return self._obs(), {}
 
     def step(self, action: int):
         rotation = int(action) // self.COLS
         col = int(action) % self.COLS
 
-        # Clamp rotation to valid range for this piece type
+        # Clamp rotation to valid range for this piece
         piece_rotations = _PIECES[self._current_piece]
         rotation = min(rotation, len(piece_rotations) - 1)
         cells = piece_rotations[rotation]
@@ -150,7 +155,7 @@ class TetrisEnv(gym.Env):
 
         if placement_row < 0:
             info = {"lines_cleared": self._lines_cleared_episode}
-            return self._obs(), self.death_penalty, True, False, info
+            return self._obs(), float(self.death_penalty), True, False, info
 
         # Place cells on board
         for dr, dc in cells:
@@ -158,12 +163,9 @@ class TetrisEnv(gym.Env):
 
         lines_cleared = self._clear_lines()
         self._lines_cleared_episode += lines_cleared
+        self._lines_cleared_last = lines_cleared
 
-        reward = float(self.piece_placement)
-        reward += self.line_clear_multiplier * (lines_cleared ** 2)
-        reward -= self.hole_penalty * self._count_holes()
-        reward -= self.bumpiness_penalty * self._compute_bumpiness()
-        reward += self.height_penalty * self._max_height()
+        reward = float(self.piece_placement) + self.line_clear_multiplier * (lines_cleared ** 2)
 
         self._current_piece = self._next_piece
         self._next_piece = int(self.np_random.integers(self.N_PIECES))
@@ -176,7 +178,7 @@ class TetrisEnv(gym.Env):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _drop(self, cells: List[Tuple[int, int]], col: int) -> int:
-        """Return the anchor row where the piece lands under gravity, or -1."""
+        """Return the anchor row where the piece lands, or -1 if no valid placement."""
         placement = -1
         for r in range(self.ROWS):
             abs_cells = [(dr + r, dc + col) for dr, dc in cells]
@@ -221,17 +223,24 @@ class TetrisEnv(gym.Env):
         h = self._column_heights()
         return float(np.sum(np.abs(np.diff(h))))
 
-    def _max_height(self) -> int:
-        return int(self._column_heights().max())
-
     def _obs(self) -> np.ndarray:
-        board_flat = self._board.flatten().astype(np.float32)
-        piece_oh = np.zeros(self.N_PIECES, dtype=np.float32)
-        piece_oh[self._current_piece] = 1.0
-        next_oh = np.zeros(self.N_PIECES, dtype=np.float32)
-        next_oh[self._next_piece] = 1.0
-        heights = self._column_heights().astype(np.float32) / self.ROWS
-        return np.concatenate([board_flat, piece_oh, next_oh, heights])
+        holes = self._count_holes()
+        bumpiness = self._compute_bumpiness()
+        sum_height = float(self._column_heights().sum())
+        return np.array([
+            self._lines_cleared_last / _MAX_LINES_PER_STEP,
+            holes / _MAX_HOLES,
+            bumpiness / _MAX_BUMPINESS,
+            sum_height / _MAX_SUM_HEIGHT,
+        ], dtype=np.float32)
+
+    def get_board_props(self) -> List[float]:
+        """Return raw [holes, bumpiness, sum_height] for inspection/logging."""
+        return [
+            float(self._count_holes()),
+            self._compute_bumpiness(),
+            float(self._column_heights().sum()),
+        ]
 
 
 # ── registration ──────────────────────────────────────────────────────────────
@@ -242,5 +251,5 @@ def register():
         gym.register(
             id="Tetris-v0",
             entry_point="envs.tetris_env:TetrisEnv",
-            kwargs={"max_steps": 500},
+            kwargs={"max_steps": 1000},
         )
