@@ -158,7 +158,7 @@ export function MetricGap({ mission, events = [] }: Props) {
         <div className="flex-1 min-w-0 space-y-2">
           {/* Best iter */}
           <div className="text-[10px] text-[#64748b]">
-            best at iter {bestIter ? Math.round(Number(bestIter)) : "—"}
+            best at iter {bestIter != null ? Math.round(Number(bestIter)) : "—"}
           </div>
 
           <div className="text-[10px] text-[#94a3b8]">
