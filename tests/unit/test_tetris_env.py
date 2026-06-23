@@ -393,3 +393,39 @@ def test_get_next_states_empty_board_has_many_actions(env):
     env.reset(seed=0)
     states = env.get_next_states()
     assert len(states) >= 10
+
+
+# ── pre-clear snapshot ────────────────────────────────────────────────────────
+
+def test_clear_lines_stores_last_cleared_rows():
+    """_clear_lines() sets _last_cleared_rows to the indices of cleared rows."""
+    e = TetrisEnv()
+    e.reset(seed=0)
+    e._board[17, :] = 1
+    e._board[19, :] = 1
+    e._clear_lines()
+    assert set(e._last_cleared_rows) == {17, 19}
+    e.close()
+
+
+def test_clear_lines_empty_last_cleared_rows_when_no_clear():
+    """_last_cleared_rows is empty when no rows are full."""
+    e = TetrisEnv()
+    e.reset(seed=0)
+    e._board[19, 0] = 1  # only one cell filled, not a full row
+    e._clear_lines()
+    assert e._last_cleared_rows == []
+    e.close()
+
+
+def test_step_stores_pre_clear_board():
+    """_pre_clear_board is stored after placement and is independent of _board."""
+    e = TetrisEnv()
+    e.reset(seed=0)
+    e.step(0)
+    assert hasattr(e, "_pre_clear_board")
+    # Must be a separate copy — modifying _board should not affect the snapshot
+    snapshot = e._pre_clear_board.copy()
+    e._board[:] = 0
+    assert (e._pre_clear_board == snapshot).all()
+    e.close()

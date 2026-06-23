@@ -117,15 +117,42 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
             action = best_action
         else:
             action = 0
+        # Capture the piece being placed so the highlight frame uses the right color
+        piece_before_step = base_env._current_piece
         obs, reward, done, truncated, _ = env.step(action)
         episode_reward += float(reward)
         step += 1
+        lines_cleared = int(base_env._lines_cleared_last)
+        # When lines are cleared, emit a highlight frame (pre-clear board + cleared row indices)
+        # so the client can flash exactly those rows before showing the post-clear board.
+        if lines_cleared > 0:
+            cleared_rows = getattr(base_env, "_last_cleared_rows", [])
+            pre_clear = getattr(base_env, "_pre_clear_board", None)
+            if cleared_rows and pre_clear is not None:
+                cur_oh = [0.0] * 7
+                if 0 <= piece_before_step < 7:
+                    cur_oh[piece_before_step] = 1.0
+                nxt_oh = [0.0] * 7
+                nxt = base_env._current_piece  # after step, _current_piece is the next piece
+                if 0 <= nxt < 7:
+                    nxt_oh[nxt] = 1.0
+                heights = [float(h) for h in base_env._column_heights()]
+                frames.append({
+                    "type": "frame",
+                    "grid": pre_clear.flatten().tolist() + cur_oh + nxt_oh + heights,
+                    "step": step,
+                    "episode_reward": round(episode_reward, 2),
+                    "done": False,
+                    "lines_cleared_last": 0,
+                    "highlight_rows": cleared_rows,
+                })
         frames.append({
             "type": "frame",
             "grid": _tetris_viewer_grid(base_env),
             "step": step,
             "episode_reward": round(episode_reward, 2),
             "done": bool(done or truncated),
+            "lines_cleared_last": 0,
         })
     return frames, round(episode_reward, 2)
 
@@ -205,7 +232,12 @@ async def play_ws(
                 os.path.exists(tt_path) and open(tt_path).read().strip() == "actor_critic"
             ) or ckpt_path.endswith(".pth")
             if is_actor_critic:
+                import sys
                 import torch
+                from envs.actor_critic_net import ActorCriticNet
+                # Inject into __main__ so torch.load can unpickle models saved
+                # from train.py (where the class was defined as __main__.ActorCriticNet)
+                sys.modules["__main__"].ActorCriticNet = ActorCriticNet
                 model = torch.load(ckpt_path, weights_only=False)
                 model.eval()
                 logger.info("play_ws: loaded ActorCritic PyTorch model for mission=%s env=%s", mission_id, resolved_env_id)

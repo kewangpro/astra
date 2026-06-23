@@ -68,9 +68,17 @@ _PPO_RENAMES = {
     "clip_ratio": "clip_range",
 }
 
+# Valid actor_critic kwargs
+_VALID_AC_KWARGS = {
+    "learning_rate", "gamma", "episodes", "batch_size",
+    "replay_buffer_size", "epsilon_min", "epsilon_decay", "telemetry_interval",
+}
 
-def _clean_rl_hyperparams(raw: dict) -> dict:
-    """Rename invalid keys and drop non-SB3 kwargs."""
+
+def _clean_rl_hyperparams(raw: dict, trainer_type: str = "") -> dict:
+    """Rename invalid keys and drop trainer-irrelevant kwargs."""
+    if trainer_type == "actor_critic":
+        return {k: v for k, v in raw.items() if k in _VALID_AC_KWARGS}
     cleaned = {}
     for k, v in raw.items():
         k = _PPO_RENAMES.get(k, k)
@@ -99,12 +107,14 @@ def _infer_domain(plan: dict, task_type: str, goal: str) -> str:
 def _build_recipe_content(mission: Mission, score: Optional[float], lessons: list[dict]) -> dict:
     plan = mission.current_plan or {}
     task_type = (plan.get("task_type") or mission.task_type or "unknown").lower()
-    algorithm = plan.get("algorithm", "unknown")
+    trainer_type = plan.get("trainer_type", "")
+    # For actor_critic missions, surface the trainer as the algorithm name
+    algorithm = trainer_type if trainer_type == "actor_critic" else plan.get("algorithm", "unknown")
     raw_hp = plan.get("hyperparameters", {})
 
-    # Clean hyperparameters: strip invalid SB3 keys for RL, drop dataset_path everywhere
+    # Clean hyperparameters: strip trainer-irrelevant keys
     if task_type == "rl":
-        hyperparams = _clean_rl_hyperparams(raw_hp)
+        hyperparams = _clean_rl_hyperparams(raw_hp, trainer_type=trainer_type)
     else:
         hyperparams = {k: v for k, v in raw_hp.items() if k != "dataset_path"}
 
@@ -128,6 +138,10 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
             "best_score": score,
         },
     }
+
+    # For actor_critic missions, record trainer_type explicitly
+    if trainer_type:
+        content["trainer_type"] = trainer_type
 
     # For RL recipes, surface env_id as a top-level field
     if task_type == "rl":

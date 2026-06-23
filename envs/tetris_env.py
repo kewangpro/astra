@@ -161,6 +161,9 @@ class TetrisEnv(gym.Env):
         for dr, dc in cells:
             self._board[placement_row + dr, col + dc] = 1
 
+        # Store post-placement / pre-clear snapshot for the viewer highlight frame
+        self._pre_clear_board = self._board.copy()
+
         lines_cleared = self._clear_lines()
         self._lines_cleared_episode += lines_cleared
         self._lines_cleared_last = lines_cleared
@@ -193,6 +196,7 @@ class TetrisEnv(gym.Env):
 
     def _clear_lines(self) -> int:
         full = np.all(self._board, axis=1)
+        self._last_cleared_rows: list = np.where(full)[0].tolist()
         n = int(full.sum())
         if n:
             remaining = self._board[~full]

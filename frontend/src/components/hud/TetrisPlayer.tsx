@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 const ROWS = 20;
 const COLS = 10;
-const CELL = 18; // px per cell
+const CELL = 18;
 const W = COLS * CELL;
 const H = ROWS * CELL;
 
@@ -13,7 +13,6 @@ const WS_BASE =
     ? `ws://${window.location.hostname}:8200`
     : "ws://localhost:8200";
 
-// Classic Tetris piece colours (I O T S Z J L)
 const PIECE_COLORS = [
   "#06b6d4", // I — cyan
   "#fbbf24", // O — yellow
@@ -24,6 +23,7 @@ const PIECE_COLORS = [
   "#f97316", // L — orange
 ];
 const PIECE_NAMES = ["I", "O", "T", "S", "Z", "J", "L"];
+const FALLBACK_COLOR = "#14b8a6";
 
 interface Frame {
   type: "frame" | "episode_end" | "error";
@@ -34,33 +34,41 @@ interface Frame {
   total_reward?: number;
   done?: boolean;
   message?: string;
+  lines_cleared_last?: number;
+  highlight_rows?: number[];
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, obs: number[]) {
-  // Background
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  obs: number[],
+  cellColors: (string | null)[],
+  highlightRows: number[],
+) {
   ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, 0, W, H);
 
-  // Board (first 200 floats)
-  const currentPieceIdx = obs.slice(200, 207).indexOf(1);
-
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const filled = obs[r * COLS + c] > 0.5;
+      if (obs[r * COLS + c] <= 0.5) continue;
       const x = c * CELL;
       const y = r * CELL;
-      if (filled) {
-        ctx.fillStyle = currentPieceIdx >= 0 ? PIECE_COLORS[currentPieceIdx] : "#14b8a6";
-        ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
-        // Highlight top edge
-        ctx.fillStyle = "rgba(255,255,255,0.15)";
-        ctx.fillRect(x + 1, y + 1, CELL - 2, 2);
-      }
+      ctx.fillStyle = cellColors[r * COLS + c] ?? FALLBACK_COLOR;
+      ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillRect(x + 1, y + 1, CELL - 2, 2);
+    }
+  }
+
+  // Highlight only the rows being cleared
+  if (highlightRows.length > 0) {
+    ctx.fillStyle = "rgba(250,204,21,0.65)";
+    for (const row of highlightRows) {
+      ctx.fillRect(0, row * CELL, W, CELL);
     }
   }
 
   // Grid lines
-  ctx.strokeStyle = "rgba(20,184,166,0.05)";
+  ctx.strokeStyle = "rgba(20,184,166,0.06)";
   ctx.lineWidth = 0.5;
   for (let i = 0; i <= COLS; i++) {
     ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, H); ctx.stroke();
@@ -78,6 +86,10 @@ interface Props {
 export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  // Per-cell color memory: cells keep the color of the piece that placed them
+  const cellColorsRef = useRef<(string | null)[]>(new Array(ROWS * COLS).fill(null));
+  const prevBoardRef = useRef<number[] | null>(null);
+
   const [playing, setPlaying] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [episodeReward, setEpisodeReward] = useState(0);
@@ -98,6 +110,9 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
     if (wsRef.current) return;
     setError(null);
     setLoading(true);
+    // Reset per-cell state
+    cellColorsRef.current = new Array(ROWS * COLS).fill(null);
+    prevBoardRef.current = null;
 
     const ws = new WebSocket(
       `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=8`
@@ -110,17 +125,50 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
       const frame: Frame = JSON.parse(e.data as string);
       if (frame.type === "frame" && frame.grid) {
         const obs = frame.grid;
+        const board = obs.slice(0, 200);
+        const highlightRows = frame.highlight_rows ?? [];
+
+        // Determine current piece color for newly placed cells
+        const curIdx = obs.slice(200, 207).indexOf(1);
+        const curColor = curIdx >= 0 ? PIECE_COLORS[curIdx] : FALLBACK_COLOR;
+
+        const prevBoard = prevBoardRef.current;
+        const cellColors = cellColorsRef.current;
+
+        // When lines are cleared the board shifts down — approximate by shifting color
+        // memory down by the cleared count so existing pieces keep their color.
+        const linesCleared = frame.lines_cleared_last ?? 0;
+        if (linesCleared > 0 && prevBoard) {
+          for (let r = ROWS - 1; r >= 0; r--) {
+            for (let c = 0; c < COLS; c++) {
+              cellColors[r * COLS + c] =
+                r >= linesCleared ? cellColors[(r - linesCleared) * COLS + c] : null;
+            }
+          }
+        }
+
+        // Paint newly filled cells with the current piece color; clear emptied cells
+        for (let i = 0; i < ROWS * COLS; i++) {
+          const filled = board[i] > 0.5;
+          const wasFilled = prevBoard ? prevBoard[i] > 0.5 : false;
+          if (filled && !wasFilled) cellColors[i] = curColor;
+          else if (!filled) cellColors[i] = null;
+        }
+        prevBoardRef.current = board;
+
         const ctx = canvasRef.current?.getContext("2d");
-        if (ctx) drawFrame(ctx, obs);
+        if (ctx) drawFrame(ctx, obs, cellColors, highlightRows);
+
         setEpisodeReward(frame.episode_reward ?? 0);
         if (frame.episode) setEpisode(frame.episode);
 
-        // Decode piece one-hots from obs
-        const cur = obs.slice(200, 207).indexOf(1);
-        const nxt = obs.slice(207, 214).indexOf(1);
-        setCurrentPiece(cur >= 0 ? PIECE_NAMES[cur] : null);
-        setNextPiece(nxt >= 0 ? PIECE_NAMES[nxt] : null);
+        const nxtIdx = obs.slice(207, 214).indexOf(1);
+        setCurrentPiece(curIdx >= 0 ? PIECE_NAMES[curIdx] : null);
+        setNextPiece(nxtIdx >= 0 ? PIECE_NAMES[nxtIdx] : null);
       } else if (frame.type === "episode_end") {
+        // Reset color memory between episodes
+        cellColorsRef.current = new Array(ROWS * COLS).fill(null);
+        prevBoardRef.current = null;
         const r = frame.total_reward ?? 0;
         setBestReward((prev) => (prev === null || r > prev ? r : prev));
       } else if (frame.type === "error") {
@@ -179,7 +227,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
           }}
         />
 
-        {/* Sidebar: current / next piece + column heights legend */}
+        {/* Sidebar: current / next piece */}
         <div className="space-y-3 pt-1 min-w-[64px]">
           {currentPiece && (
             <div className="space-y-1">

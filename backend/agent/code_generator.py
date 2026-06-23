@@ -165,17 +165,10 @@ Target: lines_cleared >= {target_lines}
 Hyperparameters: {hyperparameters}
 
 == Architecture ==
-class ActorCriticNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.shared = nn.Sequential(nn.Linear(4, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU())
-        self.critic = nn.Linear(64, 1)
-        for layer in self.modules():
-            if isinstance(layer, nn.Linear):
-                nn.init.xavier_uniform_(layer.weight)
-    def forward(self, x):  # x: Tensor[batch, 4]
-        h = self.shared(x)
-        return self.critic(h)  # returns Tensor[batch, 1]
+Import the canonical class — do NOT redefine it inline:
+    from envs.actor_critic_net import ActorCriticNet
+This ensures torch.load can resolve the class in any process (play, benchmark, eval).
+model = ActorCriticNet()  # shared MLP [4→64→64] + critic head Linear(64,1)
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
 BUFFER = collections.deque(maxlen=10000)

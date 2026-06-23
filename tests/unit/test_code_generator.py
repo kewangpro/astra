@@ -628,7 +628,7 @@ def test_build_user_prompt_actor_critic_route(tmp_path, monkeypatch):
 
     assert "get_next_states" in prompt
     assert "actor_critic" in prompt
-    assert "replay" in prompt.lower()
+    assert "ActorCriticNet" in prompt
 
 
 def test_build_user_prompt_actor_critic_contains_env_id(tmp_path, monkeypatch):

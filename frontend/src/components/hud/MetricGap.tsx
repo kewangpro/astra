@@ -109,7 +109,8 @@ export function MetricGap({ mission, events = [] }: Props) {
     const byIter = new Map<number, { step: number; value: number; iteration: number }>();
     for (const e of events) {
       if ((e.type !== "metric" && e.type !== "backfill") || e.name !== metricName) continue;
-      if (e.iteration == null || e.value == null || e.iteration >= currentIter) continue;
+      const iterCutoff = mission.status === "running" ? currentIter : currentIter + 1;
+      if (e.iteration == null || e.value == null || e.iteration >= iterCutoff) continue;
       const iter = e.iteration;
       const existing = byIter.get(iter);
       if (!existing || (e.value as number) > existing.value)

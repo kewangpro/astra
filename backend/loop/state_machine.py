@@ -327,9 +327,12 @@ class LoopStateMachine:
                 await emit_status(mission_id, "Evaluating results…", event_type="info")
                 eval_result = await self._evaluator.evaluate(mission_id, plan)
                 current_metrics = eval_result.get("metrics", {})
-                # Merge in metrics the sandbox actually posted to telemetry (mean_reward)
+                # Merge in mean_reward from sandbox telemetry (training signal only).
+                # Goal metrics must come from dedicated eval, not training rolling means.
                 sandbox_metrics = self._read_telemetry_metrics(mission_id, tel_offset)
-                current_metrics = {**current_metrics, **sandbox_metrics}
+                mean_reward_from_sandbox = sandbox_metrics.get("mean_reward")
+                if mean_reward_from_sandbox is not None:
+                    current_metrics.setdefault("mean_reward", mean_reward_from_sandbox)
 
                 # For non-mean_reward goal metrics: run dedicated eval episodes if the
                 # benchmark didn't supply the value, then always write to telemetry so the
@@ -1036,8 +1039,15 @@ class LoopStateMachine:
         env_id = plan.get("env_id", "")
         algorithm = plan.get("algorithm", "PPO").upper()
         checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
-        checkpoint_path = os.path.join(checkpoint_dir, "best_model.zip")
-        if not os.path.isfile(checkpoint_path):
+
+        # Prefer actor_critic .pth; fall back to SB3 .zip
+        ckpt_pth = os.path.join(checkpoint_dir, "best_model.pth")
+        ckpt_zip = os.path.join(checkpoint_dir, "best_model.zip")
+        if os.path.isfile(ckpt_pth):
+            checkpoint_path = ckpt_pth
+        elif os.path.isfile(ckpt_zip):
+            checkpoint_path = ckpt_zip
+        else:
             checkpoint_path = os.path.join(checkpoint_dir, "last_model.zip")
         if not os.path.isfile(checkpoint_path):
             logger.warning("LoopStateMachine: no checkpoint for goal metric eval mission=%s", mission_id)
@@ -1056,8 +1066,42 @@ class LoopStateMachine:
                 register()
 
             import gymnasium as gym
-            from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
 
+            # Actor-critic path: use get_next_states() greedy eval
+            if checkpoint_path.endswith(".pth"):
+                import torch
+                from envs.actor_critic_net import ActorCriticNet
+                sys.modules["__main__"].ActorCriticNet = ActorCriticNet
+                model = torch.load(checkpoint_path, weights_only=False)
+                model.eval()
+                env = gym.make(env_id)
+                values = []
+                for _ in range(10):
+                    obs, _ = env.reset()
+                    done = False
+                    ep_val = 0.0
+                    while not done:
+                        next_states = env.unwrapped.get_next_states()
+                        if next_states:
+                            with torch.no_grad():
+                                action = max(
+                                    next_states,
+                                    key=lambda a: model(
+                                        torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)
+                                    ).item()
+                                )
+                        else:
+                            action = 0
+                        obs, _, terminated, truncated, info = env.step(action)
+                        done = terminated or truncated
+                        if done:
+                            ep_val = float(info.get(metric_name, 0))
+                    values.append(ep_val)
+                env.close()
+                return float(max(values)) if values else None
+
+            # SB3 path
+            from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
             algo_cls = {"PPO": PPO, "SAC": SAC, "A2C": A2C, "DQN": DQN, "TD3": TD3}.get(algorithm, PPO)
             env = gym.make(env_id)
             model = algo_cls.load(checkpoint_path, env=env)

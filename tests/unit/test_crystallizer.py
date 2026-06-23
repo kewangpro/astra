@@ -183,3 +183,36 @@ class TestBuildRecipeContent:
         mission = _make_mission(current_iteration=7)
         content = _build_recipe_content(mission, score=None, lessons=[])
         assert content["provenance"]["iterations"] == 7
+
+    def test_actor_critic_sets_algorithm_field(self):
+        """trainer_type=actor_critic overrides algorithm to 'actor_critic'."""
+        plan = {
+            "task_type": "rl", "algorithm": "PPO",
+            "trainer_type": "actor_critic", "hyperparameters": {},
+        }
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert content["algorithm"] == "actor_critic"
+
+    def test_actor_critic_strips_ppo_kwargs(self):
+        """PPO-specific keys (n_steps, gae_lambda, etc.) are removed for actor_critic."""
+        hp = {"learning_rate": 0.001, "gamma": 0.99, "n_steps": 512, "gae_lambda": 0.9}
+        plan = {
+            "task_type": "rl", "algorithm": "PPO",
+            "trainer_type": "actor_critic", "hyperparameters": hp,
+        }
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert "n_steps" not in content["hyperparameters"]
+        assert "gae_lambda" not in content["hyperparameters"]
+        assert content["hyperparameters"]["learning_rate"] == 0.001
+
+    def test_actor_critic_surfaces_trainer_type(self):
+        """trainer_type appears as a top-level field in the recipe content."""
+        plan = {
+            "task_type": "rl", "algorithm": "PPO",
+            "trainer_type": "actor_critic", "hyperparameters": {},
+        }
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert content.get("trainer_type") == "actor_critic"

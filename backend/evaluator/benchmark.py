@@ -43,6 +43,9 @@ def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 1
             from envs.tetris_env import register as _reg
             _reg()
 
+        import sys
+        from envs.actor_critic_net import ActorCriticNet
+        sys.modules["__main__"].ActorCriticNet = ActorCriticNet
         model = torch.load(checkpoint_path, weights_only=False)
         model.eval()
 
