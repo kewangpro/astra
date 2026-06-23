@@ -892,3 +892,62 @@ def test_load_goal_metric_history_last_value_per_iter_wins(tmp_path):
             result = sm._load_goal_metric_history("any-id", "food_eaten")
 
     assert result == [{"iteration": 0, "food_eaten": 5.0}]
+
+
+# ── _run_goal_metric_eval env_kwargs passthrough ──────────────────────────────
+
+def test_run_goal_metric_eval_passes_env_kwargs_to_gym_make(tmp_path):
+    """eval must pass env_kwargs from train_config.json to gym.make so obs_type=features models work."""
+    import json as _json
+    import sys
+    import types
+    from unittest.mock import patch, MagicMock
+
+    mission_id = "test-mission-eval"
+    checkpoint_dir = tmp_path / "missions" / mission_id / "checkpoints"
+    checkpoint_dir.mkdir(parents=True)
+    (checkpoint_dir / "best_model.zip").write_text("fake")
+    (checkpoint_dir / "train_config.json").write_text(
+        _json.dumps({"env_id": "Snake-v0", "env_kwargs": {"obs_type": "features", "max_steps": 2000}})
+    )
+
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    plan = {"env_id": "Snake-v0", "algorithm": "PPO", "hyperparameters": {"eval_episodes": 1}}
+
+    mock_model = MagicMock()
+    mock_model.predict.return_value = (0, None)
+    mock_env = MagicMock()
+    mock_env.reset.return_value = ([0.0] * 25, {})
+    mock_env.step.return_value = ([0.0] * 25, 0.0, True, False, {"food_eaten": 7})
+
+    mock_ppo_cls = MagicMock()
+    mock_ppo_cls.load.return_value = mock_model
+
+    make_calls = []
+
+    def fake_gym_make(env_id, **kwargs):
+        make_calls.append((env_id, kwargs))
+        return mock_env
+
+    fake_gym = types.ModuleType("gymnasium")
+    fake_gym.make = fake_gym_make
+    fake_sb3 = types.ModuleType("stable_baselines3")
+    fake_sb3.PPO = mock_ppo_cls
+    fake_sb3.SAC = MagicMock()
+    fake_sb3.A2C = MagicMock()
+    fake_sb3.DQN = MagicMock()
+    fake_sb3.TD3 = MagicMock()
+    fake_snake = types.ModuleType("envs.snake_env")
+    fake_snake.register = MagicMock()
+
+    with patch("backend.loop.state_machine.settings") as mock_settings, \
+         patch.dict(sys.modules, {
+             "gymnasium": fake_gym,
+             "stable_baselines3": fake_sb3,
+             "envs.snake_env": fake_snake,
+         }):
+        mock_settings.data_path = str(tmp_path)
+        sm._run_goal_metric_eval(mission_id, plan, "food_eaten")
+
+    assert any(kw.get("obs_type") == "features" for _, kw in make_calls), \
+        f"obs_type=features not passed to gym.make; calls={make_calls}"

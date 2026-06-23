@@ -161,3 +161,60 @@ def test_tetris_viewer_grid_heights_match_empty_board():
     grid = _tetris_viewer_grid(env)
     heights = grid[214:224]
     assert all(h == 0.0 for h in heights)
+
+
+# ── _snake_viewer_grid ────────────────────────────────────────────────────────
+
+def test_snake_viewer_grid_returns_256_elements():
+    from backend.routers.play import _snake_viewer_grid
+    from envs.snake_env import SnakeEnv
+
+    env = SnakeEnv(obs_type="features")
+    env.reset(seed=0)
+    grid = _snake_viewer_grid(env)
+    assert len(grid) == 256
+
+
+def test_snake_viewer_grid_head_is_1():
+    from backend.routers.play import _snake_viewer_grid
+    from envs.snake_env import SnakeEnv
+
+    env = SnakeEnv(obs_type="features")
+    env.reset(seed=0)
+    grid = _snake_viewer_grid(env)
+    head_r, head_c = list(env._snake)[-1]
+    assert grid[head_r * env.grid_w + head_c] == 1.0
+
+
+def test_snake_viewer_grid_food_is_minus_1():
+    from backend.routers.play import _snake_viewer_grid
+    from envs.snake_env import SnakeEnv
+
+    env = SnakeEnv(obs_type="features")
+    env.reset(seed=0)
+    grid = _snake_viewer_grid(env)
+    fr, fc = env._food
+    assert grid[fr * env.grid_w + fc] == -1.0
+
+
+def test_snake_viewer_grid_body_is_0_5():
+    from backend.routers.play import _snake_viewer_grid
+    from envs.snake_env import SnakeEnv
+
+    env = SnakeEnv(obs_type="features")
+    env.reset(seed=0)
+    grid = _snake_viewer_grid(env)
+    body = list(env._snake)[:-1]
+    for r, c in body:
+        assert grid[r * env.grid_w + c] == 0.5
+
+
+def test_snake_viewer_grid_works_with_grid_obs_type():
+    from backend.routers.play import _snake_viewer_grid
+    from envs.snake_env import SnakeEnv
+
+    env = SnakeEnv(obs_type="grid")
+    env.reset(seed=0)
+    grid = _snake_viewer_grid(env)
+    assert len(grid) == 256
+    assert 1.0 in grid  # head present

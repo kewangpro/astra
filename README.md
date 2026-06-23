@@ -19,7 +19,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **546 tests** — 537 unit + 9 integration tests covering all core services
+- **552 tests** — 543 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -81,7 +81,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 492 unit tests across all core modules
+│   ├── unit/           # 543 unit tests across all core modules
 │   └── integration/    # 9 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -126,7 +126,7 @@ make ports  # show port status for all services
 | 16 | Post-Pivot Regression Detection, Checkpoint Recovery & Best-Architecture Memory — 20% regression threshold, per-iteration rolling checkpoint window (last 10), revert targets true best-ever iter, de-escalation; best-architecture memory persisted to DB; `_normalize_pivot` policy_kwargs promotion; stop button + MLX shield; auto-approve variable URL fix; competitive-dip guard (15% tolerance) prevents false pivots on variance; `pivot_pre_best` persisted so regression detector survives restarts; `mean_reward` inflation fix in `_load_persisted_best`; 498 tests | ✅ Complete |
 | 17 | Tetris Obs Refactor + Actor-Critic Trainer — 4-feature compact obs (Step 17.1); `get_next_states()` env method + Actor-Critic contract prompt replacing SB3 template; benchmark + play router support `.pth` models; `trainer_type` routing in `state_machine`, `benchmark`, `play`; `_tetris_viewer_grid` for HUD compatibility; actor_critic infrastructure hardening (`actor_critic_net.py`, goal metric fix, pre-clear highlight frames, per-cell piece colors in TetrisPlayer, crystallizer actor_critic support); 529 tests | ✅ Complete |
 | 18 | Hardcode Removal — all training knobs (`total_timesteps`, `telemetry_interval`, `replay_buffer_size`, `batch_size`, `gamma`, `epsilon_*`, `ac_telemetry_interval`, `eval_episodes`) driven from recipe `hyperparameters:`; recipes restructured (`sft_llama_lora_v1` flat `hyperparameters:` block); 9 stale crystallized recipes deleted; 533 tests | ✅ Complete |
-| 19 | Snake Feature Obs + Recipe-Driven Defaults — `obs_type=features` adds 25D compact observation; `snake_ppo_v1.yaml` v2 with `max_steps=2000` + food-dominant rewards; `_resolve_env_kwargs` / `_resolve_hyperparams` load canonical recipe YAML per env_id/task_type so all HP and env_kwargs defaults come from recipes (Snake → snake_ppo_v1, Tetris → tetris_ppo_v1, SFT → sft_llama_lora_v1) with no hardcodes in code_generator; 546 tests | ✅ Complete |
+| 19 | Snake Feature Obs + Recipe-Driven Defaults — `obs_type=features` adds 25D compact observation; `snake_ppo_v1.yaml` v2 with `max_steps=2000` + food-dominant rewards; `_resolve_env_kwargs` / `_resolve_hyperparams` load canonical recipe YAML per env_id/task_type; `_snake_viewer_grid` reads env state for canvas renderer (fixes garbled output with `obs_type=features`); `_run_goal_metric_eval` passes `env_kwargs` to `gym.make` (fixes food_eaten always 0 due to obs shape mismatch); 552 tests | ✅ Complete |
 
 ## Hardware Target
 

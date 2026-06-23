@@ -771,4 +771,15 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `_resolve_env_kwargs(env_id, plan_env_kwargs)` similarly applies recipe `env_kwargs` as defaults. No hardcoded values remain in the generator for known envs.
     - SFT context dict removed its 8 hardcoded fields (`base_model`, `lora_r`, `batch_size`, etc.); they now come from `sft_llama_lora_v1.yaml` via `hp`.
     - Tests updated: replaced hardcoded-value assertions with recipe-value assertions; added `test_resolve_hyperparams_snake_uses_recipe_total_timesteps`, `test_resolve_hyperparams_plan_overrides_recipe`, `test_build_user_prompt_snake_uses_recipe_env_kwargs`.
-    - Total: **546 tests** (537 unit + 9 integration).
+
+- [x] **`backend/routers/play.py`: `_snake_viewer_grid` helper**
+    - `_run_episode` was sending `obs.tolist()` as the canvas grid; with `obs_type=features` this is 25 floats, not the 256-element grid `SnakePlayer.tsx` expects.
+    - Added `_snake_viewer_grid(base_env)` — reads `base_env._snake` and `base_env._food` directly and builds the flat 256-element grid (head=1.0, body=0.5, food=−1.0) regardless of `obs_type`.
+    - `_run_episode` now dispatches: Tetris → `_tetris_viewer_grid`, Snake → `_snake_viewer_grid`, else → `obs.tolist()`.
+    - 5 new tests in `test_play_router.py`: length=256, head=1.0, food=−1.0, body=0.5, works with `obs_type=grid` too.
+
+- [x] **`backend/loop/state_machine.py`: pass `env_kwargs` to `gym.make` in eval**
+    - `_run_goal_metric_eval` called `gym.make(env_id)` without `env_kwargs`, so Snake eval used `obs_type=grid` (256D) against a model trained on `obs_type=features` (25D) — shape mismatch exception caught silently, `best_metric_value` stayed `None`, MetricGap stuck at 0.
+    - Fix: load `env_kwargs` from `train_config.json` (same pattern as play router) and pass to `gym.make` for both SB3 and actor-critic eval paths.
+    - 1 new test in `test_state_machine_helpers.py`: `test_run_goal_metric_eval_passes_env_kwargs_to_gym_make` — asserts `obs_type=features` is forwarded to `gym.make`.
+    - Total: **552 tests** (543 unit + 9 integration).
