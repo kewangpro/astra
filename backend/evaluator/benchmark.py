@@ -19,12 +19,87 @@ logger = get_logger(__name__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 
+def _is_actor_critic(checkpoint_path: str) -> bool:
+    """Return True if the checkpoint was saved by a custom PyTorch Actor-Critic trainer."""
+    ckpt_dir = os.path.dirname(checkpoint_path)
+    tt_path = os.path.join(ckpt_dir, "trainer_type.txt")
+    if os.path.exists(tt_path):
+        return open(tt_path).read().strip() == "actor_critic"
+    # Also detect by file extension — .pth = PyTorch, .zip = SB3
+    return checkpoint_path.endswith(".pth")
+
+
+def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[float, dict]:
+    """Rollout a custom PyTorch Actor-Critic model using get_next_states()."""
+    import numpy as np
+    import torch
+
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+
+    try:
+        import gymnasium as gym
+        if env_id == "Tetris-v0":
+            from envs.tetris_env import register as _reg
+            _reg()
+
+        model = torch.load(checkpoint_path, weights_only=False)
+        model.eval()
+
+        env = gym.make(env_id)
+        rewards, info_accum = [], {}
+        for _ in range(n_episodes):
+            obs, _ = env.reset()
+            ep_reward, done = 0.0, False
+            ep_info = {}
+            while not done:
+                next_states = env.unwrapped.get_next_states()
+                if next_states:
+                    with torch.no_grad():
+                        best_action, best_val = None, float("-inf")
+                        for act, st in next_states.items():
+                            val = model(torch.tensor(st, dtype=torch.float32).unsqueeze(0))
+                            if isinstance(val, tuple):
+                                val = val[1]  # critic head
+                            v = float(val.squeeze())
+                            if v > best_val:
+                                best_val, best_action = v, act
+                    action = best_action
+                else:
+                    action = 0
+                obs, r, terminated, truncated, info = env.step(action)
+                ep_reward += float(r)
+                done = terminated or truncated
+                if done:
+                    ep_info = info
+            rewards.append(ep_reward)
+            for k, v in ep_info.items():
+                try:
+                    info_accum.setdefault(k, []).append(float(v))
+                except (TypeError, ValueError):
+                    pass
+        env.close()
+        max_info = {k: float(np.max(vs)) for k, vs in info_accum.items()}
+        return float(np.mean(rewards)), max_info
+    except Exception as exc:
+        logger.warning("BenchmarkSuite actor_critic rollout failed env=%s: %s", env_id, exc)
+        return 0.0, {}
+
+
 def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[float, dict]:
     """Load checkpoint, run n_episodes deterministically, return (mean_reward, mean_info).
 
     Returns info values averaged across episodes. Only collects info at episode end
-    (terminated/truncated step).
+    (terminated/truncated step). Detects actor_critic PyTorch models automatically.
     """
+    if _is_actor_critic(checkpoint_path):
+        pth = checkpoint_path.replace(".zip", ".pth")
+        if not pth.endswith(".pth"):
+            pth = checkpoint_path
+        if os.path.exists(pth):
+            return _rollout_actor_critic(pth, env_id, n_episodes)
+        # fall through to SB3 if .pth not found
+
     import numpy as np
 
     if _PROJECT_ROOT not in sys.path:

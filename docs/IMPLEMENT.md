@@ -687,13 +687,23 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 ---
 
-## Phase 17 — Tetris Obs Refactor
+## Phase 17 — Tetris Obs Refactor + Actor-Critic Trainer
 
-*Goal: Replace the 224-element flat board observation with the proven 4-feature compact representation from the reference project, enabling the PPO MLP to achieve 45+ lines cleared.*
+*Goal: Replace the 224-element flat board observation with the proven 4-feature compact representation, and replace the rigid SB3-only code generator with a contract-based Actor-Critic approach that uses `get_next_states()` — matching the reference project that achieved 121 avg lines vs PPO's 45.*
 
 - [x] **Tetris-v0 4-feature observation (Step 17.1)**
     - **Problem**: the 224-element flat board observation made learning extremely difficult. The reference project (`tetris_ppo_cnn`) achieved 45+ lines cleared with a plain PPO MLP using only a 4-feature obs; the flat board approach yielded ~10 lines.
     - `envs/tetris_env.py`: replaced flat 224-element obs (`200 board + 7 current-one-hot + 7 next-one-hot + 10 heights`) with compact 4-feature vector `[lines_cleared_last/4, holes/200, bumpiness/180, sum_height/200]` (all normalized to `[0, 1]`). Simplified reward to `+1 placement + lines²×10 − 2 death` (reference formula); removed hole/bumpiness/height penalty params from reward (board quality is encoded in obs, not reward). Legacy shaping kwargs (`hole_penalty`, `bumpiness_penalty`, `height_penalty`) silently absorbed via `**kwargs` for backwards compatibility. `max_steps` default raised 500→1000. Added `get_board_props()` helper for inspection.
     - `recipes/tetris_ppo_v1.yaml`: renamed from `tetris_mlp_v1.yaml`; updated `name`, `version` → 2.0.0, `target_metric` → `lines_cleared: 20`, `reward_shaping` → reference formula only, `env_kwargs.max_steps` → 1000.
     - `tests/unit/test_tetris_env.py`: rewrote all 33 tests for new obs shape `(4,)`, reward structure, and legacy-kwargs compatibility.
-    - Total: **501 tests** (492 unit + 9 integration).
+
+- [x] **Actor-Critic trainer with `get_next_states()` (Step 17.2)**
+    - **Problem**: SB3 PPO treats Tetris-v0 as a standard 40-action classification problem — it picks blindly from 40 actions without seeing the resulting board states. The reference project's key insight: call `get_next_states()` to simulate all 40 placements on a board copy, evaluate each resulting 4-feature obs, and pick the best — turning action selection from a 40-way guess into a 40-way lookahead. Reference Actor-Critic achieved 121 avg lines; PPO maxed out at ~45.
+    - `envs/tetris_env.py`: added `get_next_states()` returning `{action: 4-feature obs}` for all valid placements of the current piece. Board copy helpers `_drop_on`, `_clear_lines_on`, `_obs_from` operate without mutating live state. 6 new tests (39 total in `test_tetris_env.py`).
+    - `backend/agent/code_generator.py`: added `_ACTOR_CRITIC_CONTRACT` — a contract-based prompt (not a rigid template) that specifies the ASTRA integration requirements (telemetry POST URL, `best_model.pth` checkpoint paths, warm-start from `.pth`, `trainer_type.txt` marker) and lets the coder model write the full PyTorch training loop (shared MLP backbone, critic head, epsilon-greedy via `get_next_states()`, experience replay buffer, TD learning). Routes on `plan["trainer_type"] == "actor_critic"`. `train_config.json` now includes `trainer_type` field.
+    - `backend/loop/state_machine.py`: automatically injects `trainer_type: "actor_critic"` for `Tetris-v0` missions before code generation. Rolling checkpoint window updated to handle `.pth` alongside `.zip`; revert path (`_pre_pivot_best` restore) also supports both extensions.
+    - `backend/evaluator/benchmark.py`: `_is_actor_critic()` detects PyTorch models via `trainer_type.txt` or `.pth` extension. `_rollout_actor_critic()` loads the model with `torch.load`, runs greedy evaluation via `get_next_states()` + critic head value selection. `_rollout()` routes to actor_critic path first.
+    - `backend/routers/play.py`: `_run_episode_actor_critic()` uses `get_next_states()` + `torch.no_grad()` for real-time play; `_tetris_viewer_grid()` reconstructs the 224-element viewer layout from live `TetrisEnv` board state (board one-hot + current/next piece one-hots + column heights) so `TetrisPlayer.tsx` renders correctly even though training obs is only 4 floats. `_load()` checks `trainer_type.txt` and prefers `best_model.pth`; returns `(model, env, is_ac)` 3-tuple; `play_ws` uses `episode_fn = _run_episode_actor_critic if is_ac else _run_episode`.
+    - `recipes/tetris_ppo_v1.yaml`: added `trainer_type: actor_critic`.
+    - New tests: 5 tests for `_is_actor_critic` in `test_benchmark_suite.py`; 5 tests for `_tetris_viewer_grid` in `test_play_router.py`; 7 tests for Actor-Critic prompt routing in `test_code_generator.py`.
+    - Total: **523 tests** (514 unit + 9 integration).

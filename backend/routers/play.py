@@ -92,6 +92,44 @@ def _tetris_viewer_grid(base_env) -> list:
     return board + cur_oh + nxt_oh + heights                   # 224
 
 
+def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
+    """Run one episode with a PyTorch Actor-Critic model using get_next_states()."""
+    import torch
+    obs, _ = env.reset()
+    frames = []
+    episode_reward = 0.0
+    step = 0
+    done = False
+    truncated = False
+    base_env = env.unwrapped
+    while not done and not truncated:
+        next_states = base_env.get_next_states()
+        if next_states:
+            with torch.no_grad():
+                best_action, best_val = None, float("-inf")
+                for act, st in next_states.items():
+                    val = model(torch.tensor(st, dtype=torch.float32).unsqueeze(0))
+                    if isinstance(val, tuple):
+                        val = val[1]  # critic head
+                    v = float(val.squeeze())
+                    if v > best_val:
+                        best_val, best_action = v, act
+            action = best_action
+        else:
+            action = 0
+        obs, reward, done, truncated, _ = env.step(action)
+        episode_reward += float(reward)
+        step += 1
+        frames.append({
+            "type": "frame",
+            "grid": _tetris_viewer_grid(base_env),
+            "step": step,
+            "episode_reward": round(episode_reward, 2),
+            "done": bool(done or truncated),
+        })
+    return frames, round(episode_reward, 2)
+
+
 def _run_episode(model, env) -> tuple[list[dict], float]:
     """Run one episode synchronously; return list of frame dicts and total reward."""
     obs, _ = env.reset()
@@ -128,9 +166,12 @@ async def play_ws(
     await ws.accept()
 
     ckpt_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
-    ckpt_path = os.path.join(ckpt_dir, "best_model.zip")
+    # Prefer PyTorch .pth for actor_critic trainers; fall back to SB3 .zip
+    ckpt_pth = os.path.join(ckpt_dir, "best_model.pth")
+    ckpt_zip = os.path.join(ckpt_dir, "best_model.zip")
+    ckpt_path = ckpt_pth if os.path.exists(ckpt_pth) else ckpt_zip
     if not os.path.exists(ckpt_path):
-        await ws.send_json({"type": "error", "message": "No best_model.zip found for this mission."})
+        await ws.send_json({"type": "error", "message": "No best_model.pth or best_model.zip found for this mission."})
         await ws.close()
         return
 
@@ -146,10 +187,6 @@ async def play_ws(
             import gymnasium as gym
 
             cfg = _load_train_config(ckpt_dir)
-            # Use best_model_algo.txt when available — it records which algorithm
-            # actually saved best_model.zip, which may differ from train_config.json
-            # if a pivot switched algorithms but the previous algo still holds the best score.
-            algorithm = _checkpoint_algorithm(ckpt_dir, cfg)
             env_kwargs = cfg.get("env_kwargs") or {}
             resolved_env_id = cfg.get("env_id") or env_id
 
@@ -162,8 +199,21 @@ async def play_ws(
 
             env = gym.make(resolved_env_id, **env_kwargs)
 
+            # Detect actor_critic PyTorch model
+            tt_path = os.path.join(ckpt_dir, "trainer_type.txt")
+            is_actor_critic = (
+                os.path.exists(tt_path) and open(tt_path).read().strip() == "actor_critic"
+            ) or ckpt_path.endswith(".pth")
+            if is_actor_critic:
+                import torch
+                model = torch.load(ckpt_path, weights_only=False)
+                model.eval()
+                logger.info("play_ws: loaded ActorCritic PyTorch model for mission=%s env=%s", mission_id, resolved_env_id)
+                return model, env, True  # True = is_actor_critic
+
             # Try the detected algorithm first; if it fails with a policy mismatch,
             # fall back through all known algorithms so stale algo files don't hard-crash.
+            algorithm = _checkpoint_algorithm(ckpt_dir, cfg)
             algo_order = [algorithm] + [a for a in _SB3_ALGO_MAP if a != algorithm.upper()]
             last_exc: Optional[Exception] = None
             for algo_name in algo_order:
@@ -179,14 +229,15 @@ async def play_ws(
                         "play_ws: loaded %s model for mission=%s env=%s env_kwargs=%s",
                         algo_name, mission_id, resolved_env_id, env_kwargs,
                     )
-                    return model, env
+                    return model, env, False
                 except Exception as exc:
                     last_exc = exc
                     continue
             raise RuntimeError(f"Could not load best_model.zip with any known algorithm: {last_exc}")
 
 
-        model, env = await loop.run_in_executor(_EXECUTOR, _load)
+        model, env, is_ac = await loop.run_in_executor(_EXECUTOR, _load)
+        episode_fn = _run_episode_actor_critic if is_ac else _run_episode
 
         frame_delay = 1.0 / max(1, min(fps, 30))
         episode = 0
@@ -194,7 +245,7 @@ async def play_ws(
         while True:
             episode += 1
             frames, total_reward = await loop.run_in_executor(
-                _EXECUTOR, _run_episode, model, env
+                _EXECUTOR, episode_fn, model, env
             )
 
             for frame in frames:

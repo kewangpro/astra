@@ -242,6 +242,78 @@ class TetrisEnv(gym.Env):
             float(self._column_heights().sum()),
         ]
 
+    def get_next_states(self) -> dict:
+        """Return {action: 4-feature obs} for every valid placement of the current piece.
+
+        Simulates each of the 40 possible (rotation, col) actions on a board copy
+        without modifying live state. Terminal placements (no valid drop) are excluded.
+        Used by Actor-Critic agents to evaluate resulting states before acting.
+        """
+        states = {}
+        piece_rotations = _PIECES[self._current_piece]
+        for action in range(self.N_ROTATIONS * self.COLS):
+            rotation = min(action // self.COLS, len(piece_rotations) - 1)
+            col = action % self.COLS
+            cells = piece_rotations[rotation]
+            max_dc = max(dc for _, dc in cells)
+            col = max(0, min(col, self.COLS - 1 - max_dc))
+
+            board = self._board.copy()
+            placement_row = self._drop_on(board, cells, col)
+            if placement_row < 0:
+                continue  # game-over placement — skip
+
+            for dr, dc in cells:
+                board[placement_row + dr, col + dc] = 1
+
+            lines = self._clear_lines_on(board)
+            states[action] = self._obs_from(board, lines)
+        return states
+
+    # ── board-copy helpers for get_next_states ────────────────────────────────
+
+    @staticmethod
+    def _drop_on(board: np.ndarray, cells: List[Tuple[int, int]], col: int) -> int:
+        rows, cols = board.shape
+        placement = -1
+        for r in range(rows):
+            abs_cells = [(dr + r, dc + col) for dr, dc in cells]
+            if all(0 <= ar < rows and 0 <= ac < cols and not board[ar, ac] for ar, ac in abs_cells):
+                placement = r
+            else:
+                break
+        return placement
+
+    @staticmethod
+    def _clear_lines_on(board: np.ndarray) -> int:
+        full = np.all(board, axis=1)
+        n = int(full.sum())
+        if n:
+            remaining = board[~full]
+            board[:] = np.vstack([np.zeros((n, board.shape[1]), dtype=np.int8), remaining])
+        return n
+
+    @staticmethod
+    def _obs_from(board: np.ndarray, lines_cleared_last: int) -> np.ndarray:
+        rows, cols = board.shape
+        heights = np.zeros(cols, dtype=np.int32)
+        for c in range(cols):
+            filled = np.where(board[:, c])[0]
+            if filled.size:
+                heights[c] = rows - filled[0]
+        holes = sum(
+            int(np.sum(board[np.where(board[:, c])[0][0]:, c] == 0))
+            for c in range(cols) if np.any(board[:, c])
+        )
+        bumpiness = float(np.sum(np.abs(np.diff(heights))))
+        sum_height = float(heights.sum())
+        return np.array([
+            lines_cleared_last / _MAX_LINES_PER_STEP,
+            holes / _MAX_HOLES,
+            bumpiness / _MAX_BUMPINESS,
+            sum_height / _MAX_SUM_HEIGHT,
+        ], dtype=np.float32)
+
 
 # ── registration ──────────────────────────────────────────────────────────────
 

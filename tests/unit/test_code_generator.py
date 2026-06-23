@@ -599,3 +599,97 @@ def test_target_reward_uses_9999_when_target_is_custom_metric(tmp_path, monkeypa
     assert "mean_reward >= 9999" in prompt
     # The food_eaten target value (20) must NOT be used as the threshold
     assert "mean_reward >= 20:" not in prompt
+
+
+# ── Actor-Critic prompt path ──────────────────────────────────────────────────
+
+def _make_actor_critic_plan(**overrides) -> dict:
+    base = {
+        "task_type": "rl",
+        "trainer_type": "actor_critic",
+        "algorithm": "ActorCritic",
+        "env_id": "Tetris-v0",
+        "target_metric": {"lines_cleared": 20},
+        "hyperparameters": {"learning_rate": 0.0001, "episodes": 5000},
+    }
+    base.update(overrides)
+    return base
+
+
+def test_build_user_prompt_actor_critic_route(tmp_path, monkeypatch):
+    """trainer_type=actor_critic routes to _ACTOR_CRITIC_CONTRACT, not SB3 template."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "get_next_states" in prompt
+    assert "actor_critic" in prompt
+    assert "replay" in prompt.lower()
+
+
+def test_build_user_prompt_actor_critic_contains_env_id(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "Tetris-v0" in prompt
+
+
+def test_build_user_prompt_actor_critic_contains_telemetry(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "POST" in prompt
+    assert "best_model" in prompt
+
+
+def test_build_user_prompt_actor_critic_contains_hyperparameters(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan(hyperparameters={"learning_rate": 0.00025, "episodes": 8000})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "0.00025" in prompt
+    assert "8000" in prompt
+
+
+def test_build_user_prompt_actor_critic_contains_iteration(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"), current_iteration=4)
+
+    assert "4" in prompt
+
+
+def test_build_user_prompt_no_trainer_type_uses_sb3(tmp_path, monkeypatch):
+    """Plans without trainer_type still route to SB3 template."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(env_id="CartPole-v1")
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "PPO" in prompt
+    assert "get_next_states" not in prompt

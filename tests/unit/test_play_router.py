@@ -100,3 +100,64 @@ def test_checkpoint_algorithm_no_config_defaults_ppo(tmp_path):
     from backend.routers.play import _checkpoint_algorithm
 
     assert _checkpoint_algorithm(str(tmp_path), {}) == "PPO"
+
+
+# ── _tetris_viewer_grid ───────────────────────────────────────────────────────
+
+def test_tetris_viewer_grid_returns_224_elements():
+    from backend.routers.play import _tetris_viewer_grid
+    from envs.tetris_env import TetrisEnv
+
+    env = TetrisEnv()
+    env.reset(seed=0)
+    grid = _tetris_viewer_grid(env)
+    assert len(grid) == 224
+
+
+def test_tetris_viewer_grid_board_section_is_binary():
+    from backend.routers.play import _tetris_viewer_grid
+    from envs.tetris_env import TetrisEnv
+
+    env = TetrisEnv()
+    env.reset(seed=0)
+    grid = _tetris_viewer_grid(env)
+    board = grid[:200]
+    assert all(v in (0, 1) for v in board)
+
+
+def test_tetris_viewer_grid_current_piece_one_hot():
+    from backend.routers.play import _tetris_viewer_grid
+    from envs.tetris_env import TetrisEnv
+
+    env = TetrisEnv()
+    env.reset(seed=0)
+    env._current_piece = 3  # S-piece
+    grid = _tetris_viewer_grid(env)
+    cur_oh = grid[200:207]
+    assert cur_oh[3] == 1.0
+    assert sum(cur_oh) == 1.0
+
+
+def test_tetris_viewer_grid_next_piece_one_hot():
+    from backend.routers.play import _tetris_viewer_grid
+    from envs.tetris_env import TetrisEnv
+
+    env = TetrisEnv()
+    env.reset(seed=0)
+    env._next_piece = 5  # J-piece
+    grid = _tetris_viewer_grid(env)
+    nxt_oh = grid[207:214]
+    assert nxt_oh[5] == 1.0
+    assert sum(nxt_oh) == 1.0
+
+
+def test_tetris_viewer_grid_heights_match_empty_board():
+    from backend.routers.play import _tetris_viewer_grid
+    from envs.tetris_env import TetrisEnv
+
+    env = TetrisEnv()
+    env.reset(seed=0)
+    # Empty board — all column heights should be 0.0
+    grid = _tetris_viewer_grid(env)
+    heights = grid[214:224]
+    assert all(h == 0.0 for h in heights)

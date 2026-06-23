@@ -255,6 +255,10 @@ class LoopStateMachine:
                 # Inject it from the mission before code generation so the callback template
                 # gets the correct target_metric_name (e.g. "lines_cleared", not "mean_reward").
                 plan["target_metric"] = mission.target_metric or {}
+                # Inject trainer_type for envs that use a custom training loop.
+                # Tetris-v0 uses Actor-Critic with get_next_states(); all others use SB3.
+                if plan.get("env_id") == "Tetris-v0" and not plan.get("trainer_type"):
+                    plan["trainer_type"] = "actor_critic"
                 script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
                 await emit_status(mission_id, "Training script ready", event_type="success")
                 error_history: list[str] = []   # accumulated errors for this script
@@ -373,7 +377,6 @@ class LoopStateMachine:
                     _checkpoint_dir = os.path.join(
                         settings.data_path, "missions", mission_id, "checkpoints"
                     )
-                    _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
                     _pre_hps = plan.pop("_pre_pivot_hps", None)
                     _pre_score = plan.pop("_pre_pivot_best_score", None)
                     _best_iter = pivot_engine.best_metric_iteration()
@@ -381,14 +384,19 @@ class LoopStateMachine:
                     # best_metric_iteration was not persisted — there is no checkpoint for it.
                     if _best_iter is not None and _best_iter < 0:
                         _best_iter = None
+                    # Support both .pth (actor_critic) and .zip (SB3)
+                    _best_pth = os.path.join(_checkpoint_dir, "best_model.pth")
+                    _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
+                    _ckpt_ext = ".pth" if os.path.exists(_best_pth) else ".zip"
+                    _best_model = _best_pth if _ckpt_ext == ".pth" else _best_zip
                     _iter_ckpt = (
-                        os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}.zip")
+                        os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}{_ckpt_ext}")
                         if _best_iter is not None else None
                     )
                     _restore_src = _iter_ckpt if _iter_ckpt and os.path.exists(_iter_ckpt) else None
                     if _restore_src:
                         try:
-                            shutil.copy2(_restore_src, _best_zip)
+                            shutil.copy2(_restore_src, _best_model)
                             logger.info(
                                 "LoopStateMachine: restored checkpoint from %s for mission=%s",
                                 os.path.basename(_restore_src), mission_id,
@@ -785,28 +793,34 @@ class LoopStateMachine:
         return [{"iteration": it, metric_name: val} for it, val in sorted(entries.items())]
 
     def _save_iteration_checkpoint(self, mission_id: str, iteration: int) -> None:
-        """Copy best_model.zip → iter/checkpoint_iter_{N}.zip and prune old ones."""
+        """Copy best_model.{zip,pth} → iter/checkpoint_iter_{N}.{zip,pth} and prune old ones."""
         import glob
         checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+        # Support both SB3 (.zip) and PyTorch Actor-Critic (.pth) best models
+        best_pth = os.path.join(checkpoint_dir, "best_model.pth")
         best_zip = os.path.join(checkpoint_dir, "best_model.zip")
-        if not os.path.exists(best_zip):
+        if os.path.exists(best_pth):
+            best_src, ext = best_pth, ".pth"
+        elif os.path.exists(best_zip):
+            best_src, ext = best_zip, ".zip"
+        else:
             return
         iter_dir = os.path.join(checkpoint_dir, "iter")
         os.makedirs(iter_dir, exist_ok=True)
-        dest = os.path.join(iter_dir, f"checkpoint_iter_{iteration}.zip")
+        dest = os.path.join(iter_dir, f"checkpoint_iter_{iteration}{ext}")
         try:
-            shutil.copy2(best_zip, dest)
+            shutil.copy2(best_src, dest)
             logger.info(
                 "LoopStateMachine: saved checkpoint_iter_%d for mission=%s", iteration, mission_id
             )
         except Exception as _e:
             logger.warning("LoopStateMachine: could not save iter checkpoint: %s", _e)
             return
-        # Prune checkpoints beyond the rolling window
+        # Prune checkpoints beyond the rolling window (match both extensions)
         try:
             all_iter = sorted(
-                glob.glob(os.path.join(iter_dir, "checkpoint_iter_*.zip")),
-                key=lambda p: int(os.path.basename(p).replace("checkpoint_iter_", "").replace(".zip", "")),
+                glob.glob(os.path.join(iter_dir, f"checkpoint_iter_*{ext}")),
+                key=lambda p: int(os.path.basename(p).replace("checkpoint_iter_", "").replace(ext, "")),
             )
             for old in all_iter[:-ITER_CHECKPOINT_WINDOW]:
                 os.remove(old)

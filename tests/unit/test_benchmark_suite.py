@@ -67,3 +67,50 @@ def test_snake_result_status_field():
     result = suite.run("/fake/checkpoint")
     statuses = {r["status"] for r in result["results"]}
     assert statuses.issubset({"passed", "failed"})
+
+
+# ── _is_actor_critic ──────────────────────────────────────────────────────────
+
+def test_is_actor_critic_detects_trainer_type_txt(tmp_path):
+    from backend.evaluator.benchmark import _is_actor_critic
+
+    ckpt_dir = tmp_path / "checkpoints"
+    ckpt_dir.mkdir()
+    (ckpt_dir / "trainer_type.txt").write_text("actor_critic")
+    result = _is_actor_critic(str(ckpt_dir / "best_model.zip"))
+    assert result is True
+
+
+def test_is_actor_critic_false_for_sb3_trainer_type(tmp_path):
+    from backend.evaluator.benchmark import _is_actor_critic
+
+    ckpt_dir = tmp_path / "checkpoints"
+    ckpt_dir.mkdir()
+    (ckpt_dir / "trainer_type.txt").write_text("sb3")
+    result = _is_actor_critic(str(ckpt_dir / "best_model.zip"))
+    assert result is False
+
+
+def test_is_actor_critic_detects_pth_extension(tmp_path):
+    from backend.evaluator.benchmark import _is_actor_critic
+
+    result = _is_actor_critic(str(tmp_path / "best_model.pth"))
+    assert result is True
+
+
+def test_is_actor_critic_false_for_zip_without_trainer_type(tmp_path):
+    from backend.evaluator.benchmark import _is_actor_critic
+
+    result = _is_actor_critic(str(tmp_path / "best_model.zip"))
+    assert result is False
+
+
+def test_is_actor_critic_trainer_type_txt_takes_precedence_over_extension(tmp_path):
+    from backend.evaluator.benchmark import _is_actor_critic
+
+    ckpt_dir = tmp_path / "checkpoints"
+    ckpt_dir.mkdir()
+    (ckpt_dir / "trainer_type.txt").write_text("actor_critic")
+    # Even a .zip file should return True when trainer_type.txt says actor_critic
+    result = _is_actor_critic(str(ckpt_dir / "best_model.zip"))
+    assert result is True

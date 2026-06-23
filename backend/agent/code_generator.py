@@ -151,6 +151,57 @@ The script must:
 6. After training, save the final model: model.save("{checkpoint_dir}/last_model")
 7. Exit cleanly when target mean_reward is reached."""
 
+_ACTOR_CRITIC_CONTRACT = """\
+Generate a complete custom Actor-Critic training script for Tetris using PyTorch.
+Do NOT use Stable-Baselines3. Implement everything with PyTorch and plain Python.
+
+{env_setup}
+Mission ID: {mission_id}
+Environment: {env_id}
+Checkpoint directory: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+Target: lines_cleared >= {target_lines}
+Hyperparameters: {hyperparameters}
+
+== Architecture ==
+ActorCriticNetwork: shared MLP [4 → 64 → 64] with ReLU, then two heads:
+  - critic head: Linear(64, 1) → scalar state value
+  - (action selection uses critic values over get_next_states(), no actor head needed)
+Xavier uniform weight init.
+
+== Training loop ==
+- Run {episodes} episodes total.
+- Each step: call env.unwrapped.get_next_states() → dict of {{action: state_4f}}.
+  If empty (no valid moves), step with action=0 and handle termination.
+  Epsilon-greedy: with prob epsilon pick a random action from the dict keys,
+  otherwise pick the action whose resulting state has the highest critic value.
+  Decay epsilon: epsilon = max(0.01, epsilon * 0.9995), starting from 1.0.
+- Store (state, reward, next_state, done) in a replay buffer (capacity 10000).
+- Every step (if buffer has >= 512 samples): sample batch of 512, compute
+  TD target = reward + 0.99 * critic(next_state) * (1 - done),
+  loss = MSELoss(critic(state), td_target.detach()), backprop with Adam lr={lr}.
+- Track episode reward and lines_cleared from info dict.
+
+== ASTRA integration contract (ALL items MANDATORY) ==
+1. Write this file once at startup (so play/eval endpoints detect the trainer):
+     open("{checkpoint_dir}/trainer_type.txt", "w").write("actor_critic")
+2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists load with:
+     model = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+3. Track rolling mean_reward over last 50 episodes.
+   Every 50 episodes POST to telemetry:
+     POST {api_url}/telemetry/missions/{mission_id}/metrics
+     json={{"mission_id": "{mission_id}", "name": "mean_reward",
+            "value": mean_reward_50, "step": episode, "iteration": {current_iteration}}}
+     AND post lines_cleared (mean over last 50 episodes) with name "lines_cleared".
+   Use timeout=2, catch all exceptions (telemetry is non-critical).
+4. When rolling mean_reward improves over best seen so far:
+     torch.save(model, "{checkpoint_dir}/best_model.pth")
+     open("{checkpoint_dir}/best_score.txt", "w").write(str(best_reward))
+     open("{checkpoint_dir}/best_model_algo.txt", "w").write("ActorCritic")
+5. After all episodes: torch.save(model, "{checkpoint_dir}/last_model.pth")
+
+Return ONLY the raw Python script. No markdown fences, no explanation."""
+
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT.
 
@@ -270,11 +321,12 @@ class CodeGenerator:
                 "algorithm": plan.get("algorithm", "PPO"),
                 "env_id": plan.get("env_id", ""),
                 "env_kwargs": plan.get("env_kwargs", {}),
+                "trainer_type": plan.get("trainer_type", ""),
             }
             with open(config_path, "w") as f:
                 _json.dump(train_cfg, f)
-            logger.info("CodeGenerator: wrote train_config.json algorithm=%s env_kwargs=%s",
-                        train_cfg["algorithm"], train_cfg["env_kwargs"])
+            logger.info("CodeGenerator: wrote train_config.json algorithm=%s env_kwargs=%s trainer_type=%s",
+                        train_cfg["algorithm"], train_cfg["env_kwargs"], train_cfg["trainer_type"])
 
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
@@ -314,6 +366,22 @@ class CodeGenerator:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
             else:
                 env_kwargs_str = ""
+            trainer_type = plan.get("trainer_type", "")
+            if trainer_type == "actor_critic":
+                tm_lines = next(iter(tm.values()), 20) if tm else 20
+                lr = hp.get("learning_rate", 0.0001)
+                episodes = hp.get("episodes", 10000)
+                ctx = {
+                    "env_id": env_id,
+                    "env_setup": env_setup,
+                    "target_lines": tm_lines,
+                    "hyperparameters": json.dumps(hp, indent=2),
+                    "lr": lr,
+                    "episodes": episodes,
+                    "current_iteration": current_iteration,
+                    **base,
+                }
+                return _ACTOR_CRITIC_CONTRACT.format(**ctx)
             ctx = {
                 "algorithm": plan.get("algorithm", "PPO"),
                 "env_id": env_id,

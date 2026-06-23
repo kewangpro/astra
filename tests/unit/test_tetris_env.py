@@ -343,3 +343,53 @@ def test_lines_cleared_last_reflected_in_obs():
     lines_cleared = e._lines_cleared_last
     assert obs[0] == pytest.approx(lines_cleared / 4.0)
     e.close()
+
+
+# ── get_next_states ───────────────────────────────────────────────────────────
+
+def test_get_next_states_returns_dict(env):
+    env.reset(seed=0)
+    states = env.get_next_states()
+    assert isinstance(states, dict)
+    assert len(states) > 0
+
+
+def test_get_next_states_keys_are_valid_actions(env):
+    env.reset(seed=0)
+    states = env.get_next_states()
+    for action in states:
+        assert 0 <= action < 40
+
+
+def test_get_next_states_values_are_4_feature_obs(env):
+    env.reset(seed=0)
+    states = env.get_next_states()
+    for obs in states.values():
+        assert obs.shape == (4,)
+        assert obs.dtype == np.float32
+        assert obs.min() >= 0.0
+        assert obs.max() <= 1.0
+
+
+def test_get_next_states_does_not_mutate_board(env):
+    env.reset(seed=0)
+    board_before = env._board.copy()
+    env.get_next_states()
+    assert np.array_equal(env._board, board_before)
+
+
+def test_get_next_states_excludes_terminal_actions():
+    """On a nearly-full board, only non-terminal placements should appear."""
+    e = TetrisEnv()
+    e.reset(seed=0)
+    e._board[:] = 1          # fill the board — no valid placements
+    states = e.get_next_states()
+    assert len(states) == 0  # all placements are terminal
+    e.close()
+
+
+def test_get_next_states_empty_board_has_many_actions(env):
+    """On an empty board, most of the 40 actions should be valid."""
+    env.reset(seed=0)
+    states = env.get_next_states()
+    assert len(states) >= 10
