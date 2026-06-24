@@ -33,7 +33,7 @@ hyperparameters:
   ent_coef: 0.01
   vf_coef: 0.5
   max_grad_norm: 0.5
-  total_timesteps: 2000000
+  total_timesteps: 500000
   telemetry_interval: 2048
   # actor_critic
   replay_buffer_size: 10000

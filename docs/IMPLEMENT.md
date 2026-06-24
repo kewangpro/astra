@@ -825,4 +825,13 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Fix: `_load_recipe_for_env` called after `_resolve_hyperparams` to read `trainer_type` from the recipe as fallback; plan value still takes precedence.
     - `episodes: 50000` removed from `tetris_ppo_v1.yaml` (superseded by `total_timesteps`).
     - 1 new test: `test_build_user_prompt_tetris_uses_ac_template_without_trainer_type`.
-    - Total: **561 tests** (552 unit + 9 integration).
+
+- [x] **AC template: `env = gym.make()` added to skeleton**
+    - LLM consistently omitted `env = gym.make("{env_id}")`, crashing every generated script with `NameError: name 'env' is not defined`. The contract showed `env.reset()` in the loop body but never defined `env`.
+    - Fix: added `env = gym.make("{env_id}")  # MANDATORY` as the first line of the training skeleton.
+    - 1 new test: `test_build_user_prompt_actor_critic_includes_gym_make`.
+
+- [x] **`tetris_ppo_v1.yaml`: `total_timesteps` reduced from 2M to 500k**
+    - 2M timesteps at ~100 steps/episode = ~20k episodes, far more than needed for AC Tetris. Agent peaks around ep 5k–9k; the remaining budget only adds noise and delays the goal metric eval by 30–60 minutes.
+    - 500k steps ≈ 5k episodes — enough to learn, plateau, and eval, enabling faster pivot cycles.
+    - Total: **562 tests** (553 unit + 9 integration).
