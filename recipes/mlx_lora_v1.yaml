@@ -1,0 +1,33 @@
+name: mlx_lora_v1
+version: "1.0.0"
+created_at: "2026-06-24"
+task_type: mlx_lora
+domain: NLP
+description: >
+  MLX LoRA fine-tuning recipe for Apple Silicon. Uses mlx_lm.lora CLI to
+  fine-tune quantized models locally. Dataset must be prompt/completion JSONL.
+  Designed for Gemma/Llama class models in 4-bit via mlx-community.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+  num_layers: 16
+  batch_size: 1
+  learning_rate: 0.00001
+  iters: 600
+  save_every: 100
+  steps_per_eval: 100
+  steps_per_report: 10
+  val_batches: 25
+  max_seq_length: 2560
+  grad_checkpoint: true
+  mask_prompt: true
+  optimizer: adam
+  eval_episodes: 1
+
+dataset:
+  train: data/datasets/train.jsonl
+  valid: data/datasets/valid.jsonl
+  format: prompt_completion   # each line: {"prompt": "...", "completion": "..."}

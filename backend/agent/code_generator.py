@@ -268,6 +268,47 @@ The script must:
 5. POST eval_loss to the telemetry endpoint after each save step.
 6. Exit cleanly when eval_loss ≤ target."""
 
+_MLX_LORA_TEMPLATE = """\
+Generate a complete MLX LoRA fine-tuning script using mlx_lm.
+
+Mission ID: {mission_id}
+Base model: {base_model}
+Train dataset: {train_dataset}
+Valid dataset: {valid_dataset}
+LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
+Training: batch={batch_size}, lr={learning_rate}, iters={iters}
+save_every={save_every}, steps_per_eval={steps_per_eval}, steps_per_report={steps_per_report}
+val_batches={val_batches}, max_seq_length={max_seq_length}
+mask_prompt={mask_prompt}, grad_checkpoint={grad_checkpoint}
+Adapter output: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+
+The script must:
+1. Import subprocess, requests, json, logging, os, re.
+2. Build and run this mlx_lm.lora command via subprocess.run (check=True):
+       python -m mlx_lm.lora \\
+         --model {base_model} \\
+         --train --data <parent dir of train_dataset> \\
+         --adapter-path {checkpoint_dir} \\
+         --batch-size {batch_size} \\
+         --learning-rate {learning_rate} \\
+         --iters {iters} \\
+         --rank {lora_rank} \\
+         --scale {lora_scale} \\
+         --dropout {lora_dropout} \\
+         --num-layers {num_layers} \\
+         --save-every {save_every} \\
+         --steps-per-eval {steps_per_eval} \\
+         --steps-per-report {steps_per_report} \\
+         --val-batches {val_batches} \\
+         --max-seq-length {max_seq_length} \\
+         {'--mask-prompt' if mask_prompt else ''} \\
+         {'--grad-checkpoint' if grad_checkpoint else ''}
+3. Capture stdout/stderr. Parse lines matching "Val loss: <float>" to extract eval_loss.
+4. POST each eval_loss to the telemetry endpoint with metric name "eval_loss" and step=iteration.
+5. After training, POST the final eval_loss.
+6. Exit 0 on success, 1 on error with full traceback."""
+
 _ML_TEMPLATE = """\
 Generate a complete ML training script.
 
@@ -310,7 +351,8 @@ def _resolve_env_kwargs(env_id: str, plan_env_kwargs: Optional[dict]) -> dict:
 _ENV_RECIPE: dict = {
     "Snake-v0": "snake_ppo_v1.yaml",
     "Tetris-v0": "tetris_ppo_v1.yaml",
-    "sft": "sft_llama_lora_v1.yaml",   # keyed by task_type for non-RL tasks
+    "sft": "sft_llama_lora_v1.yaml",       # keyed by task_type for non-RL tasks
+    "mlx_lora": "mlx_lora_v1.yaml",
 }
 
 
@@ -497,6 +539,15 @@ class CodeGenerator:
                 **base,
             }
             return _SFT_TEMPLATE.format(**ctx)
+        if task_type == "mlx_lora":
+            dataset = plan.get("dataset", {})
+            ctx = {
+                **hp,
+                "train_dataset": dataset.get("train", hp.get("train_dataset", "data/datasets/train.jsonl")),
+                "valid_dataset": dataset.get("valid", hp.get("valid_dataset", "data/datasets/valid.jsonl")),
+                **base,
+            }
+            return _MLX_LORA_TEMPLATE.format(**ctx)
         # ml
         ctx = {
             "framework": "sklearn",

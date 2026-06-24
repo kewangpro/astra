@@ -24,12 +24,16 @@ You are ASTRA's Lead Agent — an autonomous ML training strategist.
 Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
-Consider: task type (rl/sft/ml), algorithm selection, hyperparameters, curriculum phases,
+Consider: task type (rl/sft/ml/mlx_lora), algorithm selection, hyperparameters, curriculum phases,
 and how you will measure success against the target metric.
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
 (e.g. "iris", "digits", "breast_cancer", "wine") for built-in datasets, or a file path for
 custom datasets.
+
+For mlx_lora tasks (Apple Silicon MLX fine-tuning), include "dataset" as a top-level field
+with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lora_scale,
+lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
 
 For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
 Available environments:
@@ -80,7 +84,7 @@ _PLAN_SCHEMA = {
         "plan": {
             "type": "object",
             "properties": {
-                "task_type": {"type": "string", "enum": ["rl", "sft", "ml"]},
+                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora"]},
                 "algorithm": {"type": "string"},
                 "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},
