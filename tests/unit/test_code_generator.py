@@ -778,6 +778,7 @@ def test_build_user_prompt_actor_critic_includes_gym_make(tmp_path, monkeypatch)
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
     assert 'gym.make("Tetris-v0")' in prompt
+    assert "from envs.actor_critic_net import ActorCriticNet" in prompt
 
 
 def test_build_user_prompt_tetris_uses_ac_template_without_trainer_type(tmp_path, monkeypatch):

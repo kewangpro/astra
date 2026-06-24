@@ -163,11 +163,10 @@ Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 Target: lines_cleared >= {target_lines}
 Hyperparameters: {hyperparameters}
 
-== Architecture ==
-Import the canonical class — do NOT redefine it inline:
-    from envs.actor_critic_net import ActorCriticNet
-This ensures torch.load can resolve the class in any process (play, benchmark, eval).
-model = ActorCriticNet()  # shared MLP [4→64→64] + critic head Linear(64,1)
+== Mandatory imports and setup (copy exactly) ==
+from envs.actor_critic_net import ActorCriticNet   # MANDATORY — do NOT redefine inline
+model = ActorCriticNet()                            # shared MLP [4→64→64] + critic head Linear(64,1)
+optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
 env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
