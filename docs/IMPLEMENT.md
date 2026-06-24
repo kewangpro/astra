@@ -803,3 +803,26 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 - [x] **Tests**: 6 new tests in `test_code_generator.py` — base model in prompt, dataset paths, recipe defaults (iters=600), `_resolve_hyperparams` fills recipe, plan overrides recipe.
     - Total: **557 tests** (548 unit + 9 integration).
+
+## Phase 21 — Telemetry Integrity & AC Loop Hardening
+
+*Goal: Fix three related bugs that caused MetricGap to show garbage values, Tetris missions to generate broken hybrid scripts, and AC training to run unbounded episodes.*
+
+- [x] **MetricGap only reflects end-of-iteration eval for custom goal metrics**
+    - `_load_persisted_best` scanned all telemetry for `lines_cleared`/`food_eaten`, picking up training-time mean-per-N-episodes posts (mean ~1.3 early in training) and writing them to `best_metric_value` — MetricGap showed 1.3 before any real eval ran.
+    - Fix: telemetry scan in `_load_persisted_best` restricted to `mean_reward` only. DB value for custom goal metrics only trusted when `best_metric_iteration is not None` (i.e. `_run_goal_metric_eval` has completed at least once).
+    - AC template: removed instruction to post goal metric names (`lines_cleared`, `food_eaten`) during training; only `mean_reward` should be posted as training telemetry.
+    - 2 tests updated + 2 new tests in `test_state_machine_helpers.py`.
+
+- [x] **AC training loop bounded by `total_timesteps`, not episode count**
+    - LLM was free to pick an arbitrary episode count (chose 50 000), making iterations unbounded and delaying the goal metric eval by hours.
+    - Template rewritten: `for episode in range({episodes})` → `while total_steps < {total_timesteps}`; `total_steps` incremented each `env.step()`.
+    - `episodes` key removed from context dict and `tetris_ppo_v1.yaml` recipe; `total_timesteps` (default 2 M from recipe) now governs iteration length.
+    - 1 new test: `test_build_user_prompt_actor_critic_uses_timestep_loop`.
+
+- [x] **Recipe-driven `trainer_type` fallback in `code_generator`**
+    - LLM planner never outputs `trainer_type`, so `code_generator` routed Tetris-v0 to the SB3 template despite `tetris_ppo_v1.yaml` declaring `trainer_type: actor_critic`. Healing attempts generated broken hybrid scripts mixing SB3 imports with `ActorCriticNet`.
+    - Fix: `_load_recipe_for_env` called after `_resolve_hyperparams` to read `trainer_type` from the recipe as fallback; plan value still takes precedence.
+    - `episodes: 50000` removed from `tetris_ppo_v1.yaml` (superseded by `total_timesteps`).
+    - 1 new test: `test_build_user_prompt_tetris_uses_ac_template_without_trainer_type`.
+    - Total: **561 tests** (552 unit + 9 integration).

@@ -36,7 +36,6 @@ hyperparameters:
   total_timesteps: 2000000
   telemetry_interval: 2048
   # actor_critic
-  episodes: 50000
   replay_buffer_size: 10000
   epsilon_min: 0.01
   epsilon_decay: 0.9995

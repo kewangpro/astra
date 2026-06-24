@@ -767,6 +767,28 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, 
     assert "ep_rewards[-50:]" in prompt
 
 
+def test_build_user_prompt_tetris_uses_ac_template_without_trainer_type(tmp_path, monkeypatch):
+    """Tetris-v0 routes to AC template even when plan omits trainer_type (recipe fallback)."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "rl",
+        # trainer_type intentionally omitted — simulates LLM planner output
+        "algorithm": "PPO",
+        "env_id": "Tetris-v0",
+        "target_metric": {"lines_cleared": 100},
+        "hyperparameters": {"learning_rate": 0.0003},
+    }
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "get_next_states" in prompt
+    assert "ActorCriticNet" in prompt
+    assert "total_steps" in prompt
+
+
 # ── recipe-driven env_kwargs and hyperparams tests ────────────────────────────
 
 def test_resolve_env_kwargs_snake_reads_from_recipe():

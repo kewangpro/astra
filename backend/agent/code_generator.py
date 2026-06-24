@@ -508,7 +508,8 @@ class CodeGenerator:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
             else:
                 env_kwargs_str = ""
-            trainer_type = plan.get("trainer_type", "")
+            recipe_trainer_type = _load_recipe_for_env(recipe_key).get("trainer_type", "")
+            trainer_type = plan.get("trainer_type", "") or recipe_trainer_type
             if trainer_type == "actor_critic":
                 tm_lines = next(iter(tm.values()), 20) if tm else 20
                 lr = hp.get("learning_rate", 0.0001)
