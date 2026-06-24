@@ -19,7 +19,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **562 tests** — 553 unit + 9 integration tests covering all core services
+- **568 tests** — 559 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -133,6 +133,7 @@ make ports  # show port status for all services
 | 19 | Snake Feature Obs + Recipe-Driven Defaults — `obs_type=features` adds 25D compact observation; `snake_ppo_v1.yaml` v2 with `max_steps=2000` + food-dominant rewards; `_resolve_env_kwargs` / `_resolve_hyperparams` load canonical recipe YAML per env_id/task_type; `_snake_viewer_grid` reads env state for canvas renderer (fixes garbled output with `obs_type=features`); `_run_goal_metric_eval` passes `env_kwargs` to `gym.make` (fixes food_eaten always 0 due to obs shape mismatch); 552 tests | ✅ Complete |
 | 20 | MLX LoRA Fine-Tuning — `mlx_lora` task type with `mlx_lora_v1.yaml` recipe (gemma-3-12b-it-4bit, rank=8, iters=600); `_MLX_LORA_TEMPLATE` generates `mlx_lm.lora` subprocess script with telemetry; lead agent enum + system prompt updated; task_type reconciliation persists LLM inference to DB; 557 tests | ✅ Complete |
 | 21 | Telemetry Integrity & AC Loop Hardening — MetricGap only reflects `_run_goal_metric_eval` (training-time `lines_cleared` posts no longer contaminate `best_metric_value`); AC loop bounded by `total_timesteps` not episode count; `trainer_type` read from recipe YAML as fallback so Tetris always routes to AC template without LLM needing to set it; `env = gym.make()` and `from envs.actor_critic_net import ActorCriticNet` added to AC skeleton; `tetris_ppo_v1.yaml` `total_timesteps` reduced 2M→500k; duplicate `import sys` in `_rollout_actor_critic` removed (caused UnboundLocalError after training); manifest artifact check now accepts `.pth` (actor_critic) alongside `.zip` (SB3) so AC missions can complete; 562 tests | ✅ Complete |
+| 22 | Inline Auto-Approve — approval gates now auto-approve immediately at creation time (via `try_auto_approve()` in `backend/services/auto_approver.py`) so missions don't stall overnight when no browser is open; previously auto-approve was frontend-triggered only and a 7-hour gap between iterations was observed; router delegates to same shared service eliminating duplicated logic; 568 tests | ✅ Complete |
 
 ## Hardware Target
 

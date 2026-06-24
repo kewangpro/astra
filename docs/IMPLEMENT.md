@@ -846,3 +846,26 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **Screenshots: Snake-v0 and Tetris-v0 live viewer placeholders added to README**
 
     - Total: **562 tests** (553 unit + 9 integration).
+
+## Phase 22 — Inline Auto-Approve (No Overnight Stalls)
+
+**Problem:** Approval gates for `EXECUTE_CODE` were only auto-approved when the frontend called `POST /approvals/{gate_id}/auto-approve`. With no browser open overnight, iteration 2 of mission `#81a2b6e7` waited 7 hours blocked on a gate that would have been immediately safe.
+
+**Root cause:** `_request_approval` in the state machine created the gate, then polled the DB every 5 seconds waiting for status change. The auto-approve endpoint was frontend-triggered only — never called by the backend itself.
+
+**Fix:**
+
+- [x] **`backend/services/auto_approver.py` — shared `try_auto_approve()` service**
+    - Extracted the auto-approve logic (read script, run `CodeSafetyClassifier`, update gate status) into a standalone async function callable from both the router and the state machine.
+    - Returns `AutoApproveResult(action="approved"|"blocked"|"skipped")` for all code paths.
+    - 6 new tests in `tests/unit/test_auto_approver.py`.
+
+- [x] **`backend/loop/state_machine._request_approval` — inline auto-approve at gate creation**
+    - After creating an `EXECUTE_CODE` gate, immediately calls `try_auto_approve()` using the model manager's code provider.
+    - If approved, returns `True` before entering the polling loop — no browser needed overnight.
+    - Falls back to polling if blocked, skipped, or an exception is raised.
+
+- [x] **`backend/routers/approvals.auto_approve_gate` — delegates to shared service**
+    - No duplicated logic; router retains HTTP-specific validation (404/409/422 errors).
+
+    - Total: **568 tests** (559 unit + 9 integration).

@@ -90,44 +90,24 @@ async def auto_approve_gate(gate_id: str, db: AsyncSession = Depends(get_db)):
     If the classifier deems it safe, the gate is approved automatically.
     If unsafe, the gate remains PENDING and the verdict is returned for human review.
     """
-    from backend.agent.code_safety_classifier import CodeSafetyClassifier
     from backend.routers.agent import get_code_provider
+    from backend.services.auto_approver import try_auto_approve
 
     gate = await db.get(ApprovalGate, gate_id)
     if not gate:
         raise HTTPException(status_code=404, detail="Approval gate not found")
     if gate.status != ApprovalStatus.PENDING.value:
         raise HTTPException(status_code=409, detail=f"Gate already resolved: {gate.status}")
-
-    # Read script from payload
-    script_path = (gate.payload or {}).get("script_path")
-    if not script_path or not os.path.isfile(script_path):
+    if not (gate.payload or {}).get("script_path") or not os.path.isfile(gate.payload["script_path"]):
         raise HTTPException(status_code=422, detail="Gate has no readable script_path in payload")
 
-    with open(script_path, "r") as f:
-        script = f.read()
-
-    classifier = CodeSafetyClassifier(get_code_provider())
-    verdict = await classifier.classify(script)
-
-    if verdict.safe:
-        gate.status = ApprovalStatus.APPROVED.value
-        gate.reviewer_note = f"[auto-approved] {verdict.reason} (classifier={verdict.classifier})"
-        gate.resolved_at = datetime.now(timezone.utc)
-        await db.commit()
-        await db.refresh(gate)
-        logger.info("Auto-approve: gate %s APPROVED — %s", gate_id, verdict.reason)
-        action = "approved"
-    else:
-        logger.warning("Auto-approve: gate %s BLOCKED — %s", gate_id, verdict.reason)
-        action = "blocked"
-
+    result = await try_auto_approve(gate_id, get_code_provider(), db=None)
     return AutoApproveResult(
-        gate_id=gate_id,
-        safe=verdict.safe,
-        reason=verdict.reason,
-        classifier=verdict.classifier,
-        action=action,
+        gate_id=result.gate_id,
+        safe=result.safe,
+        reason=result.reason,
+        classifier=result.classifier,
+        action=result.action,
     )
 
 

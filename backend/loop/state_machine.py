@@ -1257,7 +1257,19 @@ class LoopStateMachine:
 
         logger.info("LoopStateMachine: waiting for %s approval (gate=%s)", gate_type.value, gate_id)
 
-        # Poll for user decision
+        # Immediately attempt auto-approve so missions aren't blocked overnight
+        # when no browser is open to trigger the frontend-driven auto-approve endpoint.
+        if gate_type == GateType.EXECUTE_CODE:
+            try:
+                from backend.services.auto_approver import try_auto_approve
+                code_provider = self._model_manager._providers.get("code")
+                result = await try_auto_approve(gate_id, code_provider)
+                if result.action == "approved":
+                    return True
+            except Exception as exc:
+                logger.warning("LoopStateMachine: inline auto-approve failed for gate=%s: %s", gate_id, exc)
+
+        # Poll for user decision (fallback when auto-approve is blocked or skipped)
         while True:
             await asyncio.sleep(5)
             async with AsyncSessionLocal() as session:
