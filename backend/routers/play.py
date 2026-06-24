@@ -144,6 +144,7 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
                     "episode_reward": round(episode_reward, 2),
                     "done": False,
                     "lines_cleared_last": 0,
+                    "lines_cleared": base_env._lines_cleared_episode,
                     "highlight_rows": cleared_rows,
                 })
         frames.append({
@@ -153,6 +154,7 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
             "episode_reward": round(episode_reward, 2),
             "done": bool(done or truncated),
             "lines_cleared_last": 0,
+            "lines_cleared": base_env._lines_cleared_episode,
         })
     return frames, round(episode_reward, 2)
 
@@ -193,13 +195,18 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             grid = _snake_viewer_grid(base_env)
         else:
             grid = obs.tolist()
-        frames.append({
+        frame: dict = {
             "type": "frame",
             "grid": grid,
             "step": step,
             "episode_reward": round(episode_reward, 2),
             "done": bool(done or truncated),
-        })
+        }
+        if is_snake:
+            frame["food_eaten"] = base_env._food_eaten
+        elif is_tetris:
+            frame["lines_cleared"] = base_env._lines_cleared_episode
+        frames.append(frame)
     return frames, round(episode_reward, 2)
 
 

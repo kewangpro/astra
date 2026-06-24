@@ -35,6 +35,7 @@ interface Frame {
   done?: boolean;
   message?: string;
   lines_cleared_last?: number;
+  lines_cleared?: number;
   highlight_rows?: number[];
 }
 
@@ -93,6 +94,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
   const [playing, setPlaying] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [episodeReward, setEpisodeReward] = useState(0);
+  const [linesCleared, setLinesCleared] = useState(0);
   const [bestReward, setBestReward] = useState<number | null>(null);
   const [currentPiece, setCurrentPiece] = useState<string | null>(null);
   const [nextPiece, setNextPiece] = useState<string | null>(null);
@@ -160,6 +162,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
         if (ctx) drawFrame(ctx, obs, cellColors, highlightRows);
 
         setEpisodeReward(frame.episode_reward ?? 0);
+        if (frame.lines_cleared !== undefined) setLinesCleared(frame.lines_cleared);
         if (frame.episode) setEpisode(frame.episode);
 
         const nxtIdx = obs.slice(207, 214).indexOf(1);
@@ -169,6 +172,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
         // Reset color memory between episodes
         cellColorsRef.current = new Array(ROWS * COLS).fill(null);
         prevBoardRef.current = null;
+        setLinesCleared(0);
         const r = frame.total_reward ?? 0;
         setBestReward((prev) => (prev === null || r > prev ? r : prev));
       } else if (frame.type === "error") {
@@ -266,6 +270,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
       {playing && (
         <div className="flex justify-between text-[10px] text-[#64748b]">
           <span>episode {episode}</span>
+          <span>lines <span className="text-[#14b8a6]">{linesCleared}</span></span>
           <span>reward {episodeReward.toFixed(1)}</span>
         </div>
       )}

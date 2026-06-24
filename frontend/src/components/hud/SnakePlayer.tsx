@@ -18,6 +18,7 @@ interface Frame {
   step?: number;
   episode_reward?: number;
   total_reward?: number;
+  food_eaten?: number;
   done?: boolean;
   message?: string;
 }
@@ -72,6 +73,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
   const [playing, setPlaying] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [episodeReward, setEpisodeReward] = useState(0);
+  const [foodEaten, setFoodEaten] = useState(0);
   const [bestReward, setBestReward] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -104,8 +106,10 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
         const ctx = canvasRef.current?.getContext("2d");
         if (ctx) drawFrame(ctx, frame.grid);
         setEpisodeReward(frame.episode_reward ?? 0);
+        if (frame.food_eaten !== undefined) setFoodEaten(frame.food_eaten);
         if (frame.episode) setEpisode(frame.episode);
       } else if (frame.type === "episode_end") {
+        setFoodEaten(0);
         const r = frame.total_reward ?? 0;
         setBestReward((prev) => (prev === null || r > prev ? r : prev));
       } else if (frame.type === "error") {
@@ -179,6 +183,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
       {playing && (
         <div className="flex justify-between text-[10px] text-[#64748b]">
           <span>episode {episode}</span>
+          <span>food <span className="text-[#14b8a6]">{foodEaten}</span></span>
           <span>reward {episodeReward.toFixed(1)}</span>
         </div>
       )}
