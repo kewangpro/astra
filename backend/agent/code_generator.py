@@ -231,14 +231,21 @@ for episode in range({episodes}):
 == ASTRA integration contract (ALL items MANDATORY) ==
 1. Write this file once at startup (so play/eval endpoints detect the trainer):
      open("{checkpoint_dir}/trainer_type.txt", "w").write("actor_critic")
-2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists load with:
-     model = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists, load with weights_only=False
+   (MANDATORY — ActorCriticNet is a custom class and torch 2.6 requires this flag):
+     if os.path.exists("{checkpoint_dir}/best_model.pth"):
+         checkpoint = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+         if isinstance(checkpoint, dict):
+             model.load_state_dict(checkpoint)
+         else:
+             model.load_state_dict(checkpoint.state_dict())
 3. Track rolling mean_reward over last {ac_telemetry_interval} episodes.
-   Every {ac_telemetry_interval} episodes POST to telemetry:
+   Every {ac_telemetry_interval} episodes POST only mean_reward to telemetry:
      POST {api_url}/telemetry/missions/{mission_id}/metrics
      json={{"mission_id": "{mission_id}", "name": "mean_reward",
             "value": mean_reward_50, "step": episode, "iteration": {current_iteration}}}
-     AND post lines_cleared (mean over last {ac_telemetry_interval} episodes) with name "lines_cleared".
+   DO NOT post goal-metric names (lines_cleared, food_eaten, etc.) during training —
+   those are reserved for end-of-iteration eval rollouts by the orchestrator.
    Use timeout=2, catch all exceptions (telemetry is non-critical).
 4. When rolling mean_reward improves over best seen so far:
      torch.save(model, "{checkpoint_dir}/best_model.pth")

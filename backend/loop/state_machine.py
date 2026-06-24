@@ -765,17 +765,23 @@ class LoopStateMachine:
                 candidates.append(float(open(score_file).read().strip()))
             except Exception:
                 pass
-        # From DB — for custom (non-mean_reward) targets, negative values indicate
-        # contamination from a prior mean_reward seed; discard them.
+        # From DB — for custom (non-mean_reward) targets only trust DB when an actual
+        # goal metric eval has run (best_metric_iteration is set); without it the DB
+        # value may have been seeded from training-time telemetry posts.
         try:
             if mission.best_metric_value:
                 db_val = float(mission.best_metric_value)
-                if metric_name == "mean_reward" or db_val >= 0:
+                if metric_name == "mean_reward":
+                    candidates.append(db_val)
+                elif db_val >= 0 and mission.best_metric_iteration is not None:
                     candidates.append(db_val)
         except Exception:
             pass
-        # From full telemetry scan — authoritative for the actual target metric key
-        if metric_name:
+        # Telemetry scan is only valid for mean_reward — for custom goal metrics like
+        # lines_cleared or food_eaten the training script posts those as live training
+        # signals (mean per N episodes), which would corrupt best_metric_value.
+        # Custom goal metrics are authoritative only from _run_goal_metric_eval → DB.
+        if metric_name == "mean_reward":
             all_telem = self._read_telemetry_metrics(mission_id, offset=0)
             if metric_name in all_telem:
                 candidates.append(all_telem[metric_name])
