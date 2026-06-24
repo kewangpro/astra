@@ -170,6 +170,7 @@ This ensures torch.load can resolve the class in any process (play, benchmark, e
 model = ActorCriticNet()  # shared MLP [4→64→64] + critic head Linear(64,1)
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
+env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
 BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
 epsilon = 1.0

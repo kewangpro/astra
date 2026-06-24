@@ -767,6 +767,19 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, 
     assert "ep_rewards[-50:]" in prompt
 
 
+def test_build_user_prompt_actor_critic_includes_gym_make(tmp_path, monkeypatch):
+    """AC template skeleton must include env = gym.make(...) before the training loop."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert 'gym.make("Tetris-v0")' in prompt
+
+
 def test_build_user_prompt_tetris_uses_ac_template_without_trainer_type(tmp_path, monkeypatch):
     """Tetris-v0 routes to AC template even when plan omits trainer_type (recipe fallback)."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
