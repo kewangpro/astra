@@ -205,11 +205,20 @@ class LoopStateMachine:
                         value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
                     )
 
-                # Reconcile manifest artifact pattern if plan task_type differs
-                # from the mission's stored task_type (e.g. user left dropdown on "rl")
+                # If the LLM plan inferred a different task_type than what's stored
+                # (mission is always created with "rl" as default), persist the
+                # correction and regenerate the manifest with the right artifact pattern.
                 if current_iteration == 0:
                     plan_task_type = plan.get("task_type", "").lower()
                     if plan_task_type and plan_task_type != mission.task_type:
+                        async with AsyncSessionLocal() as _s:
+                            async with _s.begin():
+                                await _s.execute(
+                                    update(Mission)
+                                    .where(Mission.id == mission_id)
+                                    .values(task_type=plan_task_type)
+                                )
+                        mission.task_type = plan_task_type
                         manifest = generate_manifest(
                             mission_id=mission_id,
                             goal=mission.goal,
@@ -218,7 +227,7 @@ class LoopStateMachine:
                         )
                         self._save_manifest(mission_id, manifest)
                         logger.info(
-                            "LoopStateMachine: manifest reconciled task_type %s→%s for mission=%s",
+                            "LoopStateMachine: task_type corrected %s→%s for mission=%s",
                             mission.task_type, plan_task_type, mission_id,
                         )
 
