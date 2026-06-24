@@ -174,8 +174,10 @@ BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
 epsilon = 1.0
 best_reward = float("-inf")
+total_steps = 0
+episode = 0
 
-for episode in range({episodes}):
+while total_steps < {total_timesteps}:
     obs, _ = env.reset()          # gymnasium reset → (obs, info); unpack both
     ep_reward = 0.0
     ep_lines_cleared = 0
@@ -201,6 +203,7 @@ for episode in range({episodes}):
         BUFFER.append((obs, action, reward, next_obs, float(done)))
         obs = next_obs
         ep_reward += reward
+        total_steps += 1
         if done:
             ep_lines_cleared = info.get("lines_cleared", 0)
 
@@ -219,8 +222,9 @@ for episode in range({episodes}):
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
     ep_rewards.append(ep_reward)
     ep_lines.append(ep_lines_cleared)
+    episode += 1
 
-    if len(ep_rewards) >= {ac_telemetry_interval} and (episode + 1) % {ac_telemetry_interval} == 0:
+    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0:
         mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
         mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
         # telemetry POSTs here (catch all exceptions)
@@ -251,7 +255,7 @@ for episode in range({episodes}):
      torch.save(model, "{checkpoint_dir}/best_model.pth")
      open("{checkpoint_dir}/best_score.txt", "w").write(str(best_reward))
      open("{checkpoint_dir}/best_model_algo.txt", "w").write("ActorCritic")
-5. After all episodes: torch.save(model, "{checkpoint_dir}/last_model.pth")
+5. After the timestep budget ({total_timesteps} steps): torch.save(model, "{checkpoint_dir}/last_model.pth")
 
 Return ONLY the raw Python script. No markdown fences, no explanation."""
 
@@ -508,14 +512,13 @@ class CodeGenerator:
             if trainer_type == "actor_critic":
                 tm_lines = next(iter(tm.values()), 20) if tm else 20
                 lr = hp.get("learning_rate", 0.0001)
-                episodes = hp.get("episodes", 10000)
                 ctx = {
                     "env_id": env_id,
                     "env_setup": env_setup,
                     "target_lines": tm_lines,
                     "hyperparameters": json.dumps(hp, indent=2),
                     "lr": lr,
-                    "episodes": episodes,
+                    "total_timesteps": hp.get("total_timesteps", 2000000),
                     "replay_buffer_size": hp.get("replay_buffer_size", 10000),
                     "batch_size": hp.get("batch_size", 64),
                     "gamma": hp.get("gamma", 0.99),

@@ -734,8 +734,23 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_from_hyperparamete
                                                      "ac_telemetry_interval": 100})
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert "(episode + 1) % 100 == 0" in prompt
+    assert "% 100 == 0" in prompt
     assert "ep_rewards[-100:]" in prompt
+
+
+def test_build_user_prompt_actor_critic_uses_timestep_loop(tmp_path, monkeypatch):
+    """AC template loops on total_steps < total_timesteps, not on episode count."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_actor_critic_plan(hyperparameters={"learning_rate": 0.0001, "total_timesteps": 500000})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "total_steps < 500000" in prompt
+    assert "total_steps +=" in prompt
+    assert "for episode in range" not in prompt
 
 
 def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, monkeypatch):
@@ -748,7 +763,7 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, 
     plan = _make_actor_critic_plan()
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert "(episode + 1) % 50 == 0" in prompt
+    assert "% 50 == 0" in prompt
     assert "ep_rewards[-50:]" in prompt
 
 
