@@ -810,3 +810,80 @@ def test_build_user_prompt_snake_uses_recipe_env_kwargs(tmp_path, monkeypatch):
     assert "obs_type='features'" in prompt
     assert "max_steps=2000" in prompt
     assert "total_timesteps=3000000" in prompt
+
+
+# ── mlx_lora template ─────────────────────────────────────────────────────────
+
+def test_build_user_prompt_mlx_lora_contains_base_model(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "mlx_lora",
+        "algorithm": "lora",
+        "dataset": {
+            "train": "data/datasets/train.jsonl",
+            "valid": "data/datasets/valid.jsonl",
+        },
+        "hyperparameters": {"base_model": "mlx-community/gemma-3-12b-it-4bit"},
+        "target_metric": {"eval_loss": 1.0},
+    }
+    prompt = gen._build_user_prompt("mlx_lora", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "mlx-community/gemma-3-12b-it-4bit" in prompt
+    assert "mlx_lm" in prompt
+
+
+def test_build_user_prompt_mlx_lora_contains_dataset_paths(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "mlx_lora",
+        "algorithm": "lora",
+        "dataset": {
+            "train": "/my/data/train.jsonl",
+            "valid": "/my/data/valid.jsonl",
+        },
+        "hyperparameters": {"base_model": "mlx-community/gemma-3-12b-it-4bit"},
+        "target_metric": {"eval_loss": 1.0},
+    }
+    prompt = gen._build_user_prompt("mlx_lora", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "/my/data/train.jsonl" in prompt
+    assert "/my/data/valid.jsonl" in prompt
+
+
+def test_build_user_prompt_mlx_lora_uses_recipe_defaults(tmp_path, monkeypatch):
+    """mlx_lora prompt fills missing HP from mlx_lora_v1.yaml recipe."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "mlx_lora",
+        "algorithm": "lora",
+        "dataset": {"train": "train.jsonl", "valid": "valid.jsonl"},
+        "hyperparameters": {},  # let recipe fill everything
+        "target_metric": {"eval_loss": 1.0},
+    }
+    prompt = gen._build_user_prompt("mlx_lora", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "gemma-3-12b-it-4bit" in prompt
+    assert "600" in prompt  # iters from recipe
+
+
+def test_resolve_hyperparams_mlx_lora_uses_recipe_iters():
+    """mlx_lora task gets iters=600 from mlx_lora_v1.yaml when plan omits it."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("mlx_lora", {})
+    assert result["iters"] == 600
+
+
+def test_resolve_hyperparams_mlx_lora_plan_overrides_iters():
+    """Explicit plan iters overrides recipe."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("mlx_lora", {"iters": 100})
+    assert result["iters"] == 100

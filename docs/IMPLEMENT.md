@@ -783,3 +783,23 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - Fix: load `env_kwargs` from `train_config.json` (same pattern as play router) and pass to `gym.make` for both SB3 and actor-critic eval paths.
     - 1 new test in `test_state_machine_helpers.py`: `test_run_goal_metric_eval_passes_env_kwargs_to_gym_make` — asserts `obs_type=features` is forwarded to `gym.make`.
     - Total: **552 tests** (543 unit + 9 integration).
+
+## Phase 20 — MLX LoRA Fine-Tuning Support
+
+*Goal: Add native Apple Silicon MLX LoRA fine-tuning as a first-class task type alongside RL, SFT, and ML. Uses `mlx_lm.lora` CLI (not HuggingFace) for on-device quantized model fine-tuning.*
+
+- [x] **`recipes/mlx_lora_v1.yaml`**
+    - Canonical recipe for MLX LoRA: `gemma-3-12b-it-4bit`, rank=8, scale=20, lr=1e-5, iters=600, `mask_prompt=true`, `grad_checkpoint=true`, `max_seq_length=2560`.
+    - Dataset section with `train`/`valid` JSONL paths and `format: prompt_completion`.
+
+- [x] **`backend/agent/code_generator.py`: `_MLX_LORA_TEMPLATE` + wiring**
+    - `_MLX_LORA_TEMPLATE`: generates a subprocess script that runs `python -m mlx_lm.lora` with all recipe-driven flags, parses `"Val loss:"` lines from stdout, and POSTs `eval_loss` to telemetry.
+    - `_ENV_RECIPE["mlx_lora"] → mlx_lora_v1.yaml` so `_resolve_hyperparams` fills defaults.
+    - `_build_user_prompt` `mlx_lora` branch: resolves `train_dataset`/`valid_dataset` from plan `dataset` dict or recipe; pre-computes `--mask-prompt` / `--grad-checkpoint` flags to avoid `.format()` key errors.
+
+- [x] **`backend/agent/lead_agent.py`**: `task_type` enum extended to `["rl", "sft", "ml", "mlx_lora"]`; system prompt updated with `mlx_lora` guidance (dataset top-level field, key HP).
+
+- [x] **`backend/loop/state_machine.py`**: reconciliation already persists LLM-inferred `task_type` to DB, so `mlx_lora` missions are correctly typed after planning.
+
+- [x] **Tests**: 6 new tests in `test_code_generator.py` — base model in prompt, dataset paths, recipe defaults (iters=600), `_resolve_hyperparams` fills recipe, plan overrides recipe.
+    - Total: **557 tests** (548 unit + 9 integration).

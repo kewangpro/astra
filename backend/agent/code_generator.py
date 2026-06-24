@@ -302,8 +302,8 @@ The script must:
          --steps-per-report {steps_per_report} \\
          --val-batches {val_batches} \\
          --max-seq-length {max_seq_length} \\
-         {'--mask-prompt' if mask_prompt else ''} \\
-         {'--grad-checkpoint' if grad_checkpoint else ''}
+         {mask_prompt_flag} \\
+         {grad_checkpoint_flag}
 3. Capture stdout/stderr. Parse lines matching "Val loss: <float>" to extract eval_loss.
 4. POST each eval_loss to the telemetry endpoint with metric name "eval_loss" and step=iteration.
 5. After training, POST the final eval_loss.
@@ -545,6 +545,8 @@ class CodeGenerator:
                 **hp,
                 "train_dataset": dataset.get("train", hp.get("train_dataset", "data/datasets/train.jsonl")),
                 "valid_dataset": dataset.get("valid", hp.get("valid_dataset", "data/datasets/valid.jsonl")),
+                "mask_prompt_flag": "--mask-prompt" if hp.get("mask_prompt", True) else "",
+                "grad_checkpoint_flag": "--grad-checkpoint" if hp.get("grad_checkpoint", True) else "",
                 **base,
             }
             return _MLX_LORA_TEMPLATE.format(**ctx)
