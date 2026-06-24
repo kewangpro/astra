@@ -31,6 +31,10 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 |---|---|
 | ![Metric History chart showing bright current run over muted prior runs](docs/screenshots/metric_history.png) | ![Approval panel with Auto-Approve button and safety verdict card](docs/screenshots/approval_panel.png) |
 
+| Snake-v0 Live Viewer | Tetris-v0 Live Viewer |
+|---|---|
+| ![Snake-v0 agent playing live in the mission HUD — grid canvas with head, body, and food rendered in real time](docs/screenshots/snake_viewer.png) | ![Tetris-v0 agent playing live in the mission HUD — board canvas with piece colors and line-clear highlights](docs/screenshots/tetris_viewer.png) |
+
 ## Documentation
 
 | Doc | Purpose |
@@ -128,7 +132,7 @@ make ports  # show port status for all services
 | 18 | Hardcode Removal — all training knobs (`total_timesteps`, `telemetry_interval`, `replay_buffer_size`, `batch_size`, `gamma`, `epsilon_*`, `ac_telemetry_interval`, `eval_episodes`) driven from recipe `hyperparameters:`; recipes restructured (`sft_llama_lora_v1` flat `hyperparameters:` block); 9 stale crystallized recipes deleted; 533 tests | ✅ Complete |
 | 19 | Snake Feature Obs + Recipe-Driven Defaults — `obs_type=features` adds 25D compact observation; `snake_ppo_v1.yaml` v2 with `max_steps=2000` + food-dominant rewards; `_resolve_env_kwargs` / `_resolve_hyperparams` load canonical recipe YAML per env_id/task_type; `_snake_viewer_grid` reads env state for canvas renderer (fixes garbled output with `obs_type=features`); `_run_goal_metric_eval` passes `env_kwargs` to `gym.make` (fixes food_eaten always 0 due to obs shape mismatch); 552 tests | ✅ Complete |
 | 20 | MLX LoRA Fine-Tuning — `mlx_lora` task type with `mlx_lora_v1.yaml` recipe (gemma-3-12b-it-4bit, rank=8, iters=600); `_MLX_LORA_TEMPLATE` generates `mlx_lm.lora` subprocess script with telemetry; lead agent enum + system prompt updated; task_type reconciliation persists LLM inference to DB; 557 tests | ✅ Complete |
-| 21 | Telemetry Integrity & AC Loop Hardening — MetricGap only reflects `_run_goal_metric_eval` (training-time `lines_cleared` posts no longer contaminate `best_metric_value`); AC loop bounded by `total_timesteps` not episode count; `trainer_type` read from recipe YAML as fallback so Tetris always routes to AC template without LLM needing to set it; `env = gym.make()` added to AC skeleton (LLM was omitting it); `tetris_ppo_v1.yaml` `total_timesteps` reduced 2M→500k for faster eval/pivot cycles; 562 tests | ✅ Complete |
+| 21 | Telemetry Integrity & AC Loop Hardening — MetricGap only reflects `_run_goal_metric_eval` (training-time `lines_cleared` posts no longer contaminate `best_metric_value`); AC loop bounded by `total_timesteps` not episode count; `trainer_type` read from recipe YAML as fallback so Tetris always routes to AC template without LLM needing to set it; `env = gym.make()` and `from envs.actor_critic_net import ActorCriticNet` added to AC skeleton; `tetris_ppo_v1.yaml` `total_timesteps` reduced 2M→500k; duplicate `import sys` in `_rollout_actor_critic` removed (caused UnboundLocalError after training); manifest artifact check now accepts `.pth` (actor_critic) alongside `.zip` (SB3) so AC missions can complete; 562 tests | ✅ Complete |
 
 ## Hardware Target
 

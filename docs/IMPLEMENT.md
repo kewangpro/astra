@@ -834,4 +834,15 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **`tetris_ppo_v1.yaml`: `total_timesteps` reduced from 2M to 500k**
     - 2M timesteps at ~100 steps/episode = ~20k episodes, far more than needed for AC Tetris. Agent peaks around ep 5k–9k; the remaining budget only adds noise and delays the goal metric eval by 30–60 minutes.
     - 500k steps ≈ 5k episodes — enough to learn, plateau, and eval, enabling faster pivot cycles.
+
+- [x] **`benchmark._rollout_actor_critic`: duplicate `import sys` removed**
+    - `_rollout_actor_critic` had `import sys` at line 46 inside the function body, after already using `sys` at line 37 (via the module-level import). Python's scoping rules made `sys` a local variable throughout the function, causing `UnboundLocalError: local variable 'sys' referenced before assignment` on every eval call — mission failed immediately after training completed.
+
+- [x] **Manifest artifact check accepts `.pth` (actor_critic) alongside `.zip` (SB3)**
+    - `req_002` used `checkpoints/*.zip` which only matches SB3 models. Actor-critic missions save `best_model.pth`, so `req_002` permanently failed → `2/3 requirements passed` → mission never completed even when `lines_cleared >= 100`.
+    - `manifest_generator`: rl pattern changed to `checkpoints/*.{zip,pth}`.
+    - `manifest_evaluator._check_file_exists`: expands `{alt1,alt2}` brace syntax before globbing.
+
+- [x] **Screenshots: Snake-v0 and Tetris-v0 live viewer placeholders added to README**
+
     - Total: **562 tests** (553 unit + 9 integration).
