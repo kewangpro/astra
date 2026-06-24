@@ -82,10 +82,18 @@ class ManifestEvaluator:
     def _check_file_exists(req: Requirement, mission_dir: str) -> tuple[bool, Optional[str]]:
         if not req.path_pattern:
             return False, None
-        pattern = os.path.join(mission_dir, req.path_pattern)
-        matches = glob.glob(pattern)
-        if matches:
-            return True, f"found {os.path.relpath(matches[0], mission_dir)}"
+        # Support comma-separated alternatives inside {}: e.g. "checkpoints/*.{zip,pth}"
+        pattern_str = req.path_pattern
+        if "{" in pattern_str and "," in pattern_str:
+            prefix, rest = pattern_str.split("{", 1)
+            alts, suffix = rest.split("}", 1)
+            patterns = [os.path.join(mission_dir, prefix + a + suffix) for a in alts.split(",")]
+        else:
+            patterns = [os.path.join(mission_dir, pattern_str)]
+        for pattern in patterns:
+            matches = glob.glob(pattern)
+            if matches:
+                return True, f"found {os.path.relpath(matches[0], mission_dir)}"
         return False, None
 
     @staticmethod

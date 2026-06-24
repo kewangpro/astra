@@ -17,9 +17,10 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 # Checkpoint glob patterns per task type
+# rl accepts both SB3 .zip and actor_critic .pth checkpoints
 _CHECKPOINT_PATTERNS: dict = {
     "ml":  "checkpoints/model.*",
-    "rl":  "checkpoints/*.zip",
+    "rl":  "checkpoints/*.{zip,pth}",
     "sft": "checkpoints/*/",
 }
 
