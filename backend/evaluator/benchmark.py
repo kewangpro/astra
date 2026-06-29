@@ -19,6 +19,23 @@ logger = get_logger(__name__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 
+def _load_env_kwargs(checkpoint_path: str) -> dict:
+    """Read env_kwargs from train_config.json next to the checkpoint.
+
+    Ensures the benchmark env matches the obs_type (and other kwargs) the
+    model was actually trained with — e.g. obs_type='features' for Snake.
+    """
+    import json
+    config_path = os.path.join(os.path.dirname(checkpoint_path), "train_config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                return json.load(f).get("env_kwargs") or {}
+        except Exception:
+            pass
+    return {}
+
+
 def _is_actor_critic(checkpoint_path: str) -> bool:
     """Return True if the checkpoint was saved by a custom PyTorch Actor-Critic trainer."""
     ckpt_dir = os.path.dirname(checkpoint_path)
@@ -29,7 +46,7 @@ def _is_actor_critic(checkpoint_path: str) -> bool:
     return checkpoint_path.endswith(".pth")
 
 
-def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[float, dict]:
+def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs: Optional[dict] = None) -> tuple[float, dict]:
     """Rollout a custom PyTorch Actor-Critic model using get_next_states()."""
     import numpy as np
     import torch
@@ -48,7 +65,7 @@ def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 1
         model = torch.load(checkpoint_path, weights_only=False)
         model.eval()
 
-        env = gym.make(env_id)
+        env = gym.make(env_id, **(env_kwargs or {}))
         rewards, info_accum = [], {}
         for _ in range(n_episodes):
             obs, _ = env.reset()
@@ -88,18 +105,21 @@ def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 1
         return 0.0, {}
 
 
-def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[float, dict]:
+def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs: Optional[dict] = None) -> tuple[float, dict]:
     """Load checkpoint, run n_episodes deterministically, return (mean_reward, mean_info).
 
     Returns info values averaged across episodes. Only collects info at episode end
     (terminated/truncated step). Detects actor_critic PyTorch models automatically.
     """
+    if env_kwargs is None:
+        env_kwargs = _load_env_kwargs(checkpoint_path)
+
     if _is_actor_critic(checkpoint_path):
         pth = checkpoint_path.replace(".zip", ".pth")
         if not pth.endswith(".pth"):
             pth = checkpoint_path
         if os.path.exists(pth):
-            return _rollout_actor_critic(pth, env_id, n_episodes)
+            return _rollout_actor_critic(pth, env_id, n_episodes, env_kwargs=env_kwargs)
         # fall through to SB3 if .pth not found
 
     import numpy as np
@@ -122,7 +142,7 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10) -> tuple[f
         if model is None:
             return 0.0, {}
 
-        env = gym.make(env_id)
+        env = gym.make(env_id, **(env_kwargs or {}))
         rewards, info_accum = [], {}
         for _ in range(n_episodes):
             obs, _ = env.reset()
