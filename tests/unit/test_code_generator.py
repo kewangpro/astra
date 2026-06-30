@@ -1087,3 +1087,28 @@ def test_generate_training_script_non_snake_no_curriculum(tmp_path, monkeypatch)
 
     content = open(path).read()
     assert "_CURRICULUM_PHASES" not in content
+
+
+# ── valid_algo_keys tests ──────────────────────────────────────────────────────
+
+def test_valid_algo_keys_ppo():
+    keys = CodeGenerator.valid_algo_keys("PPO")
+    assert "ent_coef" in keys
+    assert "vf_coef" in keys
+    assert "buffer_size" not in keys
+
+
+def test_valid_algo_keys_dqn():
+    keys = CodeGenerator.valid_algo_keys("DQN")
+    assert "buffer_size" in keys
+    assert "exploration_fraction" in keys
+    assert "ent_coef" not in keys
+    assert "vf_coef" not in keys
+
+
+def test_valid_algo_keys_case_insensitive():
+    assert CodeGenerator.valid_algo_keys("dqn") == CodeGenerator.valid_algo_keys("DQN")
+
+
+def test_valid_algo_keys_unknown_returns_empty():
+    assert CodeGenerator.valid_algo_keys("UNKNOWN_ALGO") == set()

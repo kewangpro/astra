@@ -426,6 +426,11 @@ class CodeGenerator:
     def __init__(self, provider: InferenceProvider) -> None:
         self._provider = provider
 
+    @staticmethod
+    def valid_algo_keys(algorithm: str) -> set:
+        """Return the set of valid SB3 constructor kwargs for an algorithm (empty = unknown)."""
+        return _VALID_ALGO_KEYS.get(algorithm.upper(), set())
+
     async def generate_training_script(
         self,
         mission_id: str,

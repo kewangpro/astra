@@ -51,7 +51,10 @@ Respond with valid JSON.
 
 Escalation levels — follow the level provided in the user message:
   Level 0 (first plateau): tune hyperparameters only. Small changes — adjust learning_rate,
-    batch_size, gamma, ent_coef, etc. Keep the same algorithm and architecture.
+    batch_size, gamma, and other params valid for the current algorithm. Keep the same algorithm
+    and architecture. IMPORTANT: only propose keys listed under the current algorithm's valid
+    hyperparameter ranges below — never mix PPO params (ent_coef, vf_coef, gae_lambda) into a
+    DQN pivot or DQN params (buffer_size, exploration_fraction) into a PPO pivot.
   Level 1 (repeated plateau): change the policy network architecture in addition to HPs.
     Use "policy_kwargs" with a "net_arch" from: [256, 256], [400, 300], or [256, 256, 128].
     IMPORTANT: if a "Best performing architecture" is listed below, reuse it — do NOT switch
@@ -195,7 +198,13 @@ class LeadAgent:
                    "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
                    "distance shaping (distance_weight=0) and increasing food_reward.",
             }.get(escalation_level, "Level 0 — tune hyperparameters only.")
+        from backend.agent.code_generator import _VALID_ALGO_KEYS
+        _valid_keys = _VALID_ALGO_KEYS.get(current_algorithm.upper(), set())
         current_state_lines = [f"Current algorithm: {current_algorithm}"]
+        if _valid_keys:
+            current_state_lines.append(
+                f"Valid hyperparameter keys for {current_algorithm} (use ONLY these in adjustments): {sorted(_valid_keys)}"
+            )
         if current_policy_kwargs:
             current_state_lines.append(f"Current policy_kwargs (net_arch etc): {json.dumps(current_policy_kwargs)}")
         if current_hyperparameters:

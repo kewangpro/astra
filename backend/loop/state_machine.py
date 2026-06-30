@@ -502,6 +502,17 @@ class LoopStateMachine:
                     adjustments = self._clamp_rl_adjustments(
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
+                    # Drop keys that aren't valid for the current algorithm so
+                    # PPO-specific params (ent_coef, vf_coef) never land in a DQN pivot.
+                    _valid_pivot_keys = CodeGenerator.valid_algo_keys(current_algo)
+                    if _valid_pivot_keys:
+                        _invalid = {k for k in adjustments if k not in _valid_pivot_keys}
+                        if _invalid:
+                            logger.warning(
+                                "LoopStateMachine: dropping %d invalid pivot keys for %s: %s",
+                                len(_invalid), current_algo, sorted(_invalid),
+                            )
+                            adjustments = {k: v for k, v in adjustments.items() if k in _valid_pivot_keys}
 
                     # Filter out HP adjustments identical to current values.
                     # Compare as float to handle LLM returning "0.0005" (str) vs 0.0005 (float).

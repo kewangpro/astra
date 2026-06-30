@@ -906,8 +906,15 @@ This document outlines the phased implementation strategy for `ASTRA`.
 - [x] **`recipes/train_rl_v12.yaml` deleted**
     - Stale crystallized recipe written to disk as a side effect of crystallization. Nothing reads recipe files for crystallized missions — they live in DB + ChromaDB. File was dead code.
 
-- [x] **12 new tests in `test_code_generator.py`**
+- [x] **Algorithm-aware pivot filtering**
+    - `CodeGenerator.valid_algo_keys(algorithm: str) -> set` classmethod exposes `_VALID_ALGO_KEYS` as a public API.
+    - `LoopStateMachine` filters pivot `adjustments` against valid keys for the current algorithm after `_clamp_rl_adjustments` — hard guard drops PPO-specific params (`ent_coef`, `vf_coef`) from DQN pivots and logs a warning.
+    - `_PIVOT_SYSTEM` Level 0 description updated to warn against cross-algorithm key mixing.
+    - `propose_pivot` user message now includes the exact valid key list for the current algorithm so the LLM knows what to propose.
+
+- [x] **16 new tests in `test_code_generator.py`**
     - `_inject_curriculum`: loop present, phases list, `set_env`, grid dims from phase dict, grid dims excluded from base kwargs, `_phase_best_food` in `__init__`, food tracking in `_on_step`, `reset_num_timesteps` flag.
     - Integration: Snake-v0 script gets curriculum injected end-to-end; CartPole script does not.
+    - `valid_algo_keys`: PPO contains `ent_coef`/`vf_coef` not `buffer_size`; DQN contains `buffer_size`/`exploration_fraction` not `ent_coef`/`vf_coef`; case-insensitive; unknown algo returns empty set.
 
-    - Total: **578 tests** (569 unit + 9 integration).
+    Total: **582 tests** (573 unit + 9 integration).
