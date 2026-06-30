@@ -1,0 +1,59 @@
+name: snake_dqn_v1
+version: "1.0.0"
+created_at: "2026-06-29"
+task_type: RL
+domain: Snake
+algorithm: DQN
+description: >
+  DQN recipe for Snake-v0. Off-policy with a replay buffer — reuses past
+  experience so it needs fewer environment steps than PPO to reach the same
+  food_eaten score. Better suited for sparse rewards (only triggered on food)
+  than PPO, which discards experience after each update. Uses the same compact
+  25D feature obs as the PPO recipe so policy weights and env_kwargs are
+  compatible.
+
+hyperparameters:
+  algorithm: DQN
+  learning_rate: 0.0001
+  buffer_size: 100000         # replay buffer — key DQN advantage over PPO
+  learning_starts: 10000      # collect experience before first gradient step
+  batch_size: 32
+  gamma: 0.99
+  tau: 1.0                    # hard target network update
+  train_freq: 4               # train every 4 env steps
+  gradient_steps: 1
+  target_update_interval: 1000
+  exploration_fraction: 0.3   # epsilon decays over 30% of training
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.05
+  max_grad_norm: 10.0
+  policy_kwargs:
+    net_arch: [256, 256]
+  # Training budget
+  total_timesteps: 3000000
+  telemetry_interval: 2048
+  eval_episodes: 10
+
+env_kwargs:
+  obs_type: features          # 25D compact feature vector — same as PPO recipe
+  max_steps: 2000
+  food_reward: 20.0
+  death_penalty: -10.0
+  distance_weight: 0.3
+  survival_bonus: 0.01
+
+# Same curriculum phases as PPO — grid size progression is algorithm-agnostic.
+curriculum:
+  phases:
+    - grid_h: 8
+      grid_w: 8
+      food_target: 15
+      timesteps: 300000
+    - grid_h: 12
+      grid_w: 12
+      food_target: 40
+      timesteps: 700000
+    - grid_h: 16
+      grid_w: 16
+      food_target: 100
+      timesteps: 2000000

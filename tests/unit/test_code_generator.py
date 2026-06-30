@@ -938,3 +938,152 @@ def test_resolve_hyperparams_mlx_lora_plan_overrides_iters():
     from backend.agent.code_generator import _resolve_hyperparams
     result = _resolve_hyperparams("mlx_lora", {"iters": 100})
     assert result["iters"] == 100
+
+
+# ── _inject_curriculum ────────────────────────────────────────────────────────
+
+_SAMPLE_PHASES = [
+    {"grid_h": 8,  "grid_w": 8,  "food_target": 15, "timesteps": 300000},
+    {"grid_h": 12, "grid_w": 12, "food_target": 40, "timesteps": 700000},
+    {"grid_h": 16, "grid_w": 16, "food_target": 100, "timesteps": 2000000},
+]
+
+_SAMPLE_ENV_KWARGS = {
+    "obs_type": "features",
+    "food_reward": 20.0,
+    "death_penalty": -10.0,
+    "max_steps": 2000,
+}
+
+def _make_injectable_script() -> str:
+    """Minimal script with the two hooks _inject_curriculum looks for."""
+    return (
+        "import os\n"
+        "import gymnasium as gym\n"
+        "import numpy as np\n"
+        "import logging\n"
+        "env = gym.make('Snake-v0')\n"
+        "class CustomCallback(BaseCallback):\n"
+        "    def __init__(self, verbose=0):\n"
+        "        super().__init__(verbose=verbose)\n"
+        "        try:\n"
+        '            self._best_reward = float(open("ckpt/best_score.txt").read().strip())\n'
+        "        except Exception:\n"
+        '            self._best_reward = float("-inf")\n'
+        "    def _on_step(self) -> bool:\n"
+        "        if self.n_calls % 2048 == 0:\n"
+        "            pass\n"
+        "        return True\n"
+        "callback = CustomCallback()\n"
+        "model.learn(total_timesteps=3000000, callback=callback)\n"
+        "model.save('ckpt/last_model')\n"
+    )
+
+
+def test_inject_curriculum_replaces_learn_call():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert "model.learn(total_timesteps=3000000, callback=callback)" not in result
+    assert "_CURRICULUM_PHASES" in result
+    assert "for _ph_idx, _ph in enumerate(_CURRICULUM_PHASES):" in result
+
+
+def test_inject_curriculum_phases_list_present():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert '"grid_h": 8' in result
+    assert '"food_target": 15' in result
+    assert '"timesteps": 2000000' in result
+
+
+def test_inject_curriculum_set_env_per_phase():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert "model.set_env(_ph_env)" in result
+
+
+def test_inject_curriculum_grid_dims_come_from_phase():
+    """grid_h/grid_w must be passed from the phase dict, not hardcoded from env_kwargs."""
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert '_ph["grid_h"]' in result
+    assert '_ph["grid_w"]' in result
+
+
+def test_inject_curriculum_excludes_grid_dims_from_base_kwargs():
+    """grid_h/grid_w must not appear in the base gym.make call (they come from phase)."""
+    env_kw_with_grid = {**_SAMPLE_ENV_KWARGS, "grid_h": 16, "grid_w": 16}
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", env_kw_with_grid)
+    # The _ph_env = gym.make(...) line should not have literal grid_h=16
+    for line in result.splitlines():
+        if "_ph_env = gym.make" in line:
+            assert "grid_h=16" not in line
+            assert "grid_w=16" not in line
+
+
+def test_inject_curriculum_adds_phase_best_food_to_init():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert "self._phase_best_food = 0" in result
+
+
+def test_inject_curriculum_adds_food_tracking_to_on_step():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert 'self.locals.get("infos"' in result
+    assert 'self.locals.get("dones"' in result
+    assert "self._phase_best_food" in result
+
+
+def test_inject_curriculum_reset_num_timesteps_only_on_first_phase():
+    """reset_num_timesteps=True only for phase 0 so step counter is continuous."""
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
+    assert "reset_num_timesteps=(_ph_idx == 0)" in result
+
+
+def test_generate_training_script_snake_injects_curriculum(tmp_path, monkeypatch):
+    """End-to-end: Snake-v0 script gets curriculum injected after LLM generation."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    llm_output = _make_injectable_script()
+    gen = CodeGenerator(_make_provider(llm_output))
+    plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "env_id": "Snake-v0",
+        "hyperparameters": {"learning_rate": 0.0003},
+        "target_metric": {"food_eaten": 100},
+    }
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-curriculum", plan)
+        )
+
+    content = open(path).read()
+    assert "_CURRICULUM_PHASES" in content
+    assert "model.set_env(_ph_env)" in content
+    assert "_phase_best_food" in content
+
+
+def test_generate_training_script_non_snake_no_curriculum(tmp_path, monkeypatch):
+    """CartPole has no curriculum in its recipe — no injection."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    llm_output = _make_injectable_script()
+    gen = CodeGenerator(_make_provider(llm_output))
+    plan = _make_rl_plan(env_id="CartPole-v1")
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-cartpole2", plan)
+        )
+
+    content = open(path).read()
+    assert "_CURRICULUM_PHASES" not in content

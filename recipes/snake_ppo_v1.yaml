@@ -36,3 +36,20 @@ env_kwargs:
   death_penalty: -10.0        # clear death signal
   distance_weight: 0.3        # light distance shaping — food reward dominates
   survival_bonus: 0.01        # minimal; avoid incentivizing stalling
+
+# Curriculum: train on progressively larger grids before tackling the full 16×16.
+# obs_type=features is always 25D regardless of grid size — policy weights transfer.
+curriculum:
+  phases:
+    - grid_h: 8
+      grid_w: 8
+      food_target: 15         # ~23% grid fill — achievable in phase 1
+      timesteps: 300000
+    - grid_h: 12
+      grid_w: 12
+      food_target: 40         # ~28% grid fill — intermediate difficulty
+      timesteps: 700000
+    - grid_h: 16
+      grid_w: 16
+      food_target: 100        # ~39% grid fill — mission target
+      timesteps: 2000000

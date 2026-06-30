@@ -869,3 +869,45 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - No duplicated logic; router retains HTTP-specific validation (404/409/422 errors).
 
     - Total: **568 tests** (559 unit + 9 integration).
+
+## Phase 23 — Curriculum Training & Algorithm-Aware Code Generation
+
+**Problem:** Snake-v0 PPO missions plateau around food_eaten=72 on a 16×16 grid. The agent has no gradient signal for scores above ~72 because it almost never stumbles into a successful 80+ food episode — the environment is too hard from the start. Separately, DQN missions silently dropped `buffer_size`, `learning_starts`, and other DQN-specific constructor kwargs because `_RL_TEMPLATE` hardcoded `_VALID_PPO_KEYS` and `PPO(...)` regardless of the plan's `algorithm` field.
+
+**Fix:**
+
+- [x] **`recipes/snake_ppo_v1.yaml` — added `curriculum.phases` block**
+    - 3 phases: `8×8 (300k steps, target food_eaten=15)` → `12×12 (700k steps, target=40)` → `16×16 (2M steps, target=100)`.
+    - Total timesteps unchanged at 3M — budget redistributed across phases rather than all spent on the hardest grid.
+    - `obs_type=features` keeps obs at 25D regardless of grid size, so policy weights transfer across phases via `model.set_env()` with no architecture change.
+
+- [x] **`recipes/snake_dqn_v1.yaml` — new DQN recipe for Snake-v0**
+    - Replay buffer hyperparams: `buffer_size=100000`, `learning_starts=10000`, `target_update_interval=1000`, `exploration_fraction=0.3`, `exploration_final_eps=0.05`.
+    - Same 3-phase curriculum as PPO recipe — curriculum is algorithm-agnostic.
+    - Same `env_kwargs` as PPO recipe for environment compatibility.
+
+- [x] **`CodeGenerator._inject_curriculum` — deterministic curriculum post-processor**
+    - Called after LLM generation so the loop is deterministic, not LLM-generated (LLMs reliably get `reset_num_timesteps`, `set_env`, and callback state tracking wrong).
+    - Replaces `model.learn(total_timesteps=..., callback=callback)` with a `_CURRICULUM_PHASES` loop via regex substitution.
+    - Patches `CustomCallback.__init__` to add `self._phase_best_food = 0`.
+    - Patches `_on_step` to track `food_eaten` from `self.locals["infos"]` per phase.
+    - Sets `reset_num_timesteps=(_ph_idx == 0)` so the step counter is continuous across phases.
+    - Applied automatically in `generate_training_script` when the resolved recipe contains `curriculum.phases`.
+
+- [x] **`_VALID_ALGO_KEYS` — per-algorithm SB3 constructor key whitelist**
+    - Maps PPO / DQN / SAC / A2C / TD3 → their respective valid `__init__` kwargs.
+    - `_RL_TEMPLATE` now uses `{valid_keys_var}` / `{valid_keys_set}` / `{algorithm}` placeholders — import, model constructor, and warm-start load are all algorithm-parameterized.
+    - DQN missions now correctly pass `buffer_size`, `learning_starts`, `exploration_fraction`, etc. instead of silently filtering them.
+
+- [x] **`_ENV_RECIPE` — algorithm-specific recipe override**
+    - Added `Snake-v0/DQN → snake_dqn_v1.yaml` key; `_load_recipe_for_env(env_id, algorithm)` checks the combined key first, falls back to env-only.
+    - `_resolve_hyperparams(env_id, plan_hp, algorithm)` passes `algorithm` through so DQN missions pull defaults from `snake_dqn_v1.yaml`.
+
+- [x] **`recipes/train_rl_v12.yaml` deleted**
+    - Stale crystallized recipe written to disk as a side effect of crystallization. Nothing reads recipe files for crystallized missions — they live in DB + ChromaDB. File was dead code.
+
+- [x] **12 new tests in `test_code_generator.py`**
+    - `_inject_curriculum`: loop present, phases list, `set_env`, grid dims from phase dict, grid dims excluded from base kwargs, `_phase_best_food` in `__init__`, food tracking in `_on_step`, `reset_num_timesteps` flag.
+    - Integration: Snake-v0 script gets curriculum injected end-to-end; CartPole script does not.
+
+    - Total: **578 tests** (569 unit + 9 integration).

@@ -71,7 +71,7 @@ The script MUST start with these exact imports (do not omit any):
     import numpy as np
     import requests
     import logging
-    from stable_baselines3 import PPO
+    from stable_baselines3 import {algorithm}
     from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
@@ -82,13 +82,11 @@ The script must:
    Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
 
-       _VALID_PPO_KEYS = {{"learning_rate", "n_steps", "batch_size", "n_epochs", "gamma",
-                           "gae_lambda", "clip_range", "clip_range_vf", "ent_coef",
-                           "vf_coef", "max_grad_norm", "target_kl"}}
+       {valid_keys_var} = {valid_keys_set}
        _hp = {hyperparameters}
-       _filtered = {{k: v for k, v in _hp.items() if k in _VALID_PPO_KEYS}}
+       _filtered = {{k: v for k, v in _hp.items() if k in {valid_keys_var}}}
        _policy_kwargs = {policy_kwargs}
-       model = PPO("MlpPolicy", env, **_filtered,
+       model = {algorithm}("MlpPolicy", env, **_filtered,
                    **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
 
    These values are set by the optimizer — do NOT substitute your own hyperparameter values.
@@ -97,7 +95,7 @@ The script must:
        _best_ckpt = "{checkpoint_dir}/best_model.zip"
        if os.path.exists(_best_ckpt):
            try:
-               _warm = PPO.load(_best_ckpt, env=env)
+               _warm = {algorithm}.load(_best_ckpt, env=env)
                model.policy.load_state_dict(_warm.policy.state_dict())
                del _warm
            except Exception as _e:
@@ -357,19 +355,53 @@ def _resolve_env_kwargs(env_id: str, plan_env_kwargs: Optional[dict]) -> dict:
     return kw
 
 
+# Valid constructor kwargs per SB3 algorithm — used to filter _hp before model(...)
+_VALID_ALGO_KEYS: dict[str, set] = {
+    "PPO": {
+        "learning_rate", "n_steps", "batch_size", "n_epochs", "gamma",
+        "gae_lambda", "clip_range", "clip_range_vf", "ent_coef",
+        "vf_coef", "max_grad_norm", "target_kl",
+    },
+    "DQN": {
+        "learning_rate", "buffer_size", "learning_starts", "batch_size",
+        "tau", "gamma", "train_freq", "gradient_steps", "optimize_memory_usage",
+        "target_update_interval", "exploration_fraction",
+        "exploration_initial_eps", "exploration_final_eps", "max_grad_norm",
+    },
+    "SAC": {
+        "learning_rate", "buffer_size", "learning_starts", "batch_size",
+        "tau", "gamma", "train_freq", "gradient_steps", "ent_coef",
+        "target_update_interval", "target_entropy", "use_sde",
+        "sde_sample_freq", "use_sde_at_warmup",
+    },
+    "A2C": {
+        "learning_rate", "n_steps", "gamma", "gae_lambda", "ent_coef",
+        "vf_coef", "max_grad_norm", "rms_prop_eps", "use_rms_prop",
+        "use_sde", "sde_sample_freq", "normalize_advantage",
+    },
+    "TD3": {
+        "learning_rate", "buffer_size", "learning_starts", "batch_size",
+        "tau", "gamma", "train_freq", "gradient_steps",
+        "action_noise", "target_policy_noise", "target_noise_clip",
+        "policy_delay",
+    },
+}
+
 # Canonical recipe file per env_id or task_type — hyperparameters and env_kwargs
 # from these files are used as defaults when the LLM plan omits a value.
 _ENV_RECIPE: dict = {
     "Snake-v0": "snake_ppo_v1.yaml",
+    "Snake-v0/DQN": "snake_dqn_v1.yaml",   # algorithm-specific override
     "Tetris-v0": "tetris_ppo_v1.yaml",
     "sft": "sft_llama_lora_v1.yaml",       # keyed by task_type for non-RL tasks
     "mlx_lora": "mlx_lora_v1.yaml",
 }
 
 
-def _load_recipe_for_env(env_id: str) -> dict:
-    """Return the parsed recipe dict for env_id, or {} if not found."""
-    filename = _ENV_RECIPE.get(env_id)
+def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
+    """Return the parsed recipe dict for env_id (+ optional algorithm), or {}."""
+    # Algorithm-specific override takes priority (e.g. Snake-v0/DQN)
+    filename = _ENV_RECIPE.get(f"{env_id}/{algorithm}") or _ENV_RECIPE.get(env_id)
     if not filename:
         return {}
     try:
@@ -381,9 +413,9 @@ def _load_recipe_for_env(env_id: str) -> dict:
         return {}
 
 
-def _resolve_hyperparams(env_id: str, plan_hp: dict) -> dict:
+def _resolve_hyperparams(env_id: str, plan_hp: dict, algorithm: str = "") -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
-    recipe_hp = _load_recipe_for_env(env_id).get("hyperparameters", {})
+    recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
     hp = dict(plan_hp)
     for k, v in recipe_hp.items():
         hp.setdefault(k, v)
@@ -444,6 +476,14 @@ class CodeGenerator:
             elif env_id == "Tetris-v0" and "register" not in code:
                 code = _TETRIS_SETUP.format(project_root=_proj_root) + "\n" + code
                 logger.info("CodeGenerator: injected Tetris-v0 registration preamble")
+            # Inject curriculum loop if recipe defines phases
+            _algo = plan.get("algorithm", "PPO")
+            _recipe = _load_recipe_for_env(env_id, _algo)
+            _curriculum_phases = (_recipe.get("curriculum") or {}).get("phases")
+            if _curriculum_phases:
+                _env_kw = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
+                code = self._inject_curriculum(code, _curriculum_phases, env_id, _env_kw)
+                logger.info("CodeGenerator: injected curriculum (%d phases) for %s/%s", len(_curriculum_phases), env_id, _algo)
         # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
         code = self._fix_checkpoint_paths(code, checkpoint_dir)
 
@@ -474,7 +514,8 @@ class CodeGenerator:
 
     def _build_user_prompt(self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0) -> str:
         recipe_key = plan.get("env_id", "") if task_type == "rl" else task_type
-        hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
+        _plan_algo = plan.get("algorithm", "PPO") if task_type == "rl" else ""
+        hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}), algorithm=_plan_algo)
         api_url = f"http://127.0.0.1:{settings.api_port}"
         base = {
             "mission_id": mission_id,
@@ -508,7 +549,8 @@ class CodeGenerator:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
             else:
                 env_kwargs_str = ""
-            recipe_trainer_type = _load_recipe_for_env(recipe_key).get("trainer_type", "")
+            algorithm = plan.get("algorithm", "PPO")
+            recipe_trainer_type = _load_recipe_for_env(recipe_key, algorithm).get("trainer_type", "")
             trainer_type = plan.get("trainer_type", "") or recipe_trainer_type
             if trainer_type == "actor_critic":
                 tm_lines = next(iter(tm.values()), 20) if tm else 20
@@ -530,8 +572,15 @@ class CodeGenerator:
                     **base,
                 }
                 return _ACTOR_CRITIC_CONTRACT.format(**ctx)
+            # Build algorithm-aware valid-keys filter for the model constructor block
+            algo_upper = algorithm.upper()
+            valid_keys = _VALID_ALGO_KEYS.get(algo_upper, _VALID_ALGO_KEYS["PPO"])
+            valid_keys_var = f"_VALID_{algo_upper}_KEYS"
+            valid_keys_set = "{" + ", ".join(f'"{k}"' for k in sorted(valid_keys)) + "}"
             ctx = {
-                "algorithm": plan.get("algorithm", "PPO"),
+                "algorithm": algorithm,
+                "valid_keys_var": valid_keys_var,
+                "valid_keys_set": valid_keys_set,
                 "env_id": env_id,
                 "hyperparameters": json.dumps(hp, indent=2),
                 "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "None",
@@ -572,6 +621,63 @@ class CodeGenerator:
             **base,
         }
         return _ML_TEMPLATE.format(**ctx)
+
+    @staticmethod
+    def _inject_curriculum(code: str, phases: list, env_id: str, env_kwargs: dict) -> str:
+        """Replace single model.learn() with a multi-phase curriculum loop.
+
+        Called after LLM generation so the loop is deterministic, not LLM-generated.
+        obs_type=features keeps obs at 25D across all grid sizes — weights transfer fine.
+        """
+        import re
+
+        phases_repr = json.dumps(phases, indent=4)
+        # env_kwargs without grid dims (those come from each phase)
+        base_kw = {k: v for k, v in env_kwargs.items() if k not in ("grid_h", "grid_w")}
+        kw_str = (", " + ", ".join(f"{k}={v!r}" for k, v in base_kw.items())) if base_kw else ""
+
+        curriculum_block = (
+            f'_CURRICULUM_PHASES = {phases_repr}\n'
+            f'for _ph_idx, _ph in enumerate(_CURRICULUM_PHASES):\n'
+            f'    _ph_env = gym.make("{env_id}"{kw_str}, grid_h=_ph["grid_h"], grid_w=_ph["grid_w"])\n'
+            f'    model.set_env(_ph_env)\n'
+            f'    callback._phase_best_food = 0\n'
+            f'    logging.info("Curriculum phase %d/%d: grid=%dx%d food_target=%d timesteps=%d",\n'
+            f'                 _ph_idx + 1, len(_CURRICULUM_PHASES), _ph["grid_h"], _ph["grid_w"],\n'
+            f'                 _ph["food_target"], _ph["timesteps"])\n'
+            f'    model.learn(total_timesteps=_ph["timesteps"], callback=callback,\n'
+            f'                reset_num_timesteps=(_ph_idx == 0))\n'
+            f'    logging.info("Phase %d done — best_food=%d", _ph_idx + 1, callback._phase_best_food)'
+        )
+
+        # Replace single model.learn(...) call with the curriculum loop
+        code = re.sub(
+            r'model\.learn\(total_timesteps=\d+,\s*callback=callback\)',
+            curriculum_block,
+            code,
+        )
+
+        # Patch callback __init__: add _phase_best_food tracker
+        code = code.replace(
+            'self._best_reward = float("-inf")',
+            'self._best_reward = float("-inf")\n        self._phase_best_food = 0',
+        )
+
+        # Patch _on_step: insert food_eaten tracking before the telemetry block
+        food_tracking = (
+            '        for _info, _done in zip(self.locals.get("infos", []), self.locals.get("dones", [])):\n'
+            '            if _done and "food_eaten" in _info:\n'
+            '                _fe = int(_info["food_eaten"])\n'
+            '                if _fe > self._phase_best_food:\n'
+            '                    self._phase_best_food = _fe\n'
+        )
+        code = re.sub(
+            r'(    def _on_step\(self\) -> bool:\n)',
+            r'\1' + food_tracking,
+            code,
+        )
+
+        return code
 
     @staticmethod
     def _patch_rl_imports(code: str) -> str:

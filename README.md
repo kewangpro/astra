@@ -14,12 +14,14 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
 - **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
 - **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments; Snake-v0 tracks `food_eaten`; Tetris-v0 uses a placement-based `Discrete(40)` action space and a compact 4-feature observation `[lines_cleared_last, holes, bumpiness, sum_height]` (normalized) matching the reference approach that achieved 45+ lines cleared vs ~10 with a flat 224-element board
-- **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket; auto-detects SB3 (`best_model.zip`) vs PyTorch Actor-Critic (`best_model.pth`) and uses `get_next_states()` lookahead for Tetris playback
+- **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket; auto-detects SB3 (`best_model.zip`) vs PyTorch Actor-Critic (`best_model.pth`) and uses `get_next_states()` lookahead for Tetris playback; displays `lines_cleared` (Tetris) and `food_eaten` (Snake) per episode
+- **Curriculum training** — Snake-v0 recipes define grid-size phases (8×8 → 12×12 → 16×16); `CodeGenerator._inject_curriculum` deterministically rewrites the generated `model.learn()` call into a multi-phase loop, transferring weights between phases via `model.set_env()` — no LLM involvement in the curriculum logic
+- **Algorithm-aware code generation** — `_VALID_ALGO_KEYS` maps PPO/DQN/SAC/A2C/TD3 to their valid SB3 constructor kwargs; `_RL_TEMPLATE` is fully parameterized so DQN missions get `buffer_size`, `learning_starts`, `exploration_fraction`, etc. correctly passed rather than silently filtered; `snake_dqn_v1.yaml` recipe added alongside the existing PPO recipe
 - **Persistent escalating pivot strategy** — PivotEngine escalates through 4 levels (HP tuning → architecture change → algorithm switch → reward shaping) across server restarts via DB-persisted `pivot_escalation_count`; pivot event stream shows real old→new diffs
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **568 tests** — 559 unit + 9 integration tests covering all core services
+- **578 tests** — 569 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -85,7 +87,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 553 unit tests across all core modules
+│   ├── unit/           # 569 unit tests across all core modules
 │   └── integration/    # 9 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -134,6 +136,7 @@ make ports  # show port status for all services
 | 20 | MLX LoRA Fine-Tuning — `mlx_lora` task type with `mlx_lora_v1.yaml` recipe (gemma-3-12b-it-4bit, rank=8, iters=600); `_MLX_LORA_TEMPLATE` generates `mlx_lm.lora` subprocess script with telemetry; lead agent enum + system prompt updated; task_type reconciliation persists LLM inference to DB; 557 tests | ✅ Complete |
 | 21 | Telemetry Integrity & AC Loop Hardening — MetricGap only reflects `_run_goal_metric_eval` (training-time `lines_cleared` posts no longer contaminate `best_metric_value`); AC loop bounded by `total_timesteps` not episode count; `trainer_type` read from recipe YAML as fallback so Tetris always routes to AC template without LLM needing to set it; `env = gym.make()` and `from envs.actor_critic_net import ActorCriticNet` added to AC skeleton; `tetris_ppo_v1.yaml` `total_timesteps` reduced 2M→500k; duplicate `import sys` in `_rollout_actor_critic` removed (caused UnboundLocalError after training); manifest artifact check now accepts `.pth` (actor_critic) alongside `.zip` (SB3) so AC missions can complete; 562 tests | ✅ Complete |
 | 22 | Inline Auto-Approve — approval gates now auto-approve immediately at creation time (via `try_auto_approve()` in `backend/services/auto_approver.py`) so missions don't stall overnight when no browser is open; previously auto-approve was frontend-triggered only and a 7-hour gap between iterations was observed; router delegates to same shared service eliminating duplicated logic; 568 tests | ✅ Complete |
+| 23 | Curriculum Training & Algorithm-Aware Code Generation — `CodeGenerator._inject_curriculum` post-processor rewrites generated `model.learn()` into a multi-phase grid-size curriculum loop (8×8→12×12→16×16) deterministically, bypassing LLM for complex control flow; `snake_ppo_v1.yaml` and new `snake_dqn_v1.yaml` both carry `curriculum.phases`; `_VALID_ALGO_KEYS` and `_RL_TEMPLATE` parameterized per algorithm so DQN/SAC/A2C/TD3 get correct constructor kwargs; `_load_recipe_for_env` accepts `algorithm` for algorithm-specific recipe overrides (`Snake-v0/DQN → snake_dqn_v1.yaml`); `lines_cleared` (Tetris) and `food_eaten` (Snake) displayed in live viewer stats row; `train_rl_v12.yaml` stale crystallized recipe deleted; BenchmarkSuite reads `env_kwargs` from `train_config.json` to match training obs shape; 578 tests | ✅ Complete |
 
 ## Hardware Target
 
