@@ -12,6 +12,7 @@ description: >
 hyperparameters:
   # PPO
   learning_rate: 0.0003
+  lr_schedule: linear       # decay learning_rate to 0 over each run's total_timesteps
   gamma: 0.99
   gae_lambda: 0.95
   n_steps: 2048

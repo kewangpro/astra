@@ -82,14 +82,28 @@ The script must:
    Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
 
+       def _linear_schedule(initial_value):
+           def _schedule(progress_remaining):
+               return progress_remaining * initial_value
+           return _schedule
+
        {valid_keys_var} = {valid_keys_set}
        _hp = {hyperparameters}
        _filtered = {{k: v for k, v in _hp.items() if k in {valid_keys_var}}}
+       if _hp.get("lr_schedule") == "linear" and "learning_rate" in _filtered:
+           _filtered["learning_rate"] = _linear_schedule(_filtered["learning_rate"])
        _policy_kwargs = {policy_kwargs}
        model = {algorithm}("MlpPolicy", env, **_filtered,
                    **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
 
    These values are set by the optimizer — do NOT substitute your own hyperparameter values.
+   `lr_schedule` is an opt-in recipe setting (not an SB3 constructor kwarg, so it is
+   automatically excluded from `_filtered` by the {valid_keys_var} check above). When set to
+   "linear", `_linear_schedule` decays the learning rate linearly from its initial value to 0
+   over the course of THIS run's `total_timesteps` (SB3 calls it with `progress_remaining`
+   going 1 → 0). When absent, learning_rate stays a constant scalar as before. This is in
+   addition to, not a replacement for, the optimizer's across-iteration pivot adjustments to
+   the starting learning rate.
 3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
 
        _best_ckpt = "{checkpoint_dir}/best_model.zip"

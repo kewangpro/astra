@@ -284,6 +284,59 @@ def test_build_user_prompt_rl_policy_kwargs_none_renders_as_python_none(tmp_path
     assert "_policy_kwargs = None" in prompt
 
 
+def test_build_user_prompt_rl_includes_lr_schedule_helper(tmp_path, monkeypatch):
+    """The _linear_schedule helper and its opt-in guard are always emitted,
+    even when the recipe/plan does not set lr_schedule."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan()
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    assert "_linear_schedule" in prompt
+    assert '_hp.get("lr_schedule") == "linear"' in prompt
+
+
+def test_build_user_prompt_rl_hyperparameters_without_lr_schedule_stay_constant(tmp_path, monkeypatch):
+    """When the plan/recipe omits lr_schedule, _hp has no such key and the
+    generated script's guard leaves learning_rate as a constant scalar."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(hyperparameters={"learning_rate": 0.0003, "n_steps": 2048})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    hp_block = prompt.split("_hp = ")[1].split("_filtered")[0]
+    assert "lr_schedule" not in hp_block
+
+
+def test_build_user_prompt_rl_hyperparameters_with_lr_schedule_linear(tmp_path, monkeypatch):
+    """When the plan/recipe sets lr_schedule: linear, it is hardcoded into _hp
+    so the opt-in guard activates at runtime."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = _make_rl_plan(hyperparameters={"learning_rate": 0.0003, "lr_schedule": "linear"})
+    prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+    hp_block = prompt.split("_hp = ")[1].split("_filtered")[0]
+    assert "lr_schedule" in hp_block
+    assert "linear" in hp_block
+
+
+def test_resolve_hyperparams_snake_recipe_sets_lr_schedule_linear():
+    """snake_ppo_v1.yaml opts into the linear LR schedule by default."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("Snake-v0", {"learning_rate": 0.0003})
+    assert result.get("lr_schedule") == "linear"
+
+
 def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

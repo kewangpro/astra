@@ -21,7 +21,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **582 tests** — 573 unit + 9 integration tests covering all core services
+- **598 tests** — 589 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -87,7 +87,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 573 unit tests across all core modules
+│   ├── unit/           # 589 unit tests across all core modules
 │   └── integration/    # 9 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -137,6 +137,7 @@ make ports  # show port status for all services
 | 21 | Telemetry Integrity & AC Loop Hardening — MetricGap only reflects `_run_goal_metric_eval` (training-time `lines_cleared` posts no longer contaminate `best_metric_value`); AC loop bounded by `total_timesteps` not episode count; `trainer_type` read from recipe YAML as fallback so Tetris always routes to AC template without LLM needing to set it; `env = gym.make()` and `from envs.actor_critic_net import ActorCriticNet` added to AC skeleton; `tetris_ppo_v1.yaml` `total_timesteps` reduced 2M→500k; duplicate `import sys` in `_rollout_actor_critic` removed (caused UnboundLocalError after training); manifest artifact check now accepts `.pth` (actor_critic) alongside `.zip` (SB3) so AC missions can complete; 562 tests | ✅ Complete |
 | 22 | Inline Auto-Approve — approval gates now auto-approve immediately at creation time (via `try_auto_approve()` in `backend/services/auto_approver.py`) so missions don't stall overnight when no browser is open; previously auto-approve was frontend-triggered only and a 7-hour gap between iterations was observed; router delegates to same shared service eliminating duplicated logic; 568 tests | ✅ Complete |
 | 23 | Curriculum Training & Algorithm-Aware Code Generation — `CodeGenerator._inject_curriculum` post-processor rewrites generated `model.learn()` into a multi-phase grid-size curriculum loop (8×8→12×12→16×16) deterministically, bypassing LLM for complex control flow; `snake_ppo_v1.yaml` and new `snake_dqn_v1.yaml` both carry `curriculum.phases`; `_VALID_ALGO_KEYS` and `_RL_TEMPLATE` parameterized per algorithm so DQN/SAC/A2C/TD3 get correct constructor kwargs; `_load_recipe_for_env` accepts `algorithm` for algorithm-specific recipe overrides (`Snake-v0/DQN → snake_dqn_v1.yaml`); `lines_cleared` (Tetris) and `food_eaten` (Snake) displayed in live viewer stats row; `train_rl_v12.yaml` stale crystallized recipe deleted; BenchmarkSuite reads `env_kwargs` from `train_config.json` to match training obs shape; algorithm-aware pivot filtering: `CodeGenerator.valid_algo_keys()` exposes `_VALID_ALGO_KEYS`, `LoopStateMachine` hard-guards pivot `adjustments` against valid keys before applying (drops `ent_coef`/`vf_coef` from DQN pivots), `propose_pivot` passes exact valid key list to LLM; 582 tests | ✅ Complete |
+| 24 | Sandbox Shutdown Fix + Opt-In PPO Learning Rate Schedule — `SSHSandbox.terminate()` now does graceful `kill -TERM` → poll → `kill -9` instead of a bare force-kill, matching `SubprocessSandbox` shutdown semantics; new `test_ssh_sandbox.py` (previously the SSH backend had no direct unit test); `_RL_TEMPLATE` emits an opt-in `_linear_schedule` helper for PPO learning rate, gated by recipe key `lr_schedule: linear` (not in `_VALID_ALGO_KEYS`, so other algorithms are unaffected unless they opt in); `snake_ppo_v1.yaml` sets `lr_schedule: linear`; 598 tests | ✅ Complete |
 
 ## Hardware Target
 

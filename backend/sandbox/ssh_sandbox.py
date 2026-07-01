@@ -83,7 +83,11 @@ class SSHSandbox(BaseSandbox):
     def terminate(self) -> None:
         if self._remote_pid:
             subprocess.run(
-                ["ssh", self._host, f"kill -9 {self._remote_pid} 2>/dev/null"],
+                ["ssh", self._host,
+                 f"kill -TERM {self._remote_pid} 2>/dev/null; "
+                 f"for i in $(seq 1 10); do "
+                 f"kill -0 {self._remote_pid} 2>/dev/null || exit 0; sleep 1; done; "
+                 f"kill -9 {self._remote_pid} 2>/dev/null"],
                 capture_output=True,
             )
         self._sync_back()

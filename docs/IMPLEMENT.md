@@ -918,3 +918,29 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `valid_algo_keys`: PPO contains `ent_coef`/`vf_coef` not `buffer_size`; DQN contains `buffer_size`/`exploration_fraction` not `ent_coef`/`vf_coef`; case-insensitive; unknown algo returns empty set.
 
     Total: **582 tests** (573 unit + 9 integration).
+
+## Phase 24 — Sandbox Shutdown Fix + Opt-In PPO Learning Rate Schedule
+
+**Problem:** A codebase review (prompted by the Ray multi-node proposal in `docs/IMPROVEMENT.md`) found `SSHSandbox.terminate()` sent a bare `kill -9` with no graceful step, unlike `SubprocessSandbox.terminate()` (`SIGTERM` → wait(10s) → `SIGKILL`), and that the SSH backend had zero direct unit test coverage. Separately, while investigating a plateauing Snake-v0 PPO mission (food_eaten oscillating 38-52 across iterations 9-15 vs a target of 100), found that PPO's learning rate is a static scalar within a single training run — `PivotEngine` only adjusts it *between* iterations, never decays it during one.
+
+**Fix:**
+
+- [x] **`backend/sandbox/ssh_sandbox.py` — graceful `terminate()`**
+    - Now runs `kill -TERM` → polls `kill -0` for up to 10s → `kill -9`, all in a single SSH command, matching `SubprocessSandbox`'s shutdown semantics so the remote training process gets a chance to flush/save state before being force-killed.
+
+- [x] **`tests/unit/test_ssh_sandbox.py` — new file, 12 tests**
+    - Covers `launch` (remote dir creation, script transfer, PID/status tracking), `is_alive` (including triggering `_sync_back` on death), the new graceful `terminate` sequence (asserts `kill -TERM` precedes `kill -9` in the remote command string), `get_sandbox_id`, and `_sync_back`.
+
+- [x] **`backend/agent/code_generator.py` — opt-in linear LR schedule for PPO**
+    - `_RL_TEMPLATE` now always emits a `_linear_schedule(initial_value)` helper, decaying `progress_remaining` (1 → 0) times the initial LR.
+    - Guarded by `if _hp.get("lr_schedule") == "linear" and "learning_rate" in _filtered` — opt-in, not always-on, so DQN/SAC/A2C/TD3 recipes are unaffected unless they explicitly set the flag.
+    - `lr_schedule` is a recipe-only key, not in `_VALID_ALGO_KEYS`, so it's automatically excluded from `_filtered` before reaching the SB3 constructor.
+    - Composes with, rather than replaces, `PivotEngine`'s across-iteration LR adjustments.
+
+- [x] **`recipes/snake_ppo_v1.yaml` — sets `lr_schedule: linear`**
+    - All other recipes (Tetris PPO, Snake DQN, SFT, MLX LoRA) untouched, keep constant LR.
+
+- [x] **5 new tests in `test_code_generator.py`**
+    - `_linear_schedule` helper always emitted; opt-in guard stays inert when `lr_schedule` absent from `_hp`; activates when set to `"linear"`; `_resolve_hyperparams("Snake-v0", ...)` picks up the recipe's `lr_schedule: linear` default.
+
+    Total: **598 tests** (589 unit + 9 integration).
