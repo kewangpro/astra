@@ -21,7 +21,9 @@ Ray is designed to run on commodity hardware over a LAN — no special networkin
 
 ### Motivation
 
-Astra currently runs one mission at a time — the training sandbox is a local subprocess on the MacBook Air. A second machine (Mac Mini) sits idle while training runs. Ray enables parallel mission dispatch across both machines without changing astra's orchestration logic.
+Astra currently runs one mission at a time — the training sandbox is a local subprocess on the MacBook Air, or dispatched to a single statically-configured remote host via `SSHSandbox`. A second machine can sit idle while another mission runs because there's no concurrent dispatch: `SandboxManager` runs one sandbox at a time, and there's no scheduling logic to pick a least-loaded node (`sandbox_host` is a static config value). Ray (or a lighter round-robin extension to `SSHSandbox`) would enable parallel mission dispatch across both machines without changing astra's planning/eval/manifest loop.
+
+Before building `RaySandbox`, weigh it against the lighter alternative: extending `SSHSandbox` to round-robin across N configured hosts, which may get most of the concurrency benefit without a new dependency.
 
 ### Architecture
 
@@ -64,18 +66,21 @@ Ray's scheduler routes each task to whichever node has free resources. If the Ma
 
 | Component | Current | With Ray |
 |---|---|---|
-| `SubprocessSandbox` | local subprocess | `RaySandbox` submits task to cluster |
+| `SubprocessSandbox` / `SSHSandbox` | local subprocess, or one static remote host | `RaySandbox` submits task to cluster scheduler |
 | LLM inference | MacBook only | MacBook only (MLX is single-machine) |
-| Telemetry | localhost | both nodes POST to MacBook:8200 |
-| Concurrency | 1 mission | 2+ missions simultaneously |
+| Telemetry | already POSTs to `settings.telemetry_host` (defaults `macbook.local`) — no change needed | same |
+| Concurrency | 1 mission at a time | 2+ missions simultaneously |
 
 ### Implementation Plan
 
 1. Add `backend/sandbox/ray_sandbox.py` — implements `SandboxBase`, submits training script as a `ray.remote` task
-2. Add `ASTRA_SANDBOX_BACKEND=ray` env var (default: `subprocess`)
-3. `SandboxManager` selects backend based on config
+2. Add `ASTRA_SANDBOX_BACKEND=ray` env var (default: `subprocess`, joining existing `subprocess`/`ssh` options)
+3. `SandboxManager` selects backend based on config (same pattern `_detect_backend()` already uses for `ssh`)
 4. Mac Mini needs: Python, astra dependencies, Ray worker, access to shared or synced mission data path
-5. Mission data (`data/missions/`) must be accessible on both nodes — either via NFS mount or rsync before sandbox launch
+5. Mission data (`data/missions/`) accessible on both nodes via **NFS mount** (decided over rsync — avoids staleness/race conditions if mission dir changes mid-run; simpler to operate on a 2-node LAN than a rsync-before-launch step). Note `SSHSandbox` currently gets away with rsync-back-on-exit instead of a live mount — checkpoints under `checkpoints/` are only synced post-hoc when the sandbox exits, never live during a run. Same limitation would apply to `RaySandbox` unless NFS is used.
+6. Confirm `SandboxBase` contract (launch, cancel, log streaming, exit status) can be satisfied by a Ray remote task. `RaySandbox.cancel()` would need its own implementation (`ray.cancel`), not a passthrough of `SubprocessSandbox`/`SSHSandbox`'s terminate sequence.
+7. Telemetry already POSTs to `settings.telemetry_host` (defaults `macbook.local`) — no code change needed here.
+8. Verify `LoopStateMachine`/`PivotEngine` plateau and best-score tracking still works when the sandbox runs on the Mac Mini. Telemetry-based state (`telemetry.jsonl`, read via HTTP POST) is already node-agnostic and fine. The open risk is checkpoint-file state (`best_score.txt`, `checkpoints/best_model.zip`): today `SSHSandbox` only rsyncs these back when the sandbox exits, never live during a run, so mid-run reads of checkpoint files from the head node would be stale — the same limitation would apply to `RaySandbox` unless step 5's NFS mount is used instead of exit-time sync.
 
 ### Practical Result
 
