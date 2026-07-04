@@ -401,6 +401,17 @@ class LoopStateMachine:
                             goal_val = await asyncio.to_thread(
                                 self._run_bare_eval, mission_id, plan
                             )
+                            if goal_val is None:
+                                # The official post-training eval failed/crashed
+                                # (e.g. missing checkpoint, transient SSH error) —
+                                # fall back to the best live-tailed pass_rate seen
+                                # during this iteration's training run, so a crash
+                                # right after a successful run doesn't erase real,
+                                # already-observed progress. Only used as a
+                                # fallback: Metric Gap still updates once per
+                                # completed iteration, same as RL's food_eaten,
+                                # never mid-training.
+                                goal_val = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
                         else:
                             goal_val = await asyncio.to_thread(
                                 self._run_goal_metric_eval, mission_id, plan, metric_name
@@ -941,26 +952,6 @@ class LoopStateMachine:
                     .values(current_metric_value=str(value))
                 )
 
-    async def _update_live_pass_rate(self, mission_id: str, value: float, iteration: int) -> None:
-        """Update Mission.current_metric_value (always) and best_metric_value
-        (only if higher) from a live-tailed dpo/grpo pass_rate reading, so
-        Metric Gap tracks the same numbers as pass_rate history in real time
-        rather than waiting for the separate post-training _run_bare_eval check."""
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                result = await session.execute(
-                    select(Mission.best_metric_value).where(Mission.id == mission_id)
-                )
-                current_best = result.scalar_one_or_none()
-                db_best = float(current_best) if current_best else None
-                updates: dict = {"current_metric_value": str(value)}
-                if db_best is None or value > db_best:
-                    updates["best_metric_value"] = str(value)
-                    updates["best_metric_iteration"] = iteration
-                await session.execute(
-                    update(Mission).where(Mission.id == mission_id).values(**updates)
-                )
-
     async def _save_pivot_count(self, mission_id: str, count: int) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -1341,6 +1332,12 @@ class LoopStateMachine:
         """Poll until the sandbox exits. Returns error output if it failed, else None."""
         log_path = self._sandbox.get_log_path(mission_id)
         pass_rate_step = 0
+        # Fresh per-iteration fallback tracker — a stale best from a prior
+        # (successfully bare_eval'd) iteration must not leak into this one's
+        # fallback if this iteration's official eval also fails.
+        if not hasattr(self, "_live_pass_rate_best"):
+            self._live_pass_rate_best: dict = {}
+        self._live_pass_rate_best.pop(mission_id, None)
         while self._sandbox.is_alive(mission_id):
             await asyncio.sleep(EVAL_POLL_INTERVAL)
             if task_type in _FINETUNE_REMOTE_TASK_TYPES:
@@ -1394,15 +1391,18 @@ class LoopStateMachine:
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
             await emit_metric(mission_id, "pass_rate", pct / 100.0, step=pass_rate_step, iteration=pass_rate_step)
-            # Keep Metric Gap (best_metric_value/current_metric_value on the
-            # Mission row) consistent with what "pass_rate history" shows —
-            # these are the same script-reported eval, just tailed live instead
-            # of waiting for the (separate, less frequent) post-training
-            # _run_bare_eval check. Without this, a mission whose training
-            # completed fine but crashed/failed before reaching the post-
-            # training eval step would show "NO METRICS"/0.0% despite real,
-            # already-observed progress.
-            await self._update_live_pass_rate(mission_id, pct / 100.0, pass_rate_step)
+            # Track the best live-tailed reading in memory only (NOT written to
+            # Mission.best_metric_value/current_metric_value here) — Metric Gap
+            # must only update once per completed iteration, exactly like RL's
+            # food_eaten, which never updates mid-training. This value is used
+            # purely as a fallback in run()'s evaluate step, for the case where
+            # the official post-training _run_bare_eval check fails/crashes
+            # despite training having produced real, already-observed progress.
+            if not hasattr(self, "_live_pass_rate_best"):
+                self._live_pass_rate_best: dict = {}
+            prev_best = self._live_pass_rate_best.get(mission_id)
+            if prev_best is None or pct / 100.0 > prev_best:
+                self._live_pass_rate_best[mission_id] = pct / 100.0
             pass_rate_step += 1
 
         loss_re = _GRPO_LOSS_RE if task_type == "grpo" else _DPO_LOSS_RE

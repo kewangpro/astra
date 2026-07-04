@@ -67,8 +67,7 @@ class TestTailRemoteMetrics:
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "Some log noise\nPass rate: 60.0% (12/20)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch.object(sm, "_update_live_pass_rate", new_callable=AsyncMock):
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
             step = asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0)
             )
@@ -84,8 +83,7 @@ class TestTailRemoteMetrics:
             "Pass rate: 55.0% (11/20)\n"
         )
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch.object(sm, "_update_live_pass_rate", new_callable=AsyncMock):
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
             step = asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 3)
             )
@@ -96,19 +94,35 @@ class TestTailRemoteMetrics:
         assert first_call.args == ("mission-1", "pass_rate", 0.5)
         assert first_call.kwargs == {"step": 3, "iteration": 3}
 
-    def test_pass_rate_line_updates_live_metric_gap(self):
-        """Metric Gap must track the same pass_rate values shown in
-        pass_rate history, not wait for the separate post-training bare_eval."""
+    def test_pass_rate_line_tracked_in_memory_only_not_written_to_db(self):
+        """Metric Gap (Mission.best_metric_value/current_metric_value) must NOT
+        update mid-training — only _live_pass_rate_best (in-memory fallback,
+        consumed at iteration-completion time) is touched here."""
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "Pass rate: 74.2% (46/62)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock), \
-             patch.object(sm, "_update_live_pass_rate", new_callable=AsyncMock) as mock_update:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
 
-        mock_update.assert_awaited_once_with("mission-1", pytest.approx(0.742), 0)
+        assert sm._live_pass_rate_best["mission-1"] == pytest.approx(0.742)
+
+    def test_pass_rate_in_memory_tracker_keeps_higher_value(self):
+        sm = _bare_state_machine()
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock):
+            sm._sandbox.tail_new_output.return_value = "Pass rate: 74.2% (46/62)\n"
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0)
+            )
+            sm._sandbox.tail_new_output.return_value = "Pass rate: 71.2% (44/62)\n"
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 1)
+            )
+
+        # the later, lower reading must not overwrite the higher earlier one
+        assert sm._live_pass_rate_best["mission-1"] == pytest.approx(0.742)
 
     def test_tail_exception_returns_step_unchanged(self):
         """A tail failure (e.g. transient SSH error) must not crash the poll loop."""
@@ -165,53 +179,6 @@ class TestTailRemoteMetrics:
 
         mock_emit.assert_not_awaited()
 
-    @pytest.mark.usefixtures("patch_db")
-    def test_update_live_pass_rate_sets_current_and_best_on_first_reading(self, test_mission):
-        sm = _bare_state_machine()
-        asyncio.get_event_loop().run_until_complete(
-            sm._update_live_pass_rate(test_mission.id, 0.742, 0)
-        )
-
-        from sqlalchemy import select
-        from backend.models.mission import Mission
-        from backend.database import AsyncSessionLocal
-
-        async def _fetch():
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(select(Mission).where(Mission.id == test_mission.id))
-                return result.scalar_one()
-
-        refreshed = asyncio.get_event_loop().run_until_complete(_fetch())
-        assert refreshed.current_metric_value == "0.742"
-        assert refreshed.best_metric_value == "0.742"
-        assert refreshed.best_metric_iteration == 0
-
-    @pytest.mark.usefixtures("patch_db")
-    def test_update_live_pass_rate_keeps_higher_best_ignores_lower_current(self, test_mission):
-        sm = _bare_state_machine()
-
-        async def _run():
-            await sm._update_live_pass_rate(test_mission.id, 0.742, 0)
-            await sm._update_live_pass_rate(test_mission.id, 0.712, 1)
-
-        asyncio.get_event_loop().run_until_complete(_run())
-
-        from sqlalchemy import select
-        from backend.models.mission import Mission
-        from backend.database import AsyncSessionLocal
-
-        async def _fetch():
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(select(Mission).where(Mission.id == test_mission.id))
-                return result.scalar_one()
-
-        refreshed = asyncio.get_event_loop().run_until_complete(_fetch())
-        # current always tracks the latest reading, even if it regressed
-        assert refreshed.current_metric_value == "0.712"
-        # best stays at the higher earlier value, not overwritten by the later dip
-        assert refreshed.best_metric_value == "0.742"
-        assert refreshed.best_metric_iteration == 0
-
     def test_pass_rate_and_loss_both_emitted_from_same_tail(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
@@ -219,8 +186,7 @@ class TestTailRemoteMetrics:
             "Pass rate: 78.0% (23/30)\n"
         )
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch.object(sm, "_update_live_pass_rate", new_callable=AsyncMock):
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0)
             )
@@ -272,3 +238,49 @@ class TestCollectProgressStatus:
 
         mock_status.assert_awaited_once()
         assert "20/66" in mock_status.await_args.args[1]
+
+
+# ── Metric Gap fallback: only used at iteration-completion, via .pop() ─────────
+
+class TestLivePassRateFallbackConsumption:
+    """The in-memory _live_pass_rate_best tracker is only meant to be read once,
+    at the point run() falls back to it after _run_bare_eval fails — verified
+    here via the same pop()-based consumption used in state_machine.py, so a
+    stale value from one iteration can't silently leak into the next."""
+
+    def test_pop_consumes_and_clears_the_tracked_value(self):
+        sm = _bare_state_machine()
+        sm._live_pass_rate_best = {"mission-1": 0.742}
+
+        consumed = sm._live_pass_rate_best.pop("mission-1", None)
+
+        assert consumed == pytest.approx(0.742)
+        assert "mission-1" not in sm._live_pass_rate_best
+
+    def test_pop_returns_none_when_bare_eval_never_produced_a_reading(self):
+        """If bare_eval fails and no pass_rate line was ever tailed this
+        iteration (e.g. crashed before collection finished), the fallback
+        must be None, not a stale value from a previous mission's run."""
+        sm = _bare_state_machine()
+        sm._live_pass_rate_best = {}
+
+        consumed = getattr(sm, "_live_pass_rate_best", {}).pop("mission-1", None)
+
+        assert consumed is None
+
+    def test_fresh_iteration_clears_prior_iterations_tracked_value(self):
+        """_wait_for_sandbox must reset the tracker for this mission at the
+        start of each iteration, so a value already consumed (or superseded
+        by a successful bare_eval) in iteration N doesn't reappear as a false
+        fallback in iteration N+1."""
+        sm = _bare_state_machine()
+        sm._sandbox = MagicMock()
+        sm._sandbox.is_alive.return_value = False
+        sm._sandbox.get_log_path.return_value = "/nonexistent/path/for/this/test.log"
+        sm._live_pass_rate_best = {"mission-1": 0.988}  # leftover from a prior iteration
+
+        asyncio.get_event_loop().run_until_complete(
+            sm._wait_for_sandbox("mission-1", task_type="dpo")
+        )
+
+        assert "mission-1" not in sm._live_pass_rate_best
