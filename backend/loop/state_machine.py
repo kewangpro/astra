@@ -56,6 +56,15 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 _GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
 
+# dpo_train.py's collect_pairs() phase (sampling K completions per case to build
+# preference pairs) runs before any epoch/loss line exists and is typically the
+# bulk of the wall-clock time (an hour+) — with nothing else to tail, the HUD
+# would otherwise sit on "NO METRICS YET" for that whole span with no sign of
+# life. Surface its "  [i/total]  n pairs  (Ts)" progress line as a status
+# event (not a metric — its 0..total scale has nothing to do with loss/pass_rate
+# and would distort those chart axes if mixed in).
+_COLLECT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+pairs\s+\((\d+)s\)")
+
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
 ITER_CHECKPOINT_WINDOW = 10  # per-iteration checkpoints to keep (rolling)
@@ -1366,6 +1375,15 @@ class LoopStateMachine:
             step_num = int(match.group(1))
             loss_val = float(match.group(2))
             await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=step_num)
+
+        collect_matches = list(_COLLECT_PROGRESS_RE.finditer(new_output))
+        if collect_matches:
+            i, total, n_pairs, elapsed_s = collect_matches[-1].groups()
+            await emit_status(
+                mission_id,
+                f"Collecting preference pairs: {i}/{total} cases ({n_pairs} pairs, {int(elapsed_s) // 60}m elapsed)",
+                event_type="info",
+            )
 
         return pass_rate_step
 

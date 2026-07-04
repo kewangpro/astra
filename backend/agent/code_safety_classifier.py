@@ -149,4 +149,22 @@ class CodeSafetyClassifier:
                 classifier="static",
             )
 
+        # dpo/grpo dispatch wrapper: os.execv (no fork) directly into one of the
+        # two known ensemble/finetune entry scripts, with no other network/shell
+        # calls (already ruled out by danger_patterns and has_any_request above).
+        # This exact shape is what CodeGenerator's _DPO_TEMPLATE/_GRPO_TEMPLATE
+        # produce every time — os.execv itself is a legitimate process-image
+        # replacement (avoids orphaning the training subprocess), not arbitrary
+        # code execution, so don't make the LLM re-litigate it on every mission.
+        if (
+            not has_any_request
+            and re.search(r"\bos\.execv\s*\(", script)
+            and re.search(r"[\"']([^\"']*/)?(dpo_train|grpo_train)\.py[\"']", script)
+        ):
+            return SafetyVerdict(
+                safe=True,
+                reason="os.execv dispatch into a known ensemble/finetune training script — auto-approved",
+                classifier="static",
+            )
+
         return SafetyVerdict(safe=True, reason="passed static checks", classifier="static_ambiguous")

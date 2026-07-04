@@ -21,7 +21,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **663 tests** — 654 unit + 9 integration tests covering all core services
+- **666 tests** — 657 unit + 9 integration tests covering all core services
 
 ### Screenshots
 
@@ -139,7 +139,7 @@ make ports  # show port status for all services
 | 23 | Curriculum Training & Algorithm-Aware Code Generation — multi-phase grid curriculum, per-algorithm pivots | ✅ Complete |
 | 24 | Sandbox Shutdown Fix + Opt-In PPO Learning Rate Schedule — graceful SSH terminate, `lr_schedule: linear` | ✅ Complete |
 | 25 | DPO/GRPO Fine-Tune Task Types + Remote Telemetry Tailing — wraps `ensemble/finetune` scripts, SSH-tailed telemetry | ✅ Complete |
-| 26 | DPO/GRPO Hardening — recipe correctness fixes, `bare_eval` goal check, orphan-proof `os.execv` dispatch, recovery parity, `loss` training signal | ✅ Complete |
+| 26 | DPO/GRPO Hardening — recipe correctness fixes, `bare_eval` goal check, orphan-proof `os.execv` dispatch, recovery parity, `loss` training signal, collection-progress status, auto-approve for known-safe dispatch | ✅ Complete |
 
 ## Hardware Target
 

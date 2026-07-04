@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.loop.state_machine import (
-    LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE,
+    LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE, _COLLECT_PROGRESS_RE,
 )
 
 
@@ -165,3 +165,46 @@ class TestTailRemoteMetrics:
         names = [call.args[1] for call in mock_emit.await_args_list]
         assert "pass_rate" in names
         assert "loss" in names
+
+
+# ── _COLLECT_PROGRESS_RE / pair-collection status ──────────────────────────────
+
+def test_collect_progress_regex_matches_dpo_collection_line():
+    match = _COLLECT_PROGRESS_RE.search("  [40/66]  37 pairs  (3310s)")
+    assert match is not None
+    assert match.groups() == ("40", "66", "37", "3310")
+
+
+class TestCollectProgressStatus:
+    def test_collection_line_emits_status_not_metric(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = "  [40/66]  37 pairs  (3310s)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_metric, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0)
+            )
+
+        mock_metric.assert_not_awaited()
+        mock_status.assert_awaited_once()
+        args, kwargs = mock_status.await_args
+        assert "40/66" in args[1]
+        assert "37 pairs" in args[1]
+        assert "55m" in args[1]
+        assert kwargs["event_type"] == "info"
+
+    def test_multiple_collection_lines_only_emit_latest(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = (
+            "  [10/66]  10 pairs  (834s)\n"
+            "  [20/66]  19 pairs  (1675s)\n"
+        )
+
+        with patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0)
+            )
+
+        mock_status.assert_awaited_once()
+        assert "20/66" in mock_status.await_args.args[1]
