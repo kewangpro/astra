@@ -17,6 +17,8 @@ class MissionUpdate(BaseModel):
     status: Optional[MissionStatus] = None
     current_iteration: Optional[int] = None
     best_metric_value: Optional[str] = None
+    best_metric_iteration: Optional[int] = None
+    current_metric_value: Optional[str] = None
     current_plan: Optional[dict] = None
     last_checkpoint_path: Optional[str] = None
     error_log: Optional[str] = None

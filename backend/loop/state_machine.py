@@ -941,6 +941,26 @@ class LoopStateMachine:
                     .values(current_metric_value=str(value))
                 )
 
+    async def _update_live_pass_rate(self, mission_id: str, value: float, iteration: int) -> None:
+        """Update Mission.current_metric_value (always) and best_metric_value
+        (only if higher) from a live-tailed dpo/grpo pass_rate reading, so
+        Metric Gap tracks the same numbers as pass_rate history in real time
+        rather than waiting for the separate post-training _run_bare_eval check."""
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(Mission.best_metric_value).where(Mission.id == mission_id)
+                )
+                current_best = result.scalar_one_or_none()
+                db_best = float(current_best) if current_best else None
+                updates: dict = {"current_metric_value": str(value)}
+                if db_best is None or value > db_best:
+                    updates["best_metric_value"] = str(value)
+                    updates["best_metric_iteration"] = iteration
+                await session.execute(
+                    update(Mission).where(Mission.id == mission_id).values(**updates)
+                )
+
     async def _save_pivot_count(self, mission_id: str, count: int) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -1328,7 +1348,13 @@ class LoopStateMachine:
 
         # Only read content written by THIS run (skip prior runs' output)
         if os.path.isfile(log_path):
-            with open(log_path, "r") as f:
+            # errors="replace": this log is the training subprocess's raw stdout —
+            # for dpo/grpo it includes model-generated completions during pair
+            # collection, which can contain arbitrary/non-UTF-8 bytes. A single
+            # bad byte must not crash the eval step and fail an otherwise-healthy
+            # mission (confirmed via a real incident: byte 0x96 mid-log killed a
+            # run that had already finished all 3 training epochs).
+            with open(log_path, "r", errors="replace") as f:
                 f.seek(log_offset)
                 content = f.read()
             # Ignore benign warnings (telemetry timeouts, warm-start mismatches)
@@ -1368,6 +1394,15 @@ class LoopStateMachine:
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
             await emit_metric(mission_id, "pass_rate", pct / 100.0, step=pass_rate_step, iteration=pass_rate_step)
+            # Keep Metric Gap (best_metric_value/current_metric_value on the
+            # Mission row) consistent with what "pass_rate history" shows —
+            # these are the same script-reported eval, just tailed live instead
+            # of waiting for the (separate, less frequent) post-training
+            # _run_bare_eval check. Without this, a mission whose training
+            # completed fine but crashed/failed before reaching the post-
+            # training eval step would show "NO METRICS"/0.0% despite real,
+            # already-observed progress.
+            await self._update_live_pass_rate(mission_id, pct / 100.0, pass_rate_step)
             pass_rate_step += 1
 
         loss_re = _GRPO_LOSS_RE if task_type == "grpo" else _DPO_LOSS_RE

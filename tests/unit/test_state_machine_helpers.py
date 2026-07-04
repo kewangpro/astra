@@ -512,6 +512,27 @@ def test_wait_sandbox_mixed_benign_and_fatal_returns_content(tmp_path):
     assert result == content
 
 
+def test_wait_sandbox_torn_utf8_at_seek_offset_does_not_crash(tmp_path):
+    """A seek() landing mid-multibyte-character (e.g. tqdm's block-char progress
+    bar, \\xe2\\x96\\x88) must not raise UnicodeDecodeError and kill an otherwise
+    clean/successful run — confirmed via a real incident where this crashed a
+    DPO mission after all 3 training epochs had already completed."""
+    sm = _make_sm()
+    log_path = tmp_path / "sandbox.log"
+    # Byte 0x96 is the *middle* byte of the 3-byte UTF-8 sequence for '█'
+    # (\xe2\x96\x88) — write raw bytes and seek to right before it so the read
+    # starts on a continuation byte, exactly like the real incident.
+    raw = "Training complete\n".encode() + b"\xe2\x96\x88\xe2\x96\x88" + b"\n"
+    log_path.write_bytes(raw)
+    sandbox = MagicMock()
+    sandbox.is_alive.return_value = False
+    sandbox.get_log_path.return_value = str(log_path)
+    sm._sandbox = sandbox
+
+    result = _run(sm._wait_for_sandbox("mid", log_offset=len("Training complete\n".encode()) + 1))
+    assert result is None  # no Traceback/Error — must not raise
+
+
 # ── propose_pivot current plan context ───────────────────────────────────────
 
 def test_propose_pivot_passes_current_plan_context(monkeypatch):
