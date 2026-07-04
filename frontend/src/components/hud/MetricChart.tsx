@@ -19,22 +19,29 @@ interface Props {
 
 const COLORS = ["#14b8a6", "#60a5fa", "#a78bfa", "#fbbf24", "#4ade80"];
 
+// Training-signal metric names — shown continuously in history, separate from
+// the goal metric (shown in MetricGap instead). mean_reward for RL; loss for
+// dpo/grpo (grpo_train.py prints it every --steps-per-report steps, dpo_train.py
+// once per epoch — same relationship pass_rate has to mean_reward).
+const TRAINING_SIGNAL_NAMES = ["mean_reward", "loss"];
+
 export function MetricChart({ events, targetMetric }: Props) {
   // MetricHistory shows the training signal only.
-  // For RL tasks the training signal is mean_reward; the goal metric (food_eaten,
-  // lines_cleared, etc.) is a separate series shown in MetricGap — exclude it here.
-  // For ML/SFT tasks the goal metric (accuracy, eval_loss) IS the training signal,
-  // so we keep everything.
+  // For RL tasks the training signal is mean_reward; for dpo/grpo it's loss;
+  // the goal metric (food_eaten, lines_cleared, pass_rate, etc.) is a separate
+  // series shown in MetricGap — exclude it here. For ML/SFT tasks the goal
+  // metric (accuracy, eval_loss) IS the training signal, so we keep everything.
   const goalMetricName = targetMetric && Object.keys(targetMetric).length > 0
     ? Object.keys(targetMetric)[0]
     : null;
-  const hasMeanReward = events.some(
-    (e) => (e.type === "metric" || e.type === "backfill") && e.name === "mean_reward"
+  const trainingSignalEvent = events.find(
+    (e) => (e.type === "metric" || e.type === "backfill") && TRAINING_SIGNAL_NAMES.includes(e.name ?? "")
   );
-  // Only exclude goal metric when mean_reward is present (RL) and the goal metric
-  // differs from mean_reward (i.e. it is a secondary eval metric, not the signal).
+  const hasTrainingSignal = trainingSignalEvent != null;
+  // Only exclude goal metric when a training signal is present and the goal
+  // metric differs from it (i.e. it is a secondary eval metric, not the signal).
   const excludeGoalMetric =
-    hasMeanReward && goalMetricName && goalMetricName !== "mean_reward";
+    hasTrainingSignal && goalMetricName && goalMetricName !== trainingSignalEvent!.name;
   const metricEvents = events.filter(
     (e) =>
       (e.type === "metric" || e.type === "backfill") &&
@@ -106,25 +113,32 @@ export function MetricChart({ events, targetMetric }: Props) {
       ? [Object.keys(targetMetric)[0], Object.values(targetMetric)[0] as number]
       : [null, 0.92];
   const isRaw = targetValue > 1;
+  // Displaying a separate training signal (mean_reward, loss) rather than the
+  // goal metric itself means the goal's own <=1 target scale is irrelevant to
+  // this chart — e.g. pass_rate's target of 0.85 says nothing about the range
+  // of "loss" values (which can exceed 1). Always treat as raw/adaptive in
+  // that case, regardless of whether the (unshown) goal target is <=1.
+  const displayRaw = excludeGoalMetric || isRaw;
 
   // Scale Y-axis from all live data so the chart is never blank when metric names
-  // don't exactly match target_metric (e.g. target=lines_cleared but data=mean_reward).
+  // don't exactly match target_metric (e.g. target=lines_cleared but data=mean_reward),
+  // and so it adapts correctly for signals unrelated to the goal's own scale (loss vs pass_rate).
   const maxObserved = Math.max(
     0,
     ...chartEvents.filter((e) => e.isLive).map((e) => e.value)
   );
-  const yDomain: [number, number] = isRaw
-    ? [0, Math.max(targetValue * 1.1, maxObserved)]
+  const yDomain: [number, number] = displayRaw
+    ? [0, Math.max(excludeGoalMetric ? 1 : targetValue * 1.1, maxObserved * 1.1)]
     : [0, 1];
 
-  const yFormatter = isRaw
-    ? (v: number) => v.toFixed(0)
+  const yFormatter = displayRaw
+    ? (v: number) => v.toFixed(v < 10 ? 2 : 0)
     : (v: number) => `${(v * 100).toFixed(0)}%`;
 
   const tooltipFormatter = (v: unknown, name: unknown) => {
     const val = v as number;
     const label = String(name).replace(/_(live|hist)$/, "");
-    const formatted = isRaw ? val.toFixed(1) : `${(val * 100).toFixed(2)}%`;
+    const formatted = displayRaw ? val.toFixed(val < 10 ? 3 : 1) : `${(val * 100).toFixed(2)}%`;
     return [formatted, label] as [string, string];
   };
 

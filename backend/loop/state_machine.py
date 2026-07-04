@@ -46,6 +46,16 @@ logger = get_logger(__name__)
 # telemetry.
 _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 
+# Training-signal metric ("loss") shown continuously in MetricChart's history,
+# same relationship pass_rate has to mean_reward for RL, or eval_loss doubling
+# as both signal and goal metric for ml/sft. grpo_train.py prints loss every
+# --steps-per-report steps (a real, frequent signal); dpo_train.py only prints
+# it once per epoch (sparse — 3 points for the default 3 epochs — but it's what
+# the script provides, same as SFT tracking eval_loss at whatever cadence
+# --save-steps allows).
+_GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
+_DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
+
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
 ITER_CHECKPOINT_WINDOW = 10  # per-iteration checkpoints to keep (rolling)
@@ -1305,7 +1315,7 @@ class LoopStateMachine:
         while self._sandbox.is_alive(mission_id):
             await asyncio.sleep(EVAL_POLL_INTERVAL)
             if task_type in _FINETUNE_REMOTE_TASK_TYPES:
-                pass_rate_step = await self._tail_remote_pass_rate(mission_id, pass_rate_step)
+                pass_rate_step = await self._tail_remote_metrics(mission_id, task_type, pass_rate_step)
 
         # Only read content written by THIS run (skip prior runs' output)
         if os.path.isfile(log_path):
@@ -1324,23 +1334,40 @@ class LoopStateMachine:
                 return content
         return None
 
-    async def _tail_remote_pass_rate(self, mission_id: str, step: int) -> int:
+    async def _tail_remote_metrics(self, mission_id: str, task_type: str, pass_rate_step: int) -> int:
         """Fetch new remote log output (SSHSandbox.tail_new_output) and record
-        any "Pass rate: X% (n/total)" lines as pass_rate metrics. Returns the
-        updated step counter. No-op (returns step unchanged) for backends that
-        don't support live tailing, or if nothing new was written."""
+        two kinds of metrics:
+          - "pass_rate": goal metric, from "Pass rate: X% (n/total)" lines,
+            using a local incrementing step counter (returned for the next call).
+          - "loss": training signal shown continuously in MetricChart's history
+            — same relationship pass_rate has to mean_reward for RL, or eval_loss
+            doubling as both signal and goal for ml/sft. GRPO prints it every
+            --steps-per-report steps (a real, frequent signal); DPO only once
+            per epoch (sparse — 3 points for the default 3 epochs, but it's
+            what the script provides). Uses the script's own reported step/
+            epoch number, not a local counter, since it's meaningful on its own.
+        No-op (returns pass_rate_step unchanged) for backends that don't
+        support live tailing, or if nothing new was written."""
         try:
             new_output = self._sandbox.tail_new_output(mission_id)
         except Exception as exc:
             logger.warning("LoopStateMachine: tail_new_output failed for mission=%s: %s", mission_id, exc)
-            return step
+            return pass_rate_step
         if not new_output:
-            return step
+            return pass_rate_step
+
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
-            await emit_metric(mission_id, "pass_rate", pct / 100.0, step=step, iteration=step)
-            step += 1
-        return step
+            await emit_metric(mission_id, "pass_rate", pct / 100.0, step=pass_rate_step, iteration=pass_rate_step)
+            pass_rate_step += 1
+
+        loss_re = _GRPO_LOSS_RE if task_type == "grpo" else _DPO_LOSS_RE
+        for match in loss_re.finditer(new_output):
+            step_num = int(match.group(1))
+            loss_val = float(match.group(2))
+            await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=step_num)
+
+        return pass_rate_step
 
     # ── Crystallization ────────────────────────────────────────────────────────
 
