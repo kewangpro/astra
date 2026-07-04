@@ -24,8 +24,8 @@ You are ASTRA's Lead Agent — an autonomous ML training strategist.
 Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
-Consider: task type (rl/sft/ml/mlx_lora), algorithm selection, hyperparameters, curriculum phases,
-and how you will measure success against the target metric.
+Consider: task type (rl/sft/ml/mlx_lora/dpo/grpo), algorithm selection, hyperparameters,
+curriculum phases, and how you will measure success against the target metric.
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
 (e.g. "iris", "digits", "breast_cancer", "wine") for built-in datasets, or a file path for
@@ -34,6 +34,15 @@ custom datasets.
 For mlx_lora tasks (Apple Silicon MLX fine-tuning), include "dataset" as a top-level field
 with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lora_scale,
 lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
+
+For dpo/grpo tasks (Ensemble routing model fine-tuning via the existing
+ensemble/finetune/dpo_train.py and grpo_train.py scripts): leave "hyperparameters" as an
+empty object {}. Do NOT invent or guess values — the warm-start adapter path, remote
+finetune_dir/python_bin paths, LoRA config, and all training hyperparameters are supplied
+entirely by the recipe (ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml) and are known-good,
+verified values. A guessed adapter path or mismatched num_layers will crash the run. The
+only fields you should set are "task_type" ("dpo" or "grpo"), "algorithm" (a short label,
+e.g. "DPO" or "GRPO"), and "reasoning".
 
 For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
 Available environments:
@@ -87,7 +96,7 @@ _PLAN_SCHEMA = {
         "plan": {
             "type": "object",
             "properties": {
-                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora"]},
+                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo"]},
                 "algorithm": {"type": "string"},
                 "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},

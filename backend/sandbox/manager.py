@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import platform
+import subprocess
 from typing import Optional
 
 import psutil
@@ -23,11 +24,23 @@ logger = get_logger(__name__)
 
 
 def _detect_backend() -> str:
-    if settings.sandbox_host:
-        return "ssh"
+    """Default backend for missions that don't force a specific one.
+
+    Deliberately does NOT check settings.sandbox_host — that setting now only
+    controls where _FINETUNE_REMOTE_TASK_TYPES missions go (forced in launch()
+    below). Making it the general default here would silently reroute RL/ml
+    missions to the Mac Mini the moment sandbox_host is configured for
+    fine-tuning, which is not what a non-empty sandbox_host should mean.
+    """
     if platform.system() == "Darwin" and platform.machine() == "arm64":
         return "subprocess"
     return "container"
+
+
+# Fine-tune task types that wrap ensemble/finetune scripts living only on the
+# Mac Mini — these always dispatch via SSH to settings.sandbox_host, never
+# falling back to a local backend if it isn't configured.
+_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo"}
 
 
 class GPUPool:
@@ -84,13 +97,27 @@ class SandboxManager:
         gpu_index: Optional[int] = None,
         image: str = ContainerSandbox.DEFAULT_IMAGE,
         backend: Optional[str] = None,
+        task_type: Optional[str] = None,
+        remote_checkpoint_dir: Optional[str] = None,
     ) -> tuple[Optional[int], Optional[str]]:
         """
         Launch a sandbox for the given mission.
 
         Returns (subprocess_pid, container_id) — one will be None depending
         on which backend is used. Store both in the Mission Store.
+
+        remote_checkpoint_dir: for SSHSandbox, where to rsync checkpoints/adapters
+        FROM on sync-back, if it differs from the default {remote_mission_dir}/checkpoints
+        (e.g. dpo/grpo missions save under finetune_dir/adapters/ instead — see
+        backend.agent.code_generator.finetune_checkpoint_dir).
         """
+        if task_type in _FINETUNE_REMOTE_TASK_TYPES:
+            if not settings.sandbox_host:
+                raise RuntimeError(
+                    f"{task_type} missions require settings.sandbox_host (Mac Mini) "
+                    "to be configured — no local fallback for fine-tune task types"
+                )
+            backend = "ssh"
         backend = backend or self.default_backend
         data_dir = self._mission_data_dir(mission_id)
         assigned_gpu = gpu_index if gpu_index is not None else self._gpu_pool.acquire(mission_id)
@@ -104,6 +131,7 @@ class SandboxManager:
             cpu_count=cpu_count,
             gpu=gpu,
             gpu_index=assigned_gpu,
+            remote_checkpoint_dir=remote_checkpoint_dir,
         )
 
         if backend == "ssh":
@@ -142,11 +170,29 @@ class SandboxManager:
         sandbox = self._sandboxes.get(mission_id)
         return sandbox.is_alive() if sandbox else False
 
+    def get_sandbox_id(self, mission_id: str) -> Optional[str]:
+        """The sandbox's own id (local pid, container id, or remote pid string) —
+        for display/logging only. Distinct from the Mission Store's
+        subprocess_pid, which recovery treats as a LOCAL pid via psutil; do not
+        use this to populate that field for non-subprocess backends."""
+        sandbox = self._sandboxes.get(mission_id)
+        return sandbox.get_sandbox_id() if sandbox else None
+
+    def tail_new_output(self, mission_id: str) -> Optional[str]:
+        """New log output since the last call, for backends that support live
+        tailing without waiting for the sandbox to exit (currently SSHSandbox
+        only). Returns None if there's no active sandbox or it doesn't support this."""
+        sandbox = self._sandboxes.get(mission_id)
+        if sandbox is None or not hasattr(sandbox, "tail_new_output"):
+            return None
+        return sandbox.tail_new_output()
+
     def recover(
         self,
         mission_id: str,
         subprocess_pid: Optional[int],
         container_id: Optional[str],
+        remote_pid: Optional[int] = None,
     ) -> str:
         """
         Called by the State Recovery Manager on boot for each interrupted mission.
@@ -154,7 +200,45 @@ class SandboxManager:
         Returns:
             "reattached" — sandbox is still running; telemetry will back-fill.
             "dead"       — sandbox is gone; caller should re-launch from checkpoint.
+
+        remote_pid: for SSH-dispatched (dpo/grpo) missions — checked via SSH
+        kill -0 against settings.sandbox_host, the same liveness semantics as
+        the local subprocess_pid check below via psutil. Requires the wrapper
+        script to os.execv into the training process (not subprocess.run/fork)
+        so this pid IS the actual training process, not an orphan-prone parent.
         """
+        if remote_pid is not None:
+            if not settings.sandbox_host:
+                logger.warning(
+                    "Recovery: mission=%s has remote_pid=%d but sandbox_host is "
+                    "unconfigured — cannot verify, treating as dead",
+                    mission_id, remote_pid,
+                )
+                return "dead"
+            result = subprocess.run(
+                ["ssh", settings.sandbox_host,
+                 f"kill -0 {remote_pid} 2>/dev/null && echo alive || echo dead"],
+                capture_output=True, text=True,
+            )
+            if result.stdout.strip() == "alive":
+                logger.info(
+                    "Recovery: remote pid=%d still alive on %s for mission=%s — reattaching",
+                    remote_pid, settings.sandbox_host, mission_id,
+                )
+                data_dir = self._mission_data_dir(mission_id)
+                config = SandboxConfig(mission_id=mission_id, script_path="", data_dir=data_dir)
+                sandbox = SSHSandbox(config, host=settings.sandbox_host, remote_data_root=settings.sandbox_data_path)
+                sandbox._remote_pid = remote_pid
+                sandbox.status = SandboxStatus.RUNNING
+                self._sandboxes[mission_id] = sandbox
+                return "reattached"
+            else:
+                logger.warning(
+                    "Recovery: remote pid=%d gone on %s for mission=%s",
+                    remote_pid, settings.sandbox_host, mission_id,
+                )
+                return "dead"
+
         if subprocess_pid is not None:
             if psutil.pid_exists(subprocess_pid):
                 logger.info(

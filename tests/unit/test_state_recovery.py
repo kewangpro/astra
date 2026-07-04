@@ -141,6 +141,33 @@ async def test_reattached_mission_terminated_and_reset_to_pending(db_session, se
 
 
 @pytest.mark.asyncio
+async def test_remote_pid_passed_to_recover_and_reset_on_reattach(db_session, session_maker):
+    """dpo/grpo missions (SSH-dispatched) must pass remote_pid to recover() the
+    same way subprocess_pid is passed for local missions, and it must be reset
+    to None afterward like the other sandbox-tracking fields."""
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="dpo test goal",
+        task_type="dpo",
+        status=MissionStatus.RUNNING.value,
+        remote_pid=14516,
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    mock_mgr = _mock_sandbox_manager(recover_outcome="reattached")
+    with patch("backend.services.state_recovery.AsyncSessionLocal", session_maker), \
+         patch("backend.sandbox.manager.sandbox_manager", mock_mgr):
+        from backend.services.state_recovery import recover_interrupted_missions
+        await recover_interrupted_missions()
+
+    mock_mgr.recover.assert_called_once_with(mission.id, None, None, remote_pid=14516)
+    await db_session.refresh(mission)
+    assert mission.remote_pid is None
+    assert mission.status == MissionStatus.PENDING.value
+
+
+@pytest.mark.asyncio
 async def test_multiple_missions_all_returned(db_session, session_maker):
     for _ in range(3):
         await _seed_mission(db_session, MissionStatus.RUNNING.value)
@@ -161,7 +188,7 @@ async def test_mixed_outcomes_both_reset_to_pending(db_session, session_maker):
     m2 = await _seed_mission(db_session, MissionStatus.RUNNING.value, pid=None)
 
     mock_mgr = MagicMock()
-    mock_mgr.recover.side_effect = lambda mission_id, pid, cid: (
+    mock_mgr.recover.side_effect = lambda mission_id, pid, cid, remote_pid=None: (
         "reattached" if pid == 111 else "reset"
     )
     mock_mgr.terminate = MagicMock()

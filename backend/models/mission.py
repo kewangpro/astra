@@ -38,6 +38,7 @@ class Mission(Base):
     current_plan: Mapped[Optional[dict]] = mapped_column(JSON)
     container_id: Mapped[Optional[str]] = mapped_column(String(255))
     subprocess_pid: Mapped[Optional[int]] = mapped_column(Integer)
+    remote_pid: Mapped[Optional[int]] = mapped_column(Integer)  # SSHSandbox: pid on settings.sandbox_host
     last_checkpoint_path: Mapped[Optional[str]] = mapped_column(Text)
     error_log: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

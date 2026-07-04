@@ -1,0 +1,44 @@
+name: ensemble_dpo_v1
+version: "1.0.0"
+created_at: "2026-07-03"
+task_type: dpo
+domain: NLP
+description: >
+  DPO (Direct Preference Optimization) fine-tuning for the Ensemble routing
+  model. Wraps the existing ensemble/finetune/dpo_train.py script rather than
+  reimplementing the training loop — astra only orchestrates dispatch,
+  telemetry, and pivoting. Runs on the Mac Mini, where ~/finetune holds the
+  script + adapters and ~/finetune-env has mlx_lm installed.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  finetune_dir: /Users/kewang/finetune          # remote host path to ensemble/finetune checkout
+  python_bin: /Users/kewang/finetune-env/bin/python
+  adapter: adapters/grpo_v9_min/best            # warm-start + frozen reference policy
+  prompt_template: backend/prompts/conductor_min.md
+  # LoRA (must match warm-start adapter's config)
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+  # Phase 1 — pair collection
+  k_collect: 8
+  temp: 1.2
+  max_tokens: 96
+  email_weight: 1
+  routing_only: true
+  # Phase 3 — training
+  epochs: 3
+  beta: 0.1
+  learning_rate: 0.0000005      # 5e-7
+  max_grad_norm: 1.0
+  steps_per_eval: 50
+  eval_max_tokens: 256
+
+# No astra-managed dataset — dpo_train.py's oracle is a hardcoded constant
+# (backend/core/eval_cases.yaml, relative to finetune_dir), not a CLI-configurable
+# parameter. Post-training goal-metric evaluation should use finetune/bare_eval.py
+# --adapter <checkpoint_dir>/best, the actual adapter-discriminating eval tool
+# (run_eval.py is saturated and doesn't distinguish between adapters) — NOT YET
+# wired into astra's evaluator; currently only the training script's own live
+# "Pass rate" lines are tracked via telemetry.

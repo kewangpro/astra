@@ -29,6 +29,7 @@ class SSHSandbox(BaseSandbox):
         self._remote_log = os.path.join(self._remote_mission_dir, "sandbox.log")
         self._remote_pid: Optional[int] = None
         self._local_log = os.path.join(config.data_dir, "sandbox.log")
+        self._tail_offset = 0
 
     def launch(self) -> None:
         # Create remote directories
@@ -101,6 +102,20 @@ class SSHSandbox(BaseSandbox):
     def log_path(self) -> str:
         return self._local_log
 
+    def tail_new_output(self) -> str:
+        """Return remote log bytes written since the last call, without waiting
+        for the process to exit. Used for live progress on long fine-tune runs,
+        where _sync_back() only happens on death — no network calls or extra
+        deps needed on the remote host, this reads the log ssh already redirects
+        the training subprocess's stdout/stderr into."""
+        result = subprocess.run(
+            ["ssh", self._host, f"tail -c +{self._tail_offset + 1} {self._remote_log} 2>/dev/null"],
+            capture_output=True, text=True,
+        )
+        new_output = result.stdout
+        self._tail_offset += len(new_output.encode("utf-8"))
+        return new_output
+
     def _sync_back(self) -> None:
         """Fetch sandbox log and rsync checkpoints from mac-mini to local."""
         os.makedirs(self.config.data_dir, exist_ok=True)
@@ -111,12 +126,15 @@ class SSHSandbox(BaseSandbox):
             capture_output=True,
         )
 
-        # Rsync checkpoints
+        # Rsync checkpoints — from remote_checkpoint_dir if set (e.g. dpo/grpo save
+        # under finetune_dir/adapters/, not the generic mission checkpoints path),
+        # otherwise the default {remote_mission_dir}/checkpoints/.
+        remote_source = self.config.remote_checkpoint_dir or os.path.join(self._remote_mission_dir, "checkpoints")
         local_ckpt = os.path.join(self.config.data_dir, "checkpoints")
         os.makedirs(local_ckpt, exist_ok=True)
         subprocess.run(
             ["rsync", "-az",
-             f"{self._host}:{self._remote_mission_dir}/checkpoints/",
+             f"{self._host}:{remote_source}/",
              f"{local_ckpt}/"],
             capture_output=True,
         )

@@ -23,6 +23,10 @@ class SandboxConfig:
     cpu_count: int = 4
     gpu: bool = False                    # only meaningful for ContainerSandbox
     gpu_index: Optional[int] = None      # None = no pinning; int = specific GPU device index
+    remote_checkpoint_dir: Optional[str] = None  # SSHSandbox: override sync-back source dir
+    # (defaults to {remote_mission_dir}/checkpoints/ if unset — set explicitly for
+    # task types whose checkpoint_dir lives elsewhere, e.g. dpo/grpo save under
+    # finetune_dir/adapters/ rather than the generic mission checkpoints path)
 
 
 class BaseSandbox(ABC):

@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
+import subprocess
 from enum import Enum
 from typing import Optional
 
@@ -20,10 +22,10 @@ from backend.database import AsyncSessionLocal
 from backend.models.mission import Mission, MissionStatus
 from backend.models.approval import ApprovalGate, ApprovalStatus, GateType
 from backend.agent.lead_agent import LeadAgent
-from backend.agent.code_generator import CodeGenerator
+from backend.agent.code_generator import CodeGenerator, finetune_checkpoint_dir
 from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
-from backend.sandbox.manager import SandboxManager
+from backend.sandbox.manager import SandboxManager, _FINETUNE_REMOTE_TASK_TYPES
 from backend.evaluator.specialist import SpecialistEvaluator
 from backend.evaluator.manifest_evaluator import ManifestEvaluator
 from backend.loop.pivots import PivotEngine
@@ -34,9 +36,15 @@ from backend.services.preflight import PreflightChecker
 from backend.services import mission_state, session_summary
 from backend.config import settings
 from backend.logging_config import get_logger
-from backend.services.telemetry_emitter import emit_status, emit_critique
+from backend.services.telemetry_emitter import emit_status, emit_critique, emit_metric
 
 logger = get_logger(__name__)
+
+# dpo/grpo (see _FINETUNE_REMOTE_TASK_TYPES) print "Pass rate: X% (n/total)" to
+# stdout — that stdout only lands in the remote log, so we tail it over SSH and
+# record the metric ourselves rather than requiring the remote script to POST
+# telemetry.
+_PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
@@ -293,17 +301,34 @@ class LoopStateMachine:
                 log_offset = os.path.getsize(log_path) if os.path.isfile(log_path) else 0
                 tel_path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
                 tel_offset = os.path.getsize(tel_path) if os.path.isfile(tel_path) else 0
+                _mission_task_type = plan.get("task_type")
+                _remote_ckpt_dir = (
+                    finetune_checkpoint_dir(_mission_task_type, plan, mission_id)
+                    if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
+                    else None
+                )
                 pid, container_id = self._sandbox.launch(
                     mission_id, script_path,
                     env_vars={"ASTRA_MISSION_ID": mission_id},
                     memory_limit_gb=plan.get("sandbox_memory_gb", 8.0),
+                    task_type=_mission_task_type,
+                    remote_checkpoint_dir=_remote_ckpt_dir,
                 )
-                await self._save_sandbox_ids(mission_id, pid, container_id)
-                await emit_status(mission_id, "Sandbox running", event_type="info", value=f"pid={pid}")
+                _remote_pid_for_save = None
+                if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                    _sandbox_id_str = self._sandbox.get_sandbox_id(mission_id)
+                    _remote_pid_for_save = int(_sandbox_id_str) if _sandbox_id_str else None
+                    _sandbox_msg = f"host={settings.sandbox_host} remote_pid={_sandbox_id_str}"
+                else:
+                    _sandbox_msg = f"pid={pid}"
+                await self._save_sandbox_ids(mission_id, pid, container_id, remote_pid=_remote_pid_for_save)
+                await emit_status(mission_id, "Sandbox running", event_type="info", value=_sandbox_msg)
 
                 # ── EXECUTING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
-                error_output = await self._wait_for_sandbox(mission_id, log_offset)
+                error_output = await self._wait_for_sandbox(
+                    mission_id, log_offset, task_type=plan.get("task_type")
+                )
 
                 if error_output:
                     error_count += 1
@@ -352,9 +377,15 @@ class LoopStateMachine:
                         await emit_status(
                             mission_id, f"Evaluating {metric_name}…", event_type="info"
                         )
-                        goal_val = await asyncio.to_thread(
-                            self._run_goal_metric_eval, mission_id, plan, metric_name
-                        )
+                        _mission_task_type_for_eval = plan.get("task_type")
+                        if _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
+                            goal_val = await asyncio.to_thread(
+                                self._run_bare_eval, mission_id, plan
+                            )
+                        else:
+                            goal_val = await asyncio.to_thread(
+                                self._run_goal_metric_eval, mission_id, plan, metric_name
+                            )
                         if goal_val is not None:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
@@ -752,13 +783,19 @@ class LoopStateMachine:
                     update(Mission).where(Mission.id == mission_id).values(current_plan=plan)
                 )
 
-    async def _save_sandbox_ids(self, mission_id: str, pid: Optional[int], container_id: Optional[str]) -> None:
+    async def _save_sandbox_ids(
+        self,
+        mission_id: str,
+        pid: Optional[int],
+        container_id: Optional[str],
+        remote_pid: Optional[int] = None,
+    ) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await session.execute(
                     update(Mission)
                     .where(Mission.id == mission_id)
-                    .values(subprocess_pid=pid, container_id=container_id)
+                    .values(subprocess_pid=pid, container_id=container_id, remote_pid=remote_pid)
                 )
 
     def _load_persisted_best(self, mission_id: str, mission) -> Optional[float]:
@@ -1160,6 +1197,55 @@ class LoopStateMachine:
             logger.warning("LoopStateMachine: goal metric eval error: %s", exc)
             return None
 
+    def _run_bare_eval(self, mission_id: str, plan: dict) -> Optional[float]:
+        """Post-training authoritative pass_rate check for dpo/grpo missions,
+        via ensemble/finetune/bare_eval.py — the real adapter-discriminating
+        eval tool (docs/FINETUNE.md: run_eval.py is saturated and doesn't
+        distinguish between adapters; bare_eval.py is the one that does).
+
+        Runs on the Mac Mini over SSH (~12 min per docs); analogous to
+        _run_goal_metric_eval for RL missions, which this task type can't use
+        (no Gym env, no SB3/actor_critic checkpoint file — adapters are
+        .safetensors, not .zip/.pth).
+        """
+        from backend.agent.code_generator import _resolve_hyperparams
+
+        task_type = plan.get("task_type", "")
+        hp = _resolve_hyperparams(task_type, plan.get("hyperparameters", {}))
+        finetune_dir = hp.get("finetune_dir", "")
+        prompt_template = hp.get("prompt_template", "")
+        python_bin = hp.get("python_bin", "")
+        if not (finetune_dir and prompt_template and python_bin and settings.sandbox_host):
+            logger.warning(
+                "LoopStateMachine: missing finetune_dir/prompt_template/python_bin/"
+                "sandbox_host for bare_eval mission=%s", mission_id,
+            )
+            return None
+
+        adapter_rel = f"adapters/astra_{mission_id[:8]}/best"
+        cmd = (
+            f"cd {finetune_dir} && {python_bin} bare_eval.py "
+            f"--adapter {adapter_rel} --prompt-template {prompt_template}"
+        )
+        try:
+            result = subprocess.run(
+                ["ssh", settings.sandbox_host, cmd],
+                capture_output=True, text=True, timeout=1800,
+            )
+        except Exception as exc:
+            logger.warning("LoopStateMachine: bare_eval failed mission=%s: %s", mission_id, exc)
+            return None
+
+        match = _PASS_RATE_RE.search(result.stdout)
+        if not match:
+            logger.warning(
+                "LoopStateMachine: bare_eval produced no parseable pass rate mission=%s "
+                "stdout_tail=%s stderr_tail=%s",
+                mission_id, result.stdout[-500:], result.stderr[-500:],
+            )
+            return None
+        return float(match.group(1)) / 100.0
+
     async def _append_telemetry_metric(
         self, mission_id: str, name: str, value: float, iteration: int
     ) -> None:
@@ -1210,11 +1296,16 @@ class LoopStateMachine:
                     pass
         return metrics
 
-    async def _wait_for_sandbox(self, mission_id: str, log_offset: int = 0) -> Optional[str]:
+    async def _wait_for_sandbox(
+        self, mission_id: str, log_offset: int = 0, task_type: Optional[str] = None
+    ) -> Optional[str]:
         """Poll until the sandbox exits. Returns error output if it failed, else None."""
         log_path = self._sandbox.get_log_path(mission_id)
+        pass_rate_step = 0
         while self._sandbox.is_alive(mission_id):
             await asyncio.sleep(EVAL_POLL_INTERVAL)
+            if task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                pass_rate_step = await self._tail_remote_pass_rate(mission_id, pass_rate_step)
 
         # Only read content written by THIS run (skip prior runs' output)
         if os.path.isfile(log_path):
@@ -1232,6 +1323,24 @@ class LoopStateMachine:
             if fatal_lines:
                 return content
         return None
+
+    async def _tail_remote_pass_rate(self, mission_id: str, step: int) -> int:
+        """Fetch new remote log output (SSHSandbox.tail_new_output) and record
+        any "Pass rate: X% (n/total)" lines as pass_rate metrics. Returns the
+        updated step counter. No-op (returns step unchanged) for backends that
+        don't support live tailing, or if nothing new was written."""
+        try:
+            new_output = self._sandbox.tail_new_output(mission_id)
+        except Exception as exc:
+            logger.warning("LoopStateMachine: tail_new_output failed for mission=%s: %s", mission_id, exc)
+            return step
+        if not new_output:
+            return step
+        for match in _PASS_RATE_RE.finditer(new_output):
+            pct = float(match.group(1))
+            await emit_metric(mission_id, "pass_rate", pct / 100.0, step=step, iteration=step)
+            step += 1
+        return step
 
     # ── Crystallization ────────────────────────────────────────────────────────
 

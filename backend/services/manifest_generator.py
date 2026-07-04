@@ -19,9 +19,11 @@ logger = get_logger(__name__)
 # Checkpoint glob patterns per task type
 # rl accepts both SB3 .zip and actor_critic .pth checkpoints
 _CHECKPOINT_PATTERNS: dict = {
-    "ml":  "checkpoints/model.*",
-    "rl":  "checkpoints/*.{zip,pth}",
-    "sft": "checkpoints/*/",
+    "ml":   "checkpoints/model.*",
+    "rl":   "checkpoints/*.{zip,pth}",
+    "sft":  "checkpoints/*/",
+    "dpo":  "checkpoints/best/",
+    "grpo": "checkpoints/best/",
 }
 
 # For metrics where lower is better, flip the operator

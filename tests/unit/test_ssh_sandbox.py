@@ -125,6 +125,41 @@ class TestGetSandboxId:
         assert sandbox.get_sandbox_id() == "12345"
 
 
+# ── SSHSandbox.tail_new_output ────────────────────────────────────────────────
+
+class TestTailNewOutput:
+    def test_first_call_reads_from_start(self, tmp_path):
+        sandbox = _sandbox(tmp_path)
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="Pass rate: 50.0% (10/20)\n")
+            output = sandbox.tail_new_output()
+
+        assert output == "Pass rate: 50.0% (10/20)\n"
+        tail_call = mock_run.call_args_list[0].args[0]
+        assert tail_call[0] == "ssh"
+        assert "tail -c +1" in tail_call[2]
+
+    def test_second_call_advances_offset(self, tmp_path):
+        sandbox = _sandbox(tmp_path)
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="0123456789")
+            sandbox.tail_new_output()
+
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run2:
+            mock_run2.return_value = MagicMock(stdout="new stuff")
+            sandbox.tail_new_output()
+
+        tail_call = mock_run2.call_args_list[0].args[0]
+        assert "tail -c +11" in tail_call[2]   # 10 bytes consumed, 1-indexed next offset
+
+    def test_returns_empty_string_when_nothing_new(self, tmp_path):
+        sandbox = _sandbox(tmp_path)
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="")
+            output = sandbox.tail_new_output()
+        assert output == ""
+
+
 # ── SSHSandbox._sync_back ─────────────────────────────────────────────────────
 
 class TestSyncBack:
@@ -138,3 +173,22 @@ class TestSyncBack:
         rsync_call = mock_run.call_args_list[1].args[0]
         assert rsync_call[0] == "rsync"
         assert rsync_call[1] == "-az"
+        assert "test-mission/checkpoints/" in rsync_call[2]
+
+    def test_sync_back_uses_remote_checkpoint_dir_override(self, tmp_path):
+        """dpo/grpo missions save under finetune_dir/adapters/, not the default
+        {remote_mission_dir}/checkpoints — sync-back must pull from there instead."""
+        config = SandboxConfig(
+            mission_id="test-mission",
+            script_path="/tmp/fake_train.py",
+            data_dir=str(tmp_path),
+            remote_checkpoint_dir="/Users/kewang/finetune/adapters/astra_test-mis",
+        )
+        sandbox = SSHSandbox(config, host="mac-mini.local", remote_data_root="/tmp/astra")
+
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
+            sandbox._sync_back()
+
+        rsync_call = mock_run.call_args_list[1].args[0]
+        assert "/Users/kewang/finetune/adapters/astra_test-mis/" in rsync_call[2]
+        assert "checkpoints" not in rsync_call[2]

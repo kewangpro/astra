@@ -45,6 +45,43 @@ async def emit_critique(
     await manager.broadcast(mission_id, payload)
 
 
+async def emit_metric(
+    mission_id: str,
+    name: str,
+    value: float,
+    *,
+    step: Optional[int] = None,
+    iteration: Optional[int] = None,
+) -> None:
+    """
+    Record a metric in-process — same telemetry.jsonl shape and broadcast as
+    POST /telemetry/missions/{id}/metrics, without an HTTP round-trip. Used
+    for backends where the metric source can't POST to astra itself (e.g. a
+    remote fine-tune log tailed over SSH) — astra parses and records the
+    metric on its own side instead of the sandboxed process reporting it.
+    """
+    payload: dict = {
+        "type": "metric",
+        "mission_id": mission_id,
+        "name": name,
+        "value": value,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if step is not None:
+        payload["step"] = step
+    if iteration is not None:
+        payload["iteration"] = iteration
+
+    path = _telemetry_path(mission_id)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception as exc:
+        logger.warning("telemetry_emitter: failed to persist metric for %s: %s", mission_id, exc)
+    await manager.broadcast(mission_id, payload)
+
+
 async def emit_status(
     mission_id: str,
     name: str,

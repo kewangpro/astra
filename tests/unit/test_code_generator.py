@@ -986,6 +986,313 @@ def test_resolve_hyperparams_mlx_lora_uses_recipe_iters():
     assert result["iters"] == 600
 
 
+# ── dpo template ──────────────────────────────────────────────────────────────
+
+def test_build_user_prompt_dpo_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):
+    """The DPO template must instruct wrapping dpo_train.py, not reimplementing DPO math."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "dpo",
+        "hyperparameters": {},
+        "target_metric": {"pass_rate": 0.9},
+    }
+    prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "dpo_train.py" in prompt
+    assert "do NOT reimplement" in prompt
+
+
+def test_build_user_prompt_dpo_uses_recipe_defaults(tmp_path, monkeypatch):
+    """dpo prompt fills missing HP from ensemble_dpo_v1.yaml recipe."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "dpo",
+        "hyperparameters": {},   # let recipe fill everything
+        "target_metric": {"pass_rate": 0.9},
+    }
+    prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "gemma-3-12b-it-4bit" in prompt
+    assert "/Users/kewang/finetune" in prompt
+    assert "finetune-env/bin/python" in prompt
+
+
+def test_build_user_prompt_dpo_routing_only_flag_default_true(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "--routing-only" in prompt
+
+
+def test_build_user_prompt_dpo_no_telemetry_network_calls(tmp_path, monkeypatch):
+    """Astra tails the remote log itself — the wrapper script must not import
+    requests or POST telemetry (no network deps needed on the Mac Mini)."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "Do NOT import subprocess or requests" in prompt
+    assert "Telemetry URL" not in prompt
+
+
+def test_build_user_prompt_dpo_uses_execv_not_subprocess(tmp_path, monkeypatch):
+    """Must os.execv (replaces process image, same pid) instead of subprocess.run
+    (forks a child with a different pid astra can't track) — a subprocess.run
+    wrapper orphans the real training process if the wrapper ever dies, since
+    astra only tracks the wrapper's pid."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "os.execv(" in prompt
+    assert "subprocess.run(" not in prompt
+
+
+def test_build_user_prompt_dpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
+    """--prompt-template and dpo_train.py's own hardcoded eval-cases path are
+    both relative to the process cwd, not the script's own location — must
+    os.chdir(finetune_dir) before exec or those loads silently fail."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert 'os.chdir("/Users/kewang/finetune")' in prompt
+
+
+def test_resolve_hyperparams_dpo_uses_recipe_beta():
+    """dpo task gets beta=0.1 from ensemble_dpo_v1.yaml when plan omits it."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {})
+    assert result["beta"] == 0.1
+
+
+# ── grpo template ─────────────────────────────────────────────────────────────
+
+def test_build_user_prompt_grpo_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):
+    """The GRPO template must instruct wrapping grpo_train.py, not reimplementing GRPO math."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "grpo",
+        "hyperparameters": {},
+        "target_metric": {"pass_rate": 0.9},
+    }
+    prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "grpo_train.py" in prompt
+    assert "do NOT reimplement" in prompt
+
+
+def test_build_user_prompt_grpo_uses_recipe_defaults(tmp_path, monkeypatch):
+    """grpo prompt fills missing HP from ensemble_grpo_v1.yaml recipe."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "grpo",
+        "hyperparameters": {},
+        "target_metric": {"pass_rate": 0.9},
+    }
+    prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "gemma-3-12b-it-4bit" in prompt
+    assert "iters=100" in prompt   # iters from recipe (documented best practice, not the script's raw 300 default)
+
+
+def test_resolve_hyperparams_grpo_uses_recipe_clip_epsilon():
+    """grpo task gets clip_epsilon=0.1 from ensemble_grpo_v1.yaml when plan omits it."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {})
+    assert result["clip_epsilon"] == 0.1
+
+
+def test_resolve_hyperparams_grpo_num_layers_matches_warm_start_adapter():
+    """num_layers MUST be 8 (not grpo_train.py's raw --num-layers default of 16) —
+    all current warm-start adapters (grpo_v9_min/best, retrain_best) are 8-layer;
+    a mismatch is a LoRA weight shape error at load time, not a soft warning."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {})
+    assert result["num_layers"] == 8
+
+
+def test_resolve_hyperparams_grpo_uses_current_best_warm_start_adapter():
+    """Warm-start must be the documented current-best grpo_v9_min/best, not
+    grpo_train.py's generic (and mutable) DEFAULT_ADAPTER constant."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {})
+    assert result["adapter"] == "adapters/grpo_v9_min/best"
+
+
+def test_resolve_hyperparams_grpo_uses_documented_iters_not_raw_default():
+    """docs/FINETUNE.md: 'use 100 — gains are front-loaded', not the raw
+    --iters default of 300."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {})
+    assert result["iters"] == 100
+
+
+def test_resolve_hyperparams_grpo_uses_documented_max_tokens_not_raw_default():
+    """docs/FINETUNE.md: 'use 96 — skill name appears in first ~80 tokens,
+    halves step time', not the raw --max-tokens default of 256."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {})
+    assert result["max_tokens"] == 96
+
+
+def test_resolve_hyperparams_grpo_email_weight_excludes_email_cases():
+    """All runs since grpo_v8_min use --email-weight 0 ('GRPO-impenetrable'),
+    not the raw --email-weight default of 3."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {})
+    assert result["email_weight"] == 0
+
+
+def test_build_user_prompt_dpo_includes_save_pairs(tmp_path, monkeypatch):
+    """--save-pairs must always be passed so a future pivot can reuse collected
+    pairs via --load-pairs instead of re-running the slowest phase (~30-60 min)."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("dpo", "test-id12345", plan, str(tmp_path / "ckpt"))
+    assert "--save-pairs" in prompt
+    assert "/Users/kewang/finetune/logs/astra_test-id1_pairs.jsonl" in prompt
+
+
+def test_build_user_prompt_grpo_no_telemetry_network_calls(tmp_path, monkeypatch):
+    """Same no-network-calls requirement as dpo — astra tails the log itself."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "Do NOT import subprocess or requests" in prompt
+    assert "Telemetry URL" not in prompt
+
+
+def test_build_user_prompt_grpo_uses_execv_not_subprocess(tmp_path, monkeypatch):
+    """Same os.execv requirement as dpo — no orphan-prone subprocess.run fork."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "os.execv(" in prompt
+    assert "subprocess.run(" not in prompt
+
+
+def test_build_user_prompt_grpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
+    """Same cwd requirement as dpo — grpo_train.py also resolves --prompt-template
+    and its hardcoded eval-cases path relative to the process cwd."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert 'os.chdir("/Users/kewang/finetune")' in prompt
+
+
+# ── manifest checkpoint patterns ──────────────────────────────────────────────
+
+def test_manifest_checkpoint_pattern_dpo_grpo():
+    from backend.services.manifest_generator import _CHECKPOINT_PATTERNS
+    assert _CHECKPOINT_PATTERNS["dpo"] == "checkpoints/best/"
+    assert _CHECKPOINT_PATTERNS["grpo"] == "checkpoints/best/"
+
+
+# ── sandbox_host scoping regression (must not leak to non-finetune task types) ─
+
+def test_generate_training_script_rl_uses_local_checkpoint_dir_even_with_sandbox_host(tmp_path, monkeypatch):
+    """A configured sandbox_host (for dpo/grpo pinning) must NOT redirect RL
+    missions' checkpoint_dir to the remote path — only dpo/grpo do that."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+    monkeypatch.setattr("backend.config.settings.sandbox_data_path", "/tmp/astra")
+
+    code = "import gymnasium as gym\nenv = gym.make('CartPole-v1')\n"
+    gen = CodeGenerator(_make_provider(code))
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-rl-with-host", _make_rl_plan())
+        )
+
+    # Local data_path, not settings.sandbox_data_path
+    assert str(tmp_path) in path
+    assert "/tmp/astra" not in path
+
+
+def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_host(tmp_path, monkeypatch):
+    """dpo (and grpo) save under finetune_dir/adapters/, matching where
+    ensemble/finetune's own manual workflow keeps adapters (grpo_v<N>_min/,
+    retrain_best/, ...) — not the generic sandbox_data_path checkpoints path."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+    monkeypatch.setattr("backend.config.settings.sandbox_data_path", "/tmp/astra")
+
+    provider = _make_provider("print('dpo wrapper')\n")
+    gen = CodeGenerator(provider)
+    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-dpo-with-host", plan)
+        )
+
+    assert str(tmp_path) in path   # train.py itself is still written locally
+    # The prompt sent to the LLM must carry the finetune_dir/adapters/ checkpoint_dir
+    sent_messages = provider.generate.call_args[0][0]
+    prompt_text = "\n".join(m.content for m in sent_messages)
+    assert "/Users/kewang/finetune/adapters/astra_mission-" in prompt_text
+    assert "/tmp/astra" not in prompt_text
+
+
+def test_finetune_checkpoint_dir_uses_recipe_finetune_dir():
+    from backend.agent.code_generator import finetune_checkpoint_dir
+    result = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, "abc12345-full-uuid")
+    assert result == "/Users/kewang/finetune/adapters/astra_abc12345"
+
+
+def test_detect_backend_ignores_sandbox_host():
+    """_detect_backend() must not treat a configured sandbox_host as the
+    general default — only _FINETUNE_REMOTE_TASK_TYPES force ssh, in launch()."""
+    from backend.sandbox.manager import _detect_backend
+    with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"):
+        assert _detect_backend() != "ssh"
+
+
 def test_resolve_hyperparams_mlx_lora_plan_overrides_iters():
     """Explicit plan iters overrides recipe."""
     from backend.agent.code_generator import _resolve_hyperparams

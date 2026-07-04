@@ -54,10 +54,15 @@ async def recover_interrupted_missions() -> list:
                     mission.id,
                     mission.subprocess_pid,
                     mission.container_id,
+                    remote_pid=mission.remote_pid,
                 )
                 if outcome == "reattached":
                     # Terminate the still-running subprocess so the loop can
-                    # restart it cleanly from the last checkpoint.
+                    # restart it cleanly from the last checkpoint. For SSH
+                    # missions this sends a graceful kill -TERM/-9 sequence to
+                    # the real remote training process (see SSHSandbox.terminate),
+                    # not just a local no-op — the wrapper os.execv's into it,
+                    # so remote_pid IS the training process, not an orphan-prone parent.
                     sandbox_manager.terminate(mission.id)
                     reattached_ids.append(mission.id)
                 else:
@@ -72,6 +77,7 @@ async def recover_interrupted_missions() -> list:
                         status=MissionStatus.PENDING.value,
                         container_id=None,
                         subprocess_pid=None,
+                        remote_pid=None,
                     )
                 )
 
