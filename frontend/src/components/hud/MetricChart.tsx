@@ -146,17 +146,28 @@ export function MetricChart({ events, targetMetric }: Props) {
     ? `target ${targetValue.toFixed(0)}`
     : `target ${(targetValue * 100).toFixed(0)}%`;
 
-  if (!data.length)
+  if (!data.length) {
+    // No pass_rate/loss data yet doesn't necessarily mean nothing is happening —
+    // dpo's collect_pairs() phase can run 1hr+ before the first metric exists.
+    // Surface the latest "Collecting preference pairs: ..." status event (same
+    // event stream as "Sandbox running" etc.) instead of a bare placeholder.
+    const collectingEvent = [...events]
+      .reverse()
+      .find((e) => e.type === "info" && (e.name ?? "").startsWith("Collecting preference pairs"));
+
     return (
       <div
         className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5 h-56
                       flex flex-col items-center justify-center gap-2"
       >
         <div className="w-8 h-px bg-[rgba(20,184,166,0.2)]" />
-        <span className="text-[#64748b] text-xs tracking-widest">NO METRICS YET</span>
+        <span className="text-[#64748b] text-xs tracking-widest">
+          {collectingEvent ? collectingEvent.name!.toUpperCase() : "NO METRICS YET"}
+        </span>
         <div className="w-8 h-px bg-[rgba(20,184,166,0.2)]" />
       </div>
     );
+  }
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
