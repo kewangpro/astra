@@ -21,7 +21,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected, stale sandboxes terminated (including reattached processes killed by stored pid, not just by Popen handle), and `LoopStateMachine` relaunched to resume training from the last checkpoint and iteration
-- **689 tests** — 680 unit + 9 integration tests covering all core services
+- **692 tests** — 682 unit + 10 integration tests covering all core services
 
 ### Screenshots
 
@@ -81,14 +81,14 @@ astra/
 │   ├── loop/           # LoopStateMachine, PivotEngine
 │   ├── models/         # ORM models: Mission, Experiment, ModelRecord, RecipeRecord, ApprovalGate, Manifest
 │   ├── routers/        # API route handlers
-│   ├── sandbox/        # SubprocessSandbox, ContainerSandbox, SandboxManager
+│   ├── sandbox/        # SubprocessSandbox, ContainerSandbox, SSHSandbox, SandboxManager
 │   ├── schemas/        # Pydantic request/response models
 │   ├── services/       # Crystallizer, RecipeLibrary, Evolution, VectorMemory, MissionState, Preflight, StateRecovery
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 654 unit tests across all core modules
-│   └── integration/    # 9 integration tests for the loop state machine
+│   ├── unit/           # 682 unit tests across all core modules
+│   └── integration/    # 10 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)

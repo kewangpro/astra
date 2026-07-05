@@ -68,6 +68,19 @@ class TestIsAlive:
             assert sandbox.is_alive() is False
             mock_sync.assert_called_once()
 
+    def test_true_and_no_sync_back_when_ssh_connection_fails(self, tmp_path):
+        """A connection failure (e.g. 'No route to host', empty/garbage stdout)
+        must NOT be treated as 'process is dead' — that previously caused a
+        still-running remote training job to be dropped from tracking. Fail
+        safe: assume alive, don't sync back / declare completion."""
+        sandbox = _sandbox(tmp_path)
+        sandbox._remote_pid = 111
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
+             patch.object(sandbox, "_sync_back") as mock_sync:
+            mock_run.return_value = MagicMock(stdout="", stderr="ssh: connect to host mac-mini.local port 22: Undefined error: 0\n")
+            assert sandbox.is_alive() is True
+            mock_sync.assert_not_called()
+
 
 # ── SSHSandbox.terminate ──────────────────────────────────────────────────────
 
@@ -79,6 +92,7 @@ class TestTerminate:
         sandbox._remote_pid = 111
         with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
              patch.object(sandbox, "_sync_back"):
+            mock_run.return_value = MagicMock(returncode=0)
             sandbox.terminate()
 
         kill_call = mock_run.call_args_list[0].args[0]
@@ -91,16 +105,18 @@ class TestTerminate:
     def test_terminate_sets_status_stopped(self, tmp_path):
         sandbox = _sandbox(tmp_path)
         sandbox._remote_pid = 111
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run"), \
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
              patch.object(sandbox, "_sync_back"):
+            mock_run.return_value = MagicMock(returncode=0)
             sandbox.terminate()
         assert sandbox.status == SandboxStatus.STOPPED
 
     def test_terminate_calls_sync_back(self, tmp_path):
         sandbox = _sandbox(tmp_path)
         sandbox._remote_pid = 111
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run"), \
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
              patch.object(sandbox, "_sync_back") as mock_sync:
+            mock_run.return_value = MagicMock(returncode=0)
             sandbox.terminate()
         mock_sync.assert_called_once()
 
@@ -110,6 +126,21 @@ class TestTerminate:
              patch.object(sandbox, "_sync_back"):
             sandbox.terminate()   # should not raise
         assert sandbox.status == SandboxStatus.STOPPED
+
+    def test_terminate_does_not_claim_stopped_when_ssh_unreachable(self, tmp_path):
+        """If the kill command itself can't reach the host, the remote process
+        was likely never signaled — don't claim STOPPED or sync_back for a
+        kill we couldn't deliver, so an unreachable-but-still-alive process
+        stays visible (remote_pid retained) instead of silently orphaned."""
+        sandbox = _sandbox(tmp_path)
+        sandbox._remote_pid = 111
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
+             patch.object(sandbox, "_sync_back") as mock_sync:
+            mock_run.return_value = MagicMock(returncode=255)
+            sandbox.terminate()
+        mock_sync.assert_not_called()
+        assert sandbox.status != SandboxStatus.STOPPED
+        assert sandbox._remote_pid == 111
 
 
 # ── SSHSandbox.get_sandbox_id ─────────────────────────────────────────────────

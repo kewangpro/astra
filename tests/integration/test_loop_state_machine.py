@@ -140,6 +140,28 @@ class _AlwaysErrorSandbox:
         pass
 
 
+class _LaunchRaisesSandbox:
+    """Simulates a launch()-time failure (e.g. the mkdir-over-SSH exit-255 bug),
+    while a sandbox from a prior iteration is still tracked as alive. Used to
+    verify the generic-failure path attempts graceful cleanup instead of
+    leaving that prior sandbox orphaned."""
+    def __init__(self, tmp_dir: str):
+        self._tmp_dir = tmp_dir
+        self.terminate_calls: list = []
+
+    def launch(self, mission_id, script_path, **kwargs):
+        raise RuntimeError("ssh mkdir failed: exit status 255")
+
+    def is_alive(self, mission_id):
+        return True
+
+    def get_log_path(self, mission_id):
+        return os.path.join(self._tmp_dir, f"{mission_id}.log")
+
+    def terminate(self, mission_id):
+        self.terminate_calls.append(mission_id)
+
+
 class _SequenceEvaluator:
     """Returns metrics from a scripted sequence; repeats the last entry."""
     def __init__(self, sequence: list):
@@ -263,6 +285,30 @@ async def test_max_retries_exceeded_marks_failed(seeded_mission, db_session, pat
 
     await db_session.refresh(seeded_mission)
     assert seeded_mission.status == MissionStatus.FAILED.value
+
+
+@pytest.mark.asyncio
+async def test_launch_failure_terminates_sandbox_before_marking_failed(seeded_mission, db_session, patch_db, monkeypatch):
+    """A launch()-time exception (e.g. the mkdir-over-SSH bug) must attempt
+    sandbox.terminate() for graceful cleanup before the mission is marked
+    FAILED, mirroring the existing CancelledError/cancel path — otherwise a
+    still-tracked remote process is left running unmanaged."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sandbox = _LaunchRaisesSandbox(tmp)
+        sm = _build_sm(
+            _MockLeadAgent(),
+            _MockCodeGen(tmp),
+            _MockHealer(tmp),
+            sandbox,
+            _SequenceEvaluator([{"mean_reward": 0.0}]),
+        )
+        await sm.run(seeded_mission.id)
+
+    await db_session.refresh(seeded_mission)
+    assert seeded_mission.status == MissionStatus.FAILED.value
+    assert sandbox.terminate_calls == [seeded_mission.id]
 
 
 @pytest.mark.asyncio

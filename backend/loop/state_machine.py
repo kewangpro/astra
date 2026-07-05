@@ -773,6 +773,10 @@ class LoopStateMachine:
 
             except Exception as e:
                 logger.exception("LoopStateMachine: unhandled error in mission=%s: %s", mission_id, e)
+                try:
+                    self._sandbox.terminate(mission_id)
+                except Exception as _term_e:
+                    logger.warning("LoopStateMachine: sandbox terminate on failure failed for mission=%s: %s", mission_id, _term_e)
                 await emit_status(mission_id, "Mission failed", event_type="error", value=str(e))
                 await self._transition(mission_id, MissionStatus.FAILED)
                 return

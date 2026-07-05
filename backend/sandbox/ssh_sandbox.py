@@ -76,14 +76,27 @@ class SSHSandbox(BaseSandbox):
              f"kill -0 {self._remote_pid} 2>/dev/null && echo alive || echo dead"],
             capture_output=True, text=True,
         )
-        alive = result.stdout.strip() == "alive"
-        if not alive:
+        output = result.stdout.strip()
+        if output == "alive":
+            return True
+        if output == "dead":
             self._sync_back()
-        return alive
+            return False
+        # SSH itself failed to connect/run (e.g. transient network blip) — we
+        # can't confirm the remote process is actually gone. Fail safe and
+        # report alive rather than treating an unreachable host as job
+        # completion; a false "dead" here previously caused a still-running
+        # remote training process to be silently dropped from tracking.
+        logger.warning(
+            "SSHSandbox: is_alive check inconclusive for mission=%s host=%s "
+            "(stderr=%s) — assuming still alive",
+            self.config.mission_id, self._host, result.stderr.strip(),
+        )
+        return True
 
     def terminate(self) -> None:
         if self._remote_pid:
-            subprocess.run(
+            result = subprocess.run(
                 ["ssh", self._host,
                  f"kill -TERM {self._remote_pid} 2>/dev/null; "
                  f"for i in $(seq 1 10); do "
@@ -91,6 +104,17 @@ class SSHSandbox(BaseSandbox):
                  f"kill -9 {self._remote_pid} 2>/dev/null"],
                 capture_output=True,
             )
+            if result.returncode != 0:
+                # SSH itself failed (e.g. host unreachable) — the remote
+                # process was likely never signaled. Don't claim STOPPED for
+                # a kill we couldn't deliver; leave remote_pid set so it can
+                # be reconciled later instead of being silently orphaned.
+                logger.warning(
+                    "SSHSandbox: terminate could not reach host=%s for mission=%s "
+                    "(remote_pid=%d may still be running)",
+                    self._host, self.config.mission_id, self._remote_pid,
+                )
+                return
         self._sync_back()
         self.status = SandboxStatus.STOPPED
         logger.info("SSHSandbox terminated: mission=%s host=%s", self.config.mission_id, self._host)
