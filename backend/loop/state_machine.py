@@ -232,11 +232,17 @@ class LoopStateMachine:
                         _m = await _s.get(Mission, mission_id)
                         plan = dict(_m.current_plan) if _m and _m.current_plan else {}
                     skip_replan_from_db = False
-                    await emit_status(
-                        mission_id, "Continuing with pivoted plan",
-                        event_type="info",
-                        value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
-                    )
+                    # On reattach, the sandbox is already running this exact
+                    # plan — "continuing with pivoted plan" implies a new
+                    # iteration/pivot cycle starting, which is misleading here.
+                    # "Reattached to running sandbox" (emitted below) is the
+                    # first real status message for this case.
+                    if not _skip_launch:
+                        await emit_status(
+                            mission_id, "Continuing with pivoted plan",
+                            event_type="info",
+                            value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
+                        )
                 else:
                     await emit_status(mission_id, "Generating training plan…", event_type="info")
                     plan = await self._agent.plan(
@@ -304,7 +310,6 @@ class LoopStateMachine:
 
                 # ── IMPLEMENTING ─────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
-                await emit_status(mission_id, "Generating training script…", event_type="info")
                 # _PLAN_SCHEMA doesn't include target_metric, so the LLM never puts it in the plan.
                 # Inject it from the mission before code generation so the callback template
                 # gets the correct target_metric_name (e.g. "lines_cleared", not "mean_reward").
@@ -313,9 +318,17 @@ class LoopStateMachine:
                 # Tetris-v0 uses Actor-Critic with get_next_states(); all others use SB3.
                 if plan.get("env_id") == "Tetris-v0" and not plan.get("trainer_type"):
                     plan["trainer_type"] = "actor_critic"
-                script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
-                await emit_status(mission_id, "Training script ready", event_type="success")
                 error_history: list[str] = []   # accumulated errors for this script
+                if _skip_launch:
+                    # Reattaching to an already-running sandbox — no new script
+                    # is needed (or used) unless this iteration's sandbox later
+                    # errors out and needs healing. Generated lazily below in
+                    # that case only, instead of unconditionally up front.
+                    script_path = None
+                else:
+                    await emit_status(mission_id, "Generating training script…", event_type="info")
+                    script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
+                    await emit_status(mission_id, "Training script ready", event_type="success")
 
                 # EXECUTE_CODE approval gate (supervised mode) — already approved
                 # when the sandbox we're reattaching to was originally launched.
@@ -394,6 +407,13 @@ class LoopStateMachine:
                         event_type="warn",
                         value=f"attempt {error_count}/{MAX_RETRIES}",
                     )
+                    if script_path is None:
+                        # Resumed sandbox errored without this iteration ever
+                        # having generated a script (skipped on reattach) —
+                        # generate one now so the healer has something to patch.
+                        await emit_status(mission_id, "Generating training script…", event_type="info")
+                        script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
+                        await emit_status(mission_id, "Training script ready", event_type="success")
                     script_path = await self._healer.fix_script(
                         script_path, error_output, error_count,
                         prior_errors=error_history[:-1],

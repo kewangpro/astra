@@ -120,4 +120,6 @@ class SubprocessSandbox(BaseSandbox):
     def get_sandbox_id(self) -> Optional[str]:
         if self._process:
             return str(self._process.pid)
+        if self._reattach_pid is not None:
+            return str(self._reattach_pid)
         return None

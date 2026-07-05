@@ -21,7 +21,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from backend.loop.state_machine import LoopStateMachine
+from backend.loop.state_machine import LoopStateMachine, MAX_RETRIES
 from backend.models.mission import Mission, MissionStatus
 from backend.models.approval import ApprovalGate, ApprovalStatus
 from backend.evaluator.manifest_evaluator import ManifestEvaluator
@@ -51,8 +51,10 @@ class _MockCodeGen:
         self._path = os.path.join(tmp_dir, "train.py")
         with open(self._path, "w") as f:
             f.write("print('mock training script')\n")
+        self.call_count = 0
 
     async def generate_training_script(self, mission_id, plan, current_iteration=0):
+        self.call_count += 1
         return self._path
 
 
@@ -166,6 +168,50 @@ class _ReattachedSandbox:
         with open(log_path, "w") as f:
             f.write(self._log_content)
         return log_path
+
+    def get_sandbox_id(self, mission_id):
+        return "99999"
+
+    def terminate(self, mission_id):
+        pass
+
+
+class _ReattachedSandboxAlwaysErrors:
+    """Like _ReattachedSandbox, but the reattached process's own output
+    (written between the pre-wait offset snapshot and the final read, as a
+    real still-running process would) always contains a fatal error — used to
+    verify the resume path's lazily-generated script_path actually reaches
+    the healer when a resumed sandbox does fail, not just the clean case."""
+    def __init__(self, tmp_dir: str):
+        self._tmp_dir = tmp_dir
+        self._log_path = os.path.join(tmp_dir, "reattached_error.log")
+        open(self._log_path, "w").close()
+        self.launch_called = False
+        self.launch_call_count = 0
+        self._alive_calls = 0
+
+    def launch(self, mission_id, script_path, **kwargs):
+        self.launch_called = True
+        self.launch_call_count += 1
+        return (1234, None)
+
+    def is_alive(self, mission_id):
+        # Odd calls: "still alive, just wrote new (fatal) output" — even
+        # calls: "now dead". Every iteration polls exactly twice (once True,
+        # once False), so this reliably errors on EVERY iteration, not just
+        # the first ever call — a call-count-based single-shot check here
+        # previously caused later iterations to report clean/dead with no
+        # error, so the mission never hit MAX_RETRIES and looped forever
+        # across pivot iterations instead of reaching a terminal state.
+        self._alive_calls += 1
+        if self._alive_calls % 2 == 1:
+            with open(self._log_path, "a") as f:
+                f.write("Traceback\nRuntimeError: mock resumed sandbox error\n")
+            return True
+        return False
+
+    def get_log_path(self, mission_id):
+        return self._log_path
 
     def get_sandbox_id(self, mission_id):
         return "99999"
@@ -374,9 +420,10 @@ async def test_resume_existing_sandbox_skips_launch_and_reuses_saved_plan(db_ses
 
     with tempfile.TemporaryDirectory() as tmp:
         sandbox = _ReattachedSandbox(tmp)
+        codegen = _MockCodeGen(tmp)
         sm = _build_sm(
             _MockLeadAgent(),
-            _MockCodeGen(tmp),
+            codegen,
             _MockHealer(tmp),
             sandbox,
             _SequenceEvaluator([{"mean_reward": 200.0}]),
@@ -384,13 +431,73 @@ async def test_resume_existing_sandbox_skips_launch_and_reuses_saved_plan(db_ses
         # supervised mode would normally require a real approval-gate wait;
         # asserting it's never called both proves the gate is skipped on
         # resume and avoids ever actually blocking on one in this test.
-        with patch.object(LoopStateMachine, "_request_approval", new=AsyncMock()) as mock_approval:
+        # _crystallize is also mocked, matching every other test in this file
+        # that reaches a goal-met mission — unmocked, it calls the real
+        # crystallizer, which writes to the real recipes/ directory on disk
+        # (settings.recipes_path defaults to "./recipes", not a tmp path) even
+        # though its DB row only ever lands in this test's in-memory session.
+        with patch.object(LoopStateMachine, "_request_approval", new=AsyncMock()) as mock_approval, \
+             patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
             await sm.run(mission.id, resume_existing_sandbox=True)
         mock_approval.assert_not_called()
 
     assert sandbox.launch_called is False
+    # A clean reattach that finishes without error must never regenerate the
+    # training script — it isn't used (launch() is skipped) and doing it
+    # anyway wastes real wall-clock time on the resume path for nothing
+    # (confirmed via a real incident: ~2 minutes spent regenerating an unused
+    # script before a live mission's "Reattached to running sandbox" status
+    # even printed).
+    assert codegen.call_count == 0
     await db_session.refresh(mission)
     assert mission.status == MissionStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_sandbox_generates_script_lazily_when_error_found(db_session, patch_db, monkeypatch):
+    """If a reattached sandbox's own output does contain a fatal error, the
+    healer still needs a script_path to patch — it must be generated lazily
+    at that point (script_path was None going in, since this is the resume
+    iteration), not skipped entirely."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="Train a Snake RL agent",
+        task_type="rl",
+        target_metric={"mean_reward": 100.0},
+        autonomy_mode="full_autonomy",
+        status=MissionStatus.RUNNING.value,
+        current_iteration=1,
+        current_plan={
+            "task_type": "rl", "algorithm": "PPO",
+            "hyperparameters": {"learning_rate": 3e-4, "gamma": 0.99},
+            "sandbox_memory_gb": 4.0,
+        },
+        subprocess_pid=99999,
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sandbox = _ReattachedSandboxAlwaysErrors(tmp)
+        codegen = _MockCodeGen(tmp)
+        sm = _build_sm(
+            _MockLeadAgent(),
+            codegen,
+            _MockHealer(tmp),
+            sandbox,
+            _SequenceEvaluator([{"mean_reward": 0.0}]),
+        )
+        await sm.run(mission.id, resume_existing_sandbox=True)
+
+    # The first (resumed) iteration skipped launch entirely, then hit an
+    # error and had to lazily generate a script for the healer; every
+    # subsequent retry iteration launches (and codegens) normally.
+    assert sandbox.launch_call_count == MAX_RETRIES
+    assert codegen.call_count >= 1
+    await db_session.refresh(mission)
+    assert mission.status == MissionStatus.FAILED.value
 
 
 @pytest.mark.asyncio

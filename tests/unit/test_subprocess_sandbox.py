@@ -127,6 +127,15 @@ class TestGetSandboxId:
         sandbox._process = mock_process
         assert sandbox.get_sandbox_id() == "12345"
 
+    def test_returns_reattach_pid_as_string_when_no_process_handle(self):
+        """No Popen handle after a restart — must still report the pid instead
+        of None, so the "Reattached to running sandbox" status event shows
+        the real pid rather than a confusing sandbox_id=None (a real bug found
+        by inspecting the actual event log after a live production restart)."""
+        sandbox = self._sandbox()
+        sandbox._reattach_pid = 13705
+        assert sandbox.get_sandbox_id() == "13705"
+
 
 # ── SubprocessSandbox.terminate ───────────────────────────────────────────────
 
