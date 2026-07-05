@@ -21,7 +21,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
 - **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
 - **Robust state recovery** — on restart, interrupted missions are automatically detected; a still-alive sandbox (local subprocess, container, or SSH-dispatched) is reattached and resumed in place rather than killed, so a service restart doesn't throw away in-progress training; only a genuinely gone sandbox is reset to PENDING and relaunched from the last checkpoint
-- **704 tests** — 692 unit + 12 integration tests covering all core services
+- **709 tests** — 696 unit + 13 integration tests covering all core services
 
 ### Screenshots
 
@@ -87,8 +87,8 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 692 unit tests across all core modules
-│   └── integration/    # 12 integration tests for the loop state machine
+│   ├── unit/           # 696 unit tests across all core modules
+│   └── integration/    # 13 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
@@ -142,6 +142,7 @@ make ports  # show port status for all services
 | 26 | DPO/GRPO Hardening — recipe correctness fixes, `bare_eval` goal check, orphan-proof `os.execv` dispatch, recovery parity, `loss` training signal, collection-progress status, auto-approve for known-safe dispatch | ✅ Complete |
 | 27 | Sandbox Reattach — resume a still-alive sandbox (local, container, or SSH) in place instead of killing and restarting from checkpoint | ✅ Complete |
 | 28 | DPO/GRPO Recipe Lockout — pivots can no longer override recipe hyperparameters (root cause of a real training collapse) | ✅ Complete |
+| 29 | Guided Autonomy Mode — actually implemented (was silently a no-op); every gate now requires an explicit decision, no classifier shortcut | ✅ Complete |
 
 ## Hardware Target
 

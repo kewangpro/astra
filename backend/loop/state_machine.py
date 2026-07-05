@@ -330,13 +330,14 @@ class LoopStateMachine:
                     script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
                     await emit_status(mission_id, "Training script ready", event_type="success")
 
-                # EXECUTE_CODE approval gate (supervised mode) — already approved
-                # when the sandbox we're reattaching to was originally launched.
-                if not _skip_launch and mission.autonomy_mode == "supervised":
+                # EXECUTE_CODE approval gate (supervised/guided modes) — already
+                # approved when the sandbox we're reattaching to was originally launched.
+                if not _skip_launch and mission.autonomy_mode in ("supervised", "guided"):
                     await emit_status(mission_id, "Awaiting approval to execute script", event_type="warn")
                     approved, is_auto = await self._request_approval(
                         mission_id, GateType.EXECUTE_CODE,
                         payload={"script_path": script_path},
+                        allow_inline_auto_approve=mission.autonomy_mode == "supervised",
                     )
                     if not approved:
                         logger.info("LoopStateMachine: EXECUTE_CODE gate rejected — aborting")
@@ -1503,12 +1504,20 @@ class LoopStateMachine:
     # ── Approval gate ──────────────────────────────────────────────────────────
 
     async def _request_approval(
-        self, mission_id: str, gate_type: GateType, payload: dict
+        self, mission_id: str, gate_type: GateType, payload: dict,
+        allow_inline_auto_approve: bool = True,
     ) -> tuple[bool, Optional[bool]]:
         """
         Create an approval gate record and poll until approved/rejected.
-        In full_autonomy mode this is skipped (returns True immediately).
-        In guided mode ALL gates require approval (not just EXECUTE_CODE).
+        In full_autonomy mode this is never called at all (no gate exists).
+
+        allow_inline_auto_approve distinguishes supervised from guided mode
+        (both create a gate, unlike full_autonomy): supervised (True) lets
+        the classifier auto-approve inline immediately, same as before;
+        guided (False) skips that and always waits for an explicit decision
+        — a human resolving it in the UI, or a human deliberately clicking
+        the frontend's own auto-approve button (POST .../auto-approve),
+        which is a real decision, not a silent backend shortcut.
 
         Returns (approved, is_auto) — is_auto is True/False when approved
         (whether the classifier resolved it inline vs a human clicked it),
@@ -1530,7 +1539,9 @@ class LoopStateMachine:
 
         # Immediately attempt auto-approve so missions aren't blocked overnight
         # when no browser is open to trigger the frontend-driven auto-approve endpoint.
-        if gate_type == GateType.EXECUTE_CODE:
+        # Guided mode deliberately opts out of this — every gate must get an
+        # explicit decision, not a silent classifier shortcut.
+        if gate_type == GateType.EXECUTE_CODE and allow_inline_auto_approve:
             try:
                 from backend.services.auto_approver import try_auto_approve
                 code_provider = self._model_manager._providers.get("code")

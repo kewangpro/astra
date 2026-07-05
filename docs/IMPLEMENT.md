@@ -1086,3 +1086,17 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **2 new tests** (`test_code_generator.py`): `test_resolve_hyperparams_dpo_ignores_plan_override` and `test_resolve_hyperparams_grpo_ignores_plan_override` — assert a plan-provided `learning_rate`/`num_layers` has zero effect on the resolved hyperparameters for these task types.
 
     Total: **704 tests** (692 unit + 12 integration).
+
+---
+
+## Phase 29 — Guided Autonomy Mode Actually Implemented
+
+**Problem:** `Mission.autonomy_mode` supported three documented values (`guided`/`supervised`/`full_autonomy`, per `backend/config.py`'s `Literal` type and `state_machine.py`'s own module docstring), but only `"supervised"` had any effect on the loop — `LoopStateMachine.run()`'s only autonomy check was `mission.autonomy_mode == "supervised"`, so `"guided"` silently behaved identically to `"full_autonomy"` (no approval gate at all). `docs/DESIGN.md` §4.2 separately described an aspirational three-tier design referencing a "Silent Mode" and per-gate trust-score bypass — neither of which exists anywhere in the codebase.
+
+- [x] **`LoopStateMachine._request_approval()` gains `allow_inline_auto_approve: bool`** (`state_machine.py`) — the `EXECUTE_CODE` gate is now created for both `supervised` and `guided` (previously only `supervised`). `supervised` passes `True` (unchanged: the `CodeSafetyClassifier`/`AutoApprover` inline shortcut is attempted first, exactly as before). `guided` passes `False`, skipping that shortcut entirely — every gate requires an explicit decision, either a human resolving it in the UI or a human deliberately clicking the frontend's own auto-approve action, never a silent backend classifier resolution.
+- [x] **`docs/DESIGN.md` §4.1/4.2 corrected** to describe actual implemented behavior instead of the aspirational "Silent Mode"/trust-score design — also notes that `RESOURCE_ALLOCATION`/`DEPLOY_MODEL` are modeled `GateType` values with no implemented code path.
+- [x] **3 new tests**: `test_state_machine_helpers.py` — `test_request_approval_guided_mode_skips_inline_auto_approve` (asserts the classifier is never even called). `test_loop_state_machine.py` — `test_guided_mode_requests_approval_without_inline_auto_approve` (asserts the gate is created with `allow_inline_auto_approve=False`, unlike `full_autonomy` which never creates one at all).
+
+    Note: still API-only — `MissionCreate` already accepts `autonomy_mode` in the request body, but no frontend form exposes it, and `MissionUpdate` doesn't allow changing it post-creation. Deliberately out of scope for this pass.
+
+    Total: **709 tests** (696 unit + 13 integration).

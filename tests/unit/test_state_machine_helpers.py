@@ -1028,6 +1028,52 @@ def test_request_approval_flags_auto_approve(db_session, test_mission):
 
 
 @pytest.mark.usefixtures("patch_db")
+def test_request_approval_guided_mode_skips_inline_auto_approve(db_session, test_mission):
+    """allow_inline_auto_approve=False (guided mode) must never even attempt
+    the classifier shortcut — every gate requires an explicit decision, not
+    just one the classifier happens to bless. Distinct from supervised mode,
+    where the classifier is tried first and only falls back to manual on a
+    'blocked' verdict."""
+    sm = _make_sm()
+    sm._model_manager = MagicMock()
+    sm._model_manager._providers = {"code": MagicMock()}
+
+    auto_approve_called = False
+
+    async def _fake_try_auto_approve(gate_id, code_provider, db=None):
+        nonlocal auto_approve_called
+        auto_approve_called = True
+        result = MagicMock()
+        result.action = "approved"
+        return result
+
+    async def _resolve_as_manually_approved(*_args, **_kwargs):
+        from backend.loop.state_machine import AsyncSessionLocal as PatchedSessionLocal
+        async with PatchedSessionLocal() as session:
+            result = await session.execute(
+                select(ApprovalGate).where(ApprovalGate.mission_id == test_mission.id)
+            )
+            gate = result.scalars().first()
+            gate.status = ApprovalStatus.APPROVED.value
+            gate.reviewer_note = "manually reviewed and approved"
+            await session.commit()
+
+    async def _run():
+        with patch("backend.services.auto_approver.try_auto_approve", new=_fake_try_auto_approve), \
+             patch("backend.loop.state_machine.asyncio.sleep", new=AsyncMock(side_effect=_resolve_as_manually_approved)):
+            return await sm._request_approval(
+                test_mission.id, GateType.EXECUTE_CODE, payload={"script_path": "/x.py"},
+                allow_inline_auto_approve=False,
+            )
+
+    approved, is_auto = asyncio.get_event_loop().run_until_complete(_run())
+
+    assert auto_approve_called is False
+    assert approved is True
+    assert is_auto is False
+
+
+@pytest.mark.usefixtures("patch_db")
 def test_request_approval_flags_manual_approve(db_session, test_mission):
     """A gate resolved by a human clicking Approve (reviewer_note has no
     '[auto-approved]' prefix) must return is_auto=False. Deterministic:

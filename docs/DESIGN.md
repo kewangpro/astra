@@ -135,18 +135,15 @@ Enhancements for long-running stability:
 ## 4. Security & Autonomy Gates
 
 ### 4.1. The Approval Controller
-A centralized service that intercepts high-risk transitions in the DAG:
-- **Gate: `EXECUTE_CODE`**: Pauses the loop and presents the generated script to the user for a "Safety Check." The `CodeSafetyClassifier` runs a two-stage pre-screen before presenting to the user: (1) a static regex pass that immediately approves scripts whose only network calls target `localhost`/`127.0.0.1` (telemetry), and immediately blocks known-dangerous patterns (subprocess shell injection, broad file deletion, external pip installs); (2) an LLM classification pass for ambiguous cases. Only genuinely risky scripts reach the human approval queue.
-- **Gate: `RESOURCE_ALLOCATION`**: Triggers if the planned iteration exceeds the remaining "Quota" (GPU hours or memory).
-- **Gate: `DEPLOY_MODEL`**: Requires human sign-off before a champion model is moved from the Registry to a production endpoint.
+`GateType` (`backend/models/approval.py`) models three gate types (`EXECUTE_CODE`, `RESOURCE_ALLOCATION`, `DEPLOY_MODEL`), but only one is actually wired into the loop today:
+- **Gate: `EXECUTE_CODE`**: Pauses the loop and presents the generated script to the user for a "Safety Check." The `CodeSafetyClassifier` runs a two-stage pre-screen: (1) a static regex pass that immediately approves scripts whose only network calls target `localhost`/`127.0.0.1` (telemetry), and immediately blocks known-dangerous patterns (subprocess shell injection, broad file deletion, external pip installs); (2) an LLM classification pass for ambiguous cases. Only genuinely risky scripts reach the human approval queue.
+- **Gate: `RESOURCE_ALLOCATION`** / **`DEPLOY_MODEL`**: modeled in the schema, but no code path currently creates either — not implemented yet, despite being defined as gate types.
 
 ### 4.2. Autonomy Tiers
-ASTRA supports three operating modes:
-1. **Guided**: Every iteration step requires an "Approve/Reject" signal. All gates are active; Silent Mode (PRD §5.3) is disabled.
-2. **Supervised (Default)**: ASTRA iterates autonomously but pauses for `EXECUTE_CODE` and `RESOURCE_ALLOCATION`. Silent Mode may auto-promote trusted sub-tasks to bypass these specific gates based on accumulated trust score.
-3. **Full Autonomy**: ASTRA runs to completion without intervention, governed only by strict Sandbox and Resource constraints. All approval gates are suppressed; Silent Mode is redundant and has no additional effect.
-
-**Gate-priority rule**: the operating tier takes precedence. Silent Mode trust-score bypass only activates within **Supervised** mode and only for the specific gate types (`EXECUTE_CODE`, `RESOURCE_ALLOCATION`). It cannot escalate behavior beyond what the current tier permits.
+`Mission.autonomy_mode` supports three values (`backend/config.py`'s `Literal["guided", "supervised", "full_autonomy"]`), differing only in how the single implemented gate (`EXECUTE_CODE`) is handled — there is no "Silent Mode"/trust-score bypass mechanism implemented anywhere; the description below reflects actual `LoopStateMachine._request_approval()` behavior, not an aspirational design:
+1. **Guided**: an `EXECUTE_CODE` gate is created, but the backend's inline classifier auto-approve is deliberately skipped (`allow_inline_auto_approve=False`) — every gate requires an explicit decision: a human resolving it in the UI, or a human deliberately clicking the frontend's own "Auto-Approve" action (a real decision in the moment, not a silent backend shortcut).
+2. **Supervised (Default)**: an `EXECUTE_CODE` gate is created, and the backend immediately attempts the `CodeSafetyClassifier` auto-approve inline; only falls back to waiting for an explicit decision if the classifier can't resolve it (`allow_inline_auto_approve=True`).
+3. **Full Autonomy**: no gate is created at all — `_request_approval()` is never called, the script runs immediately.
 
 ### 4.3. Monitoring Dashboard (The "HUD")
 A real-time interface showing:

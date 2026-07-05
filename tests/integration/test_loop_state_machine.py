@@ -619,6 +619,47 @@ async def test_supervised_gate_rejected_marks_failed(db_session, patch_db, monke
 
 
 @pytest.mark.asyncio
+async def test_guided_mode_requests_approval_without_inline_auto_approve(db_session, patch_db, monkeypatch):
+    """Guided mode must create the same EXECUTE_CODE gate supervised mode
+    does (unlike full_autonomy, which skips it entirely) but with
+    allow_inline_auto_approve=False — every gate needs an explicit decision,
+    not the classifier shortcut supervised mode gets."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="Fine-tune an LLM",
+        task_type="sft",
+        target_metric={"eval_loss": 1.5},
+        autonomy_mode="guided",
+        status=MissionStatus.PENDING.value,
+        current_iteration=0,
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sm = _build_sm(
+            _MockLeadAgent(),
+            _MockCodeGen(tmp),
+            _MockHealer(tmp),
+            _MockSandbox(tmp),
+            _SequenceEvaluator([{"eval_loss": 0.5}]),
+        )
+        # _crystallize mocked like every other goal-met test in this file —
+        # unmocked, it calls the real crystallizer, which writes to the real
+        # recipes/ directory since settings.recipes_path defaults to
+        # "./recipes", not a tmp path (this exact gap already caused real
+        # pollution once before — see the resume tests above).
+        with patch.object(LoopStateMachine, "_request_approval", new=AsyncMock(return_value=(True, False))) as mock_approval, \
+             patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(mission.id)
+
+    mock_approval.assert_called_once()
+    assert mock_approval.call_args.kwargs["allow_inline_auto_approve"] is False
+
+
+@pytest.mark.asyncio
 async def test_pivot_plan_saved_to_db(seeded_mission, db_session, patch_db, monkeypatch):
     """After a pivot fires the modified plan must be persisted to missions.current_plan."""
     monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
