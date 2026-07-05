@@ -20,7 +20,9 @@ export interface ApprovalGate {
   gate_type: string;
   status: string;
   payload: Record<string, unknown> | null;
+  reviewer_note: string | null;
   created_at: string;
+  resolved_at: string | null;
 }
 
 export interface AutoApproveResult {
@@ -64,9 +66,12 @@ export const api = {
   cancelMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/cancel`, { method: "POST" }),
   getPendingApprovals: (missionId: string) =>
-    req<ApprovalGate[]>(`/approvals?pending_only=true`).then((gates) =>
-      gates.filter((g) => g.mission_id === missionId)
-    ),
+    req<ApprovalGate[]>(`/approvals?pending_only=true&mission_id=${missionId}`),
+  // Full gate history (approved + rejected + pending) for a mission — used to
+  // derive whether it's actually been auto-approved by the backend, as
+  // opposed to the client-only "auto-approve mode" toggle.
+  getApprovalHistory: (missionId: string) =>
+    req<ApprovalGate[]>(`/approvals?pending_only=false&mission_id=${missionId}`),
   resolveApproval: (approvalId: string, decision: "approved" | "rejected") =>
     req<ApprovalGate>(
       `/approvals/${approvalId}/${decision === "approved" ? "approve" : "reject"}`,

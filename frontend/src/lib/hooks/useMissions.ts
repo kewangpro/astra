@@ -22,6 +22,15 @@ export function usePendingApprovals(id: string) {
   });
 }
 
+export function useApprovalHistory(id: string) {
+  return useQuery({
+    queryKey: ["approvals", id, "history"],
+    queryFn: () => api.getApprovalHistory(id),
+    enabled: !!id,
+    refetchInterval: 3000,
+  });
+}
+
 export function useCreateMission() {
   const qc = useQueryClient();
   return useMutation({

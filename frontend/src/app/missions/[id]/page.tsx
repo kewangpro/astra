@@ -2,7 +2,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { useMission } from "@/lib/hooks/useMissions";
+import { useMission, useApprovalHistory } from "@/lib/hooks/useMissions";
 import { useTelemetry } from "@/lib/hooks/useTelemetry";
 import { MetricGap } from "@/components/hud/MetricGap";
 import { MetricChart } from "@/components/hud/MetricChart";
@@ -83,6 +83,17 @@ export default function MissionHUD({
     setAutoApproveModeRaw(on);
     try { localStorage.setItem(`auto-approve:${missionId}`, on ? "1" : "0"); } catch {}
   };
+  // Real backend signal: has any gate on this mission actually been
+  // auto-approved (by CodeSafetyClassifier/AutoApprover), as opposed to
+  // autoApproveMode above, which is only a client-side "auto-approve future
+  // gates in this browser" preference and says nothing about what already
+  // happened. reviewer_note's "[auto-approved]" prefix mirrors the same
+  // check LoopStateMachine._request_approval() uses server-side.
+  const { data: approvalHistory } = useApprovalHistory(missionId);
+  const hasBeenAutoApproved = !!approvalHistory?.some(
+    (g) => g.status === "approved" && g.reviewer_note?.startsWith("[auto-approved]")
+  );
+  const lightningActive = autoApproveMode || hasBeenAutoApproved;
 
   if (isLoading)
     return (
@@ -127,9 +138,16 @@ export default function MissionHUD({
           </span>
           <button
             onClick={() => setAutoApproveMode(!autoApproveMode)}
-            title={autoApproveMode ? "Disable auto-approve" : "Enable auto-approve"}
+            title={
+              hasBeenAutoApproved
+                ? "This mission's gates have been auto-approved by the backend classifier" +
+                  (autoApproveMode ? " · click to stop pre-approving future gates in this browser" : " · click to also pre-approve future gates in this browser")
+                : autoApproveMode
+                ? "Auto-approve future gates in this browser · click to disable"
+                : "Click to auto-approve future gates in this browser"
+            }
             className={`text-[11px] px-2.5 py-1 rounded border transition-colors ${
-              autoApproveMode
+              lightningActive
                 ? "border-[#38bdf8]/50 text-[#38bdf8] bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20"
                 : "border-[#475569] text-[#64748b] hover:border-[#38bdf8]/40 hover:text-[#38bdf8]"
             }`}

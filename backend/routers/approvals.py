@@ -43,10 +43,16 @@ class ApprovalDecision(BaseModel):
 
 
 @router.get("", response_model=List[ApprovalGateRead])
-async def list_approvals(pending_only: bool = True, db: AsyncSession = Depends(get_db)):
+async def list_approvals(
+    pending_only: bool = True,
+    mission_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
     q = select(ApprovalGate)
     if pending_only:
         q = q.where(ApprovalGate.status == ApprovalStatus.PENDING.value)
+    if mission_id:
+        q = q.where(ApprovalGate.mission_id == mission_id)
     result = await db.execute(q.order_by(ApprovalGate.created_at.desc()))
     return result.scalars().all()
 
