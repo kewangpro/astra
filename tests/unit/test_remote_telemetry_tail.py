@@ -85,14 +85,34 @@ class TestTailRemoteMetrics:
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
             step = asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "grpo", 3)
+                sm._tail_remote_metrics("mission-1", "grpo", 3, current_iteration=7)
             )
 
         assert step == 5   # started at 3, two matches
         assert mock_emit.await_count == 2
         first_call = mock_emit.await_args_list[0]
         assert first_call.args == ("mission-1", "pass_rate", 0.5)
-        assert first_call.kwargs == {"step": 3, "iteration": 3}
+        # "step" is the local within-run counter (chart x-axis); "iteration" is
+        # the real mission iteration passed in — these must NOT be conflated.
+        assert first_call.kwargs == {"step": 3, "iteration": 7}
+
+    def test_pass_rate_iteration_tag_is_real_mission_iteration_not_local_step(self):
+        """Regression test: MetricGap's sparkline buckets pass_rate readings by
+        "iteration" and keeps the max per bucket. pass_rate_step resets to 0 at
+        the start of every sandbox attempt, so if it were used as "iteration",
+        a later iteration's first reading would collide with an earlier
+        iteration's own data and could be silently swallowed by max()."""
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 0.0% (0/66)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+            # pass_rate_step=0 (a fresh sandbox attempt's first reading), but
+            # this is genuinely iteration 1 of the mission.
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=1)
+            )
+
+        mock_emit.assert_awaited_once_with("mission-1", "pass_rate", 0.0, step=0, iteration=1)
 
     def test_pass_rate_line_tracked_in_memory_only_not_written_to_db(self):
         """Metric Gap (Mission.best_metric_value/current_metric_value) must NOT
@@ -151,10 +171,12 @@ class TestTailRemoteMetrics:
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
             asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "grpo", 0)
+                sm._tail_remote_metrics("mission-1", "grpo", 0, current_iteration=3)
             )
 
-        mock_emit.assert_awaited_once_with("mission-1", "loss", 0.6421, step=25, iteration=25)
+        # "step" is the script's own reported step number (chart x-axis);
+        # "iteration" is the real mission iteration, not the step number.
+        mock_emit.assert_awaited_once_with("mission-1", "loss", 0.6421, step=25, iteration=3)
 
     def test_dpo_epoch_line_emits_loss_metric_with_epoch_number(self):
         sm = _bare_state_machine()
@@ -162,10 +184,10 @@ class TestTailRemoteMetrics:
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
             asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "dpo", 0)
+                sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=3)
             )
 
-        mock_emit.assert_awaited_once_with("mission-1", "loss", 0.5891, step=2, iteration=2)
+        mock_emit.assert_awaited_once_with("mission-1", "loss", 0.5891, step=2, iteration=3)
 
     def test_grpo_task_type_does_not_match_dpo_style_loss_line(self):
         """Wrong regex for the task type must not accidentally match."""
@@ -284,3 +306,22 @@ class TestLivePassRateFallbackConsumption:
         )
 
         assert "mission-1" not in sm._live_pass_rate_best
+
+    def test_wait_for_sandbox_threads_current_iteration_into_tail(self):
+        """_wait_for_sandbox must forward its current_iteration argument into
+        _tail_remote_metrics so live-tailed pass_rate/loss events are tagged
+        with the real mission iteration, not left at the default 0."""
+        sm = _bare_state_machine()
+        sm._sandbox = MagicMock()
+        # is_alive() True once, then False, so the poll loop runs exactly once.
+        sm._sandbox.is_alive.side_effect = [True, False]
+        sm._sandbox.get_log_path.return_value = "/nonexistent/path/for/this/test.log"
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 90.0% (9/10)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            asyncio.get_event_loop().run_until_complete(
+                sm._wait_for_sandbox("mission-1", task_type="dpo", current_iteration=4)
+            )
+
+        mock_emit.assert_awaited_once_with("mission-1", "pass_rate", 0.9, step=0, iteration=4)

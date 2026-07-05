@@ -346,7 +346,8 @@ class LoopStateMachine:
                 # ── EXECUTING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
                 error_output = await self._wait_for_sandbox(
-                    mission_id, log_offset, task_type=plan.get("task_type")
+                    mission_id, log_offset, task_type=plan.get("task_type"),
+                    current_iteration=current_iteration,
                 )
 
                 if error_output:
@@ -1327,7 +1328,8 @@ class LoopStateMachine:
         return metrics
 
     async def _wait_for_sandbox(
-        self, mission_id: str, log_offset: int = 0, task_type: Optional[str] = None
+        self, mission_id: str, log_offset: int = 0, task_type: Optional[str] = None,
+        current_iteration: int = 0,
     ) -> Optional[str]:
         """Poll until the sandbox exits. Returns error output if it failed, else None."""
         log_path = self._sandbox.get_log_path(mission_id)
@@ -1341,7 +1343,9 @@ class LoopStateMachine:
         while self._sandbox.is_alive(mission_id):
             await asyncio.sleep(EVAL_POLL_INTERVAL)
             if task_type in _FINETUNE_REMOTE_TASK_TYPES:
-                pass_rate_step = await self._tail_remote_metrics(mission_id, task_type, pass_rate_step)
+                pass_rate_step = await self._tail_remote_metrics(
+                    mission_id, task_type, pass_rate_step, current_iteration
+                )
 
         # Only read content written by THIS run (skip prior runs' output)
         if os.path.isfile(log_path):
@@ -1366,18 +1370,26 @@ class LoopStateMachine:
                 return content
         return None
 
-    async def _tail_remote_metrics(self, mission_id: str, task_type: str, pass_rate_step: int) -> int:
+    async def _tail_remote_metrics(
+        self, mission_id: str, task_type: str, pass_rate_step: int, current_iteration: int = 0
+    ) -> int:
         """Fetch new remote log output (SSHSandbox.tail_new_output) and record
         two kinds of metrics:
           - "pass_rate": goal metric, from "Pass rate: X% (n/total)" lines,
-            using a local incrementing step counter (returned for the next call).
+            using a local incrementing step counter for "step" (chart x-axis,
+            returned for the next call) but the REAL mission iteration for
+            "iteration" — MetricGap's sparkline buckets readings by iteration,
+            and pass_rate_step resets to 0 at the start of every sandbox
+            attempt, so tagging it as "iteration" would collide a later
+            iteration's first reading with an earlier iteration's own data.
           - "loss": training signal shown continuously in MetricChart's history
             — same relationship pass_rate has to mean_reward for RL, or eval_loss
             doubling as both signal and goal for ml/sft. GRPO prints it every
             --steps-per-report steps (a real, frequent signal); DPO only once
             per epoch (sparse — 3 points for the default 3 epochs, but it's
-            what the script provides). Uses the script's own reported step/
-            epoch number, not a local counter, since it's meaningful on its own.
+            what the script provides). "step" is the script's own reported
+            step/epoch number (meaningful on its own for the chart x-axis);
+            "iteration" is still the real mission iteration, for consistency.
         No-op (returns pass_rate_step unchanged) for backends that don't
         support live tailing, or if nothing new was written."""
         try:
@@ -1390,7 +1402,7 @@ class LoopStateMachine:
 
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
-            await emit_metric(mission_id, "pass_rate", pct / 100.0, step=pass_rate_step, iteration=pass_rate_step)
+            await emit_metric(mission_id, "pass_rate", pct / 100.0, step=pass_rate_step, iteration=current_iteration)
             # Track the best live-tailed reading in memory only (NOT written to
             # Mission.best_metric_value/current_metric_value here) — Metric Gap
             # must only update once per completed iteration, exactly like RL's
@@ -1409,7 +1421,7 @@ class LoopStateMachine:
         for match in loss_re.finditer(new_output):
             step_num = int(match.group(1))
             loss_val = float(match.group(2))
-            await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=step_num)
+            await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=current_iteration)
 
         collect_matches = list(_COLLECT_PROGRESS_RE.finditer(new_output))
         if collect_matches:
