@@ -450,7 +450,9 @@ def test_load_persisted_best_ignores_telemetry_for_custom_metric():
 # ── _wait_for_sandbox error detection ─────────────────────────────────────────
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from sqlalchemy import select
+from backend.models.approval import ApprovalGate, ApprovalStatus, GateType
 
 
 def _run(coro):
@@ -997,3 +999,102 @@ def test_run_goal_metric_eval_passes_env_kwargs_to_gym_make(tmp_path):
 
     assert any(kw.get("obs_type") == "features" for _, kw in make_calls), \
         f"obs_type=features not passed to gym.make; calls={make_calls}"
+
+
+# ── _request_approval: auto-approve vs manual-approve flag ─────────────────────
+
+@pytest.mark.usefixtures("patch_db")
+def test_request_approval_flags_auto_approve(db_session, test_mission):
+    """Inline classifier resolution must return is_auto=True, so the caller
+    can display 'auto-approve' rather than a generic message that looks the
+    same as a manual click."""
+    sm = _make_sm()
+    sm._model_manager = MagicMock()
+    sm._model_manager._providers = {"code": MagicMock()}
+
+    async def _fake_try_auto_approve(gate_id, code_provider, db=None):
+        result = MagicMock()
+        result.action = "approved"
+        result.classifier = "static"
+        return result
+
+    with patch("backend.services.auto_approver.try_auto_approve", new=_fake_try_auto_approve):
+        approved, is_auto = asyncio.get_event_loop().run_until_complete(
+            sm._request_approval(test_mission.id, GateType.EXECUTE_CODE, payload={"script_path": "/x.py"})
+        )
+
+    assert approved is True
+    assert is_auto is True
+
+
+@pytest.mark.usefixtures("patch_db")
+def test_request_approval_flags_manual_approve(db_session, test_mission):
+    """A gate resolved by a human clicking Approve (reviewer_note has no
+    '[auto-approved]' prefix) must return is_auto=False. Deterministic:
+    asyncio.sleep's mock itself performs the DB write as a side effect on its
+    first call, instead of racing a background task against the poll loop."""
+    sm = _make_sm()
+    sm._model_manager = MagicMock()
+    sm._model_manager._providers = {"code": MagicMock()}
+
+    async def _fake_try_auto_approve(gate_id, code_provider, db=None):
+        result = MagicMock()
+        result.action = "blocked"  # classifier declines -> falls through to manual poll
+        return result
+
+    async def _resolve_as_manually_approved(*_args, **_kwargs):
+        from backend.loop.state_machine import AsyncSessionLocal as PatchedSessionLocal
+        async with PatchedSessionLocal() as session:
+            result = await session.execute(
+                select(ApprovalGate).where(ApprovalGate.mission_id == test_mission.id)
+            )
+            gate = result.scalars().first()
+            gate.status = ApprovalStatus.APPROVED.value
+            gate.reviewer_note = "looks fine to me"
+            await session.commit()
+
+    async def _run():
+        with patch("backend.services.auto_approver.try_auto_approve", new=_fake_try_auto_approve), \
+             patch("backend.loop.state_machine.asyncio.sleep", new=AsyncMock(side_effect=_resolve_as_manually_approved)):
+            return await sm._request_approval(
+                test_mission.id, GateType.EXECUTE_CODE, payload={"script_path": "/x.py"}
+            )
+
+    approved, is_auto = asyncio.get_event_loop().run_until_complete(_run())
+
+    assert approved is True
+    assert is_auto is False
+
+
+@pytest.mark.usefixtures("patch_db")
+def test_request_approval_rejected_returns_none_flag(db_session, test_mission):
+    sm = _make_sm()
+    sm._model_manager = MagicMock()
+    sm._model_manager._providers = {"code": MagicMock()}
+
+    async def _fake_try_auto_approve(gate_id, code_provider, db=None):
+        result = MagicMock()
+        result.action = "blocked"
+        return result
+
+    async def _resolve_as_rejected(*_args, **_kwargs):
+        from backend.loop.state_machine import AsyncSessionLocal as PatchedSessionLocal
+        async with PatchedSessionLocal() as session:
+            result = await session.execute(
+                select(ApprovalGate).where(ApprovalGate.mission_id == test_mission.id)
+            )
+            gate = result.scalars().first()
+            gate.status = ApprovalStatus.REJECTED.value
+            await session.commit()
+
+    async def _run():
+        with patch("backend.services.auto_approver.try_auto_approve", new=_fake_try_auto_approve), \
+             patch("backend.loop.state_machine.asyncio.sleep", new=AsyncMock(side_effect=_resolve_as_rejected)):
+            return await sm._request_approval(
+                test_mission.id, GateType.EXECUTE_CODE, payload={"script_path": "/x.py"}
+            )
+
+    approved, is_auto = asyncio.get_event_loop().run_until_complete(_run())
+
+    assert approved is False
+    assert is_auto is None

@@ -302,7 +302,7 @@ class LoopStateMachine:
                 # EXECUTE_CODE approval gate (supervised mode)
                 if mission.autonomy_mode == "supervised":
                     await emit_status(mission_id, "Awaiting approval to execute script", event_type="warn")
-                    approved = await self._request_approval(
+                    approved, is_auto = await self._request_approval(
                         mission_id, GateType.EXECUTE_CODE,
                         payload={"script_path": script_path},
                     )
@@ -311,7 +311,8 @@ class LoopStateMachine:
                         await emit_status(mission_id, "Execution rejected by user", event_type="error")
                         await self._transition(mission_id, MissionStatus.FAILED)
                         return
-                    await emit_status(mission_id, "Execution approved", event_type="success")
+                    approval_note = "auto-approve" if is_auto else "manual-approve"
+                    await emit_status(mission_id, f"Execution approved: {approval_note}", event_type="success")
 
                 # ── SANDBOXING ────────────────────────────────────────────
                 self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
@@ -1450,11 +1451,16 @@ class LoopStateMachine:
 
     async def _request_approval(
         self, mission_id: str, gate_type: GateType, payload: dict
-    ) -> bool:
+    ) -> tuple[bool, Optional[bool]]:
         """
         Create an approval gate record and poll until approved/rejected.
         In full_autonomy mode this is skipped (returns True immediately).
         In guided mode ALL gates require approval (not just EXECUTE_CODE).
+
+        Returns (approved, is_auto) — is_auto is True/False when approved
+        (whether the classifier resolved it inline vs a human clicked it),
+        None when rejected. Callers format their own display string from
+        this flag; this method doesn't own presentation text.
         """
         async with AsyncSessionLocal() as session:
             gate = ApprovalGate(
@@ -1477,7 +1483,7 @@ class LoopStateMachine:
                 code_provider = self._model_manager._providers.get("code")
                 result = await try_auto_approve(gate_id, code_provider)
                 if result.action == "approved":
-                    return True
+                    return True, True
             except Exception as exc:
                 logger.warning("LoopStateMachine: inline auto-approve failed for gate=%s: %s", gate_id, exc)
 
@@ -1487,6 +1493,7 @@ class LoopStateMachine:
             async with AsyncSessionLocal() as session:
                 gate = await session.get(ApprovalGate, gate_id)
                 if gate and gate.status == ApprovalStatus.APPROVED.value:
-                    return True
+                    is_auto = (gate.reviewer_note or "").startswith("[auto-approved]")
+                    return True, is_auto
                 if gate and gate.status == ApprovalStatus.REJECTED.value:
-                    return False
+                    return False, None

@@ -376,7 +376,7 @@ async def test_supervised_gate_rejected_marks_failed(db_session, patch_db, monke
             _SequenceEvaluator([{"eval_loss": 0.5}]),
         )
         # Simulate gate rejection without polling
-        with patch.object(LoopStateMachine, "_request_approval", new=AsyncMock(return_value=False)):
+        with patch.object(LoopStateMachine, "_request_approval", new=AsyncMock(return_value=(False, None))):
             await sm.run(mission.id)
 
     await db_session.refresh(mission)

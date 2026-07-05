@@ -140,3 +140,145 @@ def test_mixed_localhost_and_external_is_unsafe():
     )
     v = _check(script)
     assert not v.safe
+
+
+# ── LLM prompt guidance (os.chdir / os.execv clarifications) ───────────────────
+
+def test_system_prompt_clarifies_chdir_is_safe():
+    """os.chdir was flagged by the LLM classifier as a real production
+    incident (dpo/grpo dispatch wrapper's os.chdir into the finetune dir) —
+    guard against the clarification silently being dropped from the prompt."""
+    from backend.agent.code_safety_classifier import _SYSTEM
+    assert "os.chdir" in _SYSTEM
+
+
+def test_system_prompt_clarifies_execv_is_safe():
+    """os.execv was also flagged by the LLM classifier in a separate incident
+    (same wrapper) — same regression guard as the os.chdir clarification."""
+    from backend.agent.code_safety_classifier import _SYSTEM
+    assert "os.execv" in _SYSTEM
+
+
+def test_system_prompt_clarifies_finetune_project_paths_are_safe():
+    """The LLM flagged real dpo_train.py file operations (adapters/logs under
+    ~/finetune) as 'outside the project directory' — the blanket UNSAFE rule
+    for that phrase doesn't distinguish a related fine-tuning project's own
+    directory from a genuinely unrelated/unexpected path."""
+    from backend.agent.code_safety_classifier import _SYSTEM
+    assert "finetune" in _SYSTEM.lower()
+
+
+# ── _strip_strings_and_comments ─────────────────────────────────────────────────
+
+def test_strip_strings_and_comments_ignores_english_text_in_print_string():
+    """'--- Baseline eval (step 0) ---' inside a print string must not trip
+    the eval() danger pattern — that was a real false positive on ensemble's
+    actual dpo_train.py/grpo_train.py."""
+    script = 'print("--- Baseline eval (step 0) ---")\n'
+    v = _check(script)
+    assert v.safe
+    assert v.classifier != "static" or "eval" not in v.reason
+
+
+def test_strip_strings_and_comments_still_catches_real_eval_call():
+    script = 'x = eval("1 + 1")\n'
+    v = _check(script)
+    assert not v.safe
+    assert "eval" in v.reason
+
+
+def test_strip_strings_and_comments_ignores_dangerous_words_in_comments():
+    script = "# this comment mentions subprocess and os.system but does nothing\nx = 1\n"
+    v = _check(script)
+    assert v.safe
+
+
+def test_model_dot_eval_and_mx_dot_eval_are_safe():
+    """Standard PyTorch/MLX idioms, not the dangerous builtin eval()."""
+    script = "model.eval()\nmx.eval(loss, grads)\n"
+    v = _check(script)
+    assert v.safe
+
+
+# ── _strip_leading_docstring ─────────────────────────────────────────────────────
+
+def test_strip_leading_docstring_removes_usage_example():
+    """A real incident: the LLM classifier misread a 'nohup python -u
+    dpo_train.py ...' shell-usage example inside a module docstring as a
+    real dangerous action, because it was all that fit in the truncated
+    slice sent to the LLM."""
+    from backend.agent.code_safety_classifier import CodeSafetyClassifier
+    script = (
+        '"""\n'
+        "Usage (Mac Mini):\n"
+        "  nohup python -u dpo_train.py --save-dir adapters/dpo_v1_min\n"
+        '"""\n'
+        "import os\n"
+        "os.execv('/x', [])\n"
+    )
+    stripped = CodeSafetyClassifier._strip_leading_docstring(script)
+    assert "nohup" not in stripped
+    assert "os.execv" in stripped
+
+
+def test_strip_leading_docstring_noop_when_no_docstring():
+    from backend.agent.code_safety_classifier import CodeSafetyClassifier
+    script = "import os\nos.execv('/x', [])\n"
+    assert CodeSafetyClassifier._strip_leading_docstring(script) == script
+
+
+def test_strip_leading_docstring_noop_on_unparseable_fragment():
+    """A truncated/invalid fragment must not crash — just pass through."""
+    from backend.agent.code_safety_classifier import CodeSafetyClassifier
+    script = "def broken(:\n    this is not valid python"
+    assert CodeSafetyClassifier._strip_leading_docstring(script) == script
+
+
+def test_classify_llm_prompt_excludes_docstring_usage_example(tmp_path):
+    """classify() must send the LLM the docstring-stripped view, not the
+    raw script — otherwise a long usage example dominates the [:2000] slice."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from backend.agent.code_safety_classifier import CodeSafetyClassifier
+
+    script = (
+        '"""\n' + ("Usage example line.\n" * 200) + '"""\n'
+        "import os\n"
+        "os.execv('/x', [])\n"
+    )
+    provider = MagicMock()
+    captured = {}
+
+    async def _fake_generate(messages, config):
+        captured["prompt"] = messages[-1].content
+        return '{"safe": true, "reason": "ok"}'
+
+    provider.generate = AsyncMock(side_effect=_fake_generate)
+    clf = CodeSafetyClassifier(provider)
+    asyncio.get_event_loop().run_until_complete(clf.classify(script))
+
+    assert "Usage example line" not in captured["prompt"]
+    assert "os.execv" in captured["prompt"]
+
+
+def test_classify_llm_call_uses_a_generous_token_budget():
+    """64 tokens was too tight for {"safe": ..., "reason": "..."} — a verdict
+    with a longer reason got cut off mid-string, producing invalid JSON and
+    forcing manual review even when the LLM's actual verdict was fine (a real
+    incident). Regression guard: the token budget must stay above that."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from backend.agent.code_safety_classifier import CodeSafetyClassifier
+
+    provider = MagicMock()
+    captured = {}
+
+    async def _fake_generate(messages, config):
+        captured["max_tokens"] = config.max_tokens
+        return '{"safe": true, "reason": "ok"}'
+
+    provider.generate = AsyncMock(side_effect=_fake_generate)
+    clf = CodeSafetyClassifier(provider)
+    asyncio.get_event_loop().run_until_complete(clf.classify("print('ambiguous but harmless')"))
+
+    assert captured["max_tokens"] > 64
