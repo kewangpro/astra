@@ -122,6 +122,21 @@ class SSHSandbox(BaseSandbox):
     def get_sandbox_id(self) -> Optional[str]:
         return str(self._remote_pid) if self._remote_pid else None
 
+    def sync_tail_offset_to_current(self) -> None:
+        """Set the tail offset to the remote log's current size. Used when
+        reattaching to an already-running process (e.g. after a backend
+        restart) so the next tail_new_output() call returns only output
+        written from this point on, instead of re-emitting the entire
+        historical log as if it were new."""
+        result = subprocess.run(
+            ["ssh", self._host, f"wc -c < {self._remote_log} 2>/dev/null"],
+            capture_output=True, text=True,
+        )
+        try:
+            self._tail_offset = int(result.stdout.strip())
+        except (ValueError, TypeError):
+            self._tail_offset = 0
+
     @property
     def log_path(self) -> str:
         return self._local_log

@@ -230,6 +230,7 @@ class SandboxManager:
                 sandbox = SSHSandbox(config, host=settings.sandbox_host, remote_data_root=settings.sandbox_data_path)
                 sandbox._remote_pid = remote_pid
                 sandbox.status = SandboxStatus.RUNNING
+                sandbox.sync_tail_offset_to_current()
                 self._sandboxes[mission_id] = sandbox
                 return "reattached"
             else:
@@ -274,6 +275,9 @@ class SandboxManager:
                     "Recovery: container %s still running for mission=%s — reattaching",
                     container_id[:12], mission_id,
                 )
+                probe._container_id = container_id
+                probe.status = SandboxStatus.RUNNING
+                self._sandboxes[mission_id] = probe
                 return "reattached"
             else:
                 logger.warning(

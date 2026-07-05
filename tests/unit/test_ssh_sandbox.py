@@ -143,6 +143,27 @@ class TestTerminate:
         assert sandbox._remote_pid == 111
 
 
+# ── SSHSandbox.sync_tail_offset_to_current ────────────────────────────────────
+
+class TestSyncTailOffsetToCurrent:
+    def test_sets_offset_to_remote_log_size(self, tmp_path):
+        sandbox = _sandbox(tmp_path)
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="4096\n")
+            sandbox.sync_tail_offset_to_current()
+        assert sandbox._tail_offset == 4096
+
+    def test_defaults_to_zero_on_unparseable_output(self, tmp_path):
+        """If the remote size can't be determined, fail safe with offset 0
+        (may re-emit some historical output as new — acceptable — rather than
+        crash the reattach path)."""
+        sandbox = _sandbox(tmp_path)
+        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="")
+            sandbox.sync_tail_offset_to_current()
+        assert sandbox._tail_offset == 0
+
+
 # ── SSHSandbox.get_sandbox_id ─────────────────────────────────────────────────
 
 class TestGetSandboxId:

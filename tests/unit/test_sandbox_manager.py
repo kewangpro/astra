@@ -52,6 +52,29 @@ class TestRecover:
         outcome = mgr.recover("test-mission", subprocess_pid=None, container_id=None)
         assert outcome == "dead"
 
+    def test_container_reattach_registers_sandbox_for_liveness_polling(self):
+        """A reattached container must be registered in self._sandboxes with
+        its container_id set — otherwise the resumed loop's is_alive() lookup
+        finds nothing and immediately (and incorrectly) treats a genuinely
+        running container as dead."""
+        mgr = _make_manager()
+        with patch("backend.sandbox.container_sandbox.ContainerSandbox.is_container_alive", return_value=True):
+            outcome = mgr.recover("test-mission", subprocess_pid=None, container_id="abc123def456")
+            assert mgr.is_alive("test-mission") is True
+
+        assert outcome == "reattached"
+        sandbox = mgr._sandboxes.get("test-mission")
+        assert sandbox is not None
+        assert sandbox._container_id == "abc123def456"
+
+    def test_container_recover_returns_dead_when_gone(self):
+        mgr = _make_manager()
+        with patch("backend.sandbox.container_sandbox.ContainerSandbox.is_container_alive", return_value=False):
+            outcome = mgr.recover("test-mission", subprocess_pid=None, container_id="abc123def456")
+
+        assert outcome == "dead"
+        assert "test-mission" not in mgr._sandboxes
+
 
 # ── SandboxManager.recover — remote_pid (SSH/dpo/grpo) ────────────────────────
 
@@ -84,6 +107,23 @@ class TestRecoverRemotePid:
         with patch("backend.sandbox.manager.settings.sandbox_host", ""):
             outcome = mgr.recover("test-mission", subprocess_pid=None, container_id=None, remote_pid=14516)
         assert outcome == "dead"
+
+    def test_reattach_syncs_tail_offset_to_current_remote_log_size(self):
+        """Reattaching mid-run must not re-tail the entire historical remote
+        log as if it were new output — that would re-emit every already-seen
+        pass_rate/loss event in one burst. The tail offset must be seeded to
+        the remote log's current size before any tail_new_output() call."""
+        mgr = _make_manager()
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.sandbox.manager.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(stdout="alive\n"),    # kill -0 liveness check
+                MagicMock(stdout="4096\n"),     # wc -c remote log size
+            ]
+            mgr.recover("test-mission", subprocess_pid=None, container_id=None, remote_pid=14516)
+
+        sandbox = mgr._sandboxes.get("test-mission")
+        assert sandbox._tail_offset == 4096
 
     def test_reattached_sandbox_terminate_kills_the_real_remote_pid(self):
         """Confirms the reattached SSHSandbox's terminate() targets the actual

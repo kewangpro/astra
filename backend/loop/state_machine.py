@@ -102,8 +102,19 @@ class LoopStateMachine:
         self._manifest_evaluator = ManifestEvaluator()
         self._preflight = PreflightChecker()
 
-    async def run(self, mission_id: str) -> None:
-        """Entry point: runs the full autonomous loop for a mission."""
+    async def run(self, mission_id: str, resume_existing_sandbox: bool = False) -> None:
+        """Entry point: runs the full autonomous loop for a mission.
+
+        resume_existing_sandbox: set by boot-time state recovery for an
+        SSH-backed (dpo/grpo) mission whose remote training process is still
+        alive (see state_recovery.py / SandboxManager.recover()). Skips
+        planning, code generation, and launch for the first iteration only —
+        reattaches to the already-running sandbox and resumes polling it in
+        place, instead of killing it and relaunching from checkpoint like a
+        normal restart would. Requires mission.current_plan and remote_pid to
+        already be set (guaranteed: both are persisted before the original
+        launch that's now being reattached to).
+        """
         mission = await self._load_mission(mission_id)
         if not mission:
             logger.error("LoopStateMachine: mission %s not found", mission_id)
@@ -185,8 +196,15 @@ class LoopStateMachine:
         # skip_replan_from_db: set on startup when restarting mid-pivot — load saved plan from DB.
         # skip_replan_in_memory: set after every in-loop pivot — plan already updated in memory.
         # Only one of these can be True at any time.
-        skip_replan_from_db = current_iteration > 0 and mission.current_plan is not None
+        skip_replan_from_db = mission.current_plan is not None and (
+            current_iteration > 0 or resume_existing_sandbox
+        )
         skip_replan_in_memory = False
+        # _skip_launch: only True for the first iteration when reattaching to an
+        # already-running sandbox — consumed (set False) right after that
+        # iteration's sandboxing step, so any subsequent retry/pivot within this
+        # same run() call launches normally.
+        _skip_launch = resume_existing_sandbox
         if skip_replan_from_db:
             logger.info(
                 "LoopStateMachine: resuming from saved plan at iter=%d for mission=%s",
@@ -299,8 +317,9 @@ class LoopStateMachine:
                 await emit_status(mission_id, "Training script ready", event_type="success")
                 error_history: list[str] = []   # accumulated errors for this script
 
-                # EXECUTE_CODE approval gate (supervised mode)
-                if mission.autonomy_mode == "supervised":
+                # EXECUTE_CODE approval gate (supervised mode) — already approved
+                # when the sandbox we're reattaching to was originally launched.
+                if not _skip_launch and mission.autonomy_mode == "supervised":
                     await emit_status(mission_id, "Awaiting approval to execute script", event_type="warn")
                     approved, is_auto = await self._request_approval(
                         mission_id, GateType.EXECUTE_CODE,
@@ -315,34 +334,44 @@ class LoopStateMachine:
                     await emit_status(mission_id, f"Execution approved: {approval_note}", event_type="success")
 
                 # ── SANDBOXING ────────────────────────────────────────────
-                self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
-                await emit_status(mission_id, "Launching training sandbox…", event_type="info")
                 log_path = self._sandbox.get_log_path(mission_id)
                 log_offset = os.path.getsize(log_path) if os.path.isfile(log_path) else 0
                 tel_path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
                 tel_offset = os.path.getsize(tel_path) if os.path.isfile(tel_path) else 0
                 _mission_task_type = plan.get("task_type")
-                _remote_ckpt_dir = (
-                    finetune_checkpoint_dir(_mission_task_type, plan, mission_id)
-                    if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
-                    else None
-                )
-                pid, container_id = self._sandbox.launch(
-                    mission_id, script_path,
-                    env_vars={"ASTRA_MISSION_ID": mission_id},
-                    memory_limit_gb=plan.get("sandbox_memory_gb", 8.0),
-                    task_type=_mission_task_type,
-                    remote_checkpoint_dir=_remote_ckpt_dir,
-                )
-                _remote_pid_for_save = None
-                if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
-                    _sandbox_id_str = self._sandbox.get_sandbox_id(mission_id)
-                    _remote_pid_for_save = int(_sandbox_id_str) if _sandbox_id_str else None
-                    _sandbox_msg = f"host={settings.sandbox_host} remote_pid={_sandbox_id_str}"
+                if _skip_launch:
+                    # Sandbox is already running (reattached by SandboxManager.recover()
+                    # during boot-time state recovery) — don't launch a new one.
+                    await emit_status(
+                        mission_id, "Reattached to running sandbox after service restart",
+                        event_type="info",
+                        value=f"sandbox_id={self._sandbox.get_sandbox_id(mission_id)}",
+                    )
+                    _skip_launch = False
                 else:
-                    _sandbox_msg = f"pid={pid}"
-                await self._save_sandbox_ids(mission_id, pid, container_id, remote_pid=_remote_pid_for_save)
-                await emit_status(mission_id, "Sandbox running", event_type="info", value=_sandbox_msg)
+                    self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
+                    await emit_status(mission_id, "Launching training sandbox…", event_type="info")
+                    _remote_ckpt_dir = (
+                        finetune_checkpoint_dir(_mission_task_type, plan, mission_id)
+                        if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
+                        else None
+                    )
+                    pid, container_id = self._sandbox.launch(
+                        mission_id, script_path,
+                        env_vars={"ASTRA_MISSION_ID": mission_id},
+                        memory_limit_gb=plan.get("sandbox_memory_gb", 8.0),
+                        task_type=_mission_task_type,
+                        remote_checkpoint_dir=_remote_ckpt_dir,
+                    )
+                    _remote_pid_for_save = None
+                    if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                        _sandbox_id_str = self._sandbox.get_sandbox_id(mission_id)
+                        _remote_pid_for_save = int(_sandbox_id_str) if _sandbox_id_str else None
+                        _sandbox_msg = f"host={settings.sandbox_host} remote_pid={_sandbox_id_str}"
+                    else:
+                        _sandbox_msg = f"pid={pid}"
+                    await self._save_sandbox_ids(mission_id, pid, container_id, remote_pid=_remote_pid_for_save)
+                    await emit_status(mission_id, "Sandbox running", event_type="info", value=_sandbox_msg)
 
                 # ── EXECUTING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)

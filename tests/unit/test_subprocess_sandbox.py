@@ -89,6 +89,21 @@ class TestIsAlive:
         sandbox._process = mock_process
         assert sandbox.is_alive() is False
 
+    def test_true_via_reattach_pid_when_process_exists(self):
+        """No Popen handle after a restart — must check by pid instead of
+        defaulting to False, so a reattached still-running process is
+        correctly detected as alive (not silently treated as dead)."""
+        sandbox = self._sandbox()
+        sandbox._reattach_pid = 99999
+        with patch("backend.sandbox.subprocess_sandbox.psutil.pid_exists", return_value=True):
+            assert sandbox.is_alive() is True
+
+    def test_false_via_reattach_pid_when_process_gone(self):
+        sandbox = self._sandbox()
+        sandbox._reattach_pid = 99999
+        with patch("backend.sandbox.subprocess_sandbox.psutil.pid_exists", return_value=False):
+            assert sandbox.is_alive() is False
+
 
 # ── SubprocessSandbox.get_sandbox_id ─────────────────────────────────────────
 

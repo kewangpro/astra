@@ -140,6 +140,40 @@ class _AlwaysErrorSandbox:
         pass
 
 
+class _ReattachedSandbox:
+    """Simulates a sandbox already reattached by SandboxManager.recover() before
+    run() is even called (as boot-time state recovery now does for a still-alive
+    sandbox) — is_alive() starts True and flips False once, as if the process
+    finished naturally while being polled. launch() must never be called in
+    this scenario; asserting via a flag instead of raising so the failure shows
+    up as a clean assertion rather than an opaque exception deep in the loop."""
+    def __init__(self, tmp_dir: str, log_content: str = "Training complete."):
+        self._tmp_dir = tmp_dir
+        self._log_content = log_content
+        self.launch_called = False
+        self._alive_calls = 0
+
+    def launch(self, mission_id, script_path, **kwargs):
+        self.launch_called = True
+        return (1234, None)
+
+    def is_alive(self, mission_id):
+        self._alive_calls += 1
+        return self._alive_calls == 1
+
+    def get_log_path(self, mission_id):
+        log_path = os.path.join(self._tmp_dir, f"{mission_id}.log")
+        with open(log_path, "w") as f:
+            f.write(self._log_content)
+        return log_path
+
+    def get_sandbox_id(self, mission_id):
+        return "99999"
+
+    def terminate(self, mission_id):
+        pass
+
+
 class _LaunchRaisesSandbox:
     """Simulates a launch()-time failure (e.g. the mkdir-over-SSH exit-255 bug),
     while a sandbox from a prior iteration is still tracked as alive. Used to
@@ -309,6 +343,54 @@ async def test_launch_failure_terminates_sandbox_before_marking_failed(seeded_mi
     await db_session.refresh(seeded_mission)
     assert seeded_mission.status == MissionStatus.FAILED.value
     assert sandbox.terminate_calls == [seeded_mission.id]
+
+
+@pytest.mark.asyncio
+async def test_resume_existing_sandbox_skips_launch_and_reuses_saved_plan(db_session, patch_db, monkeypatch):
+    """resume_existing_sandbox=True (set by boot-time state recovery when a
+    sandbox is still alive) must not call sandbox.launch() at all — it
+    reattaches to the already-running process (registered by
+    SandboxManager.recover() before run() was even called) and just resumes
+    polling it, reusing the plan already persisted in current_plan."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="Train a Snake RL agent",
+        task_type="rl",
+        target_metric={"mean_reward": 100.0},
+        autonomy_mode="supervised",   # would normally require an approval gate
+        status=MissionStatus.RUNNING.value,
+        current_iteration=1,
+        current_plan={
+            "task_type": "rl", "algorithm": "PPO",
+            "hyperparameters": {"learning_rate": 3e-4, "gamma": 0.99},
+            "sandbox_memory_gb": 4.0,
+        },
+        subprocess_pid=99999,
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sandbox = _ReattachedSandbox(tmp)
+        sm = _build_sm(
+            _MockLeadAgent(),
+            _MockCodeGen(tmp),
+            _MockHealer(tmp),
+            sandbox,
+            _SequenceEvaluator([{"mean_reward": 200.0}]),
+        )
+        # supervised mode would normally require a real approval-gate wait;
+        # asserting it's never called both proves the gate is skipped on
+        # resume and avoids ever actually blocking on one in this test.
+        with patch.object(LoopStateMachine, "_request_approval", new=AsyncMock()) as mock_approval:
+            await sm.run(mission.id, resume_existing_sandbox=True)
+        mock_approval.assert_not_called()
+
+    assert sandbox.launch_called is False
+    await db_session.refresh(mission)
+    assert mission.status == MissionStatus.COMPLETED.value
 
 
 @pytest.mark.asyncio

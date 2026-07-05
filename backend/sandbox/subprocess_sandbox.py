@@ -109,7 +109,9 @@ class SubprocessSandbox(BaseSandbox):
     def is_alive(self) -> bool:
         if self._process is not None:
             return self._process.poll() is None
-        # Re-attach path: check by PID stored in Mission Store
+        # Re-attach path: no Popen handle after a restart — check by PID instead.
+        if self._reattach_pid is not None:
+            return psutil.pid_exists(self._reattach_pid)
         return False
 
     def is_pid_alive(self, pid: int) -> bool:

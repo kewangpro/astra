@@ -88,13 +88,16 @@ class ContainerSandbox(BaseSandbox):
         logger.info("ContainerSandbox stopped: mission=%s", self.config.mission_id)
 
     def is_alive(self) -> bool:
-        if not self._container:
-            return False
-        try:
-            self._container.reload()
-            return self._container.status == "running"
-        except Exception:
-            return False
+        if self._container:
+            try:
+                self._container.reload()
+                return self._container.status == "running"
+            except Exception:
+                return False
+        # Re-attach path: no live container handle after a restart — check by ID instead.
+        if self._container_id is not None:
+            return self.is_container_alive(self._container_id)
+        return False
 
     def is_container_alive(self, container_id: str) -> bool:
         """Check a container by ID (used during recovery)."""

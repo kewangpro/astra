@@ -17,15 +17,23 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("ASTRA backend starting (env=%s, autonomy=%s)", settings.env, settings.autonomy_mode)
     await init_db()
-    recovered_ids = await recover_interrupted_missions()
-    if recovered_ids:
-        logger.info("State recovery: acted on %d mission(s).", len(recovered_ids))
-        for mission_id in recovered_ids:
+    recovered = await recover_interrupted_missions()
+    restart_ids, resume_ids = recovered["restart"], recovered["resume"]
+    if restart_ids or resume_ids:
+        logger.info("State recovery: acted on %d mission(s) (%d restart, %d resume).",
+                    len(restart_ids) + len(resume_ids), len(restart_ids), len(resume_ids))
+        for mission_id in restart_ids:
             loop = agent._build_loop()
             task = asyncio.create_task(loop.run(mission_id))
             agent._running_tasks[mission_id] = task
             task.add_done_callback(lambda t, mid=mission_id: agent._running_tasks.pop(mid, None))
             logger.info("State recovery: auto-restarted loop for mission=%s", mission_id)
+        for mission_id in resume_ids:
+            loop = agent._build_loop()
+            task = asyncio.create_task(loop.run(mission_id, resume_existing_sandbox=True))
+            agent._running_tasks[mission_id] = task
+            task.add_done_callback(lambda t, mid=mission_id: agent._running_tasks.pop(mid, None))
+            logger.info("State recovery: reattached loop for mission=%s", mission_id)
     yield
     # Cancel all running mission loops so uvicorn can reload without blocking
     tasks = list(agent._running_tasks.values())

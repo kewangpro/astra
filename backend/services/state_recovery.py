@@ -17,14 +17,15 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-async def recover_interrupted_missions() -> list:
+async def recover_interrupted_missions() -> dict:
     """
     Called once on application startup. For each RUNNING/PAUSED mission:
-      - If sandbox is still alive → terminate it and reset to PENDING so the
-        loop can restart cleanly from the last saved checkpoint.
-      - If sandbox is gone        → reset to PENDING; loop re-launches from checkpoint.
+      - Sandbox still running → reattach and resume polling it in place;
+        mission keeps its status/remote_pid/subprocess_pid untouched.
+      - Sandbox gone → reset to PENDING; loop re-launches from checkpoint.
 
-    Returns the list of mission IDs that need their loop restarted.
+    Returns {"restart": [...], "resume": [...]} — mission IDs needing a fresh
+    `loop.run()` vs a `loop.run(resume_existing_sandbox=True)` reattach.
     """
     from backend.sandbox.manager import sandbox_manager   # late import to avoid circular dep
 
@@ -44,10 +45,10 @@ async def recover_interrupted_missions() -> list:
 
             if not missions:
                 logger.info("State recovery: no interrupted missions found.")
-                return []
+                return {"restart": [], "resume": []}
 
-            reattached_ids = []
-            reset_ids = []
+            resume_ids = []   # still alive — reattach in place, don't touch
+            reset_ids = []    # sandbox gone — restart fresh
 
             for mission in missions:
                 outcome = sandbox_manager.recover(
@@ -57,22 +58,14 @@ async def recover_interrupted_missions() -> list:
                     remote_pid=mission.remote_pid,
                 )
                 if outcome == "reattached":
-                    # Terminate the still-running subprocess so the loop can
-                    # restart it cleanly from the last checkpoint. For SSH
-                    # missions this sends a graceful kill -TERM/-9 sequence to
-                    # the real remote training process (see SSHSandbox.terminate),
-                    # not just a local no-op — the wrapper os.execv's into it,
-                    # so remote_pid IS the training process, not an orphan-prone parent.
-                    sandbox_manager.terminate(mission.id)
-                    reattached_ids.append(mission.id)
+                    resume_ids.append(mission.id)
                 else:
                     reset_ids.append(mission.id)
 
-            all_ids = reattached_ids + reset_ids
-            if all_ids:
+            if reset_ids:
                 await session.execute(
                     update(Mission)
-                    .where(Mission.id.in_(all_ids))
+                    .where(Mission.id.in_(reset_ids))
                     .values(
                         status=MissionStatus.PENDING.value,
                         container_id=None,
@@ -81,10 +74,10 @@ async def recover_interrupted_missions() -> list:
                     )
                 )
 
-        if reattached_ids:
+        if resume_ids:
             logger.info(
-                "State recovery: %d mission(s) sandbox terminated + reset to PENDING: %s",
-                len(reattached_ids), reattached_ids,
+                "State recovery: %d mission(s) reattached and resuming in place: %s",
+                len(resume_ids), resume_ids,
             )
         if reset_ids:
             logger.info(
@@ -92,4 +85,4 @@ async def recover_interrupted_missions() -> list:
                 len(reset_ids), reset_ids,
             )
 
-        return all_ids
+        return {"restart": reset_ids, "resume": resume_ids}
