@@ -10,7 +10,6 @@ Wraps the inference provider with:
 from __future__ import annotations
 
 import json
-import platform
 from typing import Optional
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
@@ -58,7 +57,15 @@ You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaue
 Given the current metrics, training history, and escalation level, propose a strategic pivot.
 Respond with valid JSON.
 
-Escalation levels — follow the level provided in the user message:
+For dpo/grpo tasks (Ensemble routing model fine-tuning): do NOT propose "hyperparameters" at
+all — leave it as an empty object {}, at every escalation level. These are recipe-locked LoRA/
+optimizer settings tuned against a specific warm-start adapter (ensemble_dpo_v1.yaml /
+ensemble_grpo_v1.yaml), not the kind of RL hyperparameters described below. The PPO/DQN ranges
+in this prompt do not apply to dpo/grpo — a generic learning_rate here would be catastrophically
+wrong for LoRA DPO fine-tuning. If a dpo/grpo run is plateaued, propose a "reason" describing
+what to try differently in the training data/process itself; leave hyperparameters untouched.
+
+Escalation levels — follow the level provided in the user message (RL task types only):
   Level 0 (first plateau): tune hyperparameters only. Small changes — adjust learning_rate,
     batch_size, gamma, and other params valid for the current algorithm. Keep the same algorithm
     and architecture. IMPORTANT: only propose keys listed under the current algorithm's valid

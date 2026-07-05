@@ -1085,6 +1085,26 @@ def test_resolve_hyperparams_dpo_uses_recipe_beta():
     assert result["beta"] == 0.1
 
 
+def test_resolve_hyperparams_dpo_ignores_plan_override():
+    """The recipe must be authoritative for dpo — unlike every other task
+    type, a plan-provided hyperparameter must NOT override it. Confirmed via
+    a real incident: a pivot proposed learning_rate=0.001 (a plausible RL-style
+    value) which silently overrode the recipe's 5e-7, collapsing a DPO run's
+    pass_rate from a 62% baseline to 0% within 50 steps. PIVOT_SYSTEM doesn't
+    document dpo/grpo hyperparameter ranges at all, so this must be a hard
+    code-level guarantee, not just a prompt-level convention."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {"learning_rate": 0.001, "num_layers": 5})
+    assert result["learning_rate"] == 5e-7
+    assert result["num_layers"] == 8
+
+
+def test_resolve_hyperparams_grpo_ignores_plan_override():
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {"learning_rate": 0.001})
+    assert result["learning_rate"] != 0.001
+
+
 # ── grpo template ─────────────────────────────────────────────────────────────
 
 def test_build_user_prompt_grpo_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):

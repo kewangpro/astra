@@ -585,6 +585,15 @@ def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
 def _resolve_hyperparams(env_id: str, plan_hp: dict, algorithm: str = "") -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
+    if env_id in ("dpo", "grpo"):
+        # Recipe is authoritative, full stop — no plan/pivot override allowed.
+        # These are LoRA/optimizer settings tuned against a specific warm-start
+        # adapter; PIVOT_SYSTEM's hyperparameter guidance is RL-oriented (PPO/DQN
+        # ranges) and doesn't know these are recipe-locked. Confirmed via a real
+        # incident: a pivot's generic learning_rate=0.001 silently overrode the
+        # recipe's 5e-7 through the old setdefault-only merge below, collapsing
+        # a DPO run's pass_rate from a 62% baseline to 0% within 50 steps.
+        return dict(recipe_hp)
     hp = dict(plan_hp)
     for k, v in recipe_hp.items():
         hp.setdefault(k, v)
