@@ -17,7 +17,7 @@ LOG_DIR       := logs
 run:
 	@mkdir -p $(LOG_DIR)
 	@printf "\n$(BOLD)$(CYAN)Starting ASTRA services...$(RESET)\n"
-	@$(VENV)/uvicorn backend.main:app --host 0.0.0.0 --port $(PORT) --reload --reload-dir backend \
+	@$(VENV)/uvicorn backend.main:app --host 0.0.0.0 --port $(PORT) \
 		> $(LOG_DIR)/backend.log 2>&1 & echo $$! > $(LOG_DIR)/backend.pid
 	@printf "$(GREEN)→ Backend$(RESET)   (http://localhost:$(PORT))  tail -f $(LOG_DIR)/backend.log\n"
 	@cd frontend && npm run dev > ../$(LOG_DIR)/frontend.log 2>&1 & echo $$! > $(LOG_DIR)/frontend.pid

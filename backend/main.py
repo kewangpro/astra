@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
             task.add_done_callback(lambda t, mid=mission_id: agent._running_tasks.pop(mid, None))
             logger.info("State recovery: reattached loop for mission=%s", mission_id)
     yield
-    # Cancel all running mission loops so uvicorn can reload without blocking
+    # Cancel all running mission loops so shutdown doesn't block indefinitely
     tasks = list(agent._running_tasks.values())
     if tasks:
         logger.info("ASTRA backend shutting down — cancelling %d mission task(s).", len(tasks))
