@@ -593,22 +593,42 @@ class LoopStateMachine:
                     # Detect if the user's goal explicitly names an algorithm.
                     # If so, never switch algorithms — remap level 2 to reward shaping.
                     algo_locked = self._is_algorithm_locked(mission.goal, current_algo)
-                    pivot = await self._agent.propose_pivot(
-                        current_metrics,
-                        pivot_engine.history_snapshot(),
-                        escalation_level=escalation,
-                        current_algorithm=current_algo,
-                        algorithm_locked=algo_locked,
-                        current_policy_kwargs=plan.get("hyperparameters", {}).get("policy_kwargs"),
-                        current_hyperparameters={
-                            k: v for k, v in plan.get("hyperparameters", {}).items()
-                            if k != "policy_kwargs"
-                        } or None,
-                        current_env_kwargs=plan.get("env_kwargs") or None,
-                        best_policy_kwargs=pivot_engine.best_policy_kwargs(),
-                        best_metric_value=pivot_engine.best_metric_value(),
-                        best_metric_iteration=pivot_engine.best_metric_iteration(),
-                    )
+                    try:
+                        pivot = await self._agent.propose_pivot(
+                            current_metrics,
+                            pivot_engine.history_snapshot(),
+                            escalation_level=escalation,
+                            current_algorithm=current_algo,
+                            algorithm_locked=algo_locked,
+                            current_policy_kwargs=plan.get("hyperparameters", {}).get("policy_kwargs"),
+                            current_hyperparameters={
+                                k: v for k, v in plan.get("hyperparameters", {}).items()
+                                if k != "policy_kwargs"
+                            } or None,
+                            current_env_kwargs=plan.get("env_kwargs") or None,
+                            best_policy_kwargs=pivot_engine.best_policy_kwargs(),
+                            best_metric_value=pivot_engine.best_metric_value(),
+                            best_metric_iteration=pivot_engine.best_metric_iteration(),
+                        )
+                    except Exception as exc:
+                        # A malformed LLM response (e.g. invalid JSON that survived
+                        # _generate_structured's own retries) must not kill the whole
+                        # mission — confirmed via a real incident where this crashed
+                        # a 370-iteration run. Fall back to a no-op pivot dict, which
+                        # flows through the existing "no-op pivot detected" branch
+                        # below exactly like a real pivot proposing zero changes
+                        # would: escalates the pivot count and continues training
+                        # with the current plan, instead of aborting.
+                        logger.error(
+                            "LoopStateMachine: propose_pivot failed for mission=%s (escalation=%d): %s — "
+                            "treating as no-op pivot this cycle",
+                            mission_id, escalation, exc,
+                        )
+                        await emit_status(
+                            mission_id, "Pivot proposal failed — continuing with current plan",
+                            event_type="warn", value=str(exc)[:200], iteration=current_iteration,
+                        )
+                        pivot = {"reason": "pivot proposal failed", "adjustments": {}}
                     pivot_engine.record_pivot()
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
                     pivot = self._normalize_pivot(pivot)

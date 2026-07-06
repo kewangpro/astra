@@ -317,7 +317,10 @@ class LeadAgent:
                         Message(role="user", content=f"Invalid JSON: {e}. Please return valid JSON only, no markdown."),
                     ]
                 else:
-                    logger.error("LeadAgent: JSON parse failed after %d retries", retries)
+                    logger.error(
+                        "LeadAgent: JSON parse failed after %d retries. Raw response (truncated): %r",
+                        retries, raw[:2000],
+                    )
                     raise
 
     def flush_iteration_context(self) -> None:

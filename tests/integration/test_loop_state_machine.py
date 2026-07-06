@@ -529,6 +529,35 @@ async def test_plateau_triggers_pivot_then_goal_met(seeded_mission, db_session, 
 
 
 @pytest.mark.asyncio
+async def test_propose_pivot_failure_does_not_crash_mission(seeded_mission, db_session, patch_db, monkeypatch):
+    """A malformed LLM pivot response (e.g. JSON parse failure surviving
+    _generate_structured's own retries) must not kill the mission — confirmed
+    via a real incident where this crashed a 370-iteration run. It must fall
+    back to a no-op pivot (escalate and continue with the current plan), not
+    propagate up to the generic exception handler and mark the mission FAILED."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        evaluator = _SequenceEvaluator([
+            {"mean_reward": 10.0},   # iter 0 — below target, no pivot yet
+            {"mean_reward": 10.0},   # iter 1 — still stalled
+            {"mean_reward": 10.0},   # iter 2 — plateau → pivot attempted, fails
+            {"mean_reward": 200.0},  # iter 3 — goal met despite the failed pivot
+        ])
+        agent = _MockLeadAgent()
+        async def _broken_propose_pivot(*args, **kwargs):
+            raise ValueError("Expecting ',' delimiter: line 30 column 202 (char 989)")
+        agent.propose_pivot = _broken_propose_pivot
+
+        sm = _build_sm(agent, _MockCodeGen(tmp), _MockHealer(tmp), _MockSandbox(tmp), evaluator)
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(seeded_mission.id)
+
+    await db_session.refresh(seeded_mission)
+    assert seeded_mission.status == MissionStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
 async def test_manifest_reconciled_when_plan_task_type_differs(db_session, patch_db, monkeypatch):
     """Mission created with task_type='rl' (UI default) but plan identifies 'ml'.
     Manifest artifact pattern should be reconciled to checkpoints/model.* after iter 0."""
