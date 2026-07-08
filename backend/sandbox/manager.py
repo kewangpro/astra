@@ -246,17 +246,8 @@ class SandboxManager:
                     mission_id, remote_pid,
                 )
                 return "dead"
-            result = subprocess.run(
-                # -4: force IPv4 — see ssh_sandbox.py's module docstring for why.
-                ["ssh", "-4", settings.sandbox_host,
-                 f"kill -0 {remote_pid} 2>/dev/null && echo alive || echo dead"],
-                capture_output=True, text=True,
-            )
-            if result.stdout.strip() == "alive":
-                logger.info(
-                    "Recovery: remote pid=%d still alive on %s for mission=%s — reattaching",
-                    remote_pid, settings.sandbox_host, mission_id,
-                )
+
+            def _reattach() -> str:
                 data_dir = self._mission_data_dir(mission_id)
                 config = SandboxConfig(mission_id=mission_id, script_path="", data_dir=data_dir)
                 sandbox = SSHSandbox(config, host=settings.sandbox_host, remote_data_root=settings.sandbox_data_path)
@@ -265,6 +256,35 @@ class SandboxManager:
                 sandbox.sync_tail_offset_to_current()
                 self._sandboxes[mission_id] = sandbox
                 return "reattached"
+
+            try:
+                result = subprocess.run(
+                    # -4: force IPv4 — see ssh_sandbox.py's module docstring for why.
+                    # timeout: this runs at boot before the server accepts any
+                    # requests — an unbounded hang here would block startup
+                    # entirely, not just one mission.
+                    ["ssh", "-4", settings.sandbox_host,
+                     f"kill -0 {remote_pid} 2>/dev/null && echo alive || echo dead"],
+                    capture_output=True, text=True, timeout=15,
+                )
+            except subprocess.TimeoutExpired:
+                # Can't confirm either way. Fail safe like SSHSandbox.is_alive()
+                # does: treating this as "dead" would clear remote_pid and reset
+                # to PENDING, orphaning a possibly-still-running process exactly
+                # like the bug this whole reattach mechanism exists to prevent.
+                logger.warning(
+                    "Recovery: timed out checking remote pid=%d on %s for mission=%s "
+                    "— assuming still alive rather than risking an orphan",
+                    remote_pid, settings.sandbox_host, mission_id,
+                )
+                return _reattach()
+
+            if result.stdout.strip() == "alive":
+                logger.info(
+                    "Recovery: remote pid=%d still alive on %s for mission=%s — reattaching",
+                    remote_pid, settings.sandbox_host, mission_id,
+                )
+                return _reattach()
             else:
                 logger.warning(
                     "Recovery: remote pid=%d gone on %s for mission=%s",

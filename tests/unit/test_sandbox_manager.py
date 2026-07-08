@@ -1,6 +1,7 @@
 """Unit tests for SandboxManager.recover() and launch() lifecycle fixes."""
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -139,6 +140,21 @@ class TestRecoverRemotePid:
 
         kill_call = mock_ssh_run.call_args_list[0].args[0]
         assert "kill -TERM 14516" in kill_call[3]
+
+    def test_reattaches_when_liveness_check_times_out(self):
+        """A hung liveness check during boot-time recovery must fail safe the
+        same way an unreachable host does: reattach rather than risk declaring
+        a genuinely-running remote training process dead and orphaning it."""
+        mgr = _make_manager()
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.sandbox.manager.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+            outcome = mgr.recover("test-mission", subprocess_pid=None, container_id=None, remote_pid=14516)
+
+        assert outcome == "reattached"
+        sandbox = mgr._sandboxes.get("test-mission")
+        assert sandbox is not None
+        assert sandbox._remote_pid == 14516
 
 
 # ── SandboxManager.launch — kills existing sandbox first ─────────────────────
