@@ -138,7 +138,7 @@ class TestRecoverRemotePid:
             mgr.terminate("test-mission")
 
         kill_call = mock_ssh_run.call_args_list[0].args[0]
-        assert "kill -TERM 14516" in kill_call[3]
+        assert "kill -TERM 14516" in kill_call[2]
 
 
 # ── SandboxManager.launch — kills existing sandbox first ─────────────────────
@@ -151,7 +151,6 @@ class TestLaunchKillsExisting:
         # Plant a fake live sandbox
         stale = MagicMock(spec=SubprocessSandbox)
         stale.is_alive.return_value = True
-        stale.status = SandboxStatus.STOPPED  # terminate() succeeded
         mgr._sandboxes["test-mission"] = stale
 
         # Mock the actual launch so we don't spawn a real process
@@ -186,65 +185,6 @@ class TestLaunchKillsExisting:
             mgr.launch("test-mission", str(script))
 
         stale.terminate.assert_not_called()
-
-    def test_launch_aborts_and_restores_tracking_when_termination_unconfirmed(self, tmp_path):
-        """If terminate() can't confirm the old sandbox actually died (e.g. the
-        SSH host was unreachable — SSHSandbox.terminate() then leaves status
-        untouched, not STOPPED), launch() must not silently discard tracking
-        and proceed anyway — that would risk two processes running for the
-        same mission, and orphan the untracked one exactly like a real
-        incident where SandboxManager.terminate() discarding regardless of
-        outcome lost track of a still-possibly-alive remote_pid."""
-        mgr = _make_manager()
-
-        stale = MagicMock(spec=SubprocessSandbox)
-        stale.is_alive.return_value = True
-        stale.status = SandboxStatus.RUNNING  # terminate() could not confirm death
-        mgr._sandboxes["test-mission"] = stale
-
-        script = tmp_path / "train.py"
-        script.write_text("pass")
-
-        with patch("backend.sandbox.manager.SubprocessSandbox"), \
-             patch("backend.sandbox.manager.os.makedirs"):
-            with pytest.raises(RuntimeError, match="Could not confirm termination"):
-                mgr.launch("test-mission", str(script))
-
-        stale.terminate.assert_called_once()
-        # Restored, not orphaned — a future launch/reattach can still find it.
-        assert mgr._sandboxes["test-mission"] is stale
-
-
-# ── SandboxManager.terminate ──────────────────────────────────────────────────
-
-class TestManagerTerminate:
-    def test_terminate_discards_tracking_when_confirmed_stopped(self):
-        mgr = _make_manager()
-        sandbox = MagicMock(spec=SubprocessSandbox)
-        sandbox.status = SandboxStatus.STOPPED
-        mgr._sandboxes["test-mission"] = sandbox
-
-        mgr.terminate("test-mission")
-
-        sandbox.terminate.assert_called_once()
-        assert "test-mission" not in mgr._sandboxes
-
-    def test_terminate_keeps_tracking_when_kill_unconfirmed(self):
-        """A real incident: SSHSandbox.terminate() couldn't reach the host
-        (network blip), logged a warning, and left status untouched instead
-        of claiming STOPPED. SandboxManager.terminate() previously discarded
-        the sandbox from tracking regardless, orphaning a possibly-still-alive
-        remote_pid — the same class of bug as an earlier is_alive() gap, just
-        one layer up the call stack. Must now preserve tracking instead."""
-        mgr = _make_manager()
-        sandbox = MagicMock(spec=SubprocessSandbox)
-        sandbox.status = SandboxStatus.RUNNING  # kill could not be confirmed
-        mgr._sandboxes["test-mission"] = sandbox
-
-        mgr.terminate("test-mission")
-
-        sandbox.terminate.assert_called_once()
-        assert mgr._sandboxes["test-mission"] is sandbox
 
 
 # ── SandboxManager.launch — fine-tune task types pinned to Mac Mini ──────────

@@ -151,18 +151,6 @@ class SandboxManager:
         if existing and existing.is_alive():
             logger.warning("SandboxManager: terminating stale sandbox for mission=%s before new launch", mission_id)
             existing.terminate()
-            if existing.status != SandboxStatus.STOPPED:
-                # Termination couldn't be confirmed (e.g. SSH host unreachable
-                # — terminate() logs its own warning and leaves status
-                # untouched in that case). Restore tracking instead of
-                # silently discarding a possibly-still-running process, and
-                # abort this launch rather than risking a second process for
-                # the same mission running alongside the first.
-                self._sandboxes[mission_id] = existing
-                raise RuntimeError(
-                    f"Could not confirm termination of existing sandbox for mission={mission_id} "
-                    f"(status={existing.status}) — aborting new launch to avoid a duplicate process."
-                )
 
         sandbox.launch()
         self._sandboxes[mission_id] = sandbox
@@ -175,26 +163,7 @@ class SandboxManager:
         sandbox = self._sandboxes.get(mission_id)
         if sandbox:
             sandbox.terminate()
-            if sandbox.status == SandboxStatus.STOPPED:
-                del self._sandboxes[mission_id]
-            else:
-                # terminate() couldn't confirm the kill actually reached the
-                # process (e.g. SSHSandbox's own terminate() logs a warning
-                # and leaves status/remote_pid untouched when the host is
-                # unreachable) — status stays whatever it was before, not
-                # STOPPED. Discarding tracking here regardless would silently
-                # orphan a possibly-still-running process exactly like the
-                # incident this class of fix targets elsewhere: the sandbox
-                # itself was honest that it couldn't confirm death, but
-                # dropping it from _sandboxes anyway would throw that signal
-                # away. Keep it tracked so the next launch()'s stale-sandbox
-                # check (or a future reattach) gets another chance at it
-                # instead of losing it forever.
-                logger.warning(
-                    "SandboxManager: terminate() for mission=%s could not be confirmed "
-                    "(status=%s) — keeping it tracked instead of discarding.",
-                    mission_id, sandbox.status,
-                )
+            del self._sandboxes[mission_id]
         self._gpu_pool.release(mission_id)
 
     def is_alive(self, mission_id: str) -> bool:
@@ -247,8 +216,7 @@ class SandboxManager:
                 )
                 return "dead"
             result = subprocess.run(
-                # -4: force IPv4 — see ssh_sandbox.py's module docstring for why.
-                ["ssh", "-4", settings.sandbox_host,
+                ["ssh", settings.sandbox_host,
                  f"kill -0 {remote_pid} 2>/dev/null && echo alive || echo dead"],
                 capture_output=True, text=True,
             )
