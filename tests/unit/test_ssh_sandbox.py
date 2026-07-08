@@ -29,12 +29,13 @@ class TestLaunch:
 
         calls = mock_run.call_args_list
         mkdir_call = calls[0].args[0]
-        assert mkdir_call[:2] == ["ssh", "mac-mini.local"]
-        assert "mkdir -p" in mkdir_call[2]
+        assert mkdir_call[:3] == ["ssh", "-4", "mac-mini.local"]
+        assert "mkdir -p" in mkdir_call[3]
 
         scp_call = calls[1].args[0]
         assert scp_call[0] == "scp"
-        assert scp_call[1] == "/tmp/fake_train.py"
+        assert scp_call[1] == "-4"
+        assert scp_call[2] == "/tmp/fake_train.py"
 
     def test_launch_sets_remote_pid_and_status(self, tmp_path):
         sandbox = _sandbox(tmp_path)
@@ -96,7 +97,7 @@ class TestTerminate:
             sandbox.terminate()
 
         kill_call = mock_run.call_args_list[0].args[0]
-        remote_cmd = kill_call[2]
+        remote_cmd = kill_call[3]
         assert "kill -TERM 111" in remote_cmd
         assert "kill -9 111" in remote_cmd
         # TERM must be issued before the fallback KILL in the remote command string
@@ -189,7 +190,7 @@ class TestTailNewOutput:
         assert output == "Pass rate: 50.0% (10/20)\n"
         tail_call = mock_run.call_args_list[0].args[0]
         assert tail_call[0] == "ssh"
-        assert "tail -c +1" in tail_call[2]
+        assert "tail -c +1" in tail_call[3]
 
     def test_second_call_advances_offset(self, tmp_path):
         sandbox = _sandbox(tmp_path)
@@ -202,7 +203,7 @@ class TestTailNewOutput:
             sandbox.tail_new_output()
 
         tail_call = mock_run2.call_args_list[0].args[0]
-        assert "tail -c +11" in tail_call[2]   # 10 bytes consumed, 1-indexed next offset
+        assert "tail -c +11" in tail_call[3]   # 10 bytes consumed, 1-indexed next offset
 
     def test_returns_empty_string_when_nothing_new(self, tmp_path):
         sandbox = _sandbox(tmp_path)
@@ -222,10 +223,12 @@ class TestSyncBack:
 
         scp_call = mock_run.call_args_list[0].args[0]
         assert scp_call[0] == "scp"
+        assert scp_call[1] == "-4"
         rsync_call = mock_run.call_args_list[1].args[0]
         assert rsync_call[0] == "rsync"
         assert rsync_call[1] == "-az"
-        assert "test-mission/checkpoints/" in rsync_call[2]
+        assert rsync_call[2] == "-4"
+        assert "test-mission/checkpoints/" in rsync_call[3]
 
     def test_sync_back_uses_remote_checkpoint_dir_override(self, tmp_path):
         """dpo/grpo missions save under finetune_dir/adapters/, not the default
@@ -242,5 +245,5 @@ class TestSyncBack:
             sandbox._sync_back()
 
         rsync_call = mock_run.call_args_list[1].args[0]
-        assert "/Users/kewang/finetune/adapters/astra_test-mis/" in rsync_call[2]
-        assert "checkpoints" not in rsync_call[2]
+        assert "/Users/kewang/finetune/adapters/astra_test-mis/" in rsync_call[3]
+        assert "checkpoints" not in rsync_call[3]

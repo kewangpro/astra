@@ -1093,7 +1093,18 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **`_generate_structured()` logs the raw (truncated) LLM response on final parse failure** (`lead_agent.py`) — previously only the `JSONDecodeError` message was logged, with no way to see what the model actually produced. This incident could only be diagnosed down to "line 30 column ~200" without the raw text; future occurrences will have it.
 - [x] **1 new test** (`test_loop_state_machine.py`): `test_propose_pivot_failure_does_not_crash_mission` — `propose_pivot` raises on every call during a plateau; asserts the mission still reaches `COMPLETED` on a later iteration instead of `FAILED`.
 
-    Total: **710 tests** (696 unit + 14 integration).
+**Follow-up problem: `SandboxManager.terminate()` orphaned an unconfirmed kill.** A DPO mission (`7fd88324`) was marked `FAILED` after a `mkdir` over SSH failed during a fresh launch attempt — but the actual root cause was one step earlier. During an SSH connectivity blip, `asyncio.CancelledError` fired for the mission; the handler called `self._sandbox.terminate(mission_id)`, which reached `SSHSandbox.terminate()` — that correctly detected it couldn't reach the host and logged a warning without falsely claiming `STOPPED` (this phase's own fix, above, working as designed). But the *caller*, `SandboxManager.terminate()`, unconditionally deleted the sandbox from its in-memory `_sandboxes` tracking dict regardless of whether the kill was actually confirmed — throwing away the one signal (`sandbox.status != STOPPED`) that would have preserved it. The mission reset to `PENDING`, relaunched, and that new launch's own `mkdir` failed too (same network issue) — masking the real problem: `remote_pid` was silently dropped from tracking three log lines earlier, orphaned exactly like the incident that started this phase's work, just one layer deeper in the call stack.
+
+- [x] **`SandboxManager.terminate()` checks `sandbox.status` after calling `terminate()`** (`manager.py`) — only deletes from `_sandboxes` if it actually reached `STOPPED`; otherwise logs a warning and keeps it tracked, so a future `launch()` or reattach gets another chance at it instead of losing it silently.
+- [x] **`launch()`'s stale-sandbox eviction has the same gap, with a worse failure mode** (`manager.py`) — previously popped the existing sandbox, attempted `terminate()`, and proceeded to launch a *new* sandbox regardless of whether the old one was confirmed dead — risking two processes for the same mission if the old one was actually still alive. Now: if termination can't be confirmed, the existing sandbox is restored to tracking and the new launch is aborted (`RuntimeError`) rather than risking a duplicate.
+- [x] **3 new tests** (`test_sandbox_manager.py`): `TestManagerTerminate` — confirmed-stopped case discards tracking as before, unconfirmed case preserves it. `test_launch_aborts_and_restores_tracking_when_termination_unconfirmed` — asserts `launch()` raises and restores tracking instead of proceeding.
+
+**Follow-up problem: SSH/SCP/Rsync picked an unroutable IPv6 address.** Even after the fix above (and with confirmed-stable connectivity from a real terminal), the DPO mission's `mkdir`-over-SSH kept failing with `"No route to host"` — three consecutive identical attempts, despite the user confirming reliable `ssh`/`ping` access at the same time. `dscacheutil -q host -a name mac-mini.local` showed the real cause: mDNS resolves the hostname to **three addresses simultaneously** — one IPv4 (the only one actually routable) and two IPv6, including a link-local one (`fe80:b::...`) that's fundamentally unroutable without the correct `%en0` interface-scope suffix. Every subprocess call did a fresh hostname resolution with no explicit address-family preference — a race against whichever address `getaddrinfo()` returned first, explaining why failures were consistent-but-not-permanent. A user's own `ssh`/`ping` reliably picked the working IPv4 address (different client/connection-reuse behavior), masking the problem from manual testing.
+
+- [x] **All `ssh`/`scp`/`rsync` subprocess calls force `-4` (IPv4)** (`ssh_sandbox.py`, `manager.py`) — eliminates the address-family race entirely; these calls can no longer land on an unroutable link-local IPv6 address.
+- [x] **7 existing tests updated** for the shifted argv position (`-4` inserted after the binary name) — no behavior changes needed, purely index adjustments in `test_ssh_sandbox.py` and `test_sandbox_manager.py`.
+
+    Total: **718 tests** (704 unit + 14 integration).
 
 ---
 
@@ -1106,4 +1117,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **715 tests** (701 unit + 14 integration).
+    Total: **718 tests** (704 unit + 14 integration).
