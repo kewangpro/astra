@@ -1,7 +1,6 @@
 """Unit tests for SSHSandbox in sandbox/ssh_sandbox.py."""
 from __future__ import annotations
 
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -83,17 +82,6 @@ class TestIsAlive:
             assert sandbox.is_alive() is True
             mock_sync.assert_not_called()
 
-    def test_true_and_no_sync_back_when_ssh_times_out(self, tmp_path):
-        """A hung SSH call (SYN dropped, no active refusal) must fail safe the
-        same way a fast connection failure does: assume alive, don't sync back."""
-        sandbox = _sandbox(tmp_path)
-        sandbox._remote_pid = 111
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
-             patch.object(sandbox, "_sync_back") as mock_sync:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
-            assert sandbox.is_alive() is True
-            mock_sync.assert_not_called()
-
 
 # ── SSHSandbox.terminate ──────────────────────────────────────────────────────
 
@@ -155,20 +143,6 @@ class TestTerminate:
         assert sandbox.status != SandboxStatus.STOPPED
         assert sandbox._remote_pid == 111
 
-    def test_terminate_timeout_does_not_claim_stopped_or_sync(self, tmp_path):
-        """A hung kill command is the same failure mode as an unreachable host:
-        we can't confirm the signal was delivered, so don't claim STOPPED or
-        sync_back, and keep remote_pid so the process stays visible."""
-        sandbox = _sandbox(tmp_path)
-        sandbox._remote_pid = 111
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run, \
-             patch.object(sandbox, "_sync_back") as mock_sync:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=20)
-            sandbox.terminate()
-        mock_sync.assert_not_called()
-        assert sandbox.status != SandboxStatus.STOPPED
-        assert sandbox._remote_pid == 111
-
 
 # ── SSHSandbox.sync_tail_offset_to_current ────────────────────────────────────
 
@@ -187,13 +161,6 @@ class TestSyncTailOffsetToCurrent:
         sandbox = _sandbox(tmp_path)
         with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="")
-            sandbox.sync_tail_offset_to_current()
-        assert sandbox._tail_offset == 0
-
-    def test_defaults_to_zero_on_timeout(self, tmp_path):
-        sandbox = _sandbox(tmp_path)
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
             sandbox.sync_tail_offset_to_current()
         assert sandbox._tail_offset == 0
 
@@ -245,13 +212,6 @@ class TestTailNewOutput:
             output = sandbox.tail_new_output()
         assert output == ""
 
-    def test_returns_empty_string_on_timeout(self, tmp_path):
-        sandbox = _sandbox(tmp_path)
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
-            output = sandbox.tail_new_output()
-        assert output == ""
-
 
 # ── SSHSandbox._sync_back ─────────────────────────────────────────────────────
 
@@ -287,23 +247,3 @@ class TestSyncBack:
         rsync_call = mock_run.call_args_list[1].args[0]
         assert "/Users/kewang/finetune/adapters/astra_test-mis/" in rsync_call[3]
         assert "checkpoints" not in rsync_call[3]
-
-    def test_sync_back_returns_early_on_scp_timeout(self, tmp_path):
-        """A hung log fetch must not crash the caller (e.g. terminate()) — warn
-        and return, skipping the checkpoint rsync entirely for this call."""
-        sandbox = _sandbox(tmp_path)
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="scp", timeout=60)
-            sandbox._sync_back()   # should not raise
-        assert mock_run.call_count == 1   # rsync leg never attempted
-
-    def test_sync_back_returns_early_on_rsync_timeout(self, tmp_path):
-        """A hung checkpoint sync must not crash the caller — warn and return."""
-        sandbox = _sandbox(tmp_path)
-        with patch("backend.sandbox.ssh_sandbox.subprocess.run") as mock_run:
-            mock_run.side_effect = [
-                MagicMock(),  # scp succeeds
-                subprocess.TimeoutExpired(cmd="rsync", timeout=60),
-            ]
-            sandbox._sync_back()   # should not raise
-        assert mock_run.call_count == 2

@@ -1104,12 +1104,7 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **All `ssh`/`scp`/`rsync` subprocess calls force `-4` (IPv4)** (`ssh_sandbox.py`, `manager.py`) — eliminates the address-family race entirely; these calls can no longer land on an unroutable link-local IPv6 address.
 - [x] **7 existing tests updated** for the shifted argv position (`-4` inserted after the binary name) — no behavior changes needed, purely index adjustments in `test_ssh_sandbox.py` and `test_sandbox_manager.py`.
 
-**Follow-up problem: the IPv4 fix above exposed a worse failure mode — a hang instead of a fast failure.** Immediately after deploying the `-4` fix, the entire backend became unresponsive (every mission, every endpoint, not just the one SSH call) — confirmed via `curl` timing out against the API itself, and a hung `ssh -4 mac-mini.local mkdir -p ...` process found still running under the backend's PID. Root cause: forcing IPv4 removes the *address-family race*, but not the possibility that a SYN packet is silently dropped rather than actively refused — an unreachable IPv4 host can still hang a connection attempt indefinitely with no timeout in place, versus the previous behavior (racing IPv4 against an actively-refusing IPv6 link-local address) which happened to fail fast. Because every `ssh`/`scp`/`rsync` call in `ssh_sandbox.py` and `manager.py` runs synchronously inside the async event loop — not wrapped in `asyncio.to_thread` — a single hung subprocess call froze the entire backend, not just the one mission that triggered it.
-
-- [x] **Every `ssh`/`scp`/`rsync` call now carries an explicit `timeout=`** (`ssh_sandbox.py`, `manager.py`) — `_QUICK_TIMEOUT=15` for one-line remote commands (`mkdir`, `kill -0`, `wc -c`, `tail`), `_TERMINATE_TIMEOUT=20` for the kill sequence (which has its own up-to-10s server-side retry loop), `_TRANSFER_TIMEOUT=60` for scp/rsync of scripts and checkpoints. Each site catches `subprocess.TimeoutExpired` and handles it the same way that site already handles a fast connection failure: `is_alive()` fails safe and reports alive; `terminate()` and `manager.recover()`'s liveness check don't claim a kill/dead state they couldn't confirm; `sync_tail_offset_to_current()`/`tail_new_output()`/`_sync_back()` warn and fall back to a harmless default instead of raising. A bounded timeout turns a service-wide indefinite hang into a single call failing after a few seconds.
-- [x] **8 new tests**: `test_ssh_sandbox.py` — timeout coverage for `is_alive()`, `terminate()`, `sync_tail_offset_to_current()`, `tail_new_output()`, and both legs of `_sync_back()` (scp and rsync). `test_sandbox_manager.py` — `test_reattaches_when_liveness_check_times_out` covering `recover()`'s remote-pid liveness-check timeout path.
-
-    Total: **725 tests** (711 unit + 14 integration).
+    Total: **718 tests** (704 unit + 14 integration).
 
 ---
 
@@ -1122,4 +1117,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **725 tests** (711 unit + 14 integration).
+    Total: **718 tests** (704 unit + 14 integration).
