@@ -7,6 +7,7 @@ across runs to ensure comparable results.
 """
 from __future__ import annotations
 
+import gc
 import os
 import sys
 from dataclasses import dataclass, field
@@ -17,6 +18,18 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
+
+def _release_gpu_memory() -> None:
+    """Free GPU-backed tensors from a failed/discarded model load. Best-effort —
+    torch may not be importable or MPS may not be the active backend."""
+    gc.collect()
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:
+        pass
 
 
 def _load_env_kwargs(checkpoint_path: str) -> dict:
@@ -131,13 +144,20 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
         from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
         import gymnasium as gym
 
-        # Try loading with each algo until one succeeds
+        # Try loading with each algo until one succeeds. A failed load can
+        # still allocate GPU-backed tensors before erroring, and nothing
+        # frees them between attempts by default — on a memory-constrained
+        # run (e.g. concurrent with an active training subprocess) that can
+        # stack up real GPU pressure across this loop's up-to-5 attempts.
+        # Release explicitly after each failure rather than only trusting
+        # Python's GC to get to it eventually.
         model = None
         for cls in (PPO, SAC, A2C, DQN, TD3):
             try:
                 model = cls.load(checkpoint_path)
                 break
             except Exception:
+                _release_gpu_memory()
                 continue
         if model is None:
             return 0.0, {}

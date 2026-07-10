@@ -13,6 +13,8 @@ import gc
 import platform
 from typing import Optional
 
+import psutil
+
 from backend.agent.inference.base import InferenceProvider
 from backend.logging_config import get_logger
 
@@ -69,6 +71,22 @@ class ModelManager:
     def available_gb(self) -> float:
         return self.total_memory_gb - self.estimated_usage_gb()
 
+    def real_available_gb(self) -> float:
+        """Real system memory headroom via psutil, reflecting actual pressure
+        from EVERY consumer (registered LLM providers, a locally-running
+        training subprocess, anything else) — not just what this class
+        happens to be tracking. estimated_usage_gb()/available_gb() only
+        know about registered InferenceProviders; a local RL training
+        subprocess (SubprocessSandbox) is invisible to that accounting even
+        though it can consume several GB of real (often GPU-shared, on
+        Apple Silicon unified memory) memory. Falls back to the tracked
+        estimate if psutil is unavailable for any reason.
+        """
+        try:
+            return psutil.virtual_memory().available / (1024 ** 3)
+        except Exception:
+            return self.available_gb()
+
     # ── Sandbox lifecycle hooks ───────────────────────────────────────────────
 
     def before_sandbox_launch(self, sandbox_memory_gb: float) -> None:
@@ -76,21 +94,36 @@ class ModelManager:
         Called by SandboxManager before spawning a training process.
         Evicts the speculative drafter and optionally the coding model
         to free enough memory for the sandbox.
+
+        Gates the GC/cache-clear decision on the more conservative of the
+        tracked-provider estimate and real system memory (see
+        real_available_gb()) — a real incident showed the tracked estimate
+        alone reporting healthy headroom while a concurrently-running local
+        training subprocess had actually driven real memory pressure high
+        enough that the in-process mx.metal.clear_cache() call below (the
+        only in-process, unisolated Metal call in this whole path) itself
+        hit a fatal "Insufficient Memory" Metal command buffer failure —
+        an uncaught C++ exception that crashed the entire backend process,
+        not just the mission being launched.
         """
         self._sandbox_active = True
         self._evict_drafter()
 
-        if self.available_gb() < sandbox_memory_gb:
+        tracked_available = self.available_gb()
+        real_available = self.real_available_gb()
+        effective_available = min(tracked_available, real_available)
+
+        if effective_available < sandbox_memory_gb:
             logger.warning(
-                "ModelManager: insufficient headroom (%.1f GB free, need %.1f GB) — "
-                "triggering GC",
-                self.available_gb(), sandbox_memory_gb,
+                "ModelManager: insufficient headroom (tracked=%.1f GB, real=%.1f GB "
+                "free, need %.1f GB) — triggering GC",
+                tracked_available, real_available, sandbox_memory_gb,
             )
             self._gc()
 
         logger.info(
-            "ModelManager: pre-sandbox state — %.1f GB used, %.1f GB free",
-            self.estimated_usage_gb(), self.available_gb(),
+            "ModelManager: pre-sandbox state — %.1f GB used, %.1f GB free (real=%.1f GB)",
+            self.estimated_usage_gb(), tracked_available, real_available,
         )
 
     def after_sandbox_exit(self) -> None:

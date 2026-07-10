@@ -78,6 +78,16 @@ class TestModelManagerMemory:
 class TestModelManagerSandboxLifecycle:
     def setup_method(self):
         self.mm = ModelManager(total_memory_gb=24.0)
+        # Pin real_available_gb() to a high, deterministic value for tests
+        # that aren't specifically exercising the real-memory-aware path —
+        # otherwise these would depend on the actual host's free memory at
+        # test-run time, which is flaky/non-portable (e.g. on a loaded CI
+        # runner with little free RAM).
+        self._real_mem_patch = patch.object(ModelManager, "real_available_gb", return_value=100.0)
+        self._real_mem_patch.start()
+
+    def teardown_method(self):
+        self._real_mem_patch.stop()
 
     def test_before_sandbox_launch_sets_sandbox_active(self):
         self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
@@ -119,6 +129,38 @@ class TestModelManagerSandboxLifecycle:
         with patch("backend.agent.model_manager.gc.collect") as mock_gc:
             self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
             mock_gc.assert_not_called()
+
+    def test_gc_triggered_by_real_memory_pressure_even_when_tracked_estimate_looks_fine(self):
+        """Real incident: the tracked-provider estimate reported healthy
+        headroom while a concurrently-running local training subprocess
+        (invisible to that estimate) had actually driven real system memory
+        low. before_sandbox_launch() must gate on the more conservative of
+        the two, not just the tracked estimate."""
+        self._real_mem_patch.stop()
+        with patch.object(ModelManager, "real_available_gb", return_value=2.0), \
+             patch("backend.agent.model_manager.gc.collect") as mock_gc:
+            # No providers registered → tracked estimate says all 24 GB free.
+            self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
+            mock_gc.assert_called_once()
+        self._real_mem_patch.start()
+
+    def test_gc_not_triggered_when_real_memory_also_healthy(self):
+        with patch("backend.agent.model_manager.gc.collect") as mock_gc:
+            self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
+            mock_gc.assert_not_called()
+
+    def test_real_available_gb_uses_psutil(self):
+        self._real_mem_patch.stop()
+        fake_vm = MagicMock(available=8 * (1024 ** 3))
+        with patch("backend.agent.model_manager.psutil.virtual_memory", return_value=fake_vm):
+            assert self.mm.real_available_gb() == pytest.approx(8.0)
+        self._real_mem_patch.start()
+
+    def test_real_available_gb_falls_back_to_tracked_estimate_on_psutil_error(self):
+        self._real_mem_patch.stop()
+        with patch("backend.agent.model_manager.psutil.virtual_memory", side_effect=OSError("boom")):
+            assert self.mm.real_available_gb() == pytest.approx(self.mm.available_gb())
+        self._real_mem_patch.start()
 
     def test_restore_drafter_logs_readiness(self):
         drafter = _mock_provider("mlx-community/Llama-3.2-1B-Instruct-4bit", loaded=False)
