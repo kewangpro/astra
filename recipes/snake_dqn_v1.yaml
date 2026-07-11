@@ -1,5 +1,5 @@
 name: snake_dqn_v1
-version: "1.0.0"
+version: "1.1.1"
 created_at: "2026-06-29"
 task_type: RL
 domain: Snake
@@ -12,20 +12,44 @@ description: >
   25D feature obs as the PPO recipe so policy weights and env_kwargs are
   compatible.
 
+  v1.1.0: exploration_fraction/exploration_final_eps raised — the curriculum
+  (_inject_curriculum in code_generator.py) calls .learn() per-phase with
+  reset_num_timesteps=False for phases 1+, so SB3's _setup_learn() accumulates
+  total_timesteps across the WHOLE curriculum (3,000,000), not per-phase.
+  exploration_fraction=0.3 was therefore decaying epsilon to its floor by
+  ~900k cumulative steps — inside phase 2 — leaving essentially zero
+  exploration (0.05) for all of phase 3 (the 16x16 grid, the actual
+  food_eaten=100 target, starting at 1,000,000 cumulative steps), right when
+  the agent most needs to explore state space it's never seen at smaller grid
+  sizes. buffer_size/train_freq also adjusted to reduce the persistent
+  replay-buffer memory footprint and background CPU load.
+
+  v1.1.1: removed optimize_memory_usage — SB3's ReplayBuffer raises ValueError
+  when combined with the default handle_timeout_termination=True ("does not
+  support optimize_memory_usage=True and handle_timeout_termination=True
+  simultaneously"). Confirmed live: crashed every launch attempt (3 heal
+  retries + 1 regenerated plan, all identical failure) until removed.
+  handle_timeout_termination isn't in code_generator.py's _VALID_DQN_KEYS, so
+  it can't be set to False from the recipe either — dropping the flag is the
+  simplest fix; buffer_size=50000 alone still meaningfully reduces memory vs
+  the original 100000 without touching this SB3 constraint.
+
 hyperparameters:
   algorithm: DQN
   learning_rate: 0.0001
-  buffer_size: 100000         # replay buffer — key DQN advantage over PPO
+  buffer_size: 50000          # replay buffer — halved; old small-grid transitions
+                               # are less representative once curriculum advances
   learning_starts: 10000      # collect experience before first gradient step
   batch_size: 32
   gamma: 0.99
   tau: 1.0                    # hard target network update
-  train_freq: 4               # train every 4 env steps
+  train_freq: 8                # train every 8 env steps (was 4) — less CPU contention
   gradient_steps: 1
   target_update_interval: 1000
-  exploration_fraction: 0.3   # epsilon decays over 30% of training
+  exploration_fraction: 0.6   # was 0.3 — see v1.1.0 note above; extends real
+                               # exploration into curriculum phase 3
   exploration_initial_eps: 1.0
-  exploration_final_eps: 0.05
+  exploration_final_eps: 0.1  # was 0.05 — keep some exploration alive late-run
   max_grad_norm: 10.0
   policy_kwargs:
     net_arch: [256, 256]
