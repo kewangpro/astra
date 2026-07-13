@@ -86,6 +86,43 @@ def test_clamp_empty_adjustments():
     assert result == {}
 
 
+def test_clamp_exploration_initial_eps_floor():
+    """Real incident: successive pivots drifted exploration_initial_eps down to
+    0.01 (near-pure-greedy from the start of training) since DQN's exploration
+    keys were never added to the clamp table. Must be floored to a value that
+    still guarantees real exploration."""
+    result = LoopStateMachine._clamp_rl_adjustments({"exploration_initial_eps": 0.01}, "rl")
+    assert result["exploration_initial_eps"] == 0.5
+
+
+def test_clamp_exploration_initial_eps_ceiling():
+    result = LoopStateMachine._clamp_rl_adjustments({"exploration_initial_eps": 5.0}, "rl")
+    assert result["exploration_initial_eps"] == 1.0
+
+
+def test_clamp_exploration_fraction_floor():
+    """Real incident: exploration_fraction drifted back to 0.3, which combined
+    with _inject_curriculum's cumulative total_timesteps across phases decays
+    epsilon to its floor before the curriculum's hardest phase even begins."""
+    result = LoopStateMachine._clamp_rl_adjustments({"exploration_fraction": 0.3}, "rl")
+    assert result["exploration_fraction"] == 0.4
+
+
+def test_clamp_exploration_fraction_ceiling():
+    result = LoopStateMachine._clamp_rl_adjustments({"exploration_fraction": 1.0}, "rl")
+    assert result["exploration_fraction"] == 0.8
+
+
+def test_clamp_exploration_final_eps_floor():
+    result = LoopStateMachine._clamp_rl_adjustments({"exploration_final_eps": 0.01}, "rl")
+    assert result["exploration_final_eps"] == 0.05
+
+
+def test_clamp_exploration_final_eps_ceiling():
+    result = LoopStateMachine._clamp_rl_adjustments({"exploration_final_eps": 0.9}, "rl")
+    assert result["exploration_final_eps"] == 0.2
+
+
 # ── _read_telemetry_metrics ───────────────────────────────────────────────────
 
 def _write_telemetry(path, events):

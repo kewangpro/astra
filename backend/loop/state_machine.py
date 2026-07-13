@@ -1143,6 +1143,18 @@ class LoopStateMachine:
             "vf_coef":        (0.1,   1.0),
             "max_grad_norm":  (0.3,   1.0),
             "target_kl":      (0.01,  0.05),
+            # DQN exploration — floors prevent a pivot from silently collapsing
+            # real exploration to near-zero. Real incident: exploration_initial_eps
+            # drifted down to 0.01 over successive pivots (near-pure-greedy from
+            # the very start of training) and exploration_fraction back down to
+            # 0.3, which — combined with _inject_curriculum's cumulative
+            # total_timesteps across phases (reset_num_timesteps=False for
+            # phases 1+) — decays epsilon to its floor before the curriculum's
+            # hardest phase even begins. Both silently passed through unclamped
+            # since DQN keys were never added to this table (added for PPO only).
+            "exploration_initial_eps": (0.5,   1.0),
+            "exploration_fraction":    (0.4,   0.8),
+            "exploration_final_eps":   (0.05,  0.2),
         }
         clamped = {}
         for k, v in adjustments.items():

@@ -1100,7 +1100,12 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **`BenchmarkSuite._rollout()`'s SB3 multi-algo load loop releases GPU memory between failed attempts** (`benchmark.py`) — it tries `PPO → SAC → A2C → DQN → TD3` in sequence until one loads successfully; a failed `cls.load()` can still allocate GPU-backed tensors before erroring, and nothing freed them between attempts, letting a single eval call stack up to 5 partial loads' worth of pressure. New `_release_gpu_memory()` helper (`gc.collect()` + `torch.mps.empty_cache()` if MPS is active) now runs after each failed attempt.
 - [x] **6 new tests** (`test_model_manager.py`): `real_available_gb()` reads `psutil.virtual_memory()` correctly and falls back to the tracked estimate on a `psutil` error; GC now triggers from real-memory pressure alone even when the tracked estimate looks completely healthy (the actual incident's shape) and stays silent when both signals are healthy; existing `before_sandbox_launch()`/GC tests pinned `real_available_gb()` to a high deterministic value so they no longer depend on the actual host's free memory at test-run time.
 
-    Total: **719 tests** (705 unit + 14 integration).
+**Follow-up problem: successive pivots silently collapsed a DQN mission's exploration to near-zero.** A live Snake-v0 DQN mission (`322f5d3c`) plateaued for 60+ iterations across 30 pivots without beating an early peak. Inspecting the mission's live plan (`GET /agent/missions/{id}/plan`) found `exploration_initial_eps` had drifted down to `0.01` (near-pure-greedy from the very start of training) and `exploration_fraction` back down to `0.3` — the exact unsafe values the `snake_dqn_v1.yaml` recipe fix (this phase, see recipe changelog) was written to avoid, silently reintroduced by the LLM's own generic hyperparameter pivots. Root cause: `_clamp_rl_adjustments()` already exists specifically to bound LLM-proposed pivot hyperparameters to safe ranges, gated only on `task_type == "rl"` (any algorithm) — but its `_RANGES` table only ever had PPO-style keys (`learning_rate`, `n_steps`, `clip_range`, etc.); DQN's exploration keys were never added, so they passed through completely unclamped on every pivot.
+
+- [x] **`_clamp_rl_adjustments()`'s `_RANGES` gains DQN exploration bounds** (`state_machine.py`) — `exploration_initial_eps: (0.5, 1.0)`, `exploration_fraction: (0.4, 0.8)`, `exploration_final_eps: (0.05, 0.2)`. Purely additive to the existing table; no change to PPO clamping behavior. Now permanent and automatic — protects every future pivot for any DQN mission, not just a one-time manual correction to the currently-running one.
+- [x] **6 new tests** (`test_state_machine_helpers.py`): floor and ceiling clamped correctly for all three new keys, including the exact `0.01`/`0.3` values from the real incident.
+
+    Total: **725 tests** (711 unit + 14 integration).
 
 ---
 
@@ -1113,4 +1118,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **719 tests** (705 unit + 14 integration).
+    Total: **725 tests** (711 unit + 14 integration).
