@@ -1110,7 +1110,14 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **`_RANGES` gains DQN training-cadence bounds** (`state_machine.py`) — `train_freq: (1, 16)`, `gradient_steps: (1, 4)` (the real multiplier, tightest bound), `learning_starts: (1000, 50000)`, `target_update_interval: (100, 5000)`, `tau: (0.005, 1.0)`. Same purely-additive pattern as the exploration bounds above.
 - [x] **6 new tests** (`test_state_machine_helpers.py`): floor/ceiling for all five new keys, including the exact `gradient_steps=1000` value from the real incident.
 
-    Total: **731 tests** (717 unit + 14 integration).
+**Follow-up problem: the backend crashed a second time from the same class of bug, at a different entry point.** After the `ModelManager.before_sandbox_launch()` fix (above), the backend crashed again — this time during `MLXProvider.load()`'s `mlx_lm.load()` call while creating a fresh mission, real memory tight from concurrently-running missions. Same failure signature (uncatchable `libc++abi`/Metal command-buffer OOM aborting the whole process, not just one mission) but a different in-process Metal entry point that the sandbox-launch-specific fix doesn't cover — `MLXProvider` has no relationship to `ModelManager` and can't reuse its guard directly.
+
+- [x] **`MLXProvider.load()` gains its own real-memory-aware guard** (`mlx_provider.py`) — below `_LOW_MEMORY_THRESHOLD_GB = 2.0` GB real free memory (via `psutil.virtual_memory()`), proactively runs `gc.collect()` + `mx.metal.clear_cache()` before calling `mlx_lm.load()`, same mitigation pattern as `ModelManager._gc()`. Fails open (proceeds to load anyway) if the `psutil` check itself errors.
+- [x] **4 new tests** (`test_mlx_provider.py`, new file): GC/cache-clear skipped when memory is healthy, triggered when low, load proceeds even if the memory check itself fails, and is a no-op when already loaded.
+
+    Note: `VLLMProvider` has an analogous `load()` but isn't actually instantiated anywhere in the backend — out of scope until it's wired up.
+
+    Total: **735 tests** (721 unit + 14 integration).
 
 ---
 
@@ -1123,4 +1130,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **731 tests** (717 unit + 14 integration).
+    Total: **735 tests** (721 unit + 14 integration).

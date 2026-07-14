@@ -17,10 +17,23 @@ import json
 import re
 from typing import Optional
 
+import psutil
+
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Below this much real free memory, proactively GC + clear the Metal cache
+# before attempting to load a model — a real incident showed a backend crash
+# (uncatchable libc++abi/Metal command-buffer OOM, same failure class as
+# ModelManager.before_sandbox_launch()'s fix) happening during mlx_lm.load()
+# itself while real memory was tight from concurrently-running missions.
+# ModelManager's real-memory-aware guard only covers the sandbox-launch path;
+# this covers the other in-process Metal entry point — loading a planning/
+# coding model — which has no relationship to ModelManager and can't reuse
+# its guard directly.
+_LOW_MEMORY_THRESHOLD_GB = 2.0
 
 # Serializes all MLX inference calls — concurrent Metal GPU access causes SIGABRT
 _MLX_LOCK: Optional[asyncio.Lock] = None
@@ -56,6 +69,18 @@ class MLXProvider(InferenceProvider):
     def load(self) -> None:
         if self._model is not None:
             return
+        try:
+            available_gb = psutil.virtual_memory().available / (1024 ** 3)
+        except Exception:
+            available_gb = None
+        if available_gb is not None and available_gb < _LOW_MEMORY_THRESHOLD_GB:
+            logger.warning(
+                "MLXProvider: real memory low (%.1f GB free) before loading %s — "
+                "running gc + Metal cache clear first",
+                available_gb, self._model_id,
+            )
+            gc.collect()
+            mx.metal.clear_cache()
         logger.info("Loading MLX model: %s", self._model_id)
         self._model, self._tokenizer = mlx_lm.load(self._model_id)
         logger.info("MLX model loaded: %s", self._model_id)
