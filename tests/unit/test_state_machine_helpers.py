@@ -123,6 +123,40 @@ def test_clamp_exploration_final_eps_ceiling():
     assert result["exploration_final_eps"] == 0.2
 
 
+def test_clamp_gradient_steps_ceiling():
+    """Real incident: a pivot drifted gradient_steps to 1000 combined with
+    train_freq=1 (train after every single env step) — ~8000x the intended
+    compute per env step vs a sane default, burning 10+ hours of CPU on a
+    single iteration without finishing."""
+    result = LoopStateMachine._clamp_rl_adjustments({"gradient_steps": 1000}, "rl")
+    assert result["gradient_steps"] == 4
+
+
+def test_clamp_gradient_steps_floor():
+    result = LoopStateMachine._clamp_rl_adjustments({"gradient_steps": 0}, "rl")
+    assert result["gradient_steps"] == 1
+
+
+def test_clamp_train_freq_bounds():
+    assert LoopStateMachine._clamp_rl_adjustments({"train_freq": 0}, "rl")["train_freq"] == 1
+    assert LoopStateMachine._clamp_rl_adjustments({"train_freq": 999}, "rl")["train_freq"] == 16
+
+
+def test_clamp_learning_starts_bounds():
+    assert LoopStateMachine._clamp_rl_adjustments({"learning_starts": 0}, "rl")["learning_starts"] == 1000
+    assert LoopStateMachine._clamp_rl_adjustments({"learning_starts": 999999}, "rl")["learning_starts"] == 50000
+
+
+def test_clamp_target_update_interval_bounds():
+    assert LoopStateMachine._clamp_rl_adjustments({"target_update_interval": 1}, "rl")["target_update_interval"] == 100
+    assert LoopStateMachine._clamp_rl_adjustments({"target_update_interval": 99999}, "rl")["target_update_interval"] == 5000
+
+
+def test_clamp_tau_bounds():
+    assert LoopStateMachine._clamp_rl_adjustments({"tau": 0.0}, "rl")["tau"] == 0.005
+    assert LoopStateMachine._clamp_rl_adjustments({"tau": 2.0}, "rl")["tau"] == 1.0
+
+
 # ── _read_telemetry_metrics ───────────────────────────────────────────────────
 
 def _write_telemetry(path, events):

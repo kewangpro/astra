@@ -1105,7 +1105,12 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **`_clamp_rl_adjustments()`'s `_RANGES` gains DQN exploration bounds** (`state_machine.py`) — `exploration_initial_eps: (0.5, 1.0)`, `exploration_fraction: (0.4, 0.8)`, `exploration_final_eps: (0.05, 0.2)`. Purely additive to the existing table; no change to PPO clamping behavior. Now permanent and automatic — protects every future pivot for any DQN mission, not just a one-time manual correction to the currently-running one.
 - [x] **6 new tests** (`test_state_machine_helpers.py`): floor and ceiling clamped correctly for all three new keys, including the exact `0.01`/`0.3` values from the real incident.
 
-    Total: **725 tests** (711 unit + 14 integration).
+**Follow-up problem: the same unclamped-pivot gap let a DQN iteration burn 10+ hours of CPU without finishing.** Same mission (`322f5d3c`), found while verifying the exploration fix above: a pivot had drifted `train_freq` to `1` (train after every single env step) combined with `gradient_steps: 1000` (1000 gradient updates per training call) — roughly 8000x the intended compute per env step versus a sane default (`train_freq: 8, gradient_steps: 1`, matching this phase's recipe fix). Identical root cause to the exploration bug: `_RANGES` never had entries for DQN's training-cadence keys either.
+
+- [x] **`_RANGES` gains DQN training-cadence bounds** (`state_machine.py`) — `train_freq: (1, 16)`, `gradient_steps: (1, 4)` (the real multiplier, tightest bound), `learning_starts: (1000, 50000)`, `target_update_interval: (100, 5000)`, `tau: (0.005, 1.0)`. Same purely-additive pattern as the exploration bounds above.
+- [x] **6 new tests** (`test_state_machine_helpers.py`): floor/ceiling for all five new keys, including the exact `gradient_steps=1000` value from the real incident.
+
+    Total: **731 tests** (717 unit + 14 integration).
 
 ---
 
@@ -1118,4 +1123,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **725 tests** (711 unit + 14 integration).
+    Total: **731 tests** (717 unit + 14 integration).

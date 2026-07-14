@@ -1155,6 +1155,22 @@ class LoopStateMachine:
             "exploration_initial_eps": (0.5,   1.0),
             "exploration_fraction":    (0.4,   0.8),
             "exploration_final_eps":   (0.05,  0.2),
+            # DQN training cadence — real incident: a pivot drifted train_freq=1
+            # (train after every single env step) combined with gradient_steps=1000
+            # (1000 gradient updates per training call) — ~8000x the intended
+            # compute per env step vs a sane default (train_freq=8,
+            # gradient_steps=1), burning 10+ hours of CPU on a single iteration
+            # without finishing. gradient_steps is the real multiplier and gets
+            # the tightest bound; the other three are bounded to prevent
+            # complementary extremes (e.g. learning_starts consuming the whole
+            # iteration's step budget on pure random exploration with no
+            # training at all, or target_update_interval/tau freezing the
+            # target network for practically the whole run).
+            "train_freq":              (1,     16),
+            "gradient_steps":          (1,     4),
+            "learning_starts":         (1000,  50000),
+            "target_update_interval":  (100,   5000),
+            "tau":                     (0.005, 1.0),
         }
         clamped = {}
         for k, v in adjustments.items():
