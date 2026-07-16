@@ -21,9 +21,19 @@ PIVOT_COMPETITIVE_THRESHOLD = 0.85
 ESCALATION_RESET_THRESHOLD = 0.05
 
 # Escalation: how many consecutive failed pivots before stepping up aggressiveness
-ESCALATION_ARCH   = 2  # pivot count → suggest architecture change
-ESCALATION_ALGO   = 4  # pivot count → allow algorithm switch
-ESCALATION_REWARD = 6  # pivot count → allow reward shaping changes
+ESCALATION_ARCH   = 2   # pivot count → suggest architecture change
+ESCALATION_ALGO   = 4   # pivot count → allow algorithm switch
+ESCALATION_REWARD = 6   # pivot count → allow reward shaping changes
+# Real incident: escalation_level() previously capped at 3 forever — pivot 6
+# and pivot 111 were treated identically, with no mechanism to recognize a
+# deep plateau (far past ESCALATION_REWARD) and force something categorically
+# different. Once every level is already "allowed," the system just kept
+# sampling similar variations indefinitely, relying entirely on the LLM's own
+# initiative to produce real novelty — which converged on cycling the same 3
+# architectures without ever exhausting the search space. Level 4 explicitly
+# tells the LLM every architecture already tried this mission (not just the
+# 5-item oscillation window) and demands something structurally different.
+ESCALATION_FORCE_NOVEL = 15  # pivot count → force a never-tried architecture
 
 # After an arch/algo pivot, if the new config's best is still this much below
 # the pre-pivot best after PLATEAU_WINDOW iters, revert to the old checkpoint.
@@ -170,7 +180,10 @@ class PivotEngine:
         logger.info("PivotEngine: escalation reverted — pivot_count=%d", self._pivot_count)
 
     def escalation_level(self) -> int:
-        """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards."""
+        """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards,
+        4=deep plateau — force a never-before-tried architecture."""
+        if self._pivot_count >= ESCALATION_FORCE_NOVEL:
+            return 4
         if self._pivot_count >= ESCALATION_REWARD:
             return 3
         if self._pivot_count >= ESCALATION_ALGO:

@@ -38,7 +38,7 @@ class _MockLeadAgent:
             "sandbox_memory_gb": 4.0,
         }
 
-    async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None):
+    async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None):
         return {"reason": "plateau_detected", "adjustments": {"learning_rate": 1e-4}}
 
     def flush_iteration_context(self):
@@ -514,7 +514,7 @@ async def test_plateau_triggers_pivot_then_goal_met(seeded_mission, db_session, 
         agent = _MockLeadAgent()
         propose_calls = []
         _orig = agent.propose_pivot
-        async def _track_pivot(m, h, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None):
+        async def _track_pivot(m, h, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None):
             propose_calls.append((m, h))
             return await _orig(m, h)
         agent.propose_pivot = _track_pivot
@@ -583,7 +583,7 @@ async def test_manifest_reconciled_when_plan_task_type_differs(db_session, patch
                 "hyperparameters": {"n_estimators": 100},
                 "sandbox_memory_gb": 1.0,
             }
-        async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None):
+        async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None):
             return {"reason": "plateau", "adjustments": {}}
         def flush_iteration_context(self):
             pass

@@ -173,9 +173,27 @@ def test_escalation_level_three_at_reward_threshold():
     assert e.escalation_level() == 3
 
 
-def test_escalation_level_caps_at_three():
+def test_escalation_level_caps_at_four():
+    """Real incident: escalation previously capped at 3 forever — pivot 6 and
+    pivot 111 were treated identically, with no mechanism to force genuine
+    novelty on a deep plateau. Level 4 (ESCALATION_FORCE_NOVEL) is now the
+    true ceiling."""
     e = _engine()
     e.restore_pivot_count(999)
+    assert e.escalation_level() == 4
+
+
+def test_escalation_level_four_at_force_novel_threshold():
+    from backend.loop.pivots import ESCALATION_FORCE_NOVEL
+    e = _engine()
+    e.restore_pivot_count(ESCALATION_FORCE_NOVEL)
+    assert e.escalation_level() == 4
+
+
+def test_escalation_level_three_just_below_force_novel_threshold():
+    from backend.loop.pivots import ESCALATION_FORCE_NOVEL
+    e = _engine()
+    e.restore_pivot_count(ESCALATION_FORCE_NOVEL - 1)
     assert e.escalation_level() == 3
 
 

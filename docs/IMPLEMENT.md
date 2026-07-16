@@ -1117,7 +1117,14 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: `VLLMProvider` has an analogous `load()` but isn't actually instantiated anywhere in the backend — out of scope until it's wired up.
 
-    Total: **735 tests** (721 unit + 14 integration).
+**Follow-up problem: the escalation ladder had no ceiling behavior — a 111-pivot plateau got treated identically to a 6-pivot plateau.** A live Snake-v0 DQN mission (`271064b5`) plateaued for 242+ iterations across 111+ pivots without beating an early peak. `PivotEngine.escalation_level()` capped at level 3 once `pivot_count >= ESCALATION_REWARD (6)` and never escalated further — pivot 6 and pivot 111 produced the exact same LLM prompt guidance. Worse, oscillation suppression (`recent_arches`) only tracked the last 5 architectures, so the LLM had no visibility into the *full* set of architectures already tried this mission — it kept cycling the same 3 (`[400,300]`, `[256,256,128]`, `[256,256]`) over 100+ pivots, relying entirely on its own initiative to produce genuine novelty with no signal that it was repeating itself.
+
+- [x] **New escalation level 4 — `ESCALATION_FORCE_NOVEL = 15`** (`pivots.py`) — `escalation_level()` now returns `4` past this threshold instead of staying at `3` forever.
+- [x] **Full-mission architecture history tracked separately from the 5-item oscillation window** (`state_machine.py`) — new uncapped `plan["all_arches_tried"]`, appended alongside the existing `recent_arches` whenever an architecture pivot actually applies. At escalation level 4, the oscillation-suppression check rejects against this full history, not just the last 5.
+- [x] **`LeadAgent.propose_pivot()` gains a `tried_architectures` param and level-4 prompt text** (`lead_agent.py`) — explicitly lists every architecture already tried this mission and instructs the LLM not to propose any of them again, demanding something structurally different in depth/width rather than a resized variant. Also nudges toward an algorithm switch at level 4 if one hasn't happened yet (when not algorithm-locked).
+- [x] **9 new tests**: `test_pivot_engine.py` — escalation level 4 threshold behavior (renamed `test_escalation_level_caps_at_three` → `test_escalation_level_caps_at_four`, since capping at 3 forever was the bug). `test_lead_agent_pivot.py` (new file) — level-4 prompt lists tried architectures, still describes deep-plateau without a tried list, level 3 doesn't mention deep-plateau, non-locked level 4 suggests an algorithm switch, and an unrecognized escalation level falls back to level-0 text rather than crashing or going silent.
+
+    Total: **742 tests** (728 unit + 14 integration).
 
 ---
 
@@ -1130,4 +1137,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **735 tests** (721 unit + 14 integration).
+    Total: **742 tests** (728 unit + 14 integration).

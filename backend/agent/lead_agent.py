@@ -183,16 +183,29 @@ class LeadAgent:
         best_policy_kwargs: Optional[dict] = None,
         best_metric_value: Optional[float] = None,
         best_metric_iteration: Optional[int] = None,
+        tried_architectures: Optional[list] = None,
     ) -> dict:
         """
         Analyze a stalled run and propose a strategic pivot.
         escalation_level: 0=tune HPs, 1=change arch, 2=allow algorithm switch (or reward shaping
-        when algorithm_locked=True), 3=reshape rewards.
+        when algorithm_locked=True), 3=reshape rewards, 4=deep plateau — force a
+        never-before-tried architecture (see tried_architectures).
         algorithm_locked: when True (goal explicitly names an algorithm), skip level 2 algo switch
         and use reward shaping instead — levels map as 0=HPs, 1=arch, 2+=env_kwargs.
+        tried_architectures: every distinct net_arch/policy_kwargs actually applied this mission
+        (not just the last few — the full history), so a deep-plateau (level 4) pivot can be told
+        explicitly what's already failed instead of just avoiding immediate repeats.
         Returns the pivot dict.
         """
         self._cache.set_system_prompt(_PIVOT_SYSTEM)
+        _tried_arch_desc = ""
+        if tried_architectures:
+            _tried_arch_desc = (
+                f" Every one of these architectures has ALREADY been tried this mission and "
+                f"did NOT solve the plateau — do not propose any of them again, in any form: "
+                f"{json.dumps(tried_architectures)}. Propose something structurally different in "
+                f"depth or width (e.g. a different number of layers, not just resized existing ones)."
+            )
         if algorithm_locked:
             escalation_desc = {
                 0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
@@ -203,6 +216,9 @@ class LeadAgent:
                 3: f"Level 3 — prior reward shaping did not help. Try more aggressive env_kwargs: "
                    "higher food_reward (25–30), lower death_penalty (−3 to −5), survival_bonus 0.02–0.1. "
                    "Also consider tuning architecture and HPs together.",
+                4: f"Level 4 — DEEP PLATEAU. Every combination of HP tuning and reward shaping tried "
+                   f"so far has failed to break through.{_tried_arch_desc} Also consider a materially "
+                   f"different reward structure, not just scaled versions of what's already been tried.",
             }.get(escalation_level, "Level 0 — tune hyperparameters only.")
         else:
             escalation_desc = {
@@ -213,6 +229,9 @@ class LeadAgent:
                 3: f"Level 3 — algorithm and architecture changes have not worked. "
                    "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
                    "distance shaping (distance_weight=0) and increasing food_reward.",
+                4: f"Level 4 — DEEP PLATEAU. Algorithm switches, architecture changes, and reward "
+                   f"shaping have all failed to break through.{_tried_arch_desc} Strongly consider "
+                   f"switching algorithm if you haven't already, in addition to a novel architecture.",
             }.get(escalation_level, "Level 0 — tune hyperparameters only.")
         from backend.agent.code_generator import _VALID_ALGO_KEYS
         _valid_keys = _VALID_ALGO_KEYS.get(current_algorithm.upper(), set())

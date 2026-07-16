@@ -609,6 +609,7 @@ class LoopStateMachine:
                             best_policy_kwargs=pivot_engine.best_policy_kwargs(),
                             best_metric_value=pivot_engine.best_metric_value(),
                             best_metric_iteration=pivot_engine.best_metric_iteration(),
+                            tried_architectures=plan.get("all_arches_tried") or None,
                         )
                     except Exception as exc:
                         # A malformed LLM response (e.g. invalid JSON that survived
@@ -677,11 +678,21 @@ class LoopStateMachine:
                     _proposed_pky = pivot.get("policy_kwargs")
                     _current_pky = plan.get("hyperparameters", {}).get("policy_kwargs")
                     _recent_arches = plan.get("recent_arches", [])
-                    _arch_oscillation = bool(_proposed_pky and _proposed_pky in _recent_arches)
+                    # At deep-plateau escalation, also reject anything from the FULL
+                    # mission history (not just the last-5 oscillation window) — the
+                    # whole point of level 4 is forcing genuine novelty; re-proposing
+                    # an architecture tried 20 pivots ago is exactly what it exists
+                    # to prevent (see PivotEngine.ESCALATION_FORCE_NOVEL).
+                    _all_tried = plan.get("all_arches_tried", []) if escalation >= 4 else []
+                    _arch_oscillation = bool(
+                        _proposed_pky and (_proposed_pky in _recent_arches or _proposed_pky in _all_tried)
+                    )
                     if _arch_oscillation:
                         logger.warning(
-                            "LoopStateMachine: arch oscillation detected — proposed %s already in recent history %s; suppressing",
+                            "LoopStateMachine: arch oscillation detected — proposed %s already tried "
+                            "(recent=%s%s); suppressing",
                             _proposed_pky, _recent_arches,
+                            f", full_history={_all_tried}" if escalation >= 4 else "",
                         )
                     arch_changed = bool(
                         _proposed_pky and
@@ -723,6 +734,14 @@ class LoopStateMachine:
                             if _current_pky is not None and _current_pky not in _recent:
                                 _recent.append(_current_pky)
                             plan["recent_arches"] = _recent[-5:]
+                            # Uncapped full-mission history — distinct from recent_arches
+                            # (last 5, for immediate-oscillation suppression). Used to give
+                            # a level-4 deep-plateau pivot the complete "already tried and
+                            # failed" list, not just what's happened recently.
+                            _all_tried_now = list(plan.get("all_arches_tried", []))
+                            if _current_pky is not None and _current_pky not in _all_tried_now:
+                                _all_tried_now.append(_current_pky)
+                            plan["all_arches_tried"] = _all_tried_now
                             plan["hyperparameters"]["policy_kwargs"] = pivot["policy_kwargs"]
                             # Reset best_score.txt so the new architecture can save its own
                             # checkpoint. Without this, the old peak score blocks best_model.zip
