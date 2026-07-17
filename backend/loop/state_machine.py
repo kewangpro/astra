@@ -675,7 +675,7 @@ class LoopStateMachine:
                             "LoopStateMachine: ignoring algo switch %s→%s — algorithm locked by goal",
                             current_algo, proposed_algo,
                         )
-                    _proposed_pky = pivot.get("policy_kwargs")
+                    _proposed_pky = self._clamp_net_arch(pivot.get("policy_kwargs"))
                     _current_pky = plan.get("hyperparameters", {}).get("policy_kwargs")
                     _recent_arches = plan.get("recent_arches", [])
                     # At deep-plateau escalation, also reject anything from the FULL
@@ -694,11 +694,35 @@ class LoopStateMachine:
                             _proposed_pky, _recent_arches,
                             f", full_history={_all_tried}" if escalation >= 4 else "",
                         )
+                        # Deep plateau (level 4): blocking a bad repeat isn't enough on
+                        # its own — a real incident showed the LLM re-proposing the
+                        # identical already-abandoned architecture 11 pivots in a row
+                        # despite an explicit prompt instruction not to, stalling the
+                        # mission on pure suppression with no forward progress. Pick a
+                        # genuinely untried architecture deterministically instead of
+                        # just discarding the proposal and hoping the next LLM attempt
+                        # does better. Only supported for RL's list-style net_arch
+                        # (SB3); DPO/GRPO's dict-style net_arch isn't in scope — no
+                        # evidence of the same repeated-oscillation failure there.
+                        _forced_arch = self._pick_untried_net_arch(
+                            list(_recent_arches) + list(_all_tried), _current_pky
+                        )
+                        if _forced_arch is not None:
+                            logger.info(
+                                "LoopStateMachine: deep-plateau fallback — forcing untried "
+                                "net_arch=%s after repeated oscillation", _forced_arch,
+                            )
+                            _proposed_pky = {"net_arch": _forced_arch}
+                            _arch_oscillation = False
                     arch_changed = bool(
                         _proposed_pky and
                         _proposed_pky != _current_pky and
                         not _arch_oscillation
                     )
+                    # Downstream code reads pivot["policy_kwargs"] directly — keep it in
+                    # sync with the clamped/deep-plateau-forced value computed above.
+                    if _proposed_pky is not None:
+                        pivot["policy_kwargs"] = _proposed_pky
                     env_kwargs_changed = bool(
                         pivot.get("env_kwargs") and pivot["env_kwargs"] != plan.get("env_kwargs", {})
                     )
@@ -1093,16 +1117,95 @@ class LoopStateMachine:
         to the target env so LLM cross-env hallucinations (e.g. Snake kwargs
         appearing in a Tetris plan) are silently dropped before they reach
         train_config.json.
+
+        food_reward/death_penalty/survival_bonus ranges added after a real
+        incident: only distance_weight was ever bounded, so successive pivots
+        drifted death_penalty from -10 to -3 (weakened 3.3x) and survival_bonus
+        from 0.01 to 0.05 (5x) with zero resistance — plausibly teaching the
+        agent to prioritize just surviving over actively pursuing food, since
+        dying barely hurt anymore and merely staying alive was well-rewarded.
         """
         _KNOWN: dict = {
             "Snake-v0": {"food_reward", "death_penalty", "distance_weight", "survival_bonus"},
             "Tetris-v0": {"max_steps", "line_clear_multiplier", "piece_placement", "death_penalty"},
         }
+        _RANGES = {
+            "food_reward":    (5.0, 50.0),
+            "death_penalty":  (-20.0, -1.0),
+            "survival_bonus": (0.0, 0.2),
+        }
         allowed = _KNOWN.get(env_id)
         out = {k: v for k, v in env_kwargs.items() if allowed is None or k in allowed}
         if "distance_weight" in out:
             out["distance_weight"] = max(0.1, float(out["distance_weight"]))
+        for k, (lo, hi) in _RANGES.items():
+            if k in out:
+                try:
+                    out[k] = max(lo, min(hi, float(out[k])))
+                except (TypeError, ValueError):
+                    pass
         return out
+
+    @staticmethod
+    def _clamp_net_arch(policy_kwargs: Optional[dict]) -> Optional[dict]:
+        """Clamp LLM-proposed net_arch to sane size/depth bounds.
+
+        Real incident class: gradient_steps drifted to 1000 with no bound,
+        burning 10+ hours of CPU on one iteration — an oversized net_arch
+        (e.g. [4096, 4096, 4096]) is the same failure mode (OOM / catastrophic
+        slowdown) for architecture instead of training cadence, and was
+        equally unbounded until now. Handles both net_arch shapes seen in this
+        codebase: SB3-style list of layer widths (RL/PPO/DQN) and the DPO/GRPO
+        shared-net dict ({"type": ..., "n_layers": N, "layer_size": M}).
+        """
+        if not policy_kwargs or "net_arch" not in policy_kwargs:
+            return policy_kwargs
+        arch = policy_kwargs["net_arch"]
+        clamped = dict(policy_kwargs)
+        if isinstance(arch, list):
+            try:
+                clamped["net_arch"] = [max(8, min(1024, int(size))) for size in arch[:6]]
+            except (TypeError, ValueError):
+                pass
+        elif isinstance(arch, dict):
+            out = dict(arch)
+            try:
+                if "n_layers" in out:
+                    out["n_layers"] = max(1, min(6, int(out["n_layers"])))
+                if "layer_size" in out:
+                    out["layer_size"] = max(8, min(2048, int(out["layer_size"])))
+            except (TypeError, ValueError):
+                pass
+            clamped["net_arch"] = out
+        return clamped
+
+    # RL architectures to try, in order, when a deep-plateau pivot's proposal
+    # keeps oscillating back to something already tried (see call site in
+    # run()). Deliberately varied in both depth and width rather than simple
+    # resizes of one shape, since the LLM was observed repeatedly proposing
+    # near-identical resizes despite an explicit instruction not to.
+    _CANDIDATE_NET_ARCHES: list = [
+        [128], [512], [128, 128], [512, 512],
+        [256, 128, 64], [512, 256, 128], [1024, 512], [64, 64, 64, 64],
+    ]
+
+    @classmethod
+    def _pick_untried_net_arch(cls, tried_policy_kwargs: list, current_policy_kwargs: Optional[dict]) -> Optional[list]:
+        """Return the first candidate net_arch (list form) not already in
+        tried_policy_kwargs/current_policy_kwargs, or None if every candidate
+        has been exhausted too. RL list-style net_arch only — DPO/GRPO's
+        dict-style shared net isn't in scope (no evidence of the same
+        repeated-oscillation failure there)."""
+        tried: set = set()
+        for pky in tried_policy_kwargs:
+            if isinstance(pky, dict) and isinstance(pky.get("net_arch"), list):
+                tried.add(tuple(pky["net_arch"]))
+        if isinstance(current_policy_kwargs, dict) and isinstance(current_policy_kwargs.get("net_arch"), list):
+            tried.add(tuple(current_policy_kwargs["net_arch"]))
+        for candidate in cls._CANDIDATE_NET_ARCHES:
+            if tuple(candidate) not in tried:
+                return candidate
+        return None
 
     @staticmethod
     def _normalize_pivot(pivot: dict) -> dict:

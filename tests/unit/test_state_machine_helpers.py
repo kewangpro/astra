@@ -872,9 +872,111 @@ def test_clamp_env_kwargs_distance_weight_valid_unchanged():
 
 
 def test_clamp_env_kwargs_no_distance_weight_passthrough():
-    """Keys other than distance_weight pass through without modification."""
+    """Values already within range pass through unmodified."""
     result = LoopStateMachine._clamp_env_kwargs({"food_reward": 25.0, "survival_bonus": 0.05})
     assert result == {"food_reward": 25.0, "survival_bonus": 0.05}
+
+
+def test_clamp_env_kwargs_death_penalty_floor():
+    """Real incident: death_penalty drifted from -10 to -3 (weakened 3.3x) with
+    zero resistance, plausibly teaching the agent to prioritize survival over
+    food-seeking since dying barely hurt anymore."""
+    result = LoopStateMachine._clamp_env_kwargs({"death_penalty": -0.5})
+    assert result["death_penalty"] == -1.0
+
+
+def test_clamp_env_kwargs_death_penalty_ceiling():
+    result = LoopStateMachine._clamp_env_kwargs({"death_penalty": -999.0})
+    assert result["death_penalty"] == -20.0
+
+
+def test_clamp_env_kwargs_food_reward_bounds():
+    assert LoopStateMachine._clamp_env_kwargs({"food_reward": 0.5})["food_reward"] == 5.0
+    assert LoopStateMachine._clamp_env_kwargs({"food_reward": 9999.0})["food_reward"] == 50.0
+
+
+def test_clamp_env_kwargs_survival_bonus_ceiling():
+    """Real incident: survival_bonus drifted from 0.01 to 0.05 (5x) with zero
+    resistance, combined with the weakened death_penalty above."""
+    result = LoopStateMachine._clamp_env_kwargs({"survival_bonus": 999.0})
+    assert result["survival_bonus"] == 0.2
+
+
+def test_clamp_env_kwargs_survival_bonus_floor():
+    result = LoopStateMachine._clamp_env_kwargs({"survival_bonus": -1.0})
+    assert result["survival_bonus"] == 0.0
+
+
+# ── _clamp_net_arch ──────────────────────────────────────────────────────────
+
+def test_clamp_net_arch_none_passthrough():
+    assert LoopStateMachine._clamp_net_arch(None) is None
+
+
+def test_clamp_net_arch_no_net_arch_key_passthrough():
+    pky = {"foo": "bar"}
+    assert LoopStateMachine._clamp_net_arch(pky) == pky
+
+
+def test_clamp_net_arch_list_width_ceiling():
+    """Real incident class: gradient_steps drifted to 1000 with no bound,
+    burning 10+ hours of CPU on one iteration — an oversized net_arch is the
+    same failure mode (OOM/catastrophic slowdown) for architecture."""
+    result = LoopStateMachine._clamp_net_arch({"net_arch": [99999, 99999]})
+    assert result["net_arch"] == [1024, 1024]
+
+
+def test_clamp_net_arch_list_width_floor():
+    result = LoopStateMachine._clamp_net_arch({"net_arch": [1, 1]})
+    assert result["net_arch"] == [8, 8]
+
+
+def test_clamp_net_arch_list_depth_capped():
+    result = LoopStateMachine._clamp_net_arch({"net_arch": [64] * 20})
+    assert len(result["net_arch"]) == 6
+
+
+def test_clamp_net_arch_list_valid_unchanged():
+    result = LoopStateMachine._clamp_net_arch({"net_arch": [256, 256]})
+    assert result["net_arch"] == [256, 256]
+
+
+def test_clamp_net_arch_dict_n_layers_and_layer_size_bounded():
+    """DPO/GRPO shared-net dict shape: {'type': ..., 'n_layers': N, 'layer_size': M}."""
+    result = LoopStateMachine._clamp_net_arch(
+        {"net_arch": {"type": "shared", "n_layers": 999, "layer_size": 999999}}
+    )
+    assert result["net_arch"]["n_layers"] == 6
+    assert result["net_arch"]["layer_size"] == 2048
+    assert result["net_arch"]["type"] == "shared"  # sibling keys preserved
+
+
+# ── _pick_untried_net_arch ───────────────────────────────────────────────────
+
+def test_pick_untried_net_arch_skips_all_tried():
+    """Real incident: the LLM proposed the identical already-abandoned
+    architecture 11 pivots in a row despite an explicit instruction not to —
+    this is the deterministic fallback that breaks the stall."""
+    tried = [{"net_arch": [128]}, {"net_arch": [512]}, {"net_arch": [128, 128]}]
+    result = LoopStateMachine._pick_untried_net_arch(tried, current_policy_kwargs=None)
+    assert result is not None
+    assert result not in ([128], [512], [128, 128])
+
+
+def test_pick_untried_net_arch_also_excludes_current():
+    all_but_last = LoopStateMachine._CANDIDATE_NET_ARCHES[:-1]
+    tried = [{"net_arch": a} for a in all_but_last]
+    result = LoopStateMachine._pick_untried_net_arch(
+        tried, current_policy_kwargs={"net_arch": LoopStateMachine._CANDIDATE_NET_ARCHES[-1]}
+    )
+    assert result is None  # every candidate exhausted
+
+
+def test_pick_untried_net_arch_ignores_dict_shaped_history():
+    """DPO/GRPO dict-shaped net_arch entries must not crash the RL-only picker."""
+    tried = [{"net_arch": {"type": "shared", "n_layers": 2, "layer_size": 300}}]
+    result = LoopStateMachine._pick_untried_net_arch(tried, current_policy_kwargs=None)
+    assert result == LoopStateMachine._CANDIDATE_NET_ARCHES[0]
 
 
 # ── _save_iteration_checkpoint ───────────────────────────────────────────────
