@@ -325,6 +325,50 @@ def test_algo_locked_ppo_named():
     assert _locked("Train PPO on CartPole-v1", "PPO")
 
 
+# ── _should_force_actor_critic ────────────────────────────────────────────────
+# Real incident: this override was previously unconditional — every Tetris-v0
+# mission ever trained the custom Actor-Critic model regardless of what
+# algorithm was actually requested, with zero indication anywhere (mission
+# goal, UI, crystallized recipe) that the choice wasn't honored. Confirmed
+# live against two completed missions ("...DQN agent..." and "...PPO
+# agent...") whose generated train.py scripts both imported ActorCriticNet.
+
+_force_ac = LoopStateMachine._should_force_actor_critic
+
+
+def test_force_actor_critic_when_no_algorithm_requested():
+    """Default case: goal doesn't name a specific algorithm — use the
+    empirically stronger Actor-Critic trainer."""
+    assert _force_ac("Tetris-v0", "PPO", "", "Train a Tetris-v0 agent to clear 200 lines")
+
+
+def test_does_not_force_when_dqn_explicitly_requested():
+    """The exact real-incident reproduction."""
+    assert not _force_ac("Tetris-v0", "DQN", "", "Train a Tetris-v0 DQN agent to achieve 200 lines_cleared")
+
+
+def test_does_not_force_when_ppo_explicitly_requested():
+    assert not _force_ac("Tetris-v0", "PPO", "", "Train a Tetris-v0 PPO agent to achieve 200 lines_cleared")
+
+
+def test_does_not_force_when_a2c_explicitly_requested():
+    assert not _force_ac("Tetris-v0", "A2C", "", "Train a Tetris-v0 A2C agent to achieve 200 lines_cleared")
+
+
+def test_does_not_force_for_non_tetris_env():
+    assert not _force_ac("Snake-v0", "PPO", "", "Train a Snake-v0 agent")
+
+
+def test_does_not_force_when_trainer_type_already_set():
+    """Recipe-locked trainer_type (e.g. tetris_ppo_v1.yaml) is never overridden."""
+    assert not _force_ac("Tetris-v0", "PPO", "actor_critic", "Train a Tetris-v0 agent")
+
+
+def test_does_not_force_when_algorithm_field_empty():
+    """No algorithm in the plan at all — nothing to honor, use the default."""
+    assert _force_ac("Tetris-v0", "", "", "Train a Tetris-v0 agent to clear lines")
+
+
 # ── _normalize_pivot ─────────────────────────────────────────────────────────
 
 _normalize = LoopStateMachine._normalize_pivot

@@ -315,8 +315,10 @@ class LoopStateMachine:
                 # gets the correct target_metric_name (e.g. "lines_cleared", not "mean_reward").
                 plan["target_metric"] = mission.target_metric or {}
                 # Inject trainer_type for envs that use a custom training loop.
-                # Tetris-v0 uses Actor-Critic with get_next_states(); all others use SB3.
-                if plan.get("env_id") == "Tetris-v0" and not plan.get("trainer_type"):
+                if self._should_force_actor_critic(
+                    plan.get("env_id", ""), plan.get("algorithm", ""),
+                    plan.get("trainer_type", ""), mission.goal,
+                ):
                     plan["trainer_type"] = "actor_critic"
                 error_history: list[str] = []   # accumulated errors for this script
                 if _skip_launch:
@@ -1110,6 +1112,29 @@ class LoopStateMachine:
         """
         import re
         return bool(re.search(rf"\b{re.escape(current_algorithm)}\b", goal, re.IGNORECASE))
+
+    @classmethod
+    def _should_force_actor_critic(cls, env_id: str, algorithm: str, trainer_type: str, goal: str) -> bool:
+        """Tetris-v0 defaults to the custom Actor-Critic get_next_states()
+        trainer — Phase 17 found it empirically much stronger for this task
+        (reference PPO maxed at ~45 lines_cleared vs 121 for Actor-Critic) —
+        but ONLY when the user didn't explicitly request a specific algorithm.
+
+        Real incident: this override was previously unconditional, silently
+        discarding an explicit "Train a Tetris-v0 DQN agent..."/"...PPO
+        agent..." request 100% of the time, with the mission goal, UI, and
+        crystallized recipe all still claiming whatever algorithm was asked
+        for. Tetris-v0's Discrete(40) action space is fully SB3-compatible
+        (confirmed directly against envs/tetris_env.py) — there's no
+        technical reason an explicit choice can't be honored; better
+        empirical performance from the default doesn't justify ignoring a
+        direct request. Reuses _is_algorithm_locked()'s same goal-text
+        detection (already used elsewhere for pivot algorithm-switch
+        guarding) to recognize "the user explicitly named this algorithm."
+        """
+        if env_id != "Tetris-v0" or trainer_type:
+            return False
+        return not (algorithm and cls._is_algorithm_locked(goal, algorithm))
 
     @staticmethod
     def _clamp_env_kwargs(env_kwargs: dict, env_id: str = "") -> dict:

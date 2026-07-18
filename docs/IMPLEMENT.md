@@ -1145,7 +1145,12 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: no `DELETE /recipes/{name}` endpoint exists yet to keep file+DB stores in sync going forward — flagged as a real gap, deliberately out of scope for this pass.
 
-    Total: **763 tests** (749 unit + 14 integration).
+**Follow-up problem: Tetris-v0 missions silently ignored the explicitly requested algorithm.** While investigating a "DQN beat PPO on Tetris" result (see the crystallizer domain fix above — same investigation), found the real explanation: both missions' generated `train.py` scripts imported `ActorCriticNet`, not real SB3 `DQN`/`PPO`. `LoopStateMachine.run()` unconditionally forced `plan["trainer_type"] = "actor_critic"` for every Tetris-v0 mission whenever `trainer_type` wasn't already set — with zero visibility anywhere (no log line, no status event) that the requested algorithm was discarded. The override wasn't baseless: Phase 17 found the custom Actor-Critic trainer (using `get_next_states()` lookahead) empirically much stronger for this task (121 avg lines vs ~45 for reference PPO's blind 40-way action selection) — but better default performance doesn't justify silently ignoring an explicit "Train a Tetris-v0 DQN agent..." / "...PPO agent..." request. Confirmed `Tetris-v0`'s actual action space (`envs/tetris_env.py`: `spaces.Discrete(self.N_ROTATIONS * self.COLS)`) is fully standard-SB3-compatible, and that `code_generator.py`'s standard SB3 template already handles `Tetris-v0` env registration correctly (`_TETRIS_SETUP`) — it was simply never reached because the override was unconditional.
+
+- [x] **New `LoopStateMachine._should_force_actor_critic()` classmethod** — only defaults to the Actor-Critic trainer when the mission goal does *not* explicitly name an algorithm (reuses the existing `_is_algorithm_locked()` goal-text detection, already used for pivot algorithm-switch guarding); an explicit `trainer_type` already set (e.g. by a recipe) is still never overridden.
+- [x] **7 new tests** (`test_state_machine_helpers.py`): no-algorithm-requested defaults to actor_critic; DQN/PPO/A2C explicitly named in the goal are all honored (the exact real-incident reproduction); non-Tetris envs are never affected; an already-set `trainer_type` is never overridden; an algorithm present in the plan but not mentioned in the goal text still defaults to actor_critic (LLM's own unprompted choice, not a real user request).
+
+    Total: **770 tests** (756 unit + 14 integration).
 
 ---
 
@@ -1158,4 +1163,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **763 tests** (749 unit + 14 integration).
+    Total: **770 tests** (756 unit + 14 integration).
