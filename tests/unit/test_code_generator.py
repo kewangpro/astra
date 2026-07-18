@@ -1542,6 +1542,15 @@ def test_valid_algo_keys_dqn():
     assert "vf_coef" not in keys
 
 
+def test_valid_algo_keys_dqn_excludes_optimize_memory_usage():
+    """Real incident: optimize_memory_usage=True crashes SB3's ReplayBuffer
+    (ValueError: incompatible with the default handle_timeout_termination=True,
+    which isn't exposed here either) — reachable from a live pivot proposal,
+    not just a recipe default, so it must never appear in the valid-key
+    allowlist at all."""
+    assert "optimize_memory_usage" not in CodeGenerator.valid_algo_keys("DQN")
+
+
 def test_valid_algo_keys_case_insensitive():
     assert CodeGenerator.valid_algo_keys("dqn") == CodeGenerator.valid_algo_keys("DQN")
 

@@ -531,9 +531,23 @@ _VALID_ALGO_KEYS: dict[str, set] = {
     },
     "DQN": {
         "learning_rate", "buffer_size", "learning_starts", "batch_size",
-        "tau", "gamma", "train_freq", "gradient_steps", "optimize_memory_usage",
+        "tau", "gamma", "train_freq", "gradient_steps",
         "target_update_interval", "exploration_fraction",
         "exploration_initial_eps", "exploration_final_eps", "max_grad_norm",
+        # Real incident: optimize_memory_usage was here and reachable from
+        # LLM pivot proposals — SB3's ReplayBuffer raises ValueError when
+        # combined with the default handle_timeout_termination=True ("does
+        # not support optimize_memory_usage=True and
+        # handle_timeout_termination=True simultaneously"), and
+        # handle_timeout_termination isn't exposed here either, so there's
+        # no way to safely pair them. This already crashed one Snake-v0
+        # mission (see snake_dqn_v1.yaml's v1.1.1 changelog — fixed there
+        # only by dropping it from that one recipe's hyperparameters) and
+        # recurred via a live pivot on a Tetris-v0 mission, since a
+        # recipe-level omission does nothing to stop the LLM from proposing
+        # it again in a pivot. Removed here instead, at the actual
+        # reachable-key allowlist, so it can never be proposed again for
+        # any DQN mission regardless of recipe or pivot.
     },
     "SAC": {
         "learning_rate", "buffer_size", "learning_starts", "batch_size",
