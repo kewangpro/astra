@@ -1196,6 +1196,23 @@ class LoopStateMachine:
         equally unbounded until now. Handles both net_arch shapes seen in this
         codebase: SB3-style list of layer widths (RL/PPO/DQN) and the DPO/GRPO
         shared-net dict ({"type": ..., "n_layers": N, "layer_size": M}).
+
+        Real incident: a pivot proposed a THIRD, invalid shape — a list of
+        dicts (`[{"n_layers": 3, "n_neurons": 256}, ...]`), apparently
+        confusing the RL list convention with the DPO/GRPO dict convention.
+        Since it's still a list, the old code took the list branch, and
+        `int(size)` on a dict raised TypeError — caught by a bare
+        `except: pass` that left the malformed list in `clamped` completely
+        unchanged instead of rejecting it. That reached SB3's create_mlp()
+        as `net_arch[0]` being a dict, crashing every relaunch with
+        "TypeError: empty() received an invalid combination of arguments",
+        stuck in a self-healing crash loop with no way out since the same
+        broken plan value was retried every time. Now: any element that
+        can't be coerced to an int drops net_arch entirely (falsy dict/{})
+        instead of passing the garbage through — run()'s
+        `_proposed_pky and ...` guards already treat a falsy value as
+        "nothing proposed", so the pivot's other real changes still apply
+        and architecture just stays whatever it already was.
         """
         if not policy_kwargs or "net_arch" not in policy_kwargs:
             return policy_kwargs
@@ -1205,7 +1222,7 @@ class LoopStateMachine:
             try:
                 clamped["net_arch"] = [max(8, min(1024, int(size))) for size in arch[:6]]
             except (TypeError, ValueError):
-                pass
+                clamped.pop("net_arch", None)
         elif isinstance(arch, dict):
             out = dict(arch)
             try:
@@ -1214,8 +1231,13 @@ class LoopStateMachine:
                 if "layer_size" in out:
                     out["layer_size"] = max(8, min(2048, int(out["layer_size"])))
             except (TypeError, ValueError):
-                pass
-            clamped["net_arch"] = out
+                clamped.pop("net_arch", None)
+            else:
+                clamped["net_arch"] = out
+        else:
+            # Not a list or dict at all (e.g. a bare string/number) — same
+            # "never pass garbage through" rule.
+            clamped.pop("net_arch", None)
         return clamped
 
     # RL architectures to try, in order, when a deep-plateau pivot's proposal

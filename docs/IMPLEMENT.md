@@ -1177,6 +1177,15 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Total: **775 tests** (761 unit + 14 integration).
 
+**Follow-up problem: a malformed pivot proposal — a THIRD, invalid net_arch shape `_clamp_net_arch()` never accounted for — crash-looped a live mission with no way out.** The resumed DQN mission (`fa203f6b`) hit a deep-plateau pivot that proposed `net_arch: [{"n_layers": 3, "n_neurons": 256}, {"n_layers": 2, "n_neurons": 128}]` — a list of dicts, apparently confusing the RL list-of-widths convention with the DPO/GRPO shared-net dict convention. `_clamp_net_arch()` only handled two shapes (`isinstance(arch, list)` assumed numeric widths; `isinstance(arch, dict)` assumed the DPO/GRPO shape) — since a list-of-dicts is still a list, it took the list branch, `int(size)` on a dict raised `TypeError`, and a bare `except (TypeError, ValueError): pass` left the malformed list **completely unclamped** in `clamped` instead of rejecting it (the `pass` skipped the assignment, but `clamped` had already been seeded with the original unmodified value). That reached SB3's `create_mlp()` as `net_arch[0]` being a dict, crashing every relaunch with `TypeError: empty() received an invalid combination of arguments` — a self-healing crash loop with no way out, since the same broken plan value was retried on every restart.
+
+- [x] **`_clamp_net_arch()` now rejects instead of silently passing through**: any list element that can't be coerced to `int` (list branch), any dict field that can't be coerced (dict branch), or any non-list/non-dict `net_arch` value at all now drops `net_arch` from the returned `policy_kwargs` entirely, rather than leaving garbage in place. `run()`'s existing `_proposed_pky and ...` guards already treat a resulting falsy/empty dict as "nothing proposed," so the pivot's other real hyperparameter changes still apply and architecture just stays whatever it already was — no separate call-site change needed.
+- [x] **5 new tests** (`test_state_machine_helpers.py`): the exact incident shape (list of dicts) is dropped; sibling policy_kwargs keys (e.g. `activation_fn`) are preserved when `net_arch` is dropped; a single bad element among otherwise-valid ones still invalidates the whole list; a malformed DPO/GRPO dict (`n_layers` itself a dict) is dropped the same way; a bare scalar `net_arch` (e.g. a string) is dropped.
+
+    Note: **the specific stuck mission self-resolved before any manual intervention was needed** — a prior deep-plateau escalation had already triggered a full re-plan that discarded the entire malformed `policy_kwargs`, confirmed by reading `current_plan` directly from the DB (no `policy_kwargs` key present at all). A different manual `PATCH current_plan` fix (attempted earlier in a separate incident this session) was known to sometimes not persist correctly when raced against the running state machine's own saves — this fix path was deliberately deferred until the mission reached a stable, non-running (`pending`) state to avoid the same risk, but turned out to be unnecessary here.
+
+    Total: **780 tests** (766 unit + 14 integration).
+
 ---
 
 ## Phase 28 — os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented
@@ -1188,4 +1197,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **775 tests** (761 unit + 14 integration).
+    Total: **780 tests** (766 unit + 14 integration).

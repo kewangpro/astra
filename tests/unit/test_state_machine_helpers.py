@@ -995,6 +995,47 @@ def test_clamp_net_arch_dict_n_layers_and_layer_size_bounded():
     assert result["net_arch"]["type"] == "shared"  # sibling keys preserved
 
 
+# Real incident: a pivot proposed net_arch as a list of dicts (confusing the
+# RL list convention with the DPO/GRPO dict convention). The old code took
+# the list branch, int(dict) raised TypeError, and a bare `except: pass` left
+# the malformed list completely unclamped — it reached SB3's create_mlp() as
+# net_arch[0] being a dict and crashed every relaunch in a self-healing loop
+# with no way out (mission fa203f6b).
+
+def test_clamp_net_arch_list_of_dicts_dropped():
+    result = LoopStateMachine._clamp_net_arch(
+        {"net_arch": [{"n_layers": 3, "n_neurons": 256}, {"n_layers": 2, "n_neurons": 128}]}
+    )
+    assert "net_arch" not in result
+
+
+def test_clamp_net_arch_list_of_dicts_preserves_sibling_keys():
+    result = LoopStateMachine._clamp_net_arch(
+        {"net_arch": [{"n_layers": 3}], "activation_fn": "relu"}
+    )
+    assert "net_arch" not in result
+    assert result["activation_fn"] == "relu"
+
+
+def test_clamp_net_arch_list_with_one_bad_element_dropped():
+    """Even a single non-numeric element invalidates the whole list."""
+    result = LoopStateMachine._clamp_net_arch({"net_arch": [256, {"bad": 1}, 128]})
+    assert "net_arch" not in result
+
+
+def test_clamp_net_arch_dict_with_bad_n_layers_dropped():
+    result = LoopStateMachine._clamp_net_arch(
+        {"net_arch": {"type": "shared", "n_layers": {"nested": "garbage"}, "layer_size": 256}}
+    )
+    assert "net_arch" not in result
+
+
+def test_clamp_net_arch_scalar_dropped():
+    """Not a list or dict at all (e.g. a bare string) — same reject rule."""
+    result = LoopStateMachine._clamp_net_arch({"net_arch": "256,256"})
+    assert "net_arch" not in result
+
+
 # ── _pick_untried_net_arch ───────────────────────────────────────────────────
 
 def test_pick_untried_net_arch_skips_all_tried():
