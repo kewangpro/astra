@@ -1137,7 +1137,15 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **`MLXProvider.unload()` and `ModelManager._gc()` now acquire it before `mx.metal.clear_cache()`** — both converted to `async def`; `ModelManager.before_sandbox_launch()`/`_evict_drafter()` converted to `async def` too (to `await` the now-async `_gc()`/`unload()` calls), with `state_machine.py`'s one call site updated to `await` it. `InferenceProvider.unload()`'s abstract signature and all four implementations (`MLXProvider`, `MockProvider`, `OllamaProvider`, `VLLMProvider`) updated to `async def` for interface consistency, even though only `MLXProvider`'s actually touches Metal.
 - [x] **10 new tests**: `test_mlx_provider.py` — `unload()` genuinely blocks while the lock is held elsewhere rather than racing past it, and `mlx_provider`/`model_manager` import the identical lock object (a second, separate lock would defeat the whole fix). `test_model_manager.py` — same two checks for `_gc()`, plus the existing `TestModelManagerSandboxLifecycle` suite converted to `async def`/`await` for the new async signatures (mock providers' `unload` switched to `AsyncMock`).
 
-    Total: **761 tests** (747 unit + 14 integration).
+**Follow-up problem: every crystallized recipe ever produced had the wrong domain, and the bug had been silently recurring for months.** Reviewing the recipe auto-crystallized from a completed Tetris DQN mission (`af97b491`, `train_rl_v13.yaml`) found `domain: Train` — not `Tetris`. `crystallizer.py`'s outer `crystallize()` function computed its own domain independently (`resolved_plan.get("domain") or mission.goal.split()[0]`) instead of reusing the already-correct `_infer_domain()` helper (already used inside `_build_recipe_content()`, and already covered by its own test) — then **overwrote** that correct value with the buggy one. Every mission goal in this codebase starts with "Train" (`_make_mission`'s own test default is literally `"Train CartPole agent"`), so this fired on every single crystallization. A DB audit (`recipe_records` table) found this wasn't a one-off: all 16 rows in the entire table were `domain="Train"` orphans (`train_rl_v1`–`v13`, `train_ml_v1`–`v3`) — no crystallized recipe had ever survived with a correct domain. Separately, since recipe files and `RecipeRecord` DB rows are two independent stores written together only at creation time with no reconciliation, manually deleting the bad YAML files in past sessions (the only cleanup path available — there's no `DELETE /recipes/{id}` endpoint) had silently left the DB rows behind every time, which is how they accumulated across 13 versions before this bug was actually found and fixed.
+
+- [x] **`crystallize()` now reuses `_infer_domain()`** (`crystallizer.py`) instead of duplicating broken fallback logic — the naive `mission.goal.split()[0]` path is gone entirely.
+- [x] **All 16 orphaned `domain="Train"` DB rows removed** (direct one-off DB cleanup, no code path existed to do it via API) — `recipe_records` now contains exactly the 7 legitimate, file-backed recipes, verified consistent via `GET /recipes` (every DB row has a matching file; every file's domain is correct).
+- [x] **2 new tests** (`test_crystallizer.py`): a new `TestCrystallizeDomain` class exercises the actual `crystallize()` DB entry point end-to-end (previously untested — only the pure `_build_recipe_content()` helper had coverage, which is why the bug shipped) — reproduces the exact incident (a goal starting with "Train") and asserts the resulting `RecipeRecord.domain` and recipe `name` are correct instead of matching the bug.
+
+    Note: no `DELETE /recipes/{name}` endpoint exists yet to keep file+DB stores in sync going forward — flagged as a real gap, deliberately out of scope for this pass.
+
+    Total: **763 tests** (749 unit + 14 integration).
 
 ---
 
@@ -1150,4 +1158,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **761 tests** (747 unit + 14 integration).
+    Total: **763 tests** (749 unit + 14 integration).

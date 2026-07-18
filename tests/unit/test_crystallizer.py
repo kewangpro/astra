@@ -1,11 +1,12 @@
 """Unit tests for pure helpers in services/crystallizer.py."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import uuid
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.services.crystallizer import _slugify, _next_version, _build_recipe_content
+from backend.services.crystallizer import _slugify, _next_version, _build_recipe_content, crystallize
 
 
 # ── _slugify ──────────────────────────────────────────────────────────────────
@@ -216,3 +217,65 @@ class TestBuildRecipeContent:
         mission = _make_mission(current_plan=plan)
         content = _build_recipe_content(mission, score=None, lessons=[])
         assert content.get("trainer_type") == "actor_critic"
+
+
+# ── crystallize() — the actual DB entry point ──────────────────────────────────
+# Real incident: crystallize() computed its own domain independently
+# (`resolved_plan.get("domain") or mission.goal.split()[0]`) instead of
+# reusing _infer_domain() — already correctly used inside _build_recipe_content()
+# above — and then overwrote that correct value with the buggy one. A mission
+# goal starting with "Train" (every mission goal in this codebase does — see
+# _make_mission's own default) produced domain="Train" and a recipe filename
+# literally named after the bug (train_rl_v13.yaml). None of the tests above
+# exercise crystallize() itself, only the pure _build_recipe_content() helper,
+# which is why this shipped.
+
+class TestCrystallizeDomain:
+    @pytest.fixture(autouse=True)
+    def _patch_crystallizer_db_and_io(self, db_engine, monkeypatch, tmp_path):
+        from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+        maker = async_sessionmaker(db_engine, expire_on_commit=False, class_=AsyncSession)
+        monkeypatch.setattr("backend.services.crystallizer.AsyncSessionLocal", maker)
+        monkeypatch.setattr("backend.services.crystallizer.settings.recipes_path", str(tmp_path))
+        monkeypatch.setattr(
+            "backend.services.crystallizer.vector_memory.query_lessons", lambda *a, **kw: []
+        )
+        monkeypatch.setattr(
+            "backend.services.crystallizer.recipe_library.index_recipe", lambda *a, **kw: None
+        )
+
+    @pytest.fixture
+    async def seeded_mission(self, db_session):
+        from backend.models.mission import Mission, MissionStatus
+        mission = Mission(
+            id=str(uuid.uuid4()),
+            goal="Train a Tetris-v0 DQN agent to achieve 200 lines_cleared",
+            task_type="rl",
+            target_metric={"lines_cleared": 200.0},
+            autonomy_mode="supervised",
+            status=MissionStatus.COMPLETED.value,
+            current_iteration=1,
+            best_metric_value="300.0",
+            current_plan={
+                "task_type": "rl", "algorithm": "DQN", "env_id": "Tetris-v0",
+                "trainer_type": "actor_critic", "hyperparameters": {"learning_rate": 0.001},
+            },
+        )
+        db_session.add(mission)
+        await db_session.commit()
+        return mission
+
+    async def test_domain_not_first_word_of_goal(self, seeded_mission, db_session):
+        """The exact real-incident reproduction: a goal starting with 'Train'
+        must not produce domain='Train' when a real env_id is available."""
+        record = await crystallize(seeded_mission.id, score=300.0)
+        assert record is not None
+        assert record.domain == "Tetris"
+        assert record.domain != "Train"
+
+    async def test_recipe_name_reflects_correct_domain(self, seeded_mission, db_session):
+        """The buggy path also produced filenames like train_rl_v13.yaml —
+        the name must be built from the corrected domain."""
+        record = await crystallize(seeded_mission.id, score=300.0)
+        assert record.name.startswith("tetris_")
+        assert not record.name.startswith("train_")

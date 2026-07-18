@@ -202,8 +202,15 @@ async def crystallize(
             float(mission.best_metric_value) if mission.best_metric_value else None
         )
 
-        domain = resolved_plan.get("domain") or mission.goal.split()[0]
         task_type = resolved_plan.get("task_type") or mission.task_type
+        # Real incident: this used to be `resolved_plan.get("domain") or
+        # mission.goal.split()[0]` — a naive fallback that grabbed the first
+        # WORD of the goal string ("Train a Tetris-v0 DQN agent..." → "Train"),
+        # completely bypassing _infer_domain() (already correctly used inside
+        # _build_recipe_content() below) and then overwriting its correct
+        # result. Produced a recipe with domain="Train" and a filename literally
+        # named after the bug (train_rl_v13.yaml instead of tetris_rl_v1.yaml).
+        domain = _infer_domain(resolved_plan, task_type, mission.goal)
 
         # Retrieve lessons learned during this run
         lessons = vector_memory.query_lessons(
