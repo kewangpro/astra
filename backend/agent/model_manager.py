@@ -16,6 +16,7 @@ from typing import Optional
 import psutil
 
 from backend.agent.inference.base import InferenceProvider
+from backend.agent.inference.metal_lock import get_metal_lock
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -89,7 +90,7 @@ class ModelManager:
 
     # ── Sandbox lifecycle hooks ───────────────────────────────────────────────
 
-    def before_sandbox_launch(self, sandbox_memory_gb: float) -> None:
+    async def before_sandbox_launch(self, sandbox_memory_gb: float) -> None:
         """
         Called by SandboxManager before spawning a training process.
         Evicts the speculative drafter and optionally the coding model
@@ -105,9 +106,17 @@ class ModelManager:
         hit a fatal "Insufficient Memory" Metal command buffer failure —
         an uncaught C++ exception that crashed the entire backend process,
         not just the mission being launched.
+
+        Async (and _gc()/_evict_drafter() below too) so the Metal cache-clear
+        can acquire the shared metal_lock.py lock — a second real incident
+        showed this same call racing against an in-flight, lock-held
+        MLXProvider.generate() call (running in a background thread) and
+        crashing the backend with an uncatchable Metal assertion, since this
+        method's own cache-clear was never serialized against generate()'s
+        Metal access at all.
         """
         self._sandbox_active = True
-        self._evict_drafter()
+        await self._evict_drafter()
 
         tracked_available = self.available_gb()
         real_available = self.real_available_gb()
@@ -119,7 +128,7 @@ class ModelManager:
                 "free, need %.1f GB) — triggering GC",
                 tracked_available, real_available, sandbox_memory_gb,
             )
-            self._gc()
+            await self._gc()
 
         logger.info(
             "ModelManager: pre-sandbox state — %.1f GB used, %.1f GB free (real=%.1f GB)",
@@ -134,9 +143,9 @@ class ModelManager:
 
     # ── Speculative drafter ──────────────────────────────────────────────────
 
-    def _evict_drafter(self) -> None:
+    async def _evict_drafter(self) -> None:
         if self._drafter and self._drafter.is_loaded():
-            self._drafter.unload()
+            await self._drafter.unload()
             logger.info("ModelManager: speculative drafter evicted")
 
     def _restore_drafter(self) -> None:
@@ -146,12 +155,18 @@ class ModelManager:
 
     # ── GC ───────────────────────────────────────────────────────────────────
 
-    def _gc(self) -> None:
+    async def _gc(self) -> None:
         gc.collect()
         if platform.system() == "Darwin":
             try:
                 import mlx.core as mx
-                mx.metal.clear_cache()
-                logger.info("ModelManager: Metal cache cleared")
             except ImportError:
-                pass
+                return
+            # Real incident: this call raced against an in-flight, lock-held
+            # MLXProvider.generate() call (running in a background thread via
+            # run_in_executor, genuinely concurrent with this coroutine) and
+            # crashed the whole backend with an uncatchable Metal assertion.
+            # Must hold the same lock generate()/load()/unload() use.
+            async with get_metal_lock():
+                mx.metal.clear_cache()
+            logger.info("ModelManager: Metal cache cleared")

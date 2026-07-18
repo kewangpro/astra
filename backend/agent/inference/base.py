@@ -33,8 +33,14 @@ class InferenceProvider(ABC):
         """True if a model is currently resident in memory."""
 
     @abstractmethod
-    def unload(self) -> None:
-        """Release model weights from memory (for ModelManager GC)."""
+    async def unload(self) -> None:
+        """Release model weights from memory (for ModelManager GC).
+
+        Async so implementations that touch the GPU (e.g. MLXProvider) can
+        acquire the shared Metal lock (metal_lock.py) before doing so —
+        required to prevent racing an in-flight generate()/load() call on a
+        different provider instance and crashing the whole backend process.
+        """
 
     @property
     @abstractmethod

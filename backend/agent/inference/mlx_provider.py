@@ -20,6 +20,7 @@ from typing import Optional
 import psutil
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
+from backend.agent.inference.metal_lock import get_metal_lock
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -34,15 +35,6 @@ logger = get_logger(__name__)
 # coding model — which has no relationship to ModelManager and can't reuse
 # its guard directly.
 _LOW_MEMORY_THRESHOLD_GB = 2.0
-
-# Serializes all MLX inference calls — concurrent Metal GPU access causes SIGABRT
-_MLX_LOCK: Optional[asyncio.Lock] = None
-
-def _get_mlx_lock() -> asyncio.Lock:
-    global _MLX_LOCK
-    if _MLX_LOCK is None:
-        _MLX_LOCK = asyncio.Lock()
-    return _MLX_LOCK
 
 _MLX_AVAILABLE = False
 try:
@@ -85,12 +77,18 @@ class MLXProvider(InferenceProvider):
         self._model, self._tokenizer = mlx_lm.load(self._model_id)
         logger.info("MLX model loaded: %s", self._model_id)
 
-    def unload(self) -> None:
+    async def unload(self) -> None:
         self._model = None
         self._tokenizer = None
         gc.collect()
         if _MLX_AVAILABLE:
-            mx.metal.clear_cache()
+            # Must hold the same lock generate()/load() use — a real incident
+            # showed this call racing against an in-flight, lock-held
+            # generate() call (running in a background thread) and crashing
+            # the whole backend with an uncatchable Metal assertion. See
+            # metal_lock.py's docstring for the full incident writeup.
+            async with get_metal_lock():
+                mx.metal.clear_cache()
         logger.info("MLX model unloaded and cache cleared: %s", self._model_id)
 
     def is_loaded(self) -> bool:
@@ -101,7 +99,7 @@ class MLXProvider(InferenceProvider):
         return self._model_id
 
     async def generate(self, messages: list[Message], config: Optional[GenerationConfig] = None) -> str:
-        async with _get_mlx_lock():
+        async with get_metal_lock():
             return await self._generate_locked(messages, config)
 
     async def _generate_locked(self, messages: list[Message], config: Optional[GenerationConfig] = None) -> str:

@@ -50,7 +50,7 @@ class VLLMProvider(InferenceProvider):
         )
         logger.info("vLLM model loaded: %s", self._model_id)
 
-    def unload(self) -> None:
+    async def unload(self) -> None:
         self._llm = None
         logger.info("vLLM model unloaded: %s", self._model_id)
 

@@ -363,7 +363,7 @@ class LoopStateMachine:
                     )
                     _skip_launch = False
                 else:
-                    self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
+                    await self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
                     await emit_status(mission_id, "Launching training sandbox…", event_type="info")
                     _remote_ckpt_dir = (
                         finetune_checkpoint_dir(_mission_task_type, plan, mission_id)

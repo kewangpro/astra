@@ -273,6 +273,7 @@ class _SkipFileExistsManifestEvaluator(ManifestEvaluator):
 
 def _build_sm(agent, codegen, healer, sandbox, evaluator):
     mm = MagicMock()  # ModelManager — no-op
+    mm.before_sandbox_launch = AsyncMock()  # async (metal_lock.py) — must be awaitable
     sm = LoopStateMachine(
         lead_agent=agent,
         code_generator=codegen,

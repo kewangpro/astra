@@ -44,7 +44,7 @@ class OllamaProvider(InferenceProvider):
         # Ollama manages model loading server-side; treat as always ready
         return True
 
-    def unload(self) -> None:
+    async def unload(self) -> None:
         # Ollama manages its own memory; nothing to do locally
         pass
 

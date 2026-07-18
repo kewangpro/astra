@@ -21,7 +21,7 @@ class MockProvider(InferenceProvider):
     def is_loaded(self) -> bool:
         return self._loaded
 
-    def unload(self) -> None:
+    async def unload(self) -> None:
         self._loaded = False
 
     @property

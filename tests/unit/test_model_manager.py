@@ -1,7 +1,8 @@
 """Unit tests for ModelManager in agent/model_manager.py."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,6 +13,7 @@ def _mock_provider(model_id: str, loaded: bool = True) -> MagicMock:
     p = MagicMock()
     p.model_id = model_id
     p.is_loaded.return_value = loaded
+    p.unload = AsyncMock()  # unload() is async (metal_lock.py) — must be awaitable
     return p
 
 
@@ -89,8 +91,8 @@ class TestModelManagerSandboxLifecycle:
     def teardown_method(self):
         self._real_mem_patch.stop()
 
-    def test_before_sandbox_launch_sets_sandbox_active(self):
-        self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
+    async def test_before_sandbox_launch_sets_sandbox_active(self):
+        await self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
         assert self.mm._sandbox_active is True
 
     def test_after_sandbox_exit_clears_sandbox_active(self):
@@ -98,23 +100,23 @@ class TestModelManagerSandboxLifecycle:
         self.mm.after_sandbox_exit()
         assert self.mm._sandbox_active is False
 
-    def test_before_sandbox_evicts_drafter(self):
+    async def test_before_sandbox_evicts_drafter(self):
         drafter = _mock_provider("mlx-community/Llama-3.2-1B-Instruct-4bit", loaded=True)
         self.mm.register_drafter(drafter)
-        self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
+        await self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
         drafter.unload.assert_called_once()
 
-    def test_before_sandbox_skips_eviction_if_drafter_not_loaded(self):
+    async def test_before_sandbox_skips_eviction_if_drafter_not_loaded(self):
         drafter = _mock_provider("mlx-community/Llama-3.2-1B-Instruct-4bit", loaded=False)
         self.mm.register_drafter(drafter)
-        self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
+        await self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
         drafter.unload.assert_not_called()
 
-    def test_before_sandbox_no_drafter_registered(self):
+    async def test_before_sandbox_no_drafter_registered(self):
         # Should not raise
-        self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
+        await self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
 
-    def test_gc_triggered_when_insufficient_headroom(self):
+    async def test_gc_triggered_when_insufficient_headroom(self):
         # Load providers until available memory < requested sandbox memory
         model_id = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
         for i in range(3):
@@ -122,15 +124,15 @@ class TestModelManagerSandboxLifecycle:
         # 3 × 4.5 GB = 13.5 GB used, 10.5 GB free
         # Request 12 GB → should trigger GC
         with patch("backend.agent.model_manager.gc.collect") as mock_gc:
-            self.mm.before_sandbox_launch(sandbox_memory_gb=12.0)
+            await self.mm.before_sandbox_launch(sandbox_memory_gb=12.0)
             mock_gc.assert_called_once()
 
-    def test_gc_not_triggered_when_sufficient_headroom(self):
+    async def test_gc_not_triggered_when_sufficient_headroom(self):
         with patch("backend.agent.model_manager.gc.collect") as mock_gc:
-            self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
+            await self.mm.before_sandbox_launch(sandbox_memory_gb=1.0)
             mock_gc.assert_not_called()
 
-    def test_gc_triggered_by_real_memory_pressure_even_when_tracked_estimate_looks_fine(self):
+    async def test_gc_triggered_by_real_memory_pressure_even_when_tracked_estimate_looks_fine(self):
         """Real incident: the tracked-provider estimate reported healthy
         headroom while a concurrently-running local training subprocess
         (invisible to that estimate) had actually driven real system memory
@@ -140,13 +142,13 @@ class TestModelManagerSandboxLifecycle:
         with patch.object(ModelManager, "real_available_gb", return_value=2.0), \
              patch("backend.agent.model_manager.gc.collect") as mock_gc:
             # No providers registered → tracked estimate says all 24 GB free.
-            self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
+            await self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
             mock_gc.assert_called_once()
         self._real_mem_patch.start()
 
-    def test_gc_not_triggered_when_real_memory_also_healthy(self):
+    async def test_gc_not_triggered_when_real_memory_also_healthy(self):
         with patch("backend.agent.model_manager.gc.collect") as mock_gc:
-            self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
+            await self.mm.before_sandbox_launch(sandbox_memory_gb=4.0)
             mock_gc.assert_not_called()
 
     def test_real_available_gb_uses_psutil(self):
@@ -174,3 +176,38 @@ class TestModelManagerSandboxLifecycle:
         self.mm._sandbox_active = True
         self.mm._restore_drafter()   # no-op because sandbox is active
         drafter.unload.assert_not_called()
+
+
+class TestGcMetalLockUsage:
+    """Real incident: ModelManager._gc()'s mx.metal.clear_cache() call was
+    unprotected by the same lock MLXProvider.generate()/load() use — racing
+    against an in-flight, lock-held generate() call (running in a background
+    thread) crashed the whole backend with an uncatchable Metal assertion."""
+
+    def setup_method(self):
+        # See identical note in test_mlx_provider.py's TestMetalLockUsage —
+        # pytest-asyncio gives each test its own event loop, so the lock
+        # singleton must be reset to avoid a stale-loop error; production
+        # only ever has the one long-lived loop.
+        import backend.agent.inference.metal_lock as metal_lock_module
+        metal_lock_module._METAL_LOCK = None
+
+    async def test_gc_blocks_while_metal_lock_held_elsewhere(self):
+        from backend.agent.inference.metal_lock import get_metal_lock
+
+        mm = ModelManager(total_memory_gb=24.0)
+        lock = get_metal_lock()
+        with patch("backend.agent.model_manager.platform.system", return_value="Darwin"), \
+             patch.dict("sys.modules", {"mlx.core": MagicMock()}):
+            async with lock:
+                task = asyncio.ensure_future(mm._gc())
+                await asyncio.sleep(0.01)
+                assert not task.done()  # blocked on the lock, not racing past it
+            await task
+
+    def test_gc_uses_the_shared_metal_lock_module(self):
+        """model_manager.py must import the same get_metal_lock as
+        mlx_provider.py — a separate, local lock would defeat the fix."""
+        from backend.agent import model_manager as mm_module
+        from backend.agent.inference import mlx_provider
+        assert mm_module.get_metal_lock is mlx_provider.get_metal_lock
