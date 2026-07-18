@@ -360,7 +360,7 @@ def test_does_not_force_for_non_tetris_env():
 
 
 def test_does_not_force_when_trainer_type_already_set():
-    """Recipe-locked trainer_type (e.g. tetris_ppo_v1.yaml) is never overridden."""
+    """Recipe-locked trainer_type (e.g. tetris_actor_critic_v1.yaml) is never overridden."""
     assert not _force_ac("Tetris-v0", "PPO", "actor_critic", "Train a Tetris-v0 agent")
 
 

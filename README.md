@@ -13,7 +13,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Auto-approve with LLM classification** — `execute_code` gates are auto-approved via a two-stage classifier (static regex → LLM review); unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
 - **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments; Snake-v0 tracks `food_eaten`; Tetris-v0 uses a placement-based `Discrete(40)` action space and a compact 4-feature observation `[lines_cleared_last, holes, bumpiness, sum_height]` (normalized) matching the reference approach that achieved 45+ lines cleared vs ~10 with a flat 224-element board
+- **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments; Snake-v0 tracks `food_eaten`; Tetris-v0 uses a placement-based `Discrete(40)` action space and an 18-feature observation — 4 board-quality features `[lines_cleared_last, holes, bumpiness, sum_height]` (normalized) plus one-hot current/next piece identity, so standard SB3 policies (not just the lookahead-based Actor-Critic trainer) can learn real placements
 - **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket; auto-detects SB3 (`best_model.zip`) vs PyTorch Actor-Critic (`best_model.pth`) and uses `get_next_states()` lookahead for Tetris playback; displays `lines_cleared` (Tetris) and `food_eaten` (Snake) per episode
 - **Curriculum training** — Snake-v0 recipes define grid-size phases (8×8 → 12×12 → 16×16); `CodeGenerator._inject_curriculum` deterministically rewrites the generated `model.learn()` call into a multi-phase loop, transferring weights between phases via `model.set_env()` — no LLM involvement in the curriculum logic
 - **Algorithm-aware code generation** — `_VALID_ALGO_KEYS` maps PPO/DQN/SAC/A2C/TD3 to their valid SB3 constructor kwargs; `_RL_TEMPLATE` is fully parameterized so DQN missions get `buffer_size`, `learning_starts`, `exploration_fraction`, etc. correctly passed rather than silently filtered; `snake_dqn_v1.yaml` recipe added alongside the existing PPO recipe
@@ -86,7 +86,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 757 unit tests across all core modules
+│   ├── unit/           # 761 unit tests across all core modules
 │   └── integration/    # 14 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)

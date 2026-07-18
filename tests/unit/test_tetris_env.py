@@ -21,8 +21,8 @@ def env():
 
 def test_observation_shape(env):
     obs, _ = env.reset(seed=0)
-    # 4-feature: [lines_cleared_last, holes, bumpiness, sum_height] normalized
-    assert obs.shape == (4,)
+    # 4 board features + one-hot(current_piece, 7) + one-hot(next_piece, 7)
+    assert obs.shape == (18,)
     assert obs.dtype == np.float32
 
 
@@ -49,7 +49,7 @@ def test_step_returns_correct_types(env):
     assert isinstance(reward, float)
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)
-    assert obs.shape == (4,)
+    assert obs.shape == (18,)
 
 
 def test_obs_all_zeros_on_empty_board(env):
@@ -59,6 +59,51 @@ def test_obs_all_zeros_on_empty_board(env):
     assert obs[1] == 0.0  # holes
     assert obs[2] == 0.0  # bumpiness
     assert obs[3] == 0.0  # sum_height
+
+
+# ── piece identity in observation ───────────────────────────────────────────────
+# Real incident: the original 4-feature-only obs gave standard SB3 policies
+# (DQN/PPO/A2C) no way to know which piece was falling, so the same board state
+# + action could produce wildly different outcomes — no stable state→action
+# mapping existed for gradient-based learning to find. All three algorithms
+# plateaued at lines_cleared=0 across dozens of pivots. See tetris_env.py's
+# module docstring for the full incident writeup.
+
+def test_current_piece_one_hot_in_obs(env):
+    env.reset(seed=0)
+    env._current_piece = 3
+    obs = env._obs()
+    one_hot = obs[4:11]
+    assert one_hot.sum() == pytest.approx(1.0)
+    assert one_hot[3] == pytest.approx(1.0)
+
+
+def test_next_piece_one_hot_in_obs(env):
+    env.reset(seed=0)
+    env._next_piece = 5
+    obs = env._obs()
+    one_hot = obs[11:18]
+    assert one_hot.sum() == pytest.approx(1.0)
+    assert one_hot[5] == pytest.approx(1.0)
+
+
+def test_piece_one_hot_updates_after_step(env):
+    """After a step, current_piece becomes the old next_piece — obs must reflect it."""
+    env.reset(seed=0)
+    env._current_piece = 0
+    env._next_piece = 2
+    obs, _, terminated, _, _ = env.step(0)
+    if not terminated:
+        assert obs[4:11].sum() == pytest.approx(1.0)
+        assert obs[2 + 4] == pytest.approx(1.0)  # new current_piece == old next_piece (2)
+
+
+def test_get_next_states_obs_unaffected_by_piece_encoding(env):
+    """get_next_states() deliberately stays 4-feature regardless of _obs()'s shape."""
+    env.reset(seed=0)
+    states = env.get_next_states()
+    for obs in states.values():
+        assert obs.shape == (4,)
 
 
 # ── placement and clearing ─────────────────────────────────────────────────────
@@ -250,7 +295,7 @@ def test_register_creates_gym_env():
     register()
     e = gym.make("Tetris-v0")
     obs, _ = e.reset(seed=1)
-    assert obs.shape == (4,)
+    assert obs.shape == (18,)
     e.close()
 
 
@@ -278,7 +323,7 @@ def test_legacy_reward_kwargs_ignored():
     """Old hole_penalty / bumpiness_penalty kwargs must not raise."""
     e = TetrisEnv(hole_penalty=2.0, bumpiness_penalty=0.5, height_penalty=-0.1)
     obs, _ = e.reset(seed=0)
-    assert obs.shape == (4,)
+    assert obs.shape == (18,)
     e.close()
 
 

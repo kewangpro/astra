@@ -559,7 +559,7 @@ _VALID_ALGO_KEYS: dict[str, set] = {
 _ENV_RECIPE: dict = {
     "Snake-v0": "snake_ppo_v1.yaml",
     "Snake-v0/DQN": "snake_dqn_v1.yaml",   # algorithm-specific override
-    "Tetris-v0": "tetris_ppo_v1.yaml",
+    "Tetris-v0": "tetris_actor_critic_v1.yaml",
     "sft": "sft_llama_lora_v1.yaml",       # keyed by task_type for non-RL tasks
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",

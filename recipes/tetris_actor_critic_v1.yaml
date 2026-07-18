@@ -1,0 +1,80 @@
+name: tetris_actor_critic_v1
+version: "3.0.0"
+created_at: "2026-07-18"
+task_type: rl
+trainer_type: actor_critic
+domain: Tetris
+env_id: Tetris-v0
+target_metric:
+  lines_cleared: 200
+description: >
+  Custom Actor-Critic recipe for Tetris-v0 (not PPO — the trainer_type field
+  is authoritative). Uses env.get_next_states() to simulate the resulting
+  board for every one of the 40 (rotation, column) placements of the current
+  piece, then picks the action whose resulting board the critic scores
+  highest — implicit one-ply, piece-aware lookahead baked into action
+  selection. Observation for the critic stays the compact 4-feature board-
+  quality vector [lines_cleared_last, holes, bumpiness, sum_height]
+  (normalized to [0,1]); get_next_states() already has direct access to the
+  true current piece, so it never needed piece identity in that vector.
+  Standard SB3 DQN/PPO/A2C, by contrast, only observe raw board state with no
+  piece identity at all and must pick blindly — confirmed empirically stuck
+  at lines_cleared≈0 across dozens of pivots (mission fa203f6b, DQN;
+  1974c165, PPO; bdecd0e0, A2C) until Tetris-v0's observation space was
+  fixed to include piece one-hot encoding for those algorithms. This recipe
+  achieved lines_cleared=394 in 3 iterations (mission 8ee2a37b) — the
+  evidence behind the target_metric and hyperparameters below superseding
+  the original hand-authored defaults (target was previously a conservative
+  20).
+
+  Merged from two recipes that had accumulated for the same env/trainer_type
+  with no reconciliation: tetris_ppo_v1 (v2.0.0, hand-authored default
+  template, misleadingly named "ppo" despite being trainer_type=actor_critic)
+  and tetris_rl_v1 (v1.0.0, auto-crystallized from mission 8ee2a37b).
+
+architecture:
+  type: MLP
+  net_arch: [256, 256]
+
+hyperparameters:
+  # proven values from mission 8ee2a37b (best_score=394.0), superseding the
+  # original hand-authored defaults (learning_rate 0.0003, batch_size 64,
+  # gamma 0.99)
+  learning_rate: 0.0005
+  gamma: 0.995
+  batch_size: 32
+  # remaining defaults carried over unchanged from tetris_ppo_v1 — not
+  # present in the minimal crystallized hyperparameter set but still needed
+  # to run
+  total_timesteps: 500000
+  telemetry_interval: 2048
+  replay_buffer_size: 10000
+  epsilon_min: 0.01
+  epsilon_decay: 0.9995
+  ac_telemetry_interval: 50
+  eval_episodes: 10
+
+reward_shaping:
+  # Reference formula: +1 placement + lines² × 10 − 2 game_over
+  # No hole/bumpiness/height penalties — board quality is in the obs, not reward.
+  line_clear_multiplier: 10.0
+  piece_placement: 1.0
+  death_penalty: -2.0
+
+env_kwargs:
+  max_steps: 1000
+
+curriculum:
+  phases:
+    - max_lines_cleared: 50
+      max_iterations: 10000
+    - max_lines_cleared: 100
+      max_iterations: 20000
+    - max_lines_cleared: 200
+      max_iterations: 30000
+
+provenance:
+  mission_id: 8ee2a37b-1f20-485b-8111-92ea8cb7caf4
+  iterations: 3
+  best_score: 394.0
+  merged_from: [tetris_ppo_v1@2.0.0, tetris_rl_v1@1.0.0]

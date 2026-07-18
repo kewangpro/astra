@@ -327,7 +327,7 @@ class LoopStateMachine:
                     and self._is_algorithm_locked(mission.goal, plan["algorithm"])
                 ):
                     # An explicit algorithm was requested for an env whose recipe
-                    # (tetris_ppo_v1.yaml) defaults trainer_type to actor_critic.
+                    # (tetris_actor_critic_v1.yaml) defaults trainer_type to actor_critic.
                     # code_generator._build_user_prompt() falls back to that recipe
                     # default whenever plan["trainer_type"] is falsy — leaving it
                     # unset here would silently reintroduce the exact override this

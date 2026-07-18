@@ -1,16 +1,30 @@
 """
 Tetris-v0: A gymnasium-compatible Tetris environment for ASTRA training missions.
 
-Observation: float32 array of shape (4,)
-  [lines_cleared_last, holes, bumpiness, sum_height]  — normalized to [0, 1]
-  lines_cleared_last : lines cleared by the previous move   / 4
-  holes              : empty cells with a filled cell above  / 200
-  bumpiness          : sum of |height diff| between adj cols / 180
-  sum_height         : sum of all column heights             / 200
+Observation: float32 array of shape (18,)
+  [0:4]  board features (normalized to [0, 1], matches the reference
+         tetris_ppo_cnn project which achieved 45+ lines with a plain PPO MLP
+         using this compact representation vs only ~10 with a flat
+         224-element board):
+    lines_cleared_last : lines cleared by the previous move   / 4
+    holes              : empty cells with a filled cell above  / 200
+    bumpiness          : sum of |height diff| between adj cols / 180
+    sum_height         : sum of all column heights             / 200
+  [4:11]  current piece, one-hot over the 7 tetromino types
+  [11:18] next piece, one-hot over the 7 tetromino types
 
-  This compact 4-feature representation matches the approach used by the
-  reference project (tetris_ppo_cnn) which achieved 45+ lines with a plain
-  PPO MLP — versus only ~10 with a flat 224-element board observation.
+  Real incident: the original 4-feature-only observation gave a standard
+  "observe state, pick action" SB3 policy (DQN/PPO/A2C) zero information
+  about which piece was actually falling. The same board state + the same
+  action index produces a completely different outcome depending on piece
+  shape, so there was no stable state→action mapping for gradient-based
+  learning to discover — DQN/PPO/A2C missions all plateaued at
+  lines_cleared=0 regardless of hyperparameter/architecture pivots. The
+  custom Actor-Critic trainer (see get_next_states() below) never had this
+  problem: it has direct access to the live env's current piece and
+  evaluates the actual resulting board for every action before choosing, so
+  its 4-feature input (unchanged here — see get_next_states()'s docstring)
+  was never the bottleneck.
 
 Action: Discrete(40) — rotation(0–3) × 10 + column(0–9)
   Invalid rotations are clamped to the piece's maximum rotation count.
@@ -113,10 +127,10 @@ class TetrisEnv(gym.Env):
         self.death_penalty = death_penalty
 
         self.action_space = spaces.Discrete(self.N_ROTATIONS * self.COLS)
-        # 4-feature obs: [lines_cleared_last, holes, bumpiness, sum_height] (normalized)
+        # 4 board features + one-hot(current_piece, 7) + one-hot(next_piece, 7)
         self.observation_space = spaces.Box(
             low=0.0, high=1.0,
-            shape=(4,),
+            shape=(4 + self.N_PIECES + self.N_PIECES,),
             dtype=np.float32,
         )
 
@@ -227,16 +241,26 @@ class TetrisEnv(gym.Env):
         h = self._column_heights()
         return float(np.sum(np.abs(np.diff(h))))
 
+    def _piece_one_hot(self, piece: int) -> np.ndarray:
+        v = np.zeros(self.N_PIECES, dtype=np.float32)
+        v[piece] = 1.0
+        return v
+
     def _obs(self) -> np.ndarray:
         holes = self._count_holes()
         bumpiness = self._compute_bumpiness()
         sum_height = float(self._column_heights().sum())
-        return np.array([
+        board_features = np.array([
             self._lines_cleared_last / _MAX_LINES_PER_STEP,
             holes / _MAX_HOLES,
             bumpiness / _MAX_BUMPINESS,
             sum_height / _MAX_SUM_HEIGHT,
         ], dtype=np.float32)
+        return np.concatenate([
+            board_features,
+            self._piece_one_hot(self._current_piece),
+            self._piece_one_hot(self._next_piece),
+        ])
 
     def get_board_props(self) -> List[float]:
         """Return raw [holes, bumpiness, sum_height] for inspection/logging."""
@@ -252,6 +276,14 @@ class TetrisEnv(gym.Env):
         Simulates each of the 40 possible (rotation, col) actions on a board copy
         without modifying live state. Terminal placements (no valid drop) are excluded.
         Used by Actor-Critic agents to evaluate resulting states before acting.
+
+        Deliberately stays 4-feature (board quality only, no piece one-hot) even
+        though _obs() above now includes piece identity: this method already has
+        implicit piece-awareness — it simulates the true current piece's actual
+        placement for every action before returning the resulting board — so
+        there's no missing information for it to encode. Also keeps ActorCriticNet
+        (envs/actor_critic_net.py, hardcoded nn.Linear(4, 64) input) compatible
+        with existing checkpoints.
         """
         states = {}
         piece_rotations = _PIECES[self._current_piece]
