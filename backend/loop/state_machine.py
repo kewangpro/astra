@@ -320,6 +320,20 @@ class LoopStateMachine:
                     plan.get("trainer_type", ""), mission.goal,
                 ):
                     plan["trainer_type"] = "actor_critic"
+                elif (
+                    plan.get("env_id", "") == "Tetris-v0"
+                    and not plan.get("trainer_type", "")
+                    and plan.get("algorithm", "")
+                    and self._is_algorithm_locked(mission.goal, plan["algorithm"])
+                ):
+                    # An explicit algorithm was requested for an env whose recipe
+                    # (tetris_ppo_v1.yaml) defaults trainer_type to actor_critic.
+                    # code_generator._build_user_prompt() falls back to that recipe
+                    # default whenever plan["trainer_type"] is falsy — leaving it
+                    # unset here would silently reintroduce the exact override this
+                    # fix removes. "sb3" is just a non-"actor_critic" sentinel so
+                    # that fallback doesn't fire.
+                    plan["trainer_type"] = "sb3"
                 error_history: list[str] = []   # accumulated errors for this script
                 if _skip_launch:
                     # Reattaching to an already-running sandbox — no new script

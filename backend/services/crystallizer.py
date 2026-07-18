@@ -139,8 +139,10 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
         },
     }
 
-    # For actor_critic missions, record trainer_type explicitly
-    if trainer_type:
+    # For actor_critic missions, record trainer_type explicitly. "sb3" is an
+    # internal state_machine sentinel (see LoopStateMachine.run()) meaning
+    # "explicitly not actor_critic" — not a real recipe field value.
+    if trainer_type and trainer_type != "sb3":
         content["trainer_type"] = trainer_type
 
     # For RL recipes, surface env_id as a top-level field

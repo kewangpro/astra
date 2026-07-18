@@ -1150,7 +1150,12 @@ Watching that same live mission end-to-end also surfaced two more friction point
 - [x] **New `LoopStateMachine._should_force_actor_critic()` classmethod** — only defaults to the Actor-Critic trainer when the mission goal does *not* explicitly name an algorithm (reuses the existing `_is_algorithm_locked()` goal-text detection, already used for pivot algorithm-switch guarding); an explicit `trainer_type` already set (e.g. by a recipe) is still never overridden.
 - [x] **7 new tests** (`test_state_machine_helpers.py`): no-algorithm-requested defaults to actor_critic; DQN/PPO/A2C explicitly named in the goal are all honored (the exact real-incident reproduction); non-Tetris envs are never affected; an already-set `trainer_type` is never overridden; an algorithm present in the plan but not mentioned in the goal text still defaults to actor_critic (LLM's own unprompted choice, not a real user request).
 
-    Total: **770 tests** (756 unit + 14 integration).
+    Note: **live verification of the first pass of this fix found a second, independent copy of the same override, one layer down.** Re-running a fresh Tetris DQN mission (goal: "Train a Tetris-v0 DQN agent to achieve 100 lines_cleared") after deploying the fix above still produced a `train.py` importing `ActorCriticNet`. Root cause: `code_generator.py`'s `_build_user_prompt()` independently resolves `trainer_type` as `plan.get("trainer_type", "") or recipe_trainer_type` — falling back to whatever the env's canonical recipe (`tetris_ppo_v1.yaml`, the *only* Tetris recipe, despite its name) declares. That recipe hardcodes `trainer_type: actor_critic`. Since the state_machine fix above only sets `plan["trainer_type"]` when *forcing* actor_critic — never when honoring an explicit request — an honored request left `plan["trainer_type"]` unset, and code_generator's fallback silently reintroduced the exact override the first fix removed.
+    - [x] `LoopStateMachine.run()` now also sets `plan["trainer_type"] = "sb3"` (an internal non-`"actor_critic"` sentinel) whenever it honors an explicit algorithm request for Tetris-v0, specifically to block code_generator's recipe-default fallback.
+    - [x] `crystallizer.py`'s `_build_recipe_content()` updated to never surface this `"sb3"` sentinel as a real `trainer_type` field in a crystallized recipe.
+    - [x] **1 new test** (`test_crystallizer.py`): asserts the `"sb3"` sentinel is stripped from crystallized recipe content and the real algorithm (`DQN`) is surfaced instead.
+
+    Total: **771 tests** (757 unit + 14 integration).
 
 ---
 
@@ -1163,4 +1168,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **770 tests** (756 unit + 14 integration).
+    Total: **771 tests** (757 unit + 14 integration).

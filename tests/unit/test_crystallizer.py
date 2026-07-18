@@ -218,6 +218,20 @@ class TestBuildRecipeContent:
         content = _build_recipe_content(mission, score=None, lessons=[])
         assert content.get("trainer_type") == "actor_critic"
 
+    def test_sb3_sentinel_not_surfaced_as_trainer_type(self):
+        """"sb3" is LoopStateMachine.run()'s internal sentinel for "explicitly
+        not actor_critic" (used to stop code_generator's recipe-default
+        fallback from reintroducing the Tetris algorithm-override bug) — it
+        must never leak into a crystallized recipe as a real field value."""
+        plan = {
+            "task_type": "rl", "algorithm": "DQN", "env_id": "Tetris-v0",
+            "trainer_type": "sb3", "hyperparameters": {},
+        }
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert "trainer_type" not in content
+        assert content["algorithm"] == "DQN"
+
 
 # ── crystallize() — the actual DB entry point ──────────────────────────────────
 # Real incident: crystallize() computed its own domain independently
