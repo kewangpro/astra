@@ -676,7 +676,8 @@ class CodeGenerator:
             _curriculum_phases = (_recipe.get("curriculum") or {}).get("phases")
             if _curriculum_phases:
                 _env_kw = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
-                code = self._inject_curriculum(code, _curriculum_phases, env_id, _env_kw)
+                _metric_name = next(iter(plan.get("target_metric") or {}), "food_eaten")
+                code = self._inject_curriculum(code, _curriculum_phases, env_id, _env_kw, _metric_name)
                 logger.info("CodeGenerator: injected curriculum (%d phases) for %s/%s", len(_curriculum_phases), env_id, _algo)
         # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
         code = self._fix_checkpoint_paths(code, checkpoint_dir)
@@ -834,31 +835,62 @@ class CodeGenerator:
         return _ML_TEMPLATE.format(**ctx)
 
     @staticmethod
-    def _inject_curriculum(code: str, phases: list, env_id: str, env_kwargs: dict) -> str:
+    def _inject_curriculum(code: str, phases: list, env_id: str, env_kwargs: dict, metric_name: str = "food_eaten") -> str:
         """Replace single model.learn() with a multi-phase curriculum loop.
 
         Called after LLM generation so the loop is deterministic, not LLM-generated.
         obs_type=features keeps obs at 25D across all grid sizes — weights transfer fine.
+
+        Real incident: this was hardcoded entirely for Snake-v0's curriculum shape
+        (every phase dict assumed to have grid_h/grid_w/food_target/timesteps keys,
+        tracking hardcoded to info["food_eaten"]) with no env-specific branching —
+        it just happened to only ever be called for Snake-v0, since Tetris-v0's
+        recipe never had a curriculum section until one was merged in from a
+        crystallized recipe. That merge triggered this function for Tetris-v0's
+        curriculum shape (max_lines_cleared/max_iterations, no grid_h/grid_w at
+        all — the board is a fixed 20x10, not resizable) for the first time,
+        crashing every phase transition with KeyError: 'grid_h'. Now: per-phase
+        env kwargs (grid_h/grid_w) are only added if actually present in the
+        phase dict; the phase-duration key is "timesteps" OR "max_iterations",
+        whichever is present; and the tracked per-phase best metric comes from
+        the mission's actual target_metric name (passed in as metric_name)
+        instead of a hardcoded "food_eaten", read from the env's own info dict
+        key of the same name (Snake: info["food_eaten"]; Tetris:
+        info["lines_cleared"] — both envs already key their info dict by the
+        exact target_metric name).
         """
         import re
 
+        if not phases:
+            return code
+        phase0 = phases[0]
+        duration_key = "timesteps" if "timesteps" in phase0 else (
+            "max_iterations" if "max_iterations" in phase0 else None
+        )
+        if duration_key is None:
+            logger.warning(
+                "CodeGenerator: curriculum phases have neither 'timesteps' nor "
+                "'max_iterations' — skipping curriculum injection: %s", phase0,
+            )
+            return code
+        has_grid_dims = "grid_h" in phase0 and "grid_w" in phase0
+
         phases_repr = json.dumps(phases, indent=4)
-        # env_kwargs without grid dims (those come from each phase)
+        # env_kwargs without grid dims (those come from each phase, when present)
         base_kw = {k: v for k, v in env_kwargs.items() if k not in ("grid_h", "grid_w")}
         kw_str = (", " + ", ".join(f"{k}={v!r}" for k, v in base_kw.items())) if base_kw else ""
+        grid_kw_str = ', grid_h=_ph["grid_h"], grid_w=_ph["grid_w"]' if has_grid_dims else ""
 
         curriculum_block = (
             f'_CURRICULUM_PHASES = {phases_repr}\n'
             f'for _ph_idx, _ph in enumerate(_CURRICULUM_PHASES):\n'
-            f'    _ph_env = gym.make("{env_id}"{kw_str}, grid_h=_ph["grid_h"], grid_w=_ph["grid_w"])\n'
+            f'    _ph_env = gym.make("{env_id}"{kw_str}{grid_kw_str})\n'
             f'    model.set_env(_ph_env)\n'
-            f'    callback._phase_best_food = 0\n'
-            f'    logging.info("Curriculum phase %d/%d: grid=%dx%d food_target=%d timesteps=%d",\n'
-            f'                 _ph_idx + 1, len(_CURRICULUM_PHASES), _ph["grid_h"], _ph["grid_w"],\n'
-            f'                 _ph["food_target"], _ph["timesteps"])\n'
-            f'    model.learn(total_timesteps=_ph["timesteps"], callback=callback,\n'
+            f'    callback._phase_best_metric = 0\n'
+            f'    logging.info("Curriculum phase %d/%d: %s", _ph_idx + 1, len(_CURRICULUM_PHASES), _ph)\n'
+            f'    model.learn(total_timesteps=_ph["{duration_key}"], callback=callback,\n'
             f'                reset_num_timesteps=(_ph_idx == 0))\n'
-            f'    logging.info("Phase %d done — best_food=%d", _ph_idx + 1, callback._phase_best_food)'
+            f'    logging.info("Phase %d done — best_{metric_name}=%d", _ph_idx + 1, callback._phase_best_metric)'
         )
 
         # Replace single model.learn(...) call with the curriculum loop
@@ -868,23 +900,23 @@ class CodeGenerator:
             code,
         )
 
-        # Patch callback __init__: add _phase_best_food tracker
+        # Patch callback __init__: add _phase_best_metric tracker
         code = code.replace(
             'self._best_reward = float("-inf")',
-            'self._best_reward = float("-inf")\n        self._phase_best_food = 0',
+            'self._best_reward = float("-inf")\n        self._phase_best_metric = 0',
         )
 
-        # Patch _on_step: insert food_eaten tracking before the telemetry block
-        food_tracking = (
+        # Patch _on_step: insert per-phase metric tracking before the telemetry block
+        metric_tracking = (
             '        for _info, _done in zip(self.locals.get("infos", []), self.locals.get("dones", [])):\n'
-            '            if _done and "food_eaten" in _info:\n'
-            '                _fe = int(_info["food_eaten"])\n'
-            '                if _fe > self._phase_best_food:\n'
-            '                    self._phase_best_food = _fe\n'
+            f'            if _done and "{metric_name}" in _info:\n'
+            f'                _mv = int(_info["{metric_name}"])\n'
+            '                if _mv > self._phase_best_metric:\n'
+            '                    self._phase_best_metric = _mv\n'
         )
         code = re.sub(
             r'(    def _on_step\(self\) -> bool:\n)',
-            r'\1' + food_tracking,
+            r'\1' + metric_tracking,
             code,
         )
 

@@ -1186,6 +1186,13 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Total: **780 tests** (766 unit + 14 integration).
 
+**Follow-up regression: the earlier Tetris recipe merge exposed a second, pre-existing bug — `_inject_curriculum()` was hardcoded entirely for Snake-v0's phase shape.** Resuming the same DQN mission (`fa203f6b`) after the net_arch fix above crashed again, differently: `KeyError: 'grid_h'` at the curriculum-phase `gym.make()` call in the generated `train.py`. `code_generator.py`'s `_inject_curriculum()` unconditionally referenced `_ph["grid_h"]`/`_ph["grid_w"]` and tracked `info["food_eaten"]` for *any* env's curriculum, with zero env-specific branching — it simply had never been exercised for a non-Snake env before, since the old `tetris_ppo_v1.yaml` (the recipe actually consulted for Tetris missions) never had a `curriculum` section. Earlier this session's recipe merge (see above) folded `tetris_rl_v1.yaml`'s Tetris-shaped curriculum (`max_lines_cleared`/`max_iterations`, no grid dims — the board is a fixed 20×10) into the new default-template recipe now consulted for *every* Tetris mission — triggering `_inject_curriculum()` for Tetris for the first time and hitting the hardcoded Snake-only field access immediately. The merge is what exposed this; the underlying hardcoding bug predates it.
+
+- [x] **`_inject_curriculum()` generalized**: `grid_h`/`grid_w` are only added to the per-phase `gym.make()` call when actually present in the phase dict; the phase-duration key is `"timesteps"` OR `"max_iterations"`, whichever is present (missing both → curriculum injection is skipped entirely rather than crashing); the tracked per-phase best metric now reads the mission's actual `target_metric` name (passed in as a new `metric_name` param, default `"food_eaten"` for backward compatibility) from the env's own `info` dict key of the same name — both `SnakeEnv` and `TetrisEnv` already key their `info` dict by the exact target_metric name, so no env-specific special-casing was needed beyond removing the hardcoding. `_phase_best_food` renamed to `_phase_best_metric` throughout the generated callback.
+- [x] **9 new/updated tests** (`test_code_generator.py`): Tetris-shaped phases produce no `grid_h`/`grid_w` reference at all (the exact incident reproduction); `max_iterations` correctly used as the duration key; a custom `metric_name` (`lines_cleared`) is correctly threaded through instead of the `food_eaten` default; phases with neither duration key present safely skip injection instead of crashing; empty phase list returns the script unchanged; existing Snake-v0 tests updated for the `_phase_best_food` → `_phase_best_metric` rename. Generated code additionally verified to `compile()` cleanly for both env shapes.
+
+    Total: **785 tests** (771 unit + 14 integration).
+
 ---
 
 ## Phase 28 — os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented
@@ -1197,4 +1204,4 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     Note: the live mission was unblocked by manually approving the pending gate — this fix prevents the same stall for future dpo/grpo launches, it doesn't retroactively affect the mission that already hit it.
 
-    Total: **780 tests** (766 unit + 14 integration).
+    Total: **785 tests** (771 unit + 14 integration).

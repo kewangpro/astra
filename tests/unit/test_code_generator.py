@@ -1402,10 +1402,10 @@ def test_inject_curriculum_excludes_grid_dims_from_base_kwargs():
             assert "grid_w=16" not in line
 
 
-def test_inject_curriculum_adds_phase_best_food_to_init():
+def test_inject_curriculum_adds_phase_best_metric_to_init():
     code = _make_injectable_script()
     result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
-    assert "self._phase_best_food = 0" in result
+    assert "self._phase_best_metric = 0" in result
 
 
 def test_inject_curriculum_adds_food_tracking_to_on_step():
@@ -1413,7 +1413,8 @@ def test_inject_curriculum_adds_food_tracking_to_on_step():
     result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
     assert 'self.locals.get("infos"' in result
     assert 'self.locals.get("dones"' in result
-    assert "self._phase_best_food" in result
+    assert "self._phase_best_metric" in result
+    assert '"food_eaten" in _info' in result  # default metric_name
 
 
 def test_inject_curriculum_reset_num_timesteps_only_on_first_phase():
@@ -1421,6 +1422,61 @@ def test_inject_curriculum_reset_num_timesteps_only_on_first_phase():
     code = _make_injectable_script()
     result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", _SAMPLE_ENV_KWARGS)
     assert "reset_num_timesteps=(_ph_idx == 0)" in result
+
+
+# ── _inject_curriculum: Tetris-shaped phases (no grid dims) ────────────────────
+# Real incident: this function was hardcoded entirely for Snake's phase shape.
+# A recipe merge gave Tetris-v0 a curriculum for the first time
+# (max_lines_cleared/max_iterations, no grid_h/grid_w — the board is fixed
+# 20x10) and every phase transition crashed with KeyError: 'grid_h' because
+# the old code unconditionally referenced _ph["grid_h"]/_ph["grid_w"].
+
+_TETRIS_PHASES = [
+    {"max_lines_cleared": 50, "max_iterations": 10000},
+    {"max_lines_cleared": 100, "max_iterations": 20000},
+    {"max_lines_cleared": 200, "max_iterations": 30000},
+]
+
+
+def test_inject_curriculum_tetris_no_grid_dims_in_gym_make():
+    """The exact real-incident reproduction: no grid_h/grid_w key access at all."""
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _TETRIS_PHASES, "Tetris-v0", {"max_steps": 1000})
+    for line in result.splitlines():
+        if "_ph_env = gym.make" in line:
+            assert "grid_h" not in line
+            assert "grid_w" not in line
+
+
+def test_inject_curriculum_tetris_uses_max_iterations_as_duration():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, _TETRIS_PHASES, "Tetris-v0", {"max_steps": 1000})
+    assert 'model.learn(total_timesteps=_ph["max_iterations"]' in result
+
+
+def test_inject_curriculum_tetris_uses_target_metric_name():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(
+        code, _TETRIS_PHASES, "Tetris-v0", {"max_steps": 1000}, metric_name="lines_cleared"
+    )
+    assert '"lines_cleared" in _info' in result
+    assert '_info["lines_cleared"]' in result
+    assert '"food_eaten"' not in result
+
+
+def test_inject_curriculum_no_duration_key_skips_injection():
+    """Neither 'timesteps' nor 'max_iterations' present — don't crash, just skip."""
+    code = _make_injectable_script()
+    bad_phases = [{"max_lines_cleared": 50}]
+    result = CodeGenerator._inject_curriculum(code, bad_phases, "Tetris-v0", {})
+    assert result == code  # unchanged — original single model.learn() call kept
+    assert "model.learn(total_timesteps=3000000, callback=callback)" in result
+
+
+def test_inject_curriculum_empty_phases_returns_unchanged():
+    code = _make_injectable_script()
+    result = CodeGenerator._inject_curriculum(code, [], "Tetris-v0", {})
+    assert result == code
 
 
 def test_generate_training_script_snake_injects_curriculum(tmp_path, monkeypatch):
@@ -1447,7 +1503,7 @@ def test_generate_training_script_snake_injects_curriculum(tmp_path, monkeypatch
     content = open(path).read()
     assert "_CURRICULUM_PHASES" in content
     assert "model.set_env(_ph_env)" in content
-    assert "_phase_best_food" in content
+    assert "_phase_best_metric" in content
 
 
 def test_generate_training_script_non_snake_no_curriculum(tmp_path, monkeypatch):
