@@ -14,6 +14,12 @@ const STATUS_COLOR: Record<string, string> = {
   failed:     "#f87171",
 };
 
+// run/stop are both mission-control actions — keep them visually consistent
+// (matching STATUS_COLOR.running) instead of tracking the card's current
+// per-status color, which made "run" (pending, gray) and "stop"
+// (running/planning/evaluating, teal/blue/purple) look mismatched.
+const ACTION_COLOR = STATUS_COLOR.running;
+
 function SkeletonCard() {
   return (
     <div className="bg-[#1e293b] border border-[rgba(255,255,255,0.04)] rounded-lg p-4 animate-pulse">
@@ -108,11 +114,11 @@ function MissionCard({ m }: { m: Mission }) {
             disabled={run.isPending}
             className="mt-3 w-full text-[11px] py-1.5 rounded-sm border transition-colors disabled:opacity-40"
             style={{
-              borderColor: `${color}30`,
-              color,
+              borderColor: `${ACTION_COLOR}30`,
+              color: ACTION_COLOR,
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = `${color}10`;
+              (e.currentTarget as HTMLButtonElement).style.background = `${ACTION_COLOR}10`;
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background = "transparent";
@@ -126,11 +132,11 @@ function MissionCard({ m }: { m: Mission }) {
             onClick={handleStop}
             className="mt-3 w-full text-[11px] py-1.5 rounded-sm border transition-colors"
             style={{
-              borderColor: `${color}30`,
-              color,
+              borderColor: `${ACTION_COLOR}30`,
+              color: ACTION_COLOR,
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = `${color}10`;
+              (e.currentTarget as HTMLButtonElement).style.background = `${ACTION_COLOR}10`;
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background = "transparent";
