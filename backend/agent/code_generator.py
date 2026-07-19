@@ -185,7 +185,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
 BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
-epsilon = 1.0
+_eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
+epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
 best_reward = float("-inf")
 total_steps = 0
 episode = 0
@@ -233,6 +234,7 @@ while total_steps < {total_timesteps}:
             optimizer.zero_grad(); loss.backward(); optimizer.step()
 
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+    open(_eps_path, "w").write(str(epsilon))  # persist so the NEXT iteration's fresh script resumes decay instead of resetting to 1.0
     ep_rewards.append(ep_reward)
     ep_lines.append(ep_lines_cleared)
     episode += 1
@@ -308,7 +310,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
 BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
-epsilon = 1.0
+_eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
+epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
 best_reward = float("-inf")
 total_steps = 0
 episode = 0
@@ -359,6 +362,7 @@ while total_steps < {total_timesteps}:
             target_model.load_state_dict(model.state_dict())          # periodic target sync — the DQN-defining step
 
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+    open(_eps_path, "w").write(str(epsilon))  # persist so the NEXT iteration's fresh script resumes decay instead of resetting to 1.0
     ep_rewards.append(ep_reward)
     ep_lines.append(ep_lines_cleared)
     episode += 1
@@ -433,7 +437,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
 env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
 ep_rewards, ep_lines = [], []
-epsilon = 1.0
+_eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
+epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
 best_reward = float("-inf")
 total_steps = 0
 episode = 0
@@ -502,6 +507,7 @@ while total_steps < {total_timesteps}:
             optimizer.zero_grad(); loss.backward(); optimizer.step()
 
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+    open(_eps_path, "w").write(str(epsilon))  # persist so the NEXT iteration's fresh script resumes decay instead of resetting to 1.0
 
     if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0:
         mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
@@ -575,7 +581,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
 env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
 ep_rewards, ep_lines = [], []
-epsilon = 1.0
+_eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
+epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
 best_reward = float("-inf")
 total_steps = 0
 episode = 0
@@ -627,6 +634,7 @@ while total_steps < {total_timesteps}:
     optimizer.zero_grad(); loss.backward(); optimizer.step()
 
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+    open(_eps_path, "w").write(str(epsilon))  # persist so the NEXT iteration's fresh script resumes decay instead of resetting to 1.0
 
     if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0:
         mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))

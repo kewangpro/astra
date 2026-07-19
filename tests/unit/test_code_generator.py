@@ -1045,6 +1045,68 @@ def test_lookahead_dqn_runtime_shapes_never_mismatch():
     env.close()
 
 
+# ── epsilon persistence across iterations ───────────────────────────────────────
+# Real incident: every fresh iteration's script reset epsilon to 1.0, and
+# epsilon_decay (0.9995/episode) is far too slow relative to episodes-per-
+# iteration to meaningfully decay within one run — e.g. by episode 300,
+# epsilon is still ~0.86 (86% of actions still uniformly random). Since the
+# model IS warm-started across iterations but epsilon was NOT, training-time
+# mean_reward stayed flat and unremarkable (dominated by near-random
+# exploration noise) across iterations even as the model's true learned
+# quality — visible only in the fully-greedy, zero-exploration eval rollout
+# — improved dramatically (mission 1ed39807: mean_reward ~31 the whole way
+# through, but eval lines_cleared jumped from 3 to 313). Fixed by persisting
+# epsilon to a checkpoint-dir file, loaded on startup and written back on
+# every decay step, so it actually continues decaying across iterations
+# instead of resetting.
+
+def test_actor_critic_persists_epsilon(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_actor_critic_plan())
+    assert "_eps_path" in prompt
+    assert 'os.path.exists(_eps_path) else 1.0' in prompt
+    assert 'open(_eps_path, "w").write(str(epsilon))' in prompt
+
+
+def test_lookahead_dqn_persists_epsilon(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_dqn"))
+    assert "_eps_path" in prompt
+    assert 'os.path.exists(_eps_path) else 1.0' in prompt
+    assert 'open(_eps_path, "w").write(str(epsilon))' in prompt
+
+
+def test_lookahead_ppo_persists_epsilon(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_ppo"))
+    assert "_eps_path" in prompt
+    assert 'os.path.exists(_eps_path) else 1.0' in prompt
+    assert 'open(_eps_path, "w").write(str(epsilon))' in prompt
+
+
+def test_lookahead_a2c_persists_epsilon(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_a2c"))
+    assert "_eps_path" in prompt
+    assert 'os.path.exists(_eps_path) else 1.0' in prompt
+    assert 'open(_eps_path, "w").write(str(epsilon))' in prompt
+
+
+def test_epsilon_persistence_carries_forward_across_simulated_iterations(tmp_path):
+    """Direct reproduction of the fix's core behavior: a fresh 'script'
+    resuming from a saved epsilon.txt continues decay instead of resetting."""
+    import os as _os
+    eps_path = str(tmp_path / "epsilon.txt")
+
+    epsilon = float(open(eps_path).read().strip()) if _os.path.exists(eps_path) else 1.0
+    assert epsilon == 1.0  # iteration 0: no file yet, starts fresh
+    for _ in range(300):
+        epsilon = max(0.01, epsilon * 0.9995)
+    open(eps_path, "w").write(str(epsilon))
+    iteration_0_end = epsilon
+
+    # Simulate a brand new script execution (iteration 1) reading the same path
+    epsilon = float(open(eps_path).read().strip()) if _os.path.exists(eps_path) else 1.0
+    assert epsilon == iteration_0_end  # continues, does not reset to 1.0
+    assert epsilon < 1.0
+
+
 # ── recipe-driven env_kwargs and hyperparams tests ────────────────────────────
 
 def test_resolve_env_kwargs_snake_reads_from_recipe():
