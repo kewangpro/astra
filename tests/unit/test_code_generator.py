@@ -1045,6 +1045,67 @@ def test_lookahead_dqn_runtime_shapes_never_mismatch():
     env.close()
 
 
+# ── duplicate telemetry POST guard (PPO/A2C only) ───────────────────────────────
+# Real incident: live-observed duplicate mean_reward telemetry entries (same
+# step, same value, back to back) for a PPO mission. Root cause: PPO/A2C's
+# outer training loop runs once per ROLLOUT, not once per episode — an
+# episode can span multiple rollouts once the agent survives a while, so
+# `episode` may not change between outer-loop passes. The telemetry condition
+# only checked `episode % ac_telemetry_interval == 0`, which stays true
+# across every subsequent pass until a NEW episode finally completes,
+# re-posting the identical payload each time. DQN/actor_critic can't hit
+# this — their outer loop runs once per COMPLETED episode by construction,
+# so episode always increments exactly once per pass there.
+
+def test_lookahead_ppo_has_duplicate_post_guard(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_ppo"))
+    assert "_last_posted_episode" in prompt
+    assert "episode != _last_posted_episode" in prompt
+
+
+def test_lookahead_a2c_has_duplicate_post_guard(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_a2c"))
+    assert "_last_posted_episode" in prompt
+    assert "episode != _last_posted_episode" in prompt
+
+
+def test_lookahead_dqn_has_no_duplicate_post_guard(tmp_path, monkeypatch):
+    """DQN's outer loop runs once per completed episode by construction —
+    episode always increments each pass, so this guard isn't needed there."""
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_dqn"))
+    assert "_last_posted_episode" not in prompt
+
+
+def test_actor_critic_has_no_duplicate_post_guard(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_actor_critic_plan())
+    assert "_last_posted_episode" not in prompt
+
+
+def test_duplicate_post_guard_prevents_repeat_posts_when_episode_frozen():
+    """Direct reproduction of the live incident: episode count stays frozen
+    across multiple outer-loop passes (no episode boundary crossed), and the
+    guard must still post exactly once per unique episode count."""
+    ac_telemetry_interval = 50
+    episode = 50
+    ep_rewards = [1.0] * 60
+    _last_posted_episode = -1
+    posts = []
+
+    for outer_pass in range(5):
+        if outer_pass == 2:
+            episode = 100  # only advances once, on pass 2 — mimics an episode finally completing
+        if (
+            len(ep_rewards) >= ac_telemetry_interval
+            and episode % ac_telemetry_interval == 0
+            and episode > 0
+            and episode != _last_posted_episode
+        ):
+            _last_posted_episode = episode
+            posts.append(episode)
+
+    assert posts == [50, 100]  # exactly one post per unique episode count, no duplicates
+
+
 # ── epsilon persistence across iterations ───────────────────────────────────────
 # Real incident: every fresh iteration's script reset epsilon to 1.0, and
 # epsilon_decay (0.9995/episode) is far too slow relative to episodes-per-

@@ -442,6 +442,7 @@ epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) els
 best_reward = float("-inf")
 total_steps = 0
 episode = 0
+_last_posted_episode = -1  # the outer loop runs once per ROLLOUT, not once per episode — an episode can span multiple rollouts, so episode may not change between passes; without this guard, "episode % {ac_telemetry_interval} == 0" stays true and re-posts the identical payload on every subsequent pass until a new episode finally completes
 
 while total_steps < {total_timesteps}:
     # 1. Collect one on-policy rollout of {n_steps} steps (or until episode ends)
@@ -509,7 +510,8 @@ while total_steps < {total_timesteps}:
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
     open(_eps_path, "w").write(str(epsilon))  # persist so the NEXT iteration's fresh script resumes decay instead of resetting to 1.0
 
-    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0:
+    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0 and episode != _last_posted_episode:
+        _last_posted_episode = episode
         mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
         mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
         # telemetry POSTs here (catch all exceptions)
@@ -586,6 +588,7 @@ epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) els
 best_reward = float("-inf")
 total_steps = 0
 episode = 0
+_last_posted_episode = -1  # the outer loop runs once per ROLLOUT, not once per episode — an episode can span multiple rollouts, so episode may not change between passes; without this guard, "episode % {ac_telemetry_interval} == 0" stays true and re-posts the identical payload on every subsequent pass until a new episode finally completes
 obs, _ = env.reset()
 ep_reward, ep_lines_cleared = 0.0, 0
 
@@ -636,7 +639,8 @@ while total_steps < {total_timesteps}:
     epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
     open(_eps_path, "w").write(str(epsilon))  # persist so the NEXT iteration's fresh script resumes decay instead of resetting to 1.0
 
-    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0:
+    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0 and episode != _last_posted_episode:
+        _last_posted_episode = episode
         mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
         mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
         # telemetry POSTs here (catch all exceptions)
