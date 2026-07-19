@@ -369,6 +369,50 @@ def test_does_not_force_when_algorithm_field_empty():
     assert _force_ac("Tetris-v0", "", "", "Train a Tetris-v0 agent to clear lines")
 
 
+# ── _lookahead_trainer_type_for ─────────────────────────────────────────────────
+# Real incident: vanilla SB3 DQN/PPO/A2C structurally cannot compete on
+# Tetris-v0 (confirmed live: 130+ DQN pivots, dozens of PPO/A2C pivots, all
+# plateaued at lines_cleared≈0-1, vs. Actor-Critic hitting 394 in 3
+# iterations). An explicit DQN/PPO/A2C request for Tetris-v0 must still be
+# honored (the algorithm choice is preserved) but routed to the matching
+# lookahead-augmented custom trainer instead of hopeless vanilla SB3.
+
+_lookahead_for = LoopStateMachine._lookahead_trainer_type_for
+
+
+def test_lookahead_routes_explicit_dqn_request():
+    assert _lookahead_for("Tetris-v0", "DQN", "", "Train a Tetris-v0 DQN agent to clear 200 lines") == "lookahead_dqn"
+
+
+def test_lookahead_routes_explicit_ppo_request():
+    assert _lookahead_for("Tetris-v0", "PPO", "", "Train a Tetris-v0 PPO agent to clear 200 lines") == "lookahead_ppo"
+
+
+def test_lookahead_routes_explicit_a2c_request():
+    assert _lookahead_for("Tetris-v0", "A2C", "", "Train a Tetris-v0 A2C agent to clear 200 lines") == "lookahead_a2c"
+
+
+def test_lookahead_none_when_algorithm_not_named_in_goal():
+    """Algorithm set in the plan but not explicitly requested by the user —
+    nothing to honor, no lookahead routing (falls through to the actor_critic
+    default instead)."""
+    assert _lookahead_for("Tetris-v0", "PPO", "", "Train a Tetris-v0 agent to clear lines") is None
+
+
+def test_lookahead_none_for_non_tetris_env():
+    assert _lookahead_for("Snake-v0", "DQN", "", "Train a Snake-v0 DQN agent") is None
+
+
+def test_lookahead_none_when_trainer_type_already_set():
+    assert _lookahead_for("Tetris-v0", "DQN", "actor_critic", "Train a Tetris-v0 DQN agent") is None
+
+
+def test_lookahead_none_for_unrecognized_algorithm():
+    """Only DQN/PPO/A2C have lookahead variants — an unrecognized/unsupported
+    algorithm name falls through untouched rather than crashing."""
+    assert _lookahead_for("Tetris-v0", "SAC", "", "Train a Tetris-v0 SAC agent") is None
+
+
 # ── _normalize_pivot ─────────────────────────────────────────────────────────
 
 _normalize = LoopStateMachine._normalize_pivot

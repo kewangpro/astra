@@ -49,12 +49,18 @@ def _load_env_kwargs(checkpoint_path: str) -> dict:
     return {}
 
 
+_LOOKAHEAD_TRAINER_TYPES = {"actor_critic", "lookahead_dqn", "lookahead_ppo", "lookahead_a2c"}
+
+
 def _is_actor_critic(checkpoint_path: str) -> bool:
-    """Return True if the checkpoint was saved by a custom PyTorch Actor-Critic trainer."""
+    """Return True if the checkpoint was saved by a custom PyTorch lookahead
+    trainer (actor_critic, or one of the lookahead_dqn/ppo/a2c variants — all
+    share the same ActorCriticNet checkpoint shape and get_next_states()-based
+    rollout procedure, just trained differently)."""
     ckpt_dir = os.path.dirname(checkpoint_path)
     tt_path = os.path.join(ckpt_dir, "trainer_type.txt")
     if os.path.exists(tt_path):
-        return open(tt_path).read().strip() == "actor_critic"
+        return open(tt_path).read().strip() in _LOOKAHEAD_TRAINER_TYPES
     # Also detect by file extension — .pth = PyTorch, .zip = SB3
     return checkpoint_path.endswith(".pth")
 

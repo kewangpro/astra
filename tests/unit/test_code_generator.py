@@ -856,6 +856,195 @@ def test_build_user_prompt_tetris_uses_ac_template_without_trainer_type(tmp_path
     assert "total_steps" in prompt
 
 
+# ── Lookahead-DQN/PPO/A2C prompt path ───────────────────────────────────────────
+# Real incident: vanilla SB3 DQN/PPO/A2C structurally cannot compete on
+# Tetris-v0 (confirmed live: 130+ DQN pivots, dozens of PPO/A2C pivots, all
+# plateaued at lines_cleared≈0-1, vs. Actor-Critic hitting 394 in 3
+# iterations). LoopStateMachine now routes an explicit DQN/PPO/A2C request on
+# Tetris-v0 to the matching lookahead_dqn/lookahead_ppo/lookahead_a2c
+# trainer_type instead of vanilla SB3 — these tests cover code_generator's
+# routing to the corresponding contract template.
+
+def _make_lookahead_plan(trainer_type: str, **overrides) -> dict:
+    base = {
+        "task_type": "rl",
+        "trainer_type": trainer_type,
+        "algorithm": trainer_type.split("_")[1].upper(),
+        "env_id": "Tetris-v0",
+        "target_metric": {"lines_cleared": 200},
+        "hyperparameters": {"learning_rate": 0.0005},
+    }
+    base.update(overrides)
+    return base
+
+
+def _prompt_for(tmp_path, monkeypatch, plan) -> str:
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    return gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
+
+
+def test_lookahead_dqn_routes_to_dqn_contract(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_dqn"))
+    assert "get_next_states" in prompt
+    assert "ActorCriticNet" in prompt
+    assert "target_model" in prompt          # DQN-defining: target network
+    assert '"lookahead_dqn"' in prompt
+
+
+def test_lookahead_dqn_target_network_synced_periodically(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_dqn"))
+    assert "target_model.load_state_dict(model.state_dict())" in prompt
+
+
+def test_lookahead_ppo_routes_to_ppo_contract(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_ppo"))
+    assert "get_next_states" in prompt
+    assert "ActorCriticNet" in prompt
+    assert "GAE" in prompt or "gae" in prompt.lower()   # PPO-defining: advantage estimation
+    assert '"lookahead_ppo"' in prompt
+
+
+def test_lookahead_ppo_has_multi_epoch_clipped_updates(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_ppo"))
+    assert "for _epoch in range(" in prompt
+    assert "clip" in prompt.lower()
+    assert "torch.randperm" in prompt   # minibatch shuffling — multi-epoch reuse of one batch
+
+
+def test_lookahead_a2c_routes_to_a2c_contract(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_a2c"))
+    assert "get_next_states" in prompt
+    assert "ActorCriticNet" in prompt
+    assert '"lookahead_a2c"' in prompt
+
+
+def test_lookahead_a2c_has_no_replay_buffer_or_multi_epoch(tmp_path, monkeypatch):
+    """A2C-defining: single synchronous update per short rollout, no replay
+    buffer (unlike DQN) and no multi-epoch reuse (unlike PPO)."""
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_a2c"))
+    assert "collections.deque" not in prompt
+    assert "n_epochs" not in prompt
+    assert "target_model" not in prompt
+
+
+def test_lookahead_dqn_no_gae_or_multi_epoch(tmp_path, monkeypatch):
+    """DQN-defining: off-policy replay + target network, no on-policy GAE/epochs."""
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_dqn"))
+    assert "collections.deque" in prompt
+    assert "n_epochs" not in prompt
+    assert "advantages" not in prompt
+
+
+def test_lookahead_none_of_the_three_have_stochastic_policy_head():
+    """All three deliberately share ActorCriticNet's pure value-function shape
+    — no separate policy network/log-prob machinery in any contract."""
+    from backend.agent.code_generator import (
+        _LOOKAHEAD_DQN_CONTRACT, _LOOKAHEAD_PPO_CONTRACT, _LOOKAHEAD_A2C_CONTRACT,
+    )
+    for contract in (_LOOKAHEAD_DQN_CONTRACT, _LOOKAHEAD_PPO_CONTRACT, _LOOKAHEAD_A2C_CONTRACT):
+        assert "log_prob" not in contract
+        assert "Categorical" not in contract
+        assert "ActorCriticNet()" in contract
+
+
+# ── obs/next_obs sliced to ActorCriticNet's 4-dim input ─────────────────────────
+# Real incident: live-verified. ActorCriticNet has a hardcoded 4-dim input, but
+# after the Tetris-v0 observation-space fix (piece identity added for DQN/PPO/A2C)
+# env.step()/reset() now return 18-dim observations. Every trainer that stores
+# raw obs/next_obs in its replay buffer/rollout and later feeds them into
+# ActorCriticNet for a TD target crashed live with RuntimeError: mat1 and mat2
+# shapes cannot be multiplied (64x18 and 4x64) — confirmed on mission 06e4af4e's
+# first Lookahead-DQN run. This affects ALL FOUR lookahead-family contracts
+# (the original actor_critic one too), since all four share ActorCriticNet.
+# Fixed by slicing to [:4] at the buffer/rollout append site, since the
+# observation-space fix deliberately kept the original 4 board-quality features
+# as a prefix of the new 18-dim vector.
+
+def test_actor_critic_slices_obs_to_4_dims(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_actor_critic_plan())
+    assert "obs[:4]" in prompt
+    assert "next_obs[:4]" in prompt
+
+
+def test_lookahead_dqn_slices_obs_to_4_dims(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_dqn"))
+    assert "obs[:4]" in prompt
+    assert "next_obs[:4]" in prompt
+
+
+def test_lookahead_ppo_slices_obs_to_4_dims(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_ppo"))
+    assert "obs[:4]" in prompt
+    assert "next_obs[:4]" in prompt
+
+
+def test_lookahead_a2c_slices_obs_to_4_dims(tmp_path, monkeypatch):
+    prompt = _prompt_for(tmp_path, monkeypatch, _make_lookahead_plan("lookahead_a2c"))
+    assert "obs[:4]" in prompt
+    assert "next_obs[:4]" in prompt
+
+
+def test_lookahead_dqn_runtime_shapes_never_mismatch():
+    """End-to-end runtime simulation against the real TetrisEnv (post
+    observation-space fix, 18-dim) and real ActorCriticNet — the exact
+    reproduction of the live crash, run 200 real steps to confirm no shape
+    mismatch reaches model()/target_model()."""
+    import random
+    import collections
+    import torch
+    import torch.nn as nn
+    from envs.tetris_env import register
+    import gymnasium as gym
+    from envs.actor_critic_net import ActorCriticNet
+
+    register()
+    env = gym.make("Tetris-v0")
+    model = ActorCriticNet()
+    target_model = ActorCriticNet()
+    target_model.load_state_dict(model.state_dict())
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+
+    BUFFER = collections.deque(maxlen=1000)
+    obs, _ = env.reset()
+    assert obs.shape == (18,)  # confirms this test exercises the post-fix observation shape
+
+    for _ in range(200):
+        next_states = env.unwrapped.get_next_states()
+        if not next_states:
+            action = 0
+        elif random.random() < 0.3:
+            action = random.choice(list(next_states.keys()))
+        else:
+            with torch.no_grad():
+                action = max(
+                    next_states,
+                    key=lambda a: model(torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)).item(),
+                )
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        BUFFER.append((obs[:4], action, reward, next_obs[:4], float(done)))
+        obs = next_obs
+        if done:
+            obs, _ = env.reset()
+
+        if len(BUFFER) >= 32:
+            batch = random.sample(BUFFER, 32)
+            s, _, r, ns, d = zip(*batch)
+            s = torch.tensor(s, dtype=torch.float32)
+            ns = torch.tensor(ns, dtype=torch.float32)
+            r = torch.tensor(r, dtype=torch.float32).unsqueeze(1)
+            d = torch.tensor(d, dtype=torch.float32).unsqueeze(1)
+            with torch.no_grad():
+                td_target = r + 0.99 * target_model(ns) * (1 - d)
+            loss = nn.MSELoss()(model(s), td_target)
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+    env.close()
+
+
 # ── recipe-driven env_kwargs and hyperparams tests ────────────────────────────
 
 def test_resolve_env_kwargs_snake_reads_from_recipe():

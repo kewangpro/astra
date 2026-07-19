@@ -320,20 +320,13 @@ class LoopStateMachine:
                     plan.get("trainer_type", ""), mission.goal,
                 ):
                     plan["trainer_type"] = "actor_critic"
-                elif (
-                    plan.get("env_id", "") == "Tetris-v0"
-                    and not plan.get("trainer_type", "")
-                    and plan.get("algorithm", "")
-                    and self._is_algorithm_locked(mission.goal, plan["algorithm"])
-                ):
-                    # An explicit algorithm was requested for an env whose recipe
-                    # (tetris_actor_critic_v1.yaml) defaults trainer_type to actor_critic.
-                    # code_generator._build_user_prompt() falls back to that recipe
-                    # default whenever plan["trainer_type"] is falsy — leaving it
-                    # unset here would silently reintroduce the exact override this
-                    # fix removes. "sb3" is just a non-"actor_critic" sentinel so
-                    # that fallback doesn't fire.
-                    plan["trainer_type"] = "sb3"
+                else:
+                    _lookahead_tt = self._lookahead_trainer_type_for(
+                        plan.get("env_id", ""), plan.get("algorithm", ""),
+                        plan.get("trainer_type", ""), mission.goal,
+                    )
+                    if _lookahead_tt:
+                        plan["trainer_type"] = _lookahead_tt
                 error_history: list[str] = []   # accumulated errors for this script
                 if _skip_launch:
                     # Reattaching to an already-running sandbox — no new script
@@ -1149,6 +1142,44 @@ class LoopStateMachine:
         if env_id != "Tetris-v0" or trainer_type:
             return False
         return not (algorithm and cls._is_algorithm_locked(goal, algorithm))
+
+    @classmethod
+    def _lookahead_trainer_type_for(cls, env_id: str, algorithm: str, trainer_type: str, goal: str) -> Optional[str]:
+        """Return "lookahead_dqn"/"lookahead_ppo"/"lookahead_a2c" when an
+        explicit DQN/PPO/A2C request for Tetris-v0 should be routed to the
+        matching lookahead-augmented custom trainer, or None otherwise.
+
+        Real incident: vanilla SB3 DQN/PPO/A2C structurally cannot compete on
+        Tetris-v0 — confirmed live across 130+ DQN pivots, dozens of PPO/A2C
+        pivots, all plateaued at lines_cleared≈0-1, vs. the custom Actor-
+        Critic trainer hitting 394 in 3 iterations. Root cause isn't fixable
+        by hyperparameter/observation tuning: Actor-Critic's get_next_states()
+        gives it exact, piece-aware knowledge of every placement's outcome
+        before choosing (1-ply search); DQN/PPO/A2C pick blind among 40 raw
+        action indices with no such knowledge, no matter how much the
+        observation or reward is improved.
+
+        Routes to a lookahead-augmented custom trainer instead of vanilla
+        SB3 — same get_next_states() action-selection spine as Actor-Critic
+        (proven to work), but each keeps its own real learning-algorithm
+        identity: DQN gets an off-policy replay buffer + target network (the
+        existing Actor-Critic trainer doesn't even have one), PPO gets
+        on-policy batched rollouts with GAE(λ) advantages and multi-epoch
+        clipped value updates, A2C gets on-policy single-epoch synchronous
+        advantage updates. None gets a stochastic policy head — once actions
+        are chosen by exhaustive lookahead, there's no role for a probability
+        distribution over 40 raw indices; what makes each recognizably itself
+        is how its value function is trained, not a literal policy network.
+        This still honors "asked to use DQN, use DQN" — the algorithm choice
+        is preserved, it's no longer structurally hopeless.
+        """
+        if env_id != "Tetris-v0" or trainer_type:
+            return None
+        if algorithm not in ("DQN", "PPO", "A2C"):
+            return None
+        if not cls._is_algorithm_locked(goal, algorithm):
+            return None
+        return f"lookahead_{algorithm.lower()}"
 
     @staticmethod
     def _clamp_env_kwargs(env_kwargs: dict, env_id: str = "") -> dict:

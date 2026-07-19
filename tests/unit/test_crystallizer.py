@@ -218,19 +218,33 @@ class TestBuildRecipeContent:
         content = _build_recipe_content(mission, score=None, lessons=[])
         assert content.get("trainer_type") == "actor_critic"
 
-    def test_sb3_sentinel_not_surfaced_as_trainer_type(self):
-        """"sb3" is LoopStateMachine.run()'s internal sentinel for "explicitly
-        not actor_critic" (used to stop code_generator's recipe-default
-        fallback from reintroducing the Tetris algorithm-override bug) — it
-        must never leak into a crystallized recipe as a real field value."""
+    def test_lookahead_dqn_surfaces_trainer_type_and_real_algorithm(self):
+        """lookahead_dqn (explicit DQN request on Tetris-v0, routed to the
+        lookahead-augmented custom trainer — see LoopStateMachine.run()) is a
+        real trainer_type value, unlike the old "sb3" sentinel it replaced —
+        it must be surfaced, and the algorithm field must still say "DQN",
+        not "lookahead_dqn"."""
         plan = {
             "task_type": "rl", "algorithm": "DQN", "env_id": "Tetris-v0",
-            "trainer_type": "sb3", "hyperparameters": {},
+            "trainer_type": "lookahead_dqn", "hyperparameters": {},
         }
         mission = _make_mission(current_plan=plan)
         content = _build_recipe_content(mission, score=None, lessons=[])
-        assert "trainer_type" not in content
+        assert content.get("trainer_type") == "lookahead_dqn"
         assert content["algorithm"] == "DQN"
+
+    def test_lookahead_hyperparams_pass_through_unfiltered(self):
+        """lookahead_* trainers are hand-rolled loops, not real SB3 kwargs —
+        their hyperparameters must not be stripped against the SB3-PPO
+        allowlist the way genuine SB3 recipes are."""
+        hp = {"target_update_interval": 500, "replay_buffer_size": 20000}
+        plan = {
+            "task_type": "rl", "algorithm": "DQN", "env_id": "Tetris-v0",
+            "trainer_type": "lookahead_dqn", "hyperparameters": hp,
+        }
+        mission = _make_mission(current_plan=plan)
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert content["hyperparameters"] == hp
 
 
 # ── crystallize() — the actual DB entry point ──────────────────────────────────

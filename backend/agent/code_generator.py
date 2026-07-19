@@ -213,7 +213,7 @@ while total_steps < {total_timesteps}:
 
         next_obs, reward, terminated, truncated, info = env.step(action)  # 5-tuple
         done = terminated or truncated
-        BUFFER.append((obs, action, reward, next_obs, float(done)))
+        BUFFER.append((obs[:4], action, reward, next_obs[:4], float(done)))  # ActorCriticNet takes the 4 board-quality features only — obs/next_obs may carry extra piece-identity dims for other trainers
         obs = next_obs
         ep_reward += reward
         total_steps += 1
@@ -268,6 +268,398 @@ while total_steps < {total_timesteps}:
      torch.save(model, "{checkpoint_dir}/best_model.pth")
      open("{checkpoint_dir}/best_score.txt", "w").write(str(best_reward))
      open("{checkpoint_dir}/best_model_algo.txt", "w").write("ActorCritic")
+5. After the timestep budget ({total_timesteps} steps): torch.save(model, "{checkpoint_dir}/last_model.pth")
+
+Return ONLY the raw Python script. No markdown fences, no explanation."""
+
+_LOOKAHEAD_DQN_CONTRACT = """\
+Generate a complete custom lookahead-DQN training script for Tetris using PyTorch.
+Do NOT use Stable-Baselines3. Implement everything with PyTorch and plain Python.
+
+Real incident this trainer exists to fix: vanilla SB3 DQN structurally cannot
+compete on Tetris-v0 — it picks blind among 40 raw action indices with no
+knowledge of what each one produces, confirmed live across 130+ pivots all
+plateaued at lines_cleared≈0-1. This trainer uses the SAME get_next_states()
+lookahead action-selection spine as the proven Actor-Critic trainer (which hit
+394 lines in 3 iterations): evaluate every legal placement's actual resulting
+board through the value network, act greedily on it. What makes this
+recognizably DQN (not just a copy of Actor-Critic) is retaining DQN's core
+stabilization mechanism: an off-policy replay buffer PLUS a target network for
+stable TD targets — the existing Actor-Critic trainer has no target network at
+all, so this is a genuine upgrade, not a rename.
+
+{env_setup}
+Mission ID: {mission_id}
+Environment: {env_id}
+Checkpoint directory: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+Target: lines_cleared >= {target_lines}
+Hyperparameters: {hyperparameters}
+
+== Mandatory imports and setup (copy exactly) ==
+from envs.actor_critic_net import ActorCriticNet   # MANDATORY — do NOT redefine inline
+model = ActorCriticNet()                            # value network: shared MLP [4→64→64] + critic head Linear(64,1)
+target_model = ActorCriticNet()
+target_model.load_state_dict(model.state_dict())
+target_model.eval()
+optimizer = torch.optim.Adam(model.parameters(), lr={lr})
+
+== Training skeleton (follow exactly — do NOT deviate from these API calls) ==
+env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+BUFFER = collections.deque(maxlen={replay_buffer_size})
+ep_rewards, ep_lines = [], []
+epsilon = 1.0
+best_reward = float("-inf")
+total_steps = 0
+episode = 0
+
+while total_steps < {total_timesteps}:
+    obs, _ = env.reset()
+    ep_reward = 0.0
+    ep_lines_cleared = 0
+    done = False
+
+    while not done:
+        next_states = env.unwrapped.get_next_states()  # dict{{action: np.array(4,)}}
+        if not next_states:
+            action = 0
+        elif random.random() < epsilon:
+            action = random.choice(list(next_states.keys()))
+        else:
+            with torch.no_grad():
+                action = max(
+                    next_states,
+                    key=lambda a: model(
+                        torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)
+                    ).item()
+                )
+
+        next_obs, reward, terminated, truncated, info = env.step(action)  # 5-tuple
+        done = terminated or truncated
+        BUFFER.append((obs[:4], action, reward, next_obs[:4], float(done)))  # ActorCriticNet takes the 4 board-quality features only — obs/next_obs may carry extra piece-identity dims for other trainers
+        obs = next_obs
+        ep_reward += reward
+        total_steps += 1
+        if done:
+            ep_lines_cleared = info.get("lines_cleared", 0)
+
+        if len(BUFFER) >= {batch_size}:
+            batch = random.sample(BUFFER, {batch_size})
+            s, _, r, ns, d = zip(*batch)
+            s  = torch.tensor(s,  dtype=torch.float32)
+            ns = torch.tensor(ns, dtype=torch.float32)
+            r  = torch.tensor(r,  dtype=torch.float32).unsqueeze(1)
+            d  = torch.tensor(d,  dtype=torch.float32).unsqueeze(1)
+            with torch.no_grad():
+                td_target = r + {gamma} * target_model(ns) * (1 - d)   # target network, NOT live model
+            loss = nn.MSELoss()(model(s), td_target)
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+        if total_steps % {target_update_interval} == 0:
+            target_model.load_state_dict(model.state_dict())          # periodic target sync — the DQN-defining step
+
+    epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+    ep_rewards.append(ep_reward)
+    ep_lines.append(ep_lines_cleared)
+    episode += 1
+
+    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0:
+        mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
+        mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
+        # telemetry POSTs here (catch all exceptions)
+        if mean_reward_50 > best_reward:
+            best_reward = mean_reward_50
+            # save best model here
+
+== ASTRA integration contract (ALL items MANDATORY) ==
+1. Write this file once at startup (so play/eval endpoints detect the trainer):
+     open("{checkpoint_dir}/trainer_type.txt", "w").write("lookahead_dqn")
+2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists, load with weights_only=False
+   (MANDATORY — ActorCriticNet is a custom class and torch 2.6 requires this flag),
+   into BOTH model and target_model:
+     if os.path.exists("{checkpoint_dir}/best_model.pth"):
+         checkpoint = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+         state = checkpoint.state_dict() if not isinstance(checkpoint, dict) else checkpoint
+         model.load_state_dict(state)
+         target_model.load_state_dict(state)
+3. Track rolling mean_reward over last {ac_telemetry_interval} episodes.
+   Every {ac_telemetry_interval} episodes POST only mean_reward to telemetry:
+     POST {api_url}/telemetry/missions/{mission_id}/metrics
+     json={{"mission_id": "{mission_id}", "name": "mean_reward",
+            "value": mean_reward_50, "step": episode, "iteration": {current_iteration}}}
+   DO NOT post goal-metric names (lines_cleared, food_eaten, etc.) during training —
+   those are reserved for end-of-iteration eval rollouts by the orchestrator.
+   Use timeout=2, catch all exceptions (telemetry is non-critical).
+4. When rolling mean_reward improves over best seen so far:
+     torch.save(model, "{checkpoint_dir}/best_model.pth")
+     open("{checkpoint_dir}/best_score.txt", "w").write(str(best_reward))
+     open("{checkpoint_dir}/best_model_algo.txt", "w").write("LookaheadDQN")
+5. After the timestep budget ({total_timesteps} steps): torch.save(model, "{checkpoint_dir}/last_model.pth")
+
+Return ONLY the raw Python script. No markdown fences, no explanation."""
+
+_LOOKAHEAD_PPO_CONTRACT = """\
+Generate a complete custom lookahead-PPO training script for Tetris using PyTorch.
+Do NOT use Stable-Baselines3. Implement everything with PyTorch and plain Python.
+
+Real incident this trainer exists to fix: vanilla SB3 PPO structurally cannot
+compete on Tetris-v0 — it samples blind from a learned distribution over 40 raw
+action indices with no knowledge of what each one produces, confirmed live
+across dozens of pivots all plateaued at lines_cleared≈0-1. This trainer uses
+the SAME get_next_states() lookahead action-selection spine as the proven
+Actor-Critic trainer (which hit 394 lines in 3 iterations): evaluate every
+legal placement's actual resulting board through the value network, act
+greedily on it. There is deliberately no stochastic policy head — once actions
+are chosen by exhaustive lookahead, a probability distribution over 40 raw
+indices has no role to play. What makes this recognizably PPO (not just a copy
+of Actor-Critic) is retaining PPO's actual distinguishing mechanism: batched
+ON-POLICY rollouts, GAE(λ) advantage estimation, and MULTIPLE EPOCHS of
+clipped value updates per batch — genuinely different training dynamics from
+Actor-Critic's single-pass off-policy replay updates.
+
+{env_setup}
+Mission ID: {mission_id}
+Environment: {env_id}
+Checkpoint directory: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+Target: lines_cleared >= {target_lines}
+Hyperparameters: {hyperparameters}
+
+== Mandatory imports and setup (copy exactly) ==
+from envs.actor_critic_net import ActorCriticNet   # MANDATORY — do NOT redefine inline
+model = ActorCriticNet()                            # value network: shared MLP [4→64→64] + critic head Linear(64,1)
+optimizer = torch.optim.Adam(model.parameters(), lr={lr})
+
+== Training skeleton (follow exactly — do NOT deviate from these API calls) ==
+env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+ep_rewards, ep_lines = [], []
+epsilon = 1.0
+best_reward = float("-inf")
+total_steps = 0
+episode = 0
+
+while total_steps < {total_timesteps}:
+    # 1. Collect one on-policy rollout of {n_steps} steps (or until episode ends)
+    rollout = []   # list of (obs, reward, next_obs, done)
+    obs, _ = env.reset()
+    ep_reward, ep_lines_cleared = 0.0, 0
+    for _ in range({n_steps}):
+        next_states = env.unwrapped.get_next_states()
+        if not next_states:
+            action = 0
+        elif random.random() < epsilon:
+            action = random.choice(list(next_states.keys()))
+        else:
+            with torch.no_grad():
+                action = max(
+                    next_states,
+                    key=lambda a: model(
+                        torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)
+                    ).item()
+                )
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        rollout.append((obs[:4], reward, next_obs[:4], float(done)))  # ActorCriticNet takes the 4 board-quality features only — obs/next_obs may carry extra piece-identity dims for other trainers
+        obs = next_obs
+        ep_reward += reward
+        total_steps += 1
+        if done:
+            ep_lines_cleared = info.get("lines_cleared", 0)
+            ep_rewards.append(ep_reward); ep_lines.append(ep_lines_cleared)
+            episode += 1
+            obs, _ = env.reset()
+            ep_reward, ep_lines_cleared = 0.0, 0
+        if total_steps >= {total_timesteps}:
+            break
+
+    # 2. Compute GAE(λ) advantages/returns over the rollout (the PPO-defining step)
+    s, r, ns, d = zip(*rollout)
+    s  = torch.tensor(s,  dtype=torch.float32)
+    ns = torch.tensor(ns, dtype=torch.float32)
+    r  = torch.tensor(r,  dtype=torch.float32)
+    d  = torch.tensor(d,  dtype=torch.float32)
+    with torch.no_grad():
+        values      = model(s).squeeze(-1)
+        next_values = model(ns).squeeze(-1)
+        deltas = r + {gamma} * next_values * (1 - d) - values
+        advantages = torch.zeros_like(deltas)
+        gae = 0.0
+        for t in reversed(range(len(deltas))):
+            gae = deltas[t] + {gamma} * {gae_lambda} * (1 - d[t]) * gae
+            advantages[t] = gae
+        returns = advantages + values
+        old_values = values.clone()
+
+    # 3. {n_epochs} epochs of clipped-value minibatch updates (the OTHER PPO-defining step)
+    n = len(rollout)
+    for _epoch in range({n_epochs}):
+        perm = torch.randperm(n)
+        for start in range(0, n, {batch_size}):
+            idx = perm[start:start + {batch_size}]
+            v_pred = model(s[idx]).squeeze(-1)
+            v_clipped = old_values[idx] + torch.clamp(v_pred - old_values[idx], -{clip_range}, {clip_range})
+            loss = torch.max((v_pred - returns[idx]) ** 2, (v_clipped - returns[idx]) ** 2).mean()
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+    epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+
+    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0:
+        mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
+        mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
+        # telemetry POSTs here (catch all exceptions)
+        if mean_reward_50 > best_reward:
+            best_reward = mean_reward_50
+            # save best model here
+
+== ASTRA integration contract (ALL items MANDATORY) ==
+1. Write this file once at startup (so play/eval endpoints detect the trainer):
+     open("{checkpoint_dir}/trainer_type.txt", "w").write("lookahead_ppo")
+2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists, load with weights_only=False
+   (MANDATORY — ActorCriticNet is a custom class and torch 2.6 requires this flag):
+     if os.path.exists("{checkpoint_dir}/best_model.pth"):
+         checkpoint = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+         if isinstance(checkpoint, dict):
+             model.load_state_dict(checkpoint)
+         else:
+             model.load_state_dict(checkpoint.state_dict())
+3. Track rolling mean_reward over last {ac_telemetry_interval} episodes.
+   Every {ac_telemetry_interval} episodes (checked after each rollout's episodes complete)
+   POST only mean_reward to telemetry:
+     POST {api_url}/telemetry/missions/{mission_id}/metrics
+     json={{"mission_id": "{mission_id}", "name": "mean_reward",
+            "value": mean_reward_50, "step": episode, "iteration": {current_iteration}}}
+   DO NOT post goal-metric names (lines_cleared, food_eaten, etc.) during training —
+   those are reserved for end-of-iteration eval rollouts by the orchestrator.
+   Use timeout=2, catch all exceptions (telemetry is non-critical).
+4. When rolling mean_reward improves over best seen so far:
+     torch.save(model, "{checkpoint_dir}/best_model.pth")
+     open("{checkpoint_dir}/best_score.txt", "w").write(str(best_reward))
+     open("{checkpoint_dir}/best_model_algo.txt", "w").write("LookaheadPPO")
+5. After the timestep budget ({total_timesteps} steps): torch.save(model, "{checkpoint_dir}/last_model.pth")
+
+Return ONLY the raw Python script. No markdown fences, no explanation."""
+
+_LOOKAHEAD_A2C_CONTRACT = """\
+Generate a complete custom lookahead-A2C training script for Tetris using PyTorch.
+Do NOT use Stable-Baselines3. Implement everything with PyTorch and plain Python.
+
+Real incident this trainer exists to fix: vanilla SB3 A2C structurally cannot
+compete on Tetris-v0 — it samples blind from a learned distribution over 40 raw
+action indices with no knowledge of what each one produces, confirmed live
+across multiple pivots all plateaued at lines_cleared≈0-1. This trainer uses
+the SAME get_next_states() lookahead action-selection spine as the proven
+Actor-Critic trainer (which hit 394 lines in 3 iterations): evaluate every
+legal placement's actual resulting board through the value network, act
+greedily on it. There is deliberately no stochastic policy head — once actions
+are chosen by exhaustive lookahead, a probability distribution over 40 raw
+indices has no role to play. What makes this recognizably A2C (not just a copy
+of Actor-Critic) is retaining A2C's actual defining trait: a SHORT on-policy
+rollout ({n_steps} steps) followed by a SINGLE synchronous advantage update,
+with the rollout then discarded — no replay buffer (unlike lookahead-DQN), no
+multi-epoch reuse (unlike lookahead-PPO). This is the simplest, lightest-weight
+of the three variants, matching A2C's own position relative to DQN and PPO.
+
+{env_setup}
+Mission ID: {mission_id}
+Environment: {env_id}
+Checkpoint directory: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+Target: lines_cleared >= {target_lines}
+Hyperparameters: {hyperparameters}
+
+== Mandatory imports and setup (copy exactly) ==
+from envs.actor_critic_net import ActorCriticNet   # MANDATORY — do NOT redefine inline
+model = ActorCriticNet()                            # value network: shared MLP [4→64→64] + critic head Linear(64,1)
+optimizer = torch.optim.Adam(model.parameters(), lr={lr})
+
+== Training skeleton (follow exactly — do NOT deviate from these API calls) ==
+env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+ep_rewards, ep_lines = [], []
+epsilon = 1.0
+best_reward = float("-inf")
+total_steps = 0
+episode = 0
+obs, _ = env.reset()
+ep_reward, ep_lines_cleared = 0.0, 0
+
+while total_steps < {total_timesteps}:
+    # 1. Collect one short on-policy rollout of {n_steps} steps — no replay buffer
+    rollout = []   # list of (obs, reward, next_obs, done)
+    for _ in range({n_steps}):
+        next_states = env.unwrapped.get_next_states()
+        if not next_states:
+            action = 0
+        elif random.random() < epsilon:
+            action = random.choice(list(next_states.keys()))
+        else:
+            with torch.no_grad():
+                action = max(
+                    next_states,
+                    key=lambda a: model(
+                        torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)
+                    ).item()
+                )
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        rollout.append((obs[:4], reward, next_obs[:4], float(done)))  # ActorCriticNet takes the 4 board-quality features only — obs/next_obs may carry extra piece-identity dims for other trainers
+        obs = next_obs
+        ep_reward += reward
+        total_steps += 1
+        if done:
+            ep_lines_cleared = info.get("lines_cleared", 0)
+            ep_rewards.append(ep_reward); ep_lines.append(ep_lines_cleared)
+            episode += 1
+            obs, _ = env.reset()
+            ep_reward, ep_lines_cleared = 0.0, 0
+        if total_steps >= {total_timesteps}:
+            break
+
+    # 2. Single synchronous advantage update over the rollout — the A2C-defining
+    #    step: ONE gradient step per rollout, then the rollout is discarded.
+    s, r, ns, d = zip(*rollout)
+    s  = torch.tensor(s,  dtype=torch.float32)
+    ns = torch.tensor(ns, dtype=torch.float32)
+    r  = torch.tensor(r,  dtype=torch.float32).unsqueeze(1)
+    d  = torch.tensor(d,  dtype=torch.float32).unsqueeze(1)
+    with torch.no_grad():
+        td_target = r + {gamma} * model(ns) * (1 - d)
+    loss = nn.MSELoss()(model(s), td_target)
+    optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+    epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+
+    if len(ep_rewards) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0 and episode > 0:
+        mean_reward_50 = float(np.mean(ep_rewards[-{ac_telemetry_interval}:]))
+        mean_lines_50  = float(np.mean(ep_lines[-{ac_telemetry_interval}:]))
+        # telemetry POSTs here (catch all exceptions)
+        if mean_reward_50 > best_reward:
+            best_reward = mean_reward_50
+            # save best model here
+
+== ASTRA integration contract (ALL items MANDATORY) ==
+1. Write this file once at startup (so play/eval endpoints detect the trainer):
+     open("{checkpoint_dir}/trainer_type.txt", "w").write("lookahead_a2c")
+2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists, load with weights_only=False
+   (MANDATORY — ActorCriticNet is a custom class and torch 2.6 requires this flag):
+     if os.path.exists("{checkpoint_dir}/best_model.pth"):
+         checkpoint = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+         if isinstance(checkpoint, dict):
+             model.load_state_dict(checkpoint)
+         else:
+             model.load_state_dict(checkpoint.state_dict())
+3. Track rolling mean_reward over last {ac_telemetry_interval} episodes.
+   Every {ac_telemetry_interval} episodes (checked after each rollout's episodes complete)
+   POST only mean_reward to telemetry:
+     POST {api_url}/telemetry/missions/{mission_id}/metrics
+     json={{"mission_id": "{mission_id}", "name": "mean_reward",
+            "value": mean_reward_50, "step": episode, "iteration": {current_iteration}}}
+   DO NOT post goal-metric names (lines_cleared, food_eaten, etc.) during training —
+   those are reserved for end-of-iteration eval rollouts by the orchestrator.
+   Use timeout=2, catch all exceptions (telemetry is non-critical).
+4. When rolling mean_reward improves over best seen so far:
+     torch.save(model, "{checkpoint_dir}/best_model.pth")
+     open("{checkpoint_dir}/best_score.txt", "w").write(str(best_reward))
+     open("{checkpoint_dir}/best_model_algo.txt", "w").write("LookaheadA2C")
 5. After the timestep budget ({total_timesteps} steps): torch.save(model, "{checkpoint_dir}/last_model.pth")
 
 Return ONLY the raw Python script. No markdown fences, no explanation."""
@@ -781,6 +1173,42 @@ class CodeGenerator:
                     **base,
                 }
                 return _ACTOR_CRITIC_CONTRACT.format(**ctx)
+            if trainer_type in ("lookahead_dqn", "lookahead_ppo", "lookahead_a2c"):
+                tm_lines = next(iter(tm.values()), 20) if tm else 20
+                lr = hp.get("learning_rate", 0.0001)
+                lookahead_ctx = {
+                    "env_id": env_id,
+                    "env_setup": env_setup,
+                    "target_lines": tm_lines,
+                    "hyperparameters": json.dumps(hp, indent=2),
+                    "lr": lr,
+                    "total_timesteps": hp.get("total_timesteps", 2000000),
+                    "gamma": hp.get("gamma", 0.99),
+                    "epsilon_min": hp.get("epsilon_min", 0.01),
+                    "epsilon_decay": hp.get("epsilon_decay", 0.9995),
+                    "ac_telemetry_interval": hp.get("ac_telemetry_interval", 50),
+                    "current_iteration": current_iteration,
+                    **base,
+                }
+                if trainer_type == "lookahead_dqn":
+                    lookahead_ctx.update({
+                        "replay_buffer_size": hp.get("replay_buffer_size", 10000),
+                        "batch_size": hp.get("batch_size", 64),
+                        "target_update_interval": hp.get("target_update_interval", 2000),
+                    })
+                    return _LOOKAHEAD_DQN_CONTRACT.format(**lookahead_ctx)
+                if trainer_type == "lookahead_ppo":
+                    lookahead_ctx.update({
+                        "n_steps": hp.get("n_steps", 2048),
+                        "n_epochs": hp.get("n_epochs", 10),
+                        "batch_size": hp.get("batch_size", 64),
+                        "gae_lambda": hp.get("gae_lambda", 0.95),
+                        "clip_range": hp.get("clip_range", 0.2),
+                    })
+                    return _LOOKAHEAD_PPO_CONTRACT.format(**lookahead_ctx)
+                # lookahead_a2c
+                lookahead_ctx.update({"n_steps": hp.get("n_steps", 5)})
+                return _LOOKAHEAD_A2C_CONTRACT.format(**lookahead_ctx)
             # Build algorithm-aware valid-keys filter for the model constructor block
             algo_upper = algorithm.upper()
             valid_keys = _VALID_ALGO_KEYS.get(algo_upper, _VALID_ALGO_KEYS["PPO"])

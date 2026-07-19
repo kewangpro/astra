@@ -79,6 +79,13 @@ def _clean_rl_hyperparams(raw: dict, trainer_type: str = "") -> dict:
     """Rename invalid keys and drop trainer-irrelevant kwargs."""
     if trainer_type == "actor_critic":
         return {k: v for k, v in raw.items() if k in _VALID_AC_KWARGS}
+    # The lookahead_* custom trainers (lookahead_dqn/ppo/a2c) are hand-rolled
+    # PyTorch training loops, not real SB3 API surfaces — there's no fixed
+    # kwarg allowlist to validate against the way there is for genuine SB3
+    # PPO, so pass their hyperparameters through unfiltered rather than
+    # incorrectly stripping them against the SB3-PPO-specific allowlist below.
+    if trainer_type.startswith("lookahead_"):
+        return dict(raw)
     cleaned = {}
     for k, v in raw.items():
         k = _PPO_RENAMES.get(k, k)
@@ -139,10 +146,8 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
         },
     }
 
-    # For actor_critic missions, record trainer_type explicitly. "sb3" is an
-    # internal state_machine sentinel (see LoopStateMachine.run()) meaning
-    # "explicitly not actor_critic" — not a real recipe field value.
-    if trainer_type and trainer_type != "sb3":
+    # For actor_critic/lookahead_* missions, record trainer_type explicitly.
+    if trainer_type:
         content["trainer_type"] = trainer_type
 
     # For RL recipes, surface env_id as a top-level field

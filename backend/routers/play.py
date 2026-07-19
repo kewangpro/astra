@@ -253,10 +253,14 @@ async def play_ws(
 
             env = gym.make(resolved_env_id, **env_kwargs)
 
-            # Detect actor_critic PyTorch model
+            # Detect actor_critic / lookahead_dqn / lookahead_ppo / lookahead_a2c
+            # PyTorch model — all share the same ActorCriticNet checkpoint shape.
             tt_path = os.path.join(ckpt_dir, "trainer_type.txt")
             is_actor_critic = (
-                os.path.exists(tt_path) and open(tt_path).read().strip() == "actor_critic"
+                os.path.exists(tt_path)
+                and open(tt_path).read().strip() in (
+                    "actor_critic", "lookahead_dqn", "lookahead_ppo", "lookahead_a2c",
+                )
             ) or ckpt_path.endswith(".pth")
             if is_actor_critic:
                 import sys
