@@ -6,7 +6,7 @@ Observation (obs_type="grid", default):
   0.0 = empty, 0.5 = snake body, 1.0 = snake head, -1.0 = food
 
 Observation (obs_type="features"):
-  25D compact feature vector — better inductive bias for MLP policies.
+  28D compact feature vector — better inductive bias for MLP policies.
   [danger_straight, danger_right, danger_left,        # 3 — immediate collision
    clear_straight, clear_right, clear_left,           # 3 — 5-step path clearance
    dir_up, dir_right, dir_down, dir_left,             # 4 — direction one-hot
@@ -14,7 +14,24 @@ Observation (obs_type="features"):
    food_dist_r, food_dist_c,                          # 2 — normalized food offset
    manhattan_dist, snake_len, space_around,           # 3 — spatial scalars
    wall_top, wall_bottom, wall_left, wall_right,      # 4 — wall distances
-   food_accessibility, tail_dist]                     # 2 — advanced spatial
+   food_accessibility, tail_dist,                     # 2 — advanced spatial
+   reachable_straight, reachable_right, reachable_left]  # 3 — flood-fill reachable space after each candidate move
+
+  reachable_* real incident: path_clearance() only checks a straight 5-step
+  line and space_around only counts the 8 immediate neighbor cells — neither
+  detects the actual self-trapping failure mode (snake boxing itself in with
+  its own body as it grows), the same category of gap that made vanilla
+  Tetris fail (no way to see a move's real consequence before taking it). A
+  live Snake-v0 DQN mission plateaued at food_eaten~50-57 for 480+ iterations
+  / 151 pivots — no hyperparameter tuning could compensate for the model
+  having no signal about trap risk. reachable_* runs a real BFS flood-fill
+  from the head position after each of the 3 candidate moves (treating the
+  snake body — minus the tail cell, which vacates on a non-food step — as
+  obstacles) and reports the fraction of the grid still reachable. This is
+  the standard anti-self-trap heuristic in real Snake AI, and the direct
+  analog of what get_next_states() gave the Tetris Actor-Critic trainer:
+  computed knowledge of a move's outcome instead of inferring it purely from
+  reward signal.
 
 Action space: Discrete(4) — 0=UP, 1=RIGHT, 2=DOWN, 3=LEFT
 
@@ -36,7 +53,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-_FEATURES_DIM = 25
+_FEATURES_DIM = 28
 
 
 class SnakeEnv(gym.Env):
@@ -183,6 +200,22 @@ class SnakeEnv(gym.Env):
             if not is_collision(hr + dr2, hc + dc2)
         ) / 8.0
 
+        # Body the snake will actually occupy after this step: tail cell
+        # vacates unless this move lands on food (matches step()'s popleft()
+        # logic), so flood-fill must exclude it to avoid under-counting
+        # reachable space right after a tail-following move. Computed per
+        # candidate since each candidate move may or may not land on food.
+        body_without_tail = snake_set - {(tail_r, tail_c)}
+        reachable_straight = self._reachable_space(
+            (hr + dr, hc + dc), snake_set if (hr + dr, hc + dc) == self._food else body_without_tail
+        )
+        reachable_right = self._reachable_space(
+            (hr + rdr, hc + rdc), snake_set if (hr + rdr, hc + rdc) == self._food else body_without_tail
+        )
+        reachable_left = self._reachable_space(
+            (hr + ldr, hc + ldc), snake_set if (hr + ldr, hc + ldc) == self._food else body_without_tail
+        )
+
         return np.array([
             float(is_collision(hr + dr, hc + dc)),           # danger straight
             float(is_collision(hr + rdr, hc + rdc)),         # danger right
@@ -204,7 +237,33 @@ class SnakeEnv(gym.Env):
             (self.grid_w - hc - 1) / self.grid_w,           # dist to right wall
             (4 - blocked) / 4.0,                             # food accessibility
             (abs(hr - tail_r) + abs(hc - tail_c)) / (self.grid_h + self.grid_w),  # tail dist
+            reachable_straight,                              # flood-fill reachable space after straight move
+            reachable_right,                                 # flood-fill reachable space after right move
+            reachable_left,                                  # flood-fill reachable space after left move
         ], dtype=np.float32)
+
+    def _reachable_space(self, start: Tuple[int, int], obstacles: set) -> float:
+        """BFS flood-fill from `start`, treating `obstacles` as walls.
+        Returns the fraction of the grid reachable — 0.0 if `start` itself
+        is out of bounds or an obstacle (i.e. immediately fatal)."""
+        if (
+            not (0 <= start[0] < self.grid_h and 0 <= start[1] < self.grid_w)
+            or start in obstacles
+        ):
+            return 0.0
+        visited = {start}
+        queue = deque([start])
+        while queue:
+            r, c = queue.popleft()
+            for dr, dc in self._deltas:
+                nxt = (r + dr, c + dc)
+                if (
+                    0 <= nxt[0] < self.grid_h and 0 <= nxt[1] < self.grid_w
+                    and nxt not in obstacles and nxt not in visited
+                ):
+                    visited.add(nxt)
+                    queue.append(nxt)
+        return len(visited) / (self.grid_h * self.grid_w)
 
     def _place_food(self):
         snake_set = set(self._snake)

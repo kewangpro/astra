@@ -4,10 +4,13 @@ created_at: "2026-06-22"
 task_type: RL
 domain: Snake
 description: >
-  PPO recipe for Snake-v0 using the compact 25D feature observation (obs_type=features).
+  PPO recipe for Snake-v0 using the compact 28D feature observation (obs_type=features).
   The feature obs encodes immediate danger, 5-step path clearance, food direction/distance,
-  wall distances, and spatial features — far better inductive bias for MLP policies than
-  the flat 256-element grid. Reward shaping targets food collection over distance chasing.
+  wall distances, spatial features, and (since 2026-07-24) real BFS flood-fill reachable-space
+  after each candidate move — added after a live DQN mission plateaued at food_eaten~50-57 for
+  480+ iterations because the older danger/clearance features couldn't detect self-trapping.
+  Far better inductive bias for MLP policies than the flat 256-element grid. Reward shaping
+  targets food collection over distance chasing.
 
 hyperparameters:
   # PPO
@@ -31,7 +34,7 @@ hyperparameters:
   eval_episodes: 10
 
 env_kwargs:
-  obs_type: features          # 25D compact feature vector (key change vs v1.0)
+  obs_type: features          # 28D compact feature vector (key change vs v1.0)
   max_steps: 2000             # long enough for a 20-food run (~100 steps/food)
   food_reward: 20.0           # strong food signal
   death_penalty: -10.0        # clear death signal
@@ -39,7 +42,7 @@ env_kwargs:
   survival_bonus: 0.01        # minimal; avoid incentivizing stalling
 
 # Curriculum: train on progressively larger grids before tackling the full 16×16.
-# obs_type=features is always 25D regardless of grid size — policy weights transfer.
+# obs_type=features is always 28D regardless of grid size — policy weights transfer.
 curriculum:
   phases:
     - grid_h: 8

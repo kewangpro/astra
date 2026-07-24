@@ -224,3 +224,106 @@ def test_grid_obs_unchanged_by_obs_type_param():
     obs, _ = env.reset(seed=0)
     assert obs.shape == (64,)
     assert set(np.unique(obs)) <= {-1.0, 0.0, 0.5, 1.0}
+
+
+# ── flood-fill reachable-space tests ────────────────────────────────────────────
+# Real incident: path_clearance() only checks a straight 5-step line and
+# space_around only counts the 8 immediate neighbor cells — neither detects
+# the actual self-trapping failure mode (snake boxing itself in with its own
+# body). A live Snake-v0 DQN mission plateaued at food_eaten~50-57 for 480+
+# iterations / 151 pivots with no hyperparameter tuning able to compensate
+# for the model having no signal about trap risk. reachable_straight/right/left
+# add a real BFS flood-fill of reachable grid space after each candidate move.
+
+def test_reachable_space_open_field_near_full():
+    """In an empty grid far from walls, flood-fill should reach nearly the
+    entire grid (minus the snake's own body cells)."""
+    from envs.snake_env import SnakeEnv
+    import collections
+    env = SnakeEnv(grid_h=16, grid_w=16, obs_type="features")
+    env.reset(seed=0)
+    env._snake = collections.deque([(8, 8)])
+    env._direction = 1  # RIGHT
+    env._food = (0, 0)
+    obs = env._feature_obs()
+    reachable_straight, reachable_right, reachable_left = obs[-3], obs[-2], obs[-1]
+    assert reachable_straight > 0.9
+    assert reachable_right > 0.9
+    assert reachable_left > 0.9
+
+
+def test_reachable_space_zero_for_immediately_fatal_move():
+    """A move straight into a wall/body must score 0.0 reachable space —
+    the flood-fill can't even start from a dead cell."""
+    from envs.snake_env import SnakeEnv
+    import collections
+    env = SnakeEnv(grid_h=8, grid_w=8, obs_type="features")
+    env.reset(seed=0)
+    env._snake = collections.deque([(2, 3)])  # head at col 3
+    env._direction = 1  # RIGHT — but wall is right there for a 4-wide grid... use grid_w=4
+    env = SnakeEnv(grid_h=4, grid_w=4, obs_type="features")
+    env.reset(seed=0)
+    env._snake = collections.deque([(2, 3)])  # head at right edge (col 3 of 0..3)
+    env._direction = 1  # RIGHT — next step is col 4, out of bounds
+    env._food = (0, 0)
+    obs = env._feature_obs()
+    reachable_straight = obs[-3]
+    assert reachable_straight == 0.0
+
+
+def test_reachable_space_detects_self_trap():
+    """The exact scenario this feature exists to catch: a snake in a
+    near-closed box where one candidate direction leads into open space and
+    another leads straight into its own body — the flood-fill values must
+    differ sharply between them, unlike the old space_around/path_clearance
+    features which only look at the immediate 8 neighbors / a straight line."""
+    from envs.snake_env import SnakeEnv
+    import collections
+    env = SnakeEnv(grid_h=8, grid_w=8, obs_type="features")
+    env.reset(seed=0)
+    snake = collections.deque([(0, 0), (0, 1), (0, 2), (0, 3), (1, 3), (1, 2), (1, 1), (1, 0), (2, 0)])
+    env._snake = snake
+    env._direction = 2  # DOWN — head at (2,0), moving down into open area
+    env._food = (7, 7)
+    obs = env._feature_obs()
+    reachable_straight, reachable_right, reachable_left = obs[-3], obs[-2], obs[-1]
+    # straight (down, into open area) and left (right, back around the box) are safe;
+    # right (left, straight into the snake's own body/wall) is immediately fatal
+    assert reachable_straight > 0.5
+    assert reachable_right == 0.0
+    assert reachable_left > 0.5
+
+
+def test_reachable_space_excludes_tail_that_will_vacate():
+    """On a non-food move, the tail cell vacates — flood-fill must treat it
+    as passable, not as a permanent obstacle, or it would under-count
+    reachable space for any snake trailing its own tail."""
+    from envs.snake_env import SnakeEnv
+    import collections
+    env = SnakeEnv(grid_h=3, grid_w=3, obs_type="features")
+    env.reset(seed=0)
+    # A snake that nearly fills a 3x3 grid, leaving only the tail's current
+    # cell "blocked" — if the tail is correctly excluded, that cell (and
+    # everything beyond it) should be reachable.
+    env._snake = collections.deque([(0, 0), (0, 1), (0, 2), (1, 2), (1, 1), (1, 0), (2, 0)])
+    env._direction = 2  # DOWN — head at (2,0)
+    env._food = (2, 2)  # far from tail so the move doesn't land on food
+    obs = env._feature_obs()
+    # left of DOWN is RIGHT: head moves to (2,1) — open cell, should reach at
+    # least the tail's vacated cell (0,0) somewhere in the flood-fill region
+    reachable_left = obs[-1]
+    assert reachable_left > 0.0
+
+
+def test_reachable_space_values_bounded_0_to_1():
+    from envs.snake_env import SnakeEnv
+    env = SnakeEnv(grid_h=16, grid_w=16, obs_type="features")
+    obs, _ = env.reset(seed=0)
+    reachable_straight, reachable_right, reachable_left = obs[-3], obs[-2], obs[-1]
+    for v in (reachable_straight, reachable_right, reachable_left):
+        assert 0.0 <= v <= 1.0
+
+
+def test_feature_dim_updated_to_28():
+    from envs.snake_env import _FEATURES_DIM
+    assert _FEATURES_DIM == 28

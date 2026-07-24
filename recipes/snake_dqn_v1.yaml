@@ -1,5 +1,5 @@
 name: snake_dqn_v1
-version: "1.1.1"
+version: "1.2.0"
 created_at: "2026-06-29"
 task_type: RL
 domain: Snake
@@ -9,8 +9,22 @@ description: >
   experience so it needs fewer environment steps than PPO to reach the same
   food_eaten score. Better suited for sparse rewards (only triggered on food)
   than PPO, which discards experience after each update. Uses the same compact
-  25D feature obs as the PPO recipe so policy weights and env_kwargs are
+  28D feature obs as the PPO recipe so policy weights and env_kwargs are
   compatible.
+
+  v1.2.0: feature obs extended from 25D to 28D — added reachable_straight/
+  right/left, a real BFS flood-fill of reachable grid space after each
+  candidate move (see envs/snake_env.py). Confirmed live: this exact mission
+  plateaued at food_eaten~50-57 for 480+ iterations / 151 pivots — the old
+  danger_*/clearance_*/space_around features only look at the immediate
+  8-neighbor cells or a straight 5-step line, so the model had no signal
+  about self-trapping (boxing itself in with its own body), the actual
+  failure mode limiting scores well below the food_eaten=100 target. Same
+  architectural principle as the Tetris-v0 lookahead fix: give the model
+  computed knowledge of a move's real consequence instead of making it infer
+  trap-avoidance purely from reward signal. Existing checkpoints safely
+  warm-start-skip on the shape change (SB3's own space-mismatch check) rather
+  than crashing.
 
   v1.1.0: exploration_fraction/exploration_final_eps raised — the curriculum
   (_inject_curriculum in code_generator.py) calls .learn() per-phase with
@@ -59,7 +73,7 @@ hyperparameters:
   eval_episodes: 10
 
 env_kwargs:
-  obs_type: features          # 25D compact feature vector — same as PPO recipe
+  obs_type: features          # 28D compact feature vector — same as PPO recipe
   max_steps: 2000
   food_reward: 20.0
   death_penalty: -10.0

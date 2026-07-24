@@ -86,7 +86,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 803 unit tests across all core modules
+│   ├── unit/           # 809 unit tests across all core modules
 │   └── integration/    # 14 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -142,6 +142,7 @@ make ports  # show port status for all services
 | 27 | Sandbox Reattach, Guided Autonomy Mode, and Pivot-Failure Resilience — resume a still-alive sandbox in place instead of killing it, guided mode actually implemented, a malformed LLM pivot response no longer crashes the mission | ✅ Complete |
 | 28 | os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented — a documented-but-never-written check finally added, after it stalled a live mission for 26+ minutes | ✅ Complete |
 | 29 | Lookahead-Augmented DQN/PPO/A2C for Tetris-v0 — custom trainers giving each algorithm the same `get_next_states()` search capability as the Actor-Critic trainer, without losing its own algorithmic identity | ✅ Complete |
+| 30 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
 
 ## Hardware Target
 
