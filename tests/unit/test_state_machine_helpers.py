@@ -1080,6 +1080,91 @@ def test_clamp_net_arch_scalar_dropped():
     assert "net_arch" not in result
 
 
+# ── _clamp_fresh_plan ─────────────────────────────────────────────────────────
+
+def test_clamp_fresh_plan_clamps_out_of_range_ppo_hyperparams():
+    """Real incident: a fresh (non-pivot) Snake-v0 PPO re-plan set n_steps=128
+    (16x below the tuned recipe default) and n_epochs=100 (3.3x above the
+    pivot clamp's own ceiling) with zero validation, since the existing
+    clamps only ever ran on pivot proposals — producing unstable mean_reward
+    on a live mission."""
+    plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "env_id": "Snake-v0",
+        "hyperparameters": {"n_steps": 128, "n_epochs": 100, "learning_rate": 0.0003},
+    }
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["hyperparameters"]["n_steps"] == 1024
+    assert result["hyperparameters"]["n_epochs"] == 20
+
+
+def test_clamp_fresh_plan_clamps_oversized_net_arch():
+    plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "hyperparameters": {"policy_kwargs": {"net_arch": [99999, 99999]}},
+    }
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["hyperparameters"]["policy_kwargs"]["net_arch"] == [1024, 1024]
+
+
+def test_clamp_fresh_plan_clamps_env_kwargs():
+    plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "env_id": "Snake-v0",
+        "hyperparameters": {},
+        "env_kwargs": {"distance_weight": 0.0, "death_penalty": -999.0},
+    }
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["env_kwargs"]["distance_weight"] == 0.1
+    assert result["env_kwargs"]["death_penalty"] == -20.0
+
+
+def test_clamp_fresh_plan_actor_critic_untouched():
+    """actor_critic/lookahead_* trainers use deliberately different, much
+    smaller hyperparameter conventions (e.g. lookahead_a2c's n_steps=5) that
+    these SB3-PPO-tuned ranges would incorrectly clamp — must be skipped."""
+    plan = {
+        "task_type": "rl",
+        "algorithm": "A2C",
+        "trainer_type": "actor_critic",
+        "hyperparameters": {"n_steps": 5, "n_epochs": 1},
+    }
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["hyperparameters"] == {"n_steps": 5, "n_epochs": 1}
+
+
+def test_clamp_fresh_plan_lookahead_trainer_untouched():
+    plan = {
+        "task_type": "rl",
+        "algorithm": "A2C",
+        "trainer_type": "lookahead_a2c",
+        "hyperparameters": {"n_steps": 5},
+    }
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["hyperparameters"] == {"n_steps": 5}
+
+
+def test_clamp_fresh_plan_non_rl_task_type_untouched():
+    plan = {"task_type": "dpo", "hyperparameters": {"n_steps": 5}}
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["hyperparameters"] == {"n_steps": 5}
+
+
+def test_clamp_fresh_plan_no_policy_kwargs_or_env_kwargs_no_crash():
+    plan = {
+        "task_type": "rl",
+        "algorithm": "PPO",
+        "env_id": "Snake-v0",
+        "hyperparameters": {"learning_rate": 0.0003},
+    }
+    result = LoopStateMachine._clamp_fresh_plan(plan)
+    assert result["hyperparameters"]["learning_rate"] == 0.0003
+    assert "env_kwargs" not in result
+
+
 # ── _pick_untried_net_arch ───────────────────────────────────────────────────
 
 def test_pick_untried_net_arch_skips_all_tried():

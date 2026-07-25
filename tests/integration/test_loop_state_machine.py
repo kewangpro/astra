@@ -712,6 +712,53 @@ async def test_pivot_plan_saved_to_db(seeded_mission, db_session, patch_db, monk
 
 
 @pytest.mark.asyncio
+async def test_fresh_plan_clamped_before_codegen_and_persisted_immediately(seeded_mission, db_session, patch_db, monkeypatch):
+    """Real incident: a fresh (non-pivot) plan's unsafe hyperparameters (n_steps=128,
+    n_epochs=100) reached training with zero validation, since the existing safety
+    clamps only ever ran on pivot proposals. Also confirms the clamped plan is
+    persisted to missions.current_plan immediately (not just at the end-of-iteration
+    catch-all) — otherwise the DB/API view shows stale unclamped hyperparameters for
+    the whole iteration even though training itself uses the clamped values."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    class _UnsafeHpAgent(_MockLeadAgent):
+        async def plan(self, goal, task_type, target_metric):
+            return {
+                "task_type": "rl",
+                "algorithm": "PPO",
+                "env_id": "Snake-v0",
+                "hyperparameters": {"learning_rate": 3e-4, "n_steps": 128, "n_epochs": 100},
+                "sandbox_memory_gb": 4.0,
+            }
+
+    with tempfile.TemporaryDirectory() as tmp:
+        codegen = _MockCodeGen(tmp)
+        seen_plans = []
+        seen_db_plans = []
+        orig_generate = codegen.generate_training_script
+
+        async def _spying_generate(mission_id, plan, current_iteration=0):
+            seen_plans.append(dict(plan.get("hyperparameters", {})))
+            await db_session.refresh(seeded_mission)
+            seen_db_plans.append(dict(seeded_mission.current_plan.get("hyperparameters", {})))
+            return await orig_generate(mission_id, plan, current_iteration)
+
+        codegen.generate_training_script = _spying_generate
+        evaluator = _SequenceEvaluator([{"mean_reward": 200.0}])
+        sm = _build_sm(_UnsafeHpAgent(), codegen, _MockHealer(tmp), _MockSandbox(tmp), evaluator)
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(seeded_mission.id)
+
+    # The plan handed to codegen (what actually trains) must already be clamped.
+    assert seen_plans[0]["n_steps"] == 1024
+    assert seen_plans[0]["n_epochs"] == 20
+    # The DB row must already reflect the clamped plan at that same point in
+    # time — not just eventually, at the end of the iteration.
+    assert seen_db_plans[0]["n_steps"] == 1024
+    assert seen_db_plans[0]["n_epochs"] == 20
+
+
+@pytest.mark.asyncio
 async def test_restart_uses_saved_pivot_plan(db_session, patch_db, monkeypatch):
     """A mission restarted after a pivot must use the saved plan instead of re-planning."""
     monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)

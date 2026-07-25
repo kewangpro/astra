@@ -327,6 +327,20 @@ class LoopStateMachine:
                     )
                     if _lookahead_tt:
                         plan["trainer_type"] = _lookahead_tt
+
+                if did_replan:
+                    plan = self._clamp_fresh_plan(plan)
+                    # Re-persist immediately: the plan was already saved above
+                    # (pre-clamp, pre-trainer_type-injection), and the only other
+                    # save point is the end-of-iteration catch-all — which for a
+                    # long-running iteration leaves the DB/API-visible plan
+                    # showing stale unclamped hyperparameters for the entire
+                    # training run, not just a brief window. Every other mutation
+                    # site in this file (pivots, reverts) already re-saves
+                    # immediately after changing `plan`; this brings the fresh/
+                    # critic-revised path in line with that convention.
+                    await self._save_plan(mission_id, plan)
+
                 error_history: list[str] = []   # accumulated errors for this script
                 if _skip_launch:
                     # Reattaching to an already-running sandbox — no new script
@@ -1399,6 +1413,42 @@ class LoopStateMachine:
         if clamped != adjustments:
             logger.info("LoopStateMachine: clamped pivot adjustments %s → %s", adjustments, clamped)
         return clamped
+
+    @classmethod
+    def _clamp_fresh_plan(cls, plan: dict) -> dict:
+        """Apply the same safety clamps pivots already get to a brand-new
+        (or critic-revised) plan's hyperparameters/policy_kwargs/env_kwargs.
+
+        Real incident: `_clamp_rl_adjustments()`/`_clamp_net_arch()`/
+        `_clamp_env_kwargs()` only ever ran on PIVOT proposals — a fresh
+        full re-plan's hyperparameters were never validated at all, even
+        though the exact same LLM can produce the exact same unsafe values
+        here. A live Snake-v0 PPO mission's full re-plan set `n_steps=128`
+        with `n_epochs=100` (a rollout 16x smaller than the tuned recipe
+        default, reused for over 3x more epochs than the pivot clamp's own
+        upper bound allows) with zero guardrail, producing unstable
+        mean_reward — the exact same class of runaway/unsafe value these
+        clamps already exist to prevent for pivots, just reached through a
+        different code path (initial/critic-revised plan generation instead
+        of a mid-mission pivot).
+
+        Deliberately only applies to genuine vanilla-SB3 missions (RL task
+        type, no `trainer_type` already set) — `actor_critic`/`lookahead_*`
+        trainers use fundamentally different, deliberately-small
+        hyperparameter conventions (e.g. `lookahead_a2c`'s `n_steps=5`) that
+        these SB3-PPO-tuned ranges would incorrectly clamp.
+        """
+        if plan.get("task_type", "rl") != "rl" or plan.get("trainer_type"):
+            return plan
+        hp = plan.get("hyperparameters", {})
+        flat_hp = {k: v for k, v in hp.items() if k != "policy_kwargs"}
+        clamped_hp = cls._clamp_rl_adjustments(flat_hp, plan.get("task_type", "rl"))
+        if "policy_kwargs" in hp:
+            clamped_hp["policy_kwargs"] = cls._clamp_net_arch(hp["policy_kwargs"])
+        plan = {**plan, "hyperparameters": clamped_hp}
+        if plan.get("env_kwargs"):
+            plan["env_kwargs"] = cls._clamp_env_kwargs(plan["env_kwargs"], plan.get("env_id", ""))
+        return plan
 
     async def _increment_iteration(self, mission_id: str) -> None:
         async with AsyncSessionLocal() as session:
