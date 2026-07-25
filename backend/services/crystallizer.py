@@ -25,6 +25,7 @@ from backend.models.mission import Mission
 from backend.models.recipe import RecipeRecord
 from backend.services import vector_memory
 from backend.services import recipe_library
+from backend.agent.code_generator import _VALID_ALGO_KEYS
 
 logger = get_logger(__name__)
 
@@ -53,13 +54,6 @@ def _next_version(existing_names: list[str], base: str) -> int:
     return max(versions, default=0) + 1
 
 
-# Valid SB3 PPO kwargs — strip everything else from RL hyperparameters
-_VALID_PPO_KWARGS = {
-    "learning_rate", "n_steps", "batch_size", "n_epochs", "gamma",
-    "gae_lambda", "clip_range", "clip_range_vf", "ent_coef", "vf_coef",
-    "max_grad_norm", "target_kl",
-}
-
 # Rename map: LLM-invented keys → canonical SB3 names
 _PPO_RENAMES = {
     "entropy_coeff": "ent_coef",
@@ -75,21 +69,36 @@ _VALID_AC_KWARGS = {
 }
 
 
-def _clean_rl_hyperparams(raw: dict, trainer_type: str = "") -> dict:
-    """Rename invalid keys and drop trainer-irrelevant kwargs."""
+def _clean_rl_hyperparams(raw: dict, trainer_type: str = "", algorithm: str = "") -> dict:
+    """Rename invalid keys and drop trainer-irrelevant kwargs.
+
+    Real incident: this always filtered against a hardcoded PPO-only
+    allowlist regardless of the mission's actual algorithm — a completed
+    Snake-v0 DQN mission (271064b5, achieved food_eaten=103.0) crystallized
+    with `algorithm: DQN` correctly recorded but its real DQN hyperparameters
+    (buffer_size, exploration_fraction, target_update_interval, tau,
+    train_freq) silently stripped out and replaced with leftover PPO-shaped
+    keys (n_steps, gae_lambda, clip_range, target_kl) that vanilla DQN never
+    even uses — a genuine mission result crystallized into a misleading
+    recipe. Now reuses code_generator.py's `_VALID_ALGO_KEYS` (the same
+    allowlist the actual training script generation validates against, so
+    it can't drift out of sync with what each algorithm really accepts),
+    falling back to PPO's set only for an unrecognized/missing algorithm.
+    """
     if trainer_type == "actor_critic":
         return {k: v for k, v in raw.items() if k in _VALID_AC_KWARGS}
     # The lookahead_* custom trainers (lookahead_dqn/ppo/a2c) are hand-rolled
     # PyTorch training loops, not real SB3 API surfaces — there's no fixed
     # kwarg allowlist to validate against the way there is for genuine SB3
     # PPO, so pass their hyperparameters through unfiltered rather than
-    # incorrectly stripping them against the SB3-PPO-specific allowlist below.
+    # incorrectly stripping them against an SB3-specific allowlist below.
     if trainer_type.startswith("lookahead_"):
         return dict(raw)
+    valid_keys = _VALID_ALGO_KEYS.get(algorithm.upper(), _VALID_ALGO_KEYS["PPO"])
     cleaned = {}
     for k, v in raw.items():
         k = _PPO_RENAMES.get(k, k)
-        if k in _VALID_PPO_KWARGS:
+        if k in valid_keys:
             cleaned[k] = v
     return cleaned
 
@@ -121,7 +130,7 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
 
     # Clean hyperparameters: strip trainer-irrelevant keys
     if task_type == "rl":
-        hyperparams = _clean_rl_hyperparams(raw_hp, trainer_type=trainer_type)
+        hyperparams = _clean_rl_hyperparams(raw_hp, trainer_type=trainer_type, algorithm=algorithm)
     else:
         hyperparams = {k: v for k, v in raw_hp.items() if k != "dataset_path"}
 

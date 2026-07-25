@@ -131,6 +131,56 @@ class TestBuildRecipeContent:
         assert "entropy_coeff" not in content["hyperparameters"]
         assert content["hyperparameters"].get("ent_coef") == 0.01
 
+    def test_dqn_hyperparams_use_dqn_allowlist_not_ppo(self):
+        """Real incident: a completed Snake-v0 DQN mission (271064b5,
+        food_eaten=103.0) crystallized with algorithm=DQN correctly recorded
+        but its hyperparameters silently filtered through the PPO-only
+        allowlist — real DQN keys (buffer_size, exploration_fraction,
+        target_update_interval) stripped, leftover PPO-shaped keys
+        (n_steps, gae_lambda, clip_range, target_kl) kept even though DQN
+        never uses them. Must now use DQN's own valid-key set."""
+        hp = {
+            "learning_rate": 0.0001, "buffer_size": 50000, "tau": 1.0,
+            "exploration_fraction": 0.6, "target_update_interval": 1000,
+            "train_freq": 8, "gradient_steps": 1,
+            # leftover PPO-shaped keys that should NOT survive for DQN
+            "n_steps": 1000, "gae_lambda": 0.95, "clip_range": 0.1, "target_kl": 0.02,
+        }
+        mission = _make_mission(current_plan={"task_type": "rl", "algorithm": "DQN", "hyperparameters": hp})
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        result = content["hyperparameters"]
+        assert result.get("buffer_size") == 50000
+        assert result.get("exploration_fraction") == 0.6
+        assert result.get("target_update_interval") == 1000
+        assert "n_steps" not in result
+        assert "gae_lambda" not in result
+        assert "clip_range" not in result
+        assert "target_kl" not in result
+
+    def test_a2c_hyperparams_use_a2c_allowlist(self):
+        hp = {
+            "learning_rate": 0.0006, "n_steps": 1000, "gae_lambda": 0.95,
+            "use_rms_prop": True,
+            # DQN-shaped keys that should NOT survive for A2C
+            "buffer_size": 10000, "target_update_interval": 500,
+        }
+        mission = _make_mission(current_plan={"task_type": "rl", "algorithm": "A2C", "hyperparameters": hp})
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        result = content["hyperparameters"]
+        assert result.get("n_steps") == 1000
+        assert result.get("use_rms_prop") is True
+        assert "buffer_size" not in result
+        assert "target_update_interval" not in result
+
+    def test_unknown_algorithm_falls_back_to_ppo_allowlist(self):
+        hp = {"learning_rate": 0.001, "gamma": 0.99, "buffer_size": 5000}
+        mission = _make_mission(current_plan={"task_type": "rl", "algorithm": "UNKNOWN_ALGO", "hyperparameters": hp})
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        result = content["hyperparameters"]
+        assert result.get("learning_rate") == 0.001
+        assert result.get("gamma") == 0.99
+        assert "buffer_size" not in result  # not a PPO key
+
     def test_env_id_surfaced_for_rl(self):
         plan = {"task_type": "rl", "algorithm": "PPO", "env_id": "CartPole-v1", "hyperparameters": {}}
         mission = _make_mission(current_plan=plan)
