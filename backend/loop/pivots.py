@@ -15,6 +15,14 @@ PLATEAU_WINDOW = 3          # iterations with no improvement → plateau
 # Don't pivot when the window's best is within this fraction of the all-time peak.
 # A brief dip (e.g. iter scores 151→127→126 while peak=164) should self-correct.
 PIVOT_COMPETITIVE_THRESHOLD = 0.85
+# Real incident: a DPO mission's pass_rate oscillated between ~62% and ~80% of its
+# all-time peak for 47+ consecutive iterations (a full week) without ever dropping
+# below the competitive-dip threshold OR beating the peak — the guard above has no
+# built-in expiry, so it suppressed every single plateau check indefinitely, freezing
+# escalation at pivot_count=15 with no path forward. Once the mission has gone this
+# many iterations since its last new best while still "competitively" dipping, force
+# a pivot anyway — a metric that can't beat its peak for this long isn't noise.
+MAX_DIP_SUPPRESSION_ITERS = 10
 # A pivot resets the escalation counter only when the best metric improves by
 # this much relative to its value at the last pivot. Raised to 5% so small
 # oscillations in the running average don't keep resetting escalation back to 0.
@@ -229,12 +237,26 @@ class PivotEngine:
         if all_time_best is not None and all_time_best > 0:
             window_best = max(values)
             if 0 < window_best < all_time_best and window_best >= all_time_best * PIVOT_COMPETITIVE_THRESHOLD:
-                logger.info(
-                    "PivotEngine: dip detected but window_best=%.4f is within %.0f%% of "
-                    "all-time best=%.4f — suppressing pivot",
-                    window_best, PIVOT_COMPETITIVE_THRESHOLD * 100, all_time_best,
+                best_iter = self.best_metric_iteration()
+                current_iter = self._history[-1].get("iteration") if self._history else None
+                iters_since_best = (
+                    current_iter - best_iter
+                    if best_iter is not None and current_iter is not None
+                    else 0
                 )
-                return False
+                if iters_since_best <= MAX_DIP_SUPPRESSION_ITERS:
+                    logger.info(
+                        "PivotEngine: dip detected but window_best=%.4f is within %.0f%% of "
+                        "all-time best=%.4f — suppressing pivot (%d/%d iters since best)",
+                        window_best, PIVOT_COMPETITIVE_THRESHOLD * 100, all_time_best,
+                        iters_since_best, MAX_DIP_SUPPRESSION_ITERS,
+                    )
+                    return False
+                logger.info(
+                    "PivotEngine: dip suppression cap reached (%d > %d iters since best=%.4f) — "
+                    "forcing pivot despite window_best=%.4f being competitive",
+                    iters_since_best, MAX_DIP_SUPPRESSION_ITERS, all_time_best, window_best,
+                )
         logger.info(
             "PivotEngine: plateau detected over %d iterations "
             "(latest=%.4f <= earliest=%.4f, no improvement)",

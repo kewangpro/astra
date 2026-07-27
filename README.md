@@ -87,7 +87,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 819 unit tests across all core modules
+│   ├── unit/           # 821 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -140,10 +140,13 @@ make ports  # show port status for all services
 | 24 | Sandbox Shutdown Fix + Opt-In PPO Learning Rate Schedule — graceful SSH terminate, `lr_schedule: linear` | ✅ Complete |
 | 25 | DPO/GRPO Fine-Tune Task Types + Remote Telemetry Tailing — wraps `ensemble/finetune` scripts, SSH-tailed telemetry | ✅ Complete |
 | 26 | DPO/GRPO Hardening & Recipe Lockout — recipe correctness fixes, `bare_eval` goal check, orphan-proof `os.execv` dispatch, recovery parity, `loss` training signal, collection-progress status, auto-approve for known-safe dispatch, pivots can no longer override recipe hyperparameters | ✅ Complete |
-| 27 | Sandbox Reattach, Guided Autonomy Mode, and Pivot-Failure Resilience — resume a still-alive sandbox in place instead of killing it, guided mode actually implemented, a malformed LLM pivot response no longer crashes the mission | ✅ Complete |
-| 28 | os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented — a documented-but-never-written check finally added, after it stalled a live mission for 26+ minutes | ✅ Complete |
-| 29 | Lookahead-Augmented DQN/PPO/A2C for Tetris-v0 — custom trainers giving each algorithm the same `get_next_states()` search capability as the Actor-Critic trainer, without losing its own algorithmic identity | ✅ Complete |
-| 30 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
+| 27 | Sandbox Reattach, Guided Autonomy Mode, and Pivot-Failure Resilience — resume a still-alive sandbox in place instead of killing it, guided mode actually implemented, a malformed LLM pivot response no longer crashes the mission, pivot hyperparameter/architecture clamp hardening | ✅ Complete |
+| 28 | Backend Crash Resilience: Metal/GPU Failures — four separate uncatchable Metal aborts root-caused and fixed (real-memory-aware GC, a process-wide Metal lock), one confirmed unfixable upstream in `mlx` itself | ✅ Complete |
+| 29 | Recipe, Crystallizer & Tetris-v0 Algorithm Correctness — every crystallized recipe had the wrong domain field, Tetris-v0 missions silently ignored the requested algorithm, missing piece-identity observation feature | ✅ Complete |
+| 30 | os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented — a documented-but-never-written check finally added, after it stalled a live mission for 26+ minutes | ✅ Complete |
+| 31 | Lookahead-Augmented DQN/PPO/A2C for Tetris-v0 — custom trainers giving each algorithm the same `get_next_states()` search capability as the Actor-Critic trainer, without losing its own algorithmic identity | ✅ Complete |
+| 32 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
+| 33 | Pivot Engine: Competitive-Dip Suppression Guard Expiry — a metric orbiting just under its peak could suppress every pivot check indefinitely; now capped so a real plateau always eventually escalates | ✅ Complete |
 
 ## Hardware Target
 

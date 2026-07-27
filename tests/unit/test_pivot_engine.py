@@ -49,6 +49,30 @@ def test_no_pivot_when_improving():
     assert not e.needs_pivot()
 
 
+def test_competitive_dip_suppresses_pivot_within_cap():
+    e = _engine()
+    e.record(0, {"mean_reward": 100.0})
+    # window_best=90 is within 85% of the all-time peak (100) — a plausible
+    # temporary dip, not a real plateau. Only 1 iteration since the peak.
+    e.record(1, {"mean_reward": 90.0})
+    e.record(2, {"mean_reward": 88.0})
+    e.record(3, {"mean_reward": 90.0})
+    assert not e.needs_pivot()
+
+
+def test_competitive_dip_forces_pivot_after_suppression_cap():
+    """Real incident: a DPO mission oscillated within the competitive band for 47+
+    iterations straight with no new best, freezing escalation with no way out —
+    the guard had no expiry. Once iters-since-best exceeds the cap, pivot anyway."""
+    e = _engine()
+    e.record(0, {"mean_reward": 100.0})
+    # Oscillate within the competitive band (85-90% of peak) well past the cap
+    # without ever setting a new best or dropping out of the competitive band.
+    for i in range(1, 13):
+        e.record(i, {"mean_reward": 88.0})
+    assert e.needs_pivot()
+
+
 def test_best_metric_value_empty():
     e = _engine()
     assert e.best_metric_value() is None
