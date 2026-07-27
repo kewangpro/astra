@@ -6,21 +6,22 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Feature Highlights
 
-- **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, driven by an LLM planner with no human intervention required
-- **GAN-style self-critique** — a CriticAgent scores every plan on safety, complexity, and overfitting risk before code is written; the LeadAgent revises on low scores
-- **Recipe crystallization & evolution** — completed missions are distilled into versioned YAML recipes; recipes can be mutated, selected, and promoted to "Golden" status after consecutive wins
-- **Autonomous error learning** — ErrorAnalyzer stores each fix as a ChromaDB lesson so CodeGenerator avoids repeating the same mistake on future missions
-- **Auto-approve with LLM classification** — `execute_code` gates are auto-approved via a two-stage classifier (static regex → LLM review); unsafe scripts are flagged with a reason for manual review
-- **Multi-sandbox execution** — SubprocessSandbox (Apple Silicon Metal) or ContainerSandbox (Docker/CUDA); SandboxManager auto-selects and handles GPU pool assignment
-- **Live mission HUD** — Next.js dashboard with real-time metric charts, log stream, pivot timeline, and critic trace; WebSocket back-fills history on reconnect
-- **Custom RL environments** — Snake-v0 and Tetris-v0 Gymnasium-compatible environments; Snake-v0 tracks `food_eaten`; Tetris-v0 uses a placement-based `Discrete(40)` action space and an 18-feature observation — 4 board-quality features `[lines_cleared_last, holes, bumpiness, sum_height]` (normalized) plus one-hot current/next piece identity, so standard SB3 policies (not just the lookahead-based Actor-Critic trainer) can learn real placements
-- **Live agent viewer** — mission HUD streams the trained agent playing Snake-v0 or Tetris-v0 in real time over WebSocket; auto-detects SB3 (`best_model.zip`) vs PyTorch Actor-Critic (`best_model.pth`) and uses `get_next_states()` lookahead for Tetris playback; displays `lines_cleared` (Tetris) and `food_eaten` (Snake) per episode
-- **Curriculum training** — Snake-v0 recipes define grid-size phases (8×8 → 12×12 → 16×16); `CodeGenerator._inject_curriculum` deterministically rewrites the generated `model.learn()` call into a multi-phase loop, transferring weights between phases via `model.set_env()` — no LLM involvement in the curriculum logic
-- **Algorithm-aware code generation** — `_VALID_ALGO_KEYS` maps PPO/DQN/SAC/A2C/TD3 to their valid SB3 constructor kwargs; `_RL_TEMPLATE` is fully parameterized so DQN missions get `buffer_size`, `learning_starts`, `exploration_fraction`, etc. correctly passed rather than silently filtered; `snake_dqn_v1.yaml` recipe added alongside the existing PPO recipe
-- **Persistent escalating pivot strategy** — PivotEngine escalates through 4 levels (HP tuning → architecture change → algorithm switch → reward shaping) across server restarts via DB-persisted `pivot_escalation_count`; pivot event stream shows real old→new diffs
-- **Best-architecture memory** — PivotEngine tracks which `net_arch` produced the best goal metric; persisted to DB and restored on restart so the hint survives process restarts; `LeadAgent.propose_pivot` receives this context and is instructed to reuse the proven architecture at Level 1 rather than randomly cycling between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]`, preventing warm-start-breaking architecture thrash
-- **Dual metric tracking** — MetricHistory shows the training signal (`mean_reward`); MetricGap tracks the goal metric separately (`food_eaten`, `lines_cleared`) via post-iteration eval rollouts; both update live in the HUD
-- **Robust state recovery** — on restart, interrupted missions are automatically detected; a still-alive sandbox (local subprocess, container, or SSH-dispatched) is reattached and resumed in place rather than killed, so a service restart doesn't throw away in-progress training; only a genuinely gone sandbox is reset to PENDING and relaunched from the last checkpoint
+- **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, with no human intervention required
+- **GAN-style self-critique** — every plan is scored on safety, complexity, and overfitting risk before code is written, and revised on a low score
+- **Recipe crystallization & evolution** — completed missions are distilled into versioned recipes that can be mutated, selected, and promoted to "Golden" status after consecutive wins
+- **Autonomous error learning** — each fix is stored as a lesson so future missions avoid repeating the same mistake
+- **Auto-approve with LLM classification** — code execution is auto-approved via a two-stage classifier; unsafe scripts are flagged with a reason for manual review
+- **Multi-sandbox execution** — runs on Apple Silicon (Metal) or in Docker/CUDA containers, with automatic GPU pool assignment
+- **Live mission HUD** — real-time metric charts, log stream, pivot timeline, and critic trace, with history back-filled on reconnect
+- **Custom RL environments** — Snake-v0 and Tetris-v0, with observations rich enough (board features plus piece identity for Tetris) that standard RL algorithms — not just a custom lookahead trainer — can learn real placements
+- **Live agent viewer** — watch the trained agent play Snake-v0 or Tetris-v0 in real time, for any supported trainer type
+- **Curriculum training** — Snake-v0 missions can progress through increasing grid sizes within a single run, transferring learned weights between phases
+- **Algorithm-aware code generation** — PPO, DQN, SAC, A2C, and TD3 each get their own correct set of hyperparameters, rather than being silently filtered down to a generic subset
+- **Persistent escalating pivot strategy** — stuck missions escalate through hyperparameter tuning → architecture change → algorithm switch → reward shaping, with escalation state surviving server restarts
+- **Best-architecture memory** — the system remembers which network architecture produced the best result for a mission and prefers reusing it over randomly cycling through others
+- **Resilient warm-start across architecture pivots** — training resumes from whatever learned weights are still compatible with a new architecture, rather than a single change discarding all prior learning
+- **Dual metric tracking** — the training signal (e.g. reward) and the actual goal metric (e.g. food eaten, lines cleared) are tracked separately, so the two can be compared and diverging trends are visible
+- **Robust state recovery** — an interrupted mission's still-alive training run is reattached and resumed on restart, rather than killed; only a genuinely gone run gets reset and relaunched from the last checkpoint
 
 ### Screenshots
 

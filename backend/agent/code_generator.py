@@ -111,14 +111,25 @@ The script must:
        if os.path.exists(_best_ckpt):
            try:
                _warm = {algorithm}.load(_best_ckpt, env=env)
-               model.policy.load_state_dict(_warm.policy.state_dict())
-               del _warm
+               _warm_sd = _warm.policy.state_dict()
+               _model_sd = model.policy.state_dict()
+               _matched = {{k: v for k, v in _warm_sd.items()
+                           if k in _model_sd and v.shape == _model_sd[k].shape}}
+               _model_sd.update(_matched)
+               model.policy.load_state_dict(_model_sd)
+               if len(_matched) < len(_model_sd):
+                   logging.warning(
+                       "Warm-start: %d/%d policy tensors matched shape after net_arch/algo "
+                       "change; the rest kept their random init", len(_matched), len(_model_sd),
+                   )
+               del _warm, _warm_sd, _model_sd, _matched
            except Exception as _e:
                logging.warning("Warm-start skipped (architecture mismatch or load error): %s", _e)
 
    This resumes training from the best previously saved weights while keeping the new hyperparameters.
-   If the checkpoint architecture differs (e.g. after a net_arch pivot), the except branch silently
-   falls back to random weights. `os` and `logging` are already imported.
+   If the checkpoint architecture differs (e.g. after a net_arch pivot), only the tensors whose
+   shape still matches are copied — layers whose shape changed keep the freshly initialized
+   weights instead of discarding the ENTIRE policy. `os` and `logging` are already imported.
    The block is MANDATORY — do not remove or skip it.
 4. Implement a custom BaseCallback. Copy this ENTIRE class EXACTLY — do not add, remove, or
    modify any line:
