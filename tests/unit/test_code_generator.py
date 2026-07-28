@@ -1423,6 +1423,46 @@ def test_resolve_hyperparams_grpo_ignores_plan_override():
     assert result["learning_rate"] != 0.001
 
 
+def test_resolve_hyperparams_dpo_allows_sampling_diversity_within_bounds():
+    """Real incident: with the recipe fully authoritative, a stuck DPO mission's pivots
+    became complete no-ops for 47+ consecutive iterations — nothing ever actually changed
+    between relaunches. temp/k_collect are safe to vary (affect what gets collected, not
+    model/training stability) and must now pass through, unlike every other key."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {"temp": 0.9, "k_collect": 12})
+    assert result["temp"] == 0.9
+    assert result["k_collect"] == 12
+    # everything else stays recipe-locked
+    assert result["learning_rate"] == 5e-7
+
+
+def test_resolve_hyperparams_dpo_clamps_sampling_diversity_out_of_range():
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {"temp": 5.0, "k_collect": 1})
+    assert result["temp"] == 1.5
+    assert result["k_collect"] == 4
+
+
+def test_resolve_hyperparams_grpo_allows_num_generations_within_bounds():
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {"num_generations": 4})
+    assert result["num_generations"] == 4
+
+
+def test_resolve_hyperparams_grpo_clamps_num_generations_above_regression_ceiling():
+    """num_generations capped at 4 specifically because K=4 regressed in grpo_v10_min
+    per ensemble_grpo_v1.yaml's own changelog — a pivot must not propose higher."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("grpo", {"num_generations": 8})
+    assert result["num_generations"] == 4
+
+
+def test_clamp_dpo_grpo_pivot_hp_drops_unrecognized_keys():
+    from backend.agent.code_generator import _clamp_dpo_grpo_pivot_hp
+    result = _clamp_dpo_grpo_pivot_hp({"learning_rate": 0.001, "num_layers": 5, "temp": 1.0})
+    assert result == {"temp": 1.0}
+
+
 # ── grpo template ─────────────────────────────────────────────────────────────
 
 def test_build_user_prompt_grpo_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):

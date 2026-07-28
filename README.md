@@ -20,6 +20,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Persistent escalating pivot strategy** — stuck missions escalate through hyperparameter tuning → architecture change → algorithm switch → reward shaping, with escalation state surviving server restarts
 - **Best-architecture memory** — the system remembers which network architecture produced the best result for a mission and prefers reusing it over randomly cycling through others
 - **Resilient warm-start across architecture pivots** — training resumes from whatever learned weights are still compatible with a new architecture, rather than a single change discarding all prior learning
+- **Task-appropriate pivot search** — RL missions escalate through hyperparameters, architecture, and reward shaping; fine-tuning missions (DPO/GRPO) instead get a small set of safe, bounded sampling-diversity knobs, so a plateaued mission always has a real, actionable search lever rather than proposals that silently get discarded
 - **Dual metric tracking** — the training signal (e.g. reward) and the actual goal metric (e.g. food eaten, lines cleared) are tracked separately, so the two can be compared and diverging trends are visible
 - **Robust state recovery** — an interrupted mission's still-alive training run is reattached and resumed on restart, rather than killed; only a genuinely gone run gets reset and relaunched from the last checkpoint
 
@@ -87,7 +88,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 821 unit tests across all core modules
+│   ├── unit/           # 829 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -146,7 +147,7 @@ make ports  # show port status for all services
 | 30 | os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented — a documented-but-never-written check finally added, after it stalled a live mission for 26+ minutes | ✅ Complete |
 | 31 | Lookahead-Augmented DQN/PPO/A2C for Tetris-v0 — custom trainers giving each algorithm the same `get_next_states()` search capability as the Actor-Critic trainer, without losing its own algorithmic identity | ✅ Complete |
 | 32 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
-| 33 | Pivot Engine: Competitive-Dip Suppression Guard Expiry — a metric orbiting just under its peak could suppress every pivot check indefinitely; now capped so a real plateau always eventually escalates | ✅ Complete |
+| 33 | Pivot Engine: Competitive-Dip Suppression Guard Expiry & DPO/GRPO Sampling-Diversity Pivots — a metric orbiting just under its peak could suppress every pivot check indefinitely; separately, every dpo/grpo pivot was a complete no-op (full hyperparameter lockout), now given a safe, bounded search lever | ✅ Complete |
 
 ## Hardware Target
 

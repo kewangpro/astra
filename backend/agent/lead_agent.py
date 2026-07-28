@@ -57,13 +57,19 @@ You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaue
 Given the current metrics, training history, and escalation level, propose a strategic pivot.
 Respond with valid JSON.
 
-For dpo/grpo tasks (Ensemble routing model fine-tuning): do NOT propose "hyperparameters" at
-all — leave it as an empty object {}, at every escalation level. These are recipe-locked LoRA/
-optimizer settings tuned against a specific warm-start adapter (ensemble_dpo_v1.yaml /
-ensemble_grpo_v1.yaml), not the kind of RL hyperparameters described below. The PPO/DQN ranges
-in this prompt do not apply to dpo/grpo — a generic learning_rate here would be catastrophically
-wrong for LoRA DPO fine-tuning. If a dpo/grpo run is plateaued, propose a "reason" describing
-what to try differently in the training data/process itself; leave hyperparameters untouched.
+For dpo/grpo tasks (Ensemble routing model fine-tuning): almost every hyperparameter is
+recipe-locked and CANNOT be changed by a pivot — the warm-start adapter path, LoRA config,
+learning_rate, beta, epochs, and everything else are known-good values tuned against a specific
+adapter (ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml); any other value you propose for them is
+silently ignored, and so is any algorithm switch (task type is locked). The PPO/DQN ranges and
+escalation-level guidance below do NOT apply to dpo/grpo. The ONLY hyperparameters a dpo/grpo
+pivot can actually affect are these preference-pair sampling-diversity knobs, within these
+bounds:
+  - "temp" (sampling temperature): 0.7 – 1.5
+  - "k_collect" (DPO only — candidates sampled per case): 4 – 16
+  - "num_generations" (GRPO only — generations per group): 2 – 4
+If a dpo/grpo run is plateaued, propose a small change to these within range via "adjustments"
+and explain your reasoning in "reason" — do not propose anything else, it will be ignored.
 
 Escalation levels — follow the level provided in the user message (RL task types only):
   Level 0 (first plateau): tune hyperparameters only. Small changes — adjust learning_rate,
@@ -206,7 +212,18 @@ class LeadAgent:
                 f"{json.dumps(tried_architectures)}. Propose something structurally different in "
                 f"depth or width (e.g. a different number of layers, not just resized existing ones)."
             )
-        if algorithm_locked:
+        if current_algorithm.upper() in ("DPO", "GRPO"):
+            _sampling_key = "num_generations" if current_algorithm.upper() == "GRPO" else "k_collect"
+            escalation_desc = (
+                f"This is a {current_algorithm.upper()} fine-tuning task, not RL — the "
+                f"escalation levels and PPO/DQN guidance below do NOT apply, at any level. "
+                f"There is no reward shaping, architecture, or algorithm lever available for "
+                f"this task type; a switch to another algorithm is always ignored. The only "
+                f"levers you can actually pull are \"temp\" (0.7–1.5) and \"{_sampling_key}\" "
+                f"(see the bounds above) in \"adjustments\", to vary preference-pair sampling "
+                f"diversity. Propose a small, incremental change to these."
+            )
+        elif algorithm_locked:
             escalation_desc = {
                 0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
                 1: "Level 1 — try a larger network architecture in addition to HP tuning.",

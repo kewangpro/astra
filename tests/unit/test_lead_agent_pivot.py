@@ -75,3 +75,48 @@ class TestDeepPlateauEscalation:
         )
         query = agent._generate_structured.call_args.args[0][-1].content
         assert "Level 0" in query
+
+
+class TestDpoGrpoEscalation:
+    """Real incident: a DPO mission's pivots were complete no-ops for 47+ consecutive
+    iterations — the escalation guidance told the LLM to try RL concepts (reward shaping,
+    algorithm switches) that don't apply and always get silently discarded. Sampling-diversity
+    knobs (temp/k_collect/num_generations) are now the one lever that actually reaches
+    training; the prompt must steer the LLM toward exactly that, at every level."""
+
+    @pytest.mark.asyncio
+    async def test_dpo_escalation_never_directs_toward_rl_actions(self):
+        agent = _agent()
+        for level in (0, 1, 2, 3, 4):
+            await agent.propose_pivot(
+                {"pass_rate": 0.75}, [], escalation_level=level,
+                current_algorithm="DPO", algorithm_locked=True,
+            )
+            query = agent._generate_structured.call_args.args[0][-1].content
+            # the old RL-flavored text (concrete action items, not just the words
+            # "reward"/"architecture" in passing) must never appear for dpo/grpo
+            assert "food_reward" not in query
+            assert "net_arch" not in query
+            assert "distance_weight" not in query
+            assert "k_collect" in query
+
+    @pytest.mark.asyncio
+    async def test_grpo_escalation_mentions_num_generations_not_k_collect(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"pass_rate": 0.75}, [], escalation_level=4,
+            current_algorithm="GRPO", algorithm_locked=True,
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "num_generations" in query
+        assert "k_collect" not in query
+
+    @pytest.mark.asyncio
+    async def test_dpo_escalation_case_insensitive_algorithm(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"pass_rate": 0.75}, [], escalation_level=4,
+            current_algorithm="dpo", algorithm_locked=True,
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "k_collect" in query

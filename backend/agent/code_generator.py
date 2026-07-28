@@ -1011,18 +1011,51 @@ def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
         return {}
 
 
+# Real incident: with the recipe fully authoritative (see below), a stuck dpo/grpo mission's
+# pivots became complete no-ops — every escalation cycle relaunched the identical recipe-locked
+# run, with zero directed change, for 47+ consecutive iterations. Preference-pair sampling
+# diversity is the one axis safe to vary per pivot: it affects what gets collected, never model/
+# training stability, unlike learning_rate/num_layers/adapter path (the actually-dangerous knobs
+# from the original incident this lockout exists to prevent). Bounds keep collection cost/shape
+# sane: k_collect/num_generations too high blows up wall-clock per case; too low starves DPO/GRPO
+# of contrast. num_generations capped at 4 specifically because K=4 regressed in grpo_v10_min
+# per ensemble_grpo_v1.yaml's own changelog.
+_DPO_GRPO_PIVOT_RANGES = {
+    "temp": (0.7, 1.5),
+    "k_collect": (4, 16),
+    "num_generations": (2, 4),
+}
+
+
+def _clamp_dpo_grpo_pivot_hp(plan_hp: dict) -> dict:
+    """Clamp the small safelist of dpo/grpo keys a pivot may vary; silently drop everything else."""
+    clamped = {}
+    for k, (lo, hi) in _DPO_GRPO_PIVOT_RANGES.items():
+        if k not in plan_hp:
+            continue
+        try:
+            v = type(lo)(plan_hp[k])
+        except (TypeError, ValueError):
+            continue
+        clamped[k] = max(lo, min(hi, v))
+    return clamped
+
+
 def _resolve_hyperparams(env_id: str, plan_hp: dict, algorithm: str = "") -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
     if env_id in ("dpo", "grpo"):
-        # Recipe is authoritative, full stop — no plan/pivot override allowed.
-        # These are LoRA/optimizer settings tuned against a specific warm-start
-        # adapter; PIVOT_SYSTEM's hyperparameter guidance is RL-oriented (PPO/DQN
-        # ranges) and doesn't know these are recipe-locked. Confirmed via a real
-        # incident: a pivot's generic learning_rate=0.001 silently overrode the
-        # recipe's 5e-7 through the old setdefault-only merge below, collapsing
-        # a DPO run's pass_rate from a 62% baseline to 0% within 50 steps.
-        return dict(recipe_hp)
+        # Recipe is authoritative for everything except the small sampling-diversity
+        # safelist above — no plan/pivot override allowed for anything else. These are
+        # LoRA/optimizer settings tuned against a specific warm-start adapter;
+        # PIVOT_SYSTEM's hyperparameter guidance is RL-oriented (PPO/DQN ranges) and
+        # doesn't know these are recipe-locked. Confirmed via a real incident: a pivot's
+        # generic learning_rate=0.001 silently overrode the recipe's 5e-7 through the
+        # old setdefault-only merge below, collapsing a DPO run's pass_rate from a 62%
+        # baseline to 0% within 50 steps.
+        hp = dict(recipe_hp)
+        hp.update(_clamp_dpo_grpo_pivot_hp(plan_hp))
+        return hp
     hp = dict(plan_hp)
     for k, v in recipe_hp.items():
         hp.setdefault(k, v)
