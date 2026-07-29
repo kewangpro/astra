@@ -23,6 +23,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Task-appropriate pivot search** — RL missions escalate through hyperparameters, architecture, and reward shaping; fine-tuning missions (DPO/GRPO) instead get a small set of safe, bounded sampling-diversity knobs, so a plateaued mission always has a real, actionable search lever rather than proposals that silently get discarded
 - **Dual metric tracking** — the training signal (e.g. reward) and the actual goal metric (e.g. food eaten, lines cleared) are tracked separately, so the two can be compared and diverging trends are visible
 - **Robust state recovery** — an interrupted mission's still-alive training run is reattached and resumed on restart, rather than killed; only a genuinely gone run gets reset and relaunched from the last checkpoint
+- **Cluster visibility** — a Nodes panel shows reachability and free memory for every compute node (local and remote/SSH) a mission could run on, and each mission card shows which node it's actually running on
 
 ### Screenshots
 
@@ -92,7 +93,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 829 unit tests across all core modules
+│   ├── unit/           # 842 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -152,6 +153,7 @@ make ports  # show port status for all services
 | 31 | Lookahead-Augmented DQN/PPO/A2C for Tetris-v0 — custom trainers giving each algorithm the same `get_next_states()` search capability as the Actor-Critic trainer, without losing its own algorithmic identity | ✅ Complete |
 | 32 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
 | 33 | Pivot Engine: Competitive-Dip Suppression Guard Expiry & DPO/GRPO Sampling-Diversity Pivots — a metric orbiting just under its peak could suppress every pivot check indefinitely; separately, every dpo/grpo pivot was a complete no-op (full hyperparameter lockout), now given a safe, bounded search lever | ✅ Complete |
+| 34 | Nodes Panel — cluster visibility for missions running across local + remote (SSH) sandboxes at once: node reachability/memory in the HUD, per-mission host badges, no more manually SSHing in to check what's actually running where | ✅ Complete |
 
 ## Hardware Target
 

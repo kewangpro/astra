@@ -122,6 +122,10 @@ class SSHSandbox(BaseSandbox):
     def get_sandbox_id(self) -> Optional[str]:
         return str(self._remote_pid) if self._remote_pid else None
 
+    @property
+    def host(self) -> str:
+        return self._host
+
     def sync_tail_offset_to_current(self) -> None:
         """Set the tail offset to the remote log's current size. Used when
         reattaching to an already-running process (e.g. after a backend

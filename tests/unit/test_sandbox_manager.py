@@ -291,3 +291,95 @@ class TestFinetuneRemoteDispatch:
              patch("backend.sandbox.manager.SubprocessSandbox", return_value=new_sandbox), \
              patch("backend.sandbox.manager.os.makedirs"):
             mgr.launch("test-mission", str(script))   # no task_type kwarg at all
+
+
+# ── SandboxManager.node_status ────────────────────────────────────────────────
+
+class TestNodeStatus:
+    def test_local_only_when_no_sandbox_host_configured(self):
+        mgr = _make_manager()
+        with patch("backend.sandbox.manager.settings.sandbox_host", ""), \
+             patch.object(mgr, "_local_free_gb", return_value=10.0):
+            nodes = mgr.node_status()
+        assert [n["host"] for n in nodes] == ["local"]
+        assert nodes[0]["is_local"] is True
+        assert nodes[0]["alive"] is True
+        assert nodes[0]["real_available_gb"] == 10.0
+        assert nodes[0]["missions"] == []
+
+    def test_remote_host_listed_even_when_idle(self):
+        """The configured sandbox_host must appear even with zero active
+        missions there, so the panel doesn't disappear when idle."""
+        mgr = _make_manager()
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch.object(mgr, "_local_free_gb", return_value=10.0), \
+             patch.object(mgr, "_remote_free_gb", return_value=5.0):
+            nodes = mgr.node_status()
+        hosts = {n["host"] for n in nodes}
+        assert hosts == {"local", "mac-mini.local"}
+        remote = next(n for n in nodes if n["host"] == "mac-mini.local")
+        assert remote["is_local"] is False
+        assert remote["alive"] is True   # reachable (vm_stat succeeded) despite no missions
+        assert remote["missions"] == []
+
+    def test_groups_active_missions_by_host(self):
+        mgr = _make_manager()
+        local_sandbox = MagicMock()
+        local_sandbox.host = "local"
+        local_sandbox.is_alive.return_value = True
+        local_sandbox.get_sandbox_id.return_value = "111"
+        remote_sandbox = MagicMock()
+        remote_sandbox.host = "mac-mini.local"
+        remote_sandbox.is_alive.return_value = True
+        remote_sandbox.get_sandbox_id.return_value = "222"
+        mgr._sandboxes["mission-a"] = local_sandbox
+        mgr._sandboxes["mission-b"] = remote_sandbox
+
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch.object(mgr, "_local_free_gb", return_value=10.0), \
+             patch.object(mgr, "_remote_free_gb", return_value=5.0):
+            nodes = mgr.node_status()
+
+        local = next(n for n in nodes if n["host"] == "local")
+        remote = next(n for n in nodes if n["host"] == "mac-mini.local")
+        assert local["missions"] == [{"mission_id": "mission-a", "sandbox_id": "111"}]
+        assert remote["missions"] == [{"mission_id": "mission-b", "sandbox_id": "222"}]
+
+    def test_remote_node_not_alive_when_mission_process_dead(self):
+        mgr = _make_manager()
+        dead_sandbox = MagicMock()
+        dead_sandbox.host = "mac-mini.local"
+        dead_sandbox.is_alive.return_value = False
+        dead_sandbox.get_sandbox_id.return_value = "222"
+        mgr._sandboxes["mission-b"] = dead_sandbox
+
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch.object(mgr, "_local_free_gb", return_value=10.0), \
+             patch.object(mgr, "_remote_free_gb", return_value=5.0):
+            nodes = mgr.node_status()
+
+        remote = next(n for n in nodes if n["host"] == "mac-mini.local")
+        assert remote["alive"] is False
+
+    def test_remote_free_gb_returns_none_on_ssh_failure(self):
+        """Mirrors SSHSandbox.is_alive()'s fail-safe convention: a transient SSH
+        blip must read as unknown, never as 0 GB free."""
+        mgr = _make_manager()
+        with patch("backend.sandbox.manager.subprocess.run", side_effect=OSError("no route to host")):
+            assert mgr._remote_free_gb("mac-mini.local") is None
+
+    def test_remote_free_gb_parses_vm_stat(self):
+        mgr = _make_manager()
+        vm_stat_output = (
+            "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n"
+            "Pages free:                   100000.\n"
+            "Pages inactive:                50000.\n"
+            "Pages active:                 200000.\n"
+        )
+        with patch(
+            "backend.sandbox.manager.subprocess.run",
+            return_value=MagicMock(returncode=0, stdout=vm_stat_output),
+        ):
+            result = mgr._remote_free_gb("mac-mini.local")
+        expected = (150000 * 4096) / (1024 ** 3)
+        assert result == pytest.approx(expected)

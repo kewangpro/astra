@@ -54,3 +54,8 @@ class BaseSandbox(ABC):
     def log_path(self) -> str:
         import os
         return os.path.join(self.config.data_dir, "sandbox.log")
+
+    @property
+    def host(self) -> str:
+        """Node identity for cluster/nodes reporting. Overridden by SSHSandbox."""
+        return "local"

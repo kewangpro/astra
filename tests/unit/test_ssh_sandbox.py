@@ -244,3 +244,8 @@ class TestSyncBack:
         rsync_call = mock_run.call_args_list[1].args[0]
         assert "/Users/kewang/finetune/adapters/astra_test-mis/" in rsync_call[2]
         assert "checkpoints" not in rsync_call[2]
+
+
+def test_host_returns_configured_ssh_host(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    assert sandbox.host == "mac-mini.local"

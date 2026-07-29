@@ -76,7 +76,18 @@ function MissionCard({ m }: { m: Mission }) {
         )}
 
         <div className="flex items-start justify-between gap-2 mb-3">
-          <span className="text-[10px] text-[#64748b] tracking-widest">#{m.id}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[#64748b] tracking-widest">#{m.id}</span>
+            {m.host && (
+              <span
+                className="text-[9px] px-1 py-0.5 rounded-sm text-[#94a3b8]"
+                style={{ background: "rgba(255,255,255,0.05)" }}
+                title={`Running on ${m.host}`}
+              >
+                {m.host}
+              </span>
+            )}
+          </div>
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-sm uppercase tracking-widest font-medium"
             style={{

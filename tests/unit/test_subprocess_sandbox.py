@@ -214,3 +214,13 @@ class TestTerminate:
         with patch("backend.sandbox.subprocess_sandbox.psutil.Process", return_value=mock_proc):
             sandbox.terminate()   # must not raise
         assert sandbox.status == SandboxStatus.STOPPED
+
+
+def test_host_defaults_to_local():
+    config = SandboxConfig(
+        mission_id="test-mission",
+        script_path="/tmp/fake_script.py",
+        data_dir="/tmp/fake_data",
+    )
+    sandbox = SubprocessSandbox(config)
+    assert sandbox.host == "local"

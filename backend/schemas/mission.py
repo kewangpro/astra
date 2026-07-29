@@ -39,6 +39,7 @@ class MissionRead(BaseModel):
     current_metric_value: Optional[str]
     pivot_escalation_count: Optional[int]
     best_policy_kwargs: Optional[dict]
+    host: Optional[str] = None
     last_checkpoint_path: Optional[str]
     error_log: Optional[str]
     created_at: datetime

@@ -178,6 +178,77 @@ class SandboxManager:
         sandbox = self._sandboxes.get(mission_id)
         return sandbox.get_sandbox_id() if sandbox else None
 
+    @staticmethod
+    def _local_free_gb() -> Optional[float]:
+        """Real local memory headroom via psutil — same call ModelManager.real_available_gb()
+        uses internally; inlined here rather than importing ModelManager to avoid coupling
+        the sandbox layer to the agent layer for a one-line psutil call."""
+        try:
+            return psutil.virtual_memory().available / (1024 ** 3)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _remote_free_gb(host: str) -> Optional[float]:
+        """Real remote memory headroom via a single SSH call to vm_stat (macOS).
+        Same fail-safe convention as SSHSandbox.is_alive(): any connection/parse
+        failure returns None (unknown), never 0 — a transient SSH blip must not
+        read as "no memory free."""
+        try:
+            result = subprocess.run(
+                ["ssh", host, "vm_stat"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            page_size = 4096
+            free_pages = 0
+            for line in result.stdout.splitlines():
+                if line.startswith("Pages free:") or line.startswith("Pages inactive:"):
+                    free_pages += int(line.split(":")[1].strip().rstrip("."))
+            return (free_pages * page_size) / (1024 ** 3)
+        except Exception:
+            return None
+
+    def node_status(self) -> list[dict]:
+        """Per-node summary (alive, missions running, real free memory) for the
+        Nodes panel — groups the existing self._sandboxes registry by sandbox.host
+        instead of by mission. Always includes "local" and settings.sandbox_host
+        (if configured) even with zero active missions, so the panel doesn't
+        disappear when idle."""
+        by_host: dict[str, list[str]] = {}
+        for mission_id, sandbox in self._sandboxes.items():
+            by_host.setdefault(sandbox.host, []).append(mission_id)
+
+        known_hosts = {"local"}
+        if settings.sandbox_host:
+            known_hosts.add(settings.sandbox_host)
+        known_hosts |= set(by_host.keys())
+
+        nodes = []
+        for host in sorted(known_hosts):
+            mission_ids = by_host.get(host, [])
+            free_gb = self._local_free_gb() if host == "local" else self._remote_free_gb(host)
+            if mission_ids:
+                # A mission actually running there is the strongest liveness signal.
+                alive = any(self._sandboxes[mid].is_alive() for mid in mission_ids)
+            else:
+                # Idle host: no mission to check, so reachability is the best proxy —
+                # local is trivially reachable; remote reuses the vm_stat call above
+                # rather than paying for a second SSH round-trip just to ping it.
+                alive = True if host == "local" else free_gb is not None
+            nodes.append({
+                "host": host,
+                "is_local": host == "local",
+                "alive": alive,
+                "real_available_gb": free_gb,
+                "missions": [
+                    {"mission_id": mid, "sandbox_id": self._sandboxes[mid].get_sandbox_id()}
+                    for mid in mission_ids
+                ],
+            })
+        return nodes
+
     def tail_new_output(self, mission_id: str) -> Optional[str]:
         """New log output since the last call, for backends that support live
         tailing without waiting for the sandbox to exit (currently SSHSandbox

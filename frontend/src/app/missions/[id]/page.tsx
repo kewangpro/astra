@@ -124,6 +124,15 @@ export default function MissionHUD({
               ← missions
             </Link>
             <span className="text-[#64748b] text-xs">/ #{missionId}</span>
+            {mission.host && (
+              <span
+                className="text-[9px] px-1 py-0.5 rounded-sm text-[#94a3b8]"
+                style={{ background: "rgba(255,255,255,0.05)" }}
+                title={`Running on ${mission.host}`}
+              >
+                {mission.host}
+              </span>
+            )}
           </div>
           <p className="text-[#e2e8f0] text-sm leading-relaxed line-clamp-2">
             {mission.goal}

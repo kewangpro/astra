@@ -5,6 +5,10 @@ export function useMissions() {
   return useQuery({ queryKey: ["missions"], queryFn: api.getMissions });
 }
 
+export function useNodes() {
+  return useQuery({ queryKey: ["nodes"], queryFn: api.getNodes });
+}
+
 export function useMission(id: string) {
   return useQuery({
     queryKey: ["missions", id],

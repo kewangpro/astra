@@ -48,3 +48,15 @@ class Mission(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def host(self) -> Optional[str]:
+        """Which node this mission's sandbox is/was running on, for the Nodes panel
+        and mission grid badge. Derived, not stored — reuses the subprocess_pid/
+        remote_pid columns already written by SandboxManager.launch()/recover()."""
+        if self.subprocess_pid:
+            return "local"
+        if self.remote_pid:
+            from backend.config import settings
+            return settings.sandbox_host or None
+        return None

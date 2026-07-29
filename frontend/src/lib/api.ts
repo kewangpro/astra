@@ -10,8 +10,22 @@ export interface Mission {
   best_metric_iteration: number | null;
   current_metric_value: string | null;
   target_metric: Record<string, number> | null;
+  host: string | null;    // which node this mission's sandbox is/was running on
   created_at: string;
   updated_at: string;
+}
+
+export interface NodeMission {
+  mission_id: string;
+  sandbox_id: string | null;
+}
+
+export interface NodeStatus {
+  host: string;
+  is_local: boolean;
+  alive: boolean;
+  real_available_gb: number | null;
+  missions: NodeMission[];
 }
 
 export interface ApprovalGate {
@@ -55,6 +69,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getMissions: () => req<Mission[]>("/missions"),
+  getNodes: () => req<NodeStatus[]>("/nodes"),
   getMission: (id: string) => req<Mission>(`/missions/${id}`),
   createMission: (goal: string, taskType?: string) =>
     req<Mission>("/missions", {

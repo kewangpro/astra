@@ -2,6 +2,7 @@
 
 import { GoalInput } from "@/components/command-center/GoalInput";
 import { MissionsGrid } from "@/components/command-center/MissionsGrid";
+import { NodesPanel } from "@/components/command-center/NodesPanel";
 import { useMissions } from "@/lib/hooks/useMissions";
 
 function GlobalStats() {
@@ -54,6 +55,8 @@ export default function CommandCenter() {
       </div>
 
       <GoalInput />
+
+      <NodesPanel />
 
       <div>
         <h2 className="text-xs text-[#94a3b8] tracking-widest uppercase mb-4">
