@@ -47,6 +47,10 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 | [IMPLEMENT.md](docs/IMPLEMENT.md) | Phase-by-phase implementation roadmap |
 | [UX_SPEC.md](docs/UX_SPEC.md) | Dashboard UX specification |
 
+## Task Types
+
+ASTRA supports six training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
+
 ## Quick Start
 
 ```bash

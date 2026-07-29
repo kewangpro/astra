@@ -92,13 +92,22 @@ The execution engine that manages the state machine of training:
 - **Working Memory**: Real-time buffer for current logs and telemetry, actively injected into the Lead Agent's LLM context window to enable real-time pivot decisions.
 
 ### 2.4. Specialist Trainer (Execution)
-The worker agents that interface with diverse training paradigms:
-- **Universal Code Generator**: LLM-driven generation for:
-  - **RL**: Gym/PettingZoo environments and policy gradients.
-  - **SFT**: HuggingFace Transformers, LoRA/QLoRA configurations, and dataset formatting.
-  - **ML**: Scikit-learn, PyTorch Lightning, and XGBoost/LightGBM.
-- **Framework Wrappers**: Standardized interfaces for common libraries (Transformers, SB3, PyTorch).
-- **Telemetry Producer** (also referred to as the Telemetry Streamer in IMPLEMENT): Streams paradigm-specific metrics via WebSocket (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML). On recovery, back-fills missed logs from the `data/` volume to the HUD.
+The worker agents that interface with diverse training paradigms. `task_type` (`rl` / `sft` / `ml` / `mlx_lora` / `dpo` / `grpo`) selects which one a mission uses; LoRA is a *mechanism* (efficient low-rank weight updates), not a task type of its own — it underlies `sft`, `mlx_lora`, and both fine-tune types below.
+
+| Task type | Objective | How it trains |
+|---|---|---|
+| `rl` | Classical reinforcement learning — an agent learns a policy from trial-and-error reward signal in an environment (Snake-v0, Tetris-v0, or standard Gymnasium envs). | SB3 (PPO/DQN/A2C/SAC/TD3) via `RLTrainer`, or a custom Actor-Critic / lookahead-augmented trainer for Tetris-v0 (Phase 17, Phase 29/31). |
+| `sft` | Supervised fine-tuning — adjust a model's outputs toward labeled examples, the standard first fine-tuning step before any preference-based method. | HuggingFace Transformers + PEFT (LoRA/QLoRA) via `SFTTrainer`. |
+| `ml` | Classical (non-neural or lightly-neural) machine learning on tabular data. | Scikit-learn / PyTorch Lightning via `MLTrainer`. |
+| `mlx_lora` | LoRA fine-tuning on Apple Silicon via MLX, for local/offline workloads. | `mlx_lm.lora` subprocess wrapper (Phase 20). |
+| `dpo` | Direct Preference Optimization — given pairs of (chosen, rejected) responses to the same prompt, directly shift probability mass toward the chosen one, without a separate reward model or RL rollout loop. | Wraps `ensemble/finetune/dpo_train.py`: samples `k_collect` candidate completions per prompt at `temp`, ranks them, trains a LoRA adapter on the resulting pairs against a frozen reference policy (Phase 25/26). |
+| `grpo` | Group Relative Policy Optimization — on-policy RL without a learned critic: sample a *group* of `num_generations` completions per prompt, score each, and use the group's own mean as the baseline for the policy-gradient update. | Wraps `ensemble/finetune/grpo_train.py`. Used to produce the `grpo_v9_min` checkpoint that `dpo` warm-starts from in this project. |
+
+**Why `dpo`/`grpo` pivots are more constrained than `rl` pivots:** an RL pivot can safely retune hyperparameters, swap architecture, or reshape rewards — the training script builds everything from scratch each time. A `dpo`/`grpo` mission trains a LoRA adapter warm-started from a *specific* checkpoint (`num_layers`/`lora_rank` must match it exactly, or loading crashes) with hyperparameters (`learning_rate`, `beta`, etc.) already tuned against that checkpoint — a generic pivot-proposed learning rate destroyed a run once (Phase 26). So the recipe stays authoritative for everything except `temp`/`k_collect`/`num_generations`, which only affect preference-pair sampling diversity and are safe to vary per pivot (Phase 33).
+
+- **Universal Code Generator**: LLM-driven generation of the actual training script for each task type above, from a recipe + plan/pivot.
+- **Framework Wrappers**: Standardized interfaces for common libraries (Transformers, SB3, PyTorch, MLX).
+- **Telemetry Producer** (also referred to as the Telemetry Streamer in IMPLEMENT): Streams paradigm-specific metrics via WebSocket (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML, pass_rate/loss for DPO/GRPO). On recovery, back-fills missed logs from the `data/` volume to the HUD.
 
 ### 2.5. Secure Execution Sandbox
 The isolation layer where training actually occurs:
