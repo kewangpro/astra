@@ -21,6 +21,7 @@ import psutil
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
 from backend.agent.inference.metal_lock import get_metal_lock
+from backend.agent.model_manager import MODEL_FOOTPRINTS
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +35,16 @@ logger = get_logger(__name__)
 # this covers the other in-process Metal entry point — loading a planning/
 # coding model — which has no relationship to ModelManager and can't reuse
 # its guard directly.
-_LOW_MEMORY_THRESHOLD_GB = 2.0
+#
+# A flat 2.0 GB was too low: a second real incident crashed the backend with
+# 2-4 GB free (above this flat floor, so no GC/cache-clear ran) while loading
+# a ~4.5 GB model — free memory was fine by this threshold's standard but
+# nowhere near enough for the model actually being loaded. The threshold now
+# scales with the target model's own footprint plus a fixed safety margin for
+# the allocation/copy overhead mlx_lm.load() needs beyond the model's steady-
+# state size, so a big model triggers the defensive GC at a correspondingly
+# higher free-memory bar than a small one.
+_LOW_MEMORY_SAFETY_MARGIN_GB = 2.0
 
 _MLX_AVAILABLE = False
 try:
@@ -65,11 +75,13 @@ class MLXProvider(InferenceProvider):
             available_gb = psutil.virtual_memory().available / (1024 ** 3)
         except Exception:
             available_gb = None
-        if available_gb is not None and available_gb < _LOW_MEMORY_THRESHOLD_GB:
+        model_footprint_gb = MODEL_FOOTPRINTS.get(self._model_id, 4.5)
+        low_memory_threshold_gb = model_footprint_gb + _LOW_MEMORY_SAFETY_MARGIN_GB
+        if available_gb is not None and available_gb < low_memory_threshold_gb:
             logger.warning(
-                "MLXProvider: real memory low (%.1f GB free) before loading %s — "
-                "running gc + Metal cache clear first",
-                available_gb, self._model_id,
+                "MLXProvider: real memory low (%.1f GB free, need ~%.1f GB) before "
+                "loading %s — running gc + Metal cache clear first",
+                available_gb, low_memory_threshold_gb, self._model_id,
             )
             gc.collect()
             mx.metal.clear_cache()
