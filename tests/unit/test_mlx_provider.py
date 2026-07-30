@@ -40,6 +40,22 @@ class TestLoadMemoryGuard:
         mock_gc.assert_called_once()
         mock_clear.assert_called_once()
 
+    def test_load_scales_threshold_with_model_footprint(self):
+        """Real incident (Crash 5): the old flat 2.0GB floor didn't fire with
+        3GB free, even though 3GB is nowhere near enough headroom to load a
+        ~4.5GB model — the backend crashed with an uncatchable Metal OOM.
+        The guard must scale with the target model's own footprint, not a
+        single constant shared by every model regardless of size."""
+        provider = MLXProvider(model_id="mlx-community/Meta-Llama-3.1-8B-Instruct-4bit")
+        fake_vm = MagicMock(available=3 * (1024 ** 3))
+        with patch("backend.agent.inference.mlx_provider.psutil.virtual_memory", return_value=fake_vm), \
+             patch("backend.agent.inference.mlx_provider.gc.collect") as mock_gc, \
+             patch("backend.agent.inference.mlx_provider.mx.metal.clear_cache") as mock_clear, \
+             patch("backend.agent.inference.mlx_provider.mlx_lm.load", return_value=(MagicMock(), MagicMock())):
+            provider.load()
+        mock_gc.assert_called_once()
+        mock_clear.assert_called_once()
+
     def test_load_proceeds_even_if_memory_check_fails(self):
         """psutil failing must not block loading the model — fail open, same
         as ModelManager.real_available_gb()'s own fallback behavior."""

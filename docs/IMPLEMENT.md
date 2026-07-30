@@ -1165,6 +1165,11 @@ Watching that same live mission end-to-end also surfaced two more friction point
 
     (Test counts for this phase are combined with Phase 27/29, since all three were interleaved chronologically — see Phase 29's closing total for the combined figure.)
 
+**Crash 5 — the Crash 2 guard's flat threshold was too low for the model it was guarding.** Live: the backend died with the same `libc++abi`/Metal OOM signature as Crash 2, during `MLXProvider.load()` loading `Meta-Llama-3.1-8B-Instruct-4bit` (~4.5GB) for pivot planning right after a mission finished evaluating. Real free memory at the time was in the 2-4GB range — *above* Crash 2's flat `_LOW_MEMORY_THRESHOLD_GB = 2.0` floor, so the defensive `gc.collect()` + `mx.metal.clear_cache()` never fired, even though 2-4GB free is nowhere near enough headroom to safely load a 4.5GB model via Metal. The flat threshold conflated "memory is low in general" with "memory is low relative to what's about to be loaded" — a small model and a large model need different amounts of headroom, and a single constant can't express that.
+
+- [x] **`MLXProvider.load()`'s guard now scales with the target model's own footprint** (`mlx_provider.py`) — `_LOW_MEMORY_THRESHOLD_GB` replaced with `_LOW_MEMORY_SAFETY_MARGIN_GB = 2.0`, added on top of `MODEL_FOOTPRINTS.get(self._model_id, 4.5)` (imported from `model_manager.py`) to get the effective threshold per model, instead of one flat number for every model regardless of size.
+- [x] **Existing 6 tests in `test_mlx_provider.py` re-verified against the new logic** — the healthy-memory (8GB free) and low-memory (1GB free) fixtures already sit on the correct side of the new model-scaled threshold for the fallback 4.5GB footprint used in tests, so no test changes were needed to confirm the guard still fires/skips correctly.
+
 ---
 
 ## Phase 29 — Recipe, Crystallizer & Tetris-v0 Algorithm Correctness
