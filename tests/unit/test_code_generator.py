@@ -1457,6 +1457,45 @@ def test_resolve_hyperparams_grpo_clamps_num_generations_above_regression_ceilin
     assert result["num_generations"] == 4
 
 
+def test_resolve_hyperparams_dpo_warm_start_adapter_overrides_recipe():
+    """Real gap: without an explicit warm_start_adapter channel, every dpo/grpo
+    iteration re-trained from the recipe's static warm-start adapter forever —
+    146 iterations across 26 days on mission 7fd88324 never built on each
+    other's own progress. warm_start_adapter must override the recipe's
+    static `adapter` value when the mission has a prior-best checkpoint."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {}, warm_start_adapter="adapters/astra_7fd88324")
+    assert result["adapter"] == "adapters/astra_7fd88324"
+
+
+def test_resolve_hyperparams_dpo_no_warm_start_adapter_falls_back_to_recipe():
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {})
+    assert result["adapter"] == "adapters/grpo_v9_min/best"
+
+
+def test_resolve_hyperparams_dpo_warm_start_adapter_not_settable_via_plan_hp():
+    """warm_start_adapter must come only through the dedicated kwarg (sourced from
+    Mission.last_checkpoint_path, system-controlled) — plan_hp is LLM/pivot-controlled
+    and must not be able to redirect the warm-start adapter through the same
+    generic-key channel the learning_rate incident above was about."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("dpo", {"adapter": "adapters/attacker_controlled"})
+    assert result["adapter"] == "adapters/grpo_v9_min/best"
+
+
+def test_finetune_checkpoint_dir_relative_matches_absolute_suffix():
+    """The relative form (for --adapter) must point at the same directory the
+    absolute form (for --save-dir) does, just without the finetune_dir prefix —
+    otherwise a mission would train into one directory and warm-start from
+    another that never gets written to."""
+    from backend.agent.code_generator import finetune_checkpoint_dir, finetune_checkpoint_dir_relative
+    mission_id = "7fd88324-9e19-4388-8d0c-fb3f482d0fd6"
+    absolute = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id)
+    relative = finetune_checkpoint_dir_relative(mission_id)
+    assert absolute.endswith(relative)
+
+
 def test_clamp_dpo_grpo_pivot_hp_drops_unrecognized_keys():
     from backend.agent.code_generator import _clamp_dpo_grpo_pivot_hp
     result = _clamp_dpo_grpo_pivot_hp({"learning_rate": 0.001, "num_layers": 5, "temp": 1.0})

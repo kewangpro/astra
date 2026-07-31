@@ -53,7 +53,7 @@ class _MockCodeGen:
             f.write("print('mock training script')\n")
         self.call_count = 0
 
-    async def generate_training_script(self, mission_id, plan, current_iteration=0):
+    async def generate_training_script(self, mission_id, plan, current_iteration=0, warm_start_adapter=None):
         self.call_count += 1
         return self._path
 
@@ -737,7 +737,7 @@ async def test_fresh_plan_clamped_before_codegen_and_persisted_immediately(seede
         seen_db_plans = []
         orig_generate = codegen.generate_training_script
 
-        async def _spying_generate(mission_id, plan, current_iteration=0):
+        async def _spying_generate(mission_id, plan, current_iteration=0, warm_start_adapter=None):
             seen_plans.append(dict(plan.get("hyperparameters", {})))
             await db_session.refresh(seeded_mission)
             seen_db_plans.append(dict(seeded_mission.current_plan.get("hyperparameters", {})))

@@ -22,7 +22,7 @@ from backend.database import AsyncSessionLocal
 from backend.models.mission import Mission, MissionStatus
 from backend.models.approval import ApprovalGate, ApprovalStatus, GateType
 from backend.agent.lead_agent import LeadAgent
-from backend.agent.code_generator import CodeGenerator, finetune_checkpoint_dir
+from backend.agent.code_generator import CodeGenerator, finetune_checkpoint_dir, finetune_checkpoint_dir_relative
 from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
 from backend.sandbox.manager import SandboxManager, _FINETUNE_REMOTE_TASK_TYPES
@@ -130,6 +130,15 @@ class LoopStateMachine:
             event_type="success" if preflight.passed else "warn",
             value=preflight.summary(),
         )
+
+        # Local, in-loop copy of the dpo/grpo warm-start adapter to chain into the
+        # next iteration's --adapter — mirrors best_policy_kwargs/pivot_count below:
+        # DB writes for these go through raw update(Mission)...values() (see
+        # _save_last_checkpoint_path), which never updates this in-memory `mission`
+        # object, so later reads of mission.last_checkpoint_path within this same
+        # loop run would see the stale value from the initial load, not this run's
+        # own progress. Restored from DB here so restarts don't lose prior chaining.
+        _last_checkpoint_path = mission.last_checkpoint_path
 
         pivot_engine = PivotEngine(mission.target_metric)
         # Seed pivot engine with the persisted best so restarts don't lose history
@@ -350,7 +359,9 @@ class LoopStateMachine:
                     script_path = None
                 else:
                     await emit_status(mission_id, "Generating training script…", event_type="info")
-                    script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
+                    script_path = await self._codegen.generate_training_script(
+                        mission_id, plan, current_iteration, warm_start_adapter=_last_checkpoint_path,
+                    )
                     await emit_status(mission_id, "Training script ready", event_type="success")
 
                 # EXECUTE_CODE approval gate (supervised/guided modes) — already
@@ -436,7 +447,9 @@ class LoopStateMachine:
                         # having generated a script (skipped on reattach) —
                         # generate one now so the healer has something to patch.
                         await emit_status(mission_id, "Generating training script…", event_type="info")
-                        script_path = await self._codegen.generate_training_script(mission_id, plan, current_iteration)
+                        script_path = await self._codegen.generate_training_script(
+                            mission_id, plan, current_iteration, warm_start_adapter=_last_checkpoint_path,
+                        )
                         await emit_status(mission_id, "Training script ready", event_type="success")
                     script_path = await self._healer.fix_script(
                         script_path, error_output, error_count,
@@ -506,6 +519,22 @@ class LoopStateMachine:
                 _current_policy_kwargs = plan.get("hyperparameters", {}).get("policy_kwargs")
                 pivot_engine.record(current_iteration, current_metrics, policy_kwargs=_current_policy_kwargs)
                 await self._save_best_policy_kwargs(mission_id, pivot_engine.best_policy_kwargs())
+                # Chain dpo/grpo warm-start adapter forward only on a new best — not
+                # every iteration's raw output, since training within one iteration
+                # has repeatedly been observed to degrade pass_rate from its own
+                # starting point (see mission 7fd88324's history); chaining from a
+                # non-improving result would compound that decline instead of
+                # accumulating real progress.
+                if (
+                    plan.get("task_type") in ("dpo", "grpo")
+                    and pivot_engine.best_metric_iteration() == current_iteration
+                ):
+                    _last_checkpoint_path = finetune_checkpoint_dir_relative(mission_id)
+                    await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
+                    logger.info(
+                        "LoopStateMachine: new best — chaining dpo/grpo warm-start adapter to %s for mission=%s",
+                        _last_checkpoint_path, mission_id,
+                    )
                 current_val = current_metrics.get(metric_name) if metric_name else None
                 await self._save_best_metric(
                     mission_id,
@@ -1121,6 +1150,17 @@ class LoopStateMachine:
                     update(Mission)
                     .where(Mission.id == mission_id)
                     .values(best_policy_kwargs=kwargs)
+                )
+
+    async def _save_last_checkpoint_path(self, mission_id: str, path: Optional[str]) -> None:
+        if path is None:
+            return
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(Mission)
+                    .where(Mission.id == mission_id)
+                    .values(last_checkpoint_path=path)
                 )
 
     @staticmethod

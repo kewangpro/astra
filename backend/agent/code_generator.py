@@ -1041,7 +1041,9 @@ def _clamp_dpo_grpo_pivot_hp(plan_hp: dict) -> dict:
     return clamped
 
 
-def _resolve_hyperparams(env_id: str, plan_hp: dict, algorithm: str = "") -> dict:
+def _resolve_hyperparams(
+    env_id: str, plan_hp: dict, algorithm: str = "", warm_start_adapter: Optional[str] = None,
+) -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
     if env_id in ("dpo", "grpo"):
@@ -1055,6 +1057,15 @@ def _resolve_hyperparams(env_id: str, plan_hp: dict, algorithm: str = "") -> dic
         # baseline to 0% within 50 steps.
         hp = dict(recipe_hp)
         hp.update(_clamp_dpo_grpo_pivot_hp(plan_hp))
+        # warm_start_adapter comes from Mission.last_checkpoint_path (state_machine,
+        # system-controlled), never from plan_hp/the LLM pivot — deliberately outside
+        # the plan_hp merge above so it can't be spoofed through the same channel the
+        # incident above was about. Real gap this closes: without it, every dpo/grpo
+        # iteration re-trained from the recipe's static warm-start adapter forever,
+        # never from a prior iteration's own improved output — 146 iterations across
+        # 26 days on mission 7fd88324 never once built on each other as a result.
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
         return hp
     hp = dict(plan_hp)
     for k, v in recipe_hp.items():
@@ -1075,6 +1086,16 @@ def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str) -> str:
     return os.path.join(finetune_dir, "adapters", f"astra_{mission_id[:8]}")
 
 
+def finetune_checkpoint_dir_relative(mission_id: str) -> str:
+    """Same output directory as finetune_checkpoint_dir(), but relative to
+    finetune_dir — the form dpo_train.py's --adapter flag expects (it resolves
+    relative to the process's cwd, which the generated wrapper script chdir's
+    to finetune_dir before exec'ing). Used to chain a dpo/grpo mission's own
+    prior-best adapter into the next iteration's --adapter, instead of always
+    re-reading the recipe's static warm-start adapter."""
+    return os.path.join("adapters", f"astra_{mission_id[:8]}")
+
+
 class CodeGenerator:
     def __init__(self, provider: InferenceProvider) -> None:
         self._provider = provider
@@ -1089,6 +1110,7 @@ class CodeGenerator:
         mission_id: str,
         plan: dict,
         current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
     ) -> str:
         """
         Generate a training script and write it to data/missions/{id}/train.py.
@@ -1113,7 +1135,10 @@ class CodeGenerator:
             lesson_block = "\n".join(f"- {l}" for l in lessons)
             system_prompt += f"\n\nLessons learned from prior failures (avoid repeating these):\n{lesson_block}"
 
-        user_prompt = self._build_user_prompt(task_type, mission_id, plan, checkpoint_dir, current_iteration)
+        user_prompt = self._build_user_prompt(
+            task_type, mission_id, plan, checkpoint_dir, current_iteration,
+            warm_start_adapter=warm_start_adapter,
+        )
 
         messages = [
             Message(role="system", content=system_prompt),
@@ -1169,10 +1194,16 @@ class CodeGenerator:
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
 
-    def _build_user_prompt(self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0) -> str:
+    def _build_user_prompt(
+        self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> str:
         recipe_key = plan.get("env_id", "") if task_type == "rl" else task_type
         _plan_algo = plan.get("algorithm", "PPO") if task_type == "rl" else ""
-        hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}), algorithm=_plan_algo)
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}), algorithm=_plan_algo,
+            warm_start_adapter=warm_start_adapter,
+        )
         api_url = f"http://127.0.0.1:{settings.api_port}"
         base = {
             "mission_id": mission_id,
