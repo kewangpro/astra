@@ -28,11 +28,37 @@ hyperparameters:
   email_weight: 1
   routing_only: true
   # Phase 3 — training
-  epochs: 3
+  #
+  # learning_rate/epochs/steps_per_eval retuned 2026-08-02 after a manual offline
+  # diagnostic (outside the mission loop, reusing the same collected pairs for a
+  # clean comparison) tested three rates against 150+ iterations of the mission
+  # being stuck at 0.75-0.82 despite the search-lever fix in Phase 35:
+  #   - 5e-7 (this recipe's prior value): loss barely moves epoch to epoch
+  #     (~0.693 -> ~0.676 avg over a FULL 3-epoch run) regardless of what pairs
+  #     were collected -- confirmed via 15+ iterations' worth of near-identical
+  #     per-epoch loss. Too weak to produce any differentiated learning signal.
+  #   - 5e-6 (10x): catastrophic collapse to 0% pass rate by step ~56, wildly
+  #     unstable per-step loss (0.008 <-> 1.53) -- the same failure signature as
+  #     the original learning_rate incident that made this recipe locked in the
+  #     first place (see Phase 26). Confirms the lockout is necessary, not
+  #     over-cautious.
+  #   - 2e-6 (4x, the value below): peaked at 81.8% (tying the mission's
+  #     all-time best) at step 25 of a 192-step/3-epoch run, then steadily
+  #     overfit down to 43.9% by the final step -- clean overfitting, not
+  #     instability. dpo_train.py already tracks and saves a separate "best"
+  #     checkpoint whenever eval improves (independent of the final-epoch
+  #     adapter), which is what the mission's own pass_rate score already reads
+  #     -- so the fix is to stop training near the peak instead of running
+  #     through it, not to add new best-checkpoint-tracking logic.
+  # epochs cut 3 -> 1 (peak was well within epoch 1, ~64 steps) and
+  # steps_per_eval tightened 50 -> 15 so the best-checkpoint tracker samples
+  # finely enough within that one epoch to actually catch the peak rather than
+  # missing it between coarse checkpoints.
+  epochs: 1
   beta: 0.1
-  learning_rate: 0.0000005      # 5e-7
+  learning_rate: 0.000002       # 2e-6
   max_grad_norm: 1.0
-  steps_per_eval: 50
+  steps_per_eval: 15
   eval_max_tokens: 256
 
 # No astra-managed dataset — dpo_train.py's oracle is a hardcoded constant

@@ -1407,13 +1407,17 @@ def test_resolve_hyperparams_dpo_ignores_plan_override():
     """The recipe must be authoritative for dpo — unlike every other task
     type, a plan-provided hyperparameter must NOT override it. Confirmed via
     a real incident: a pivot proposed learning_rate=0.001 (a plausible RL-style
-    value) which silently overrode the recipe's 5e-7, collapsing a DPO run's
-    pass_rate from a 62% baseline to 0% within 50 steps. PIVOT_SYSTEM doesn't
-    document dpo/grpo hyperparameter ranges at all, so this must be a hard
-    code-level guarantee, not just a prompt-level convention."""
+    value) which silently overrode the recipe's (then-)5e-7, collapsing a DPO
+    run's pass_rate from a 62% baseline to 0% within 50 steps. PIVOT_SYSTEM
+    doesn't document dpo/grpo hyperparameter ranges at all, so this must be a
+    hard code-level guarantee, not just a prompt-level convention. (Recipe's
+    learning_rate later retuned to 2e-6 per Phase 35's follow-up diagnostic —
+    this test asserts against whatever the recipe says, not a hardcoded value,
+    so it can't go stale the way the literal above did.)"""
     from backend.agent.code_generator import _resolve_hyperparams
+    recipe_lr = _resolve_hyperparams("dpo", {})["learning_rate"]
     result = _resolve_hyperparams("dpo", {"learning_rate": 0.001, "num_layers": 5})
-    assert result["learning_rate"] == 5e-7
+    assert result["learning_rate"] == recipe_lr
     assert result["num_layers"] == 8
 
 
@@ -1429,11 +1433,12 @@ def test_resolve_hyperparams_dpo_allows_sampling_diversity_within_bounds():
     between relaunches. temp/k_collect are safe to vary (affect what gets collected, not
     model/training stability) and must now pass through, unlike every other key."""
     from backend.agent.code_generator import _resolve_hyperparams
+    recipe_lr = _resolve_hyperparams("dpo", {})["learning_rate"]
     result = _resolve_hyperparams("dpo", {"temp": 0.9, "k_collect": 12})
     assert result["temp"] == 0.9
     assert result["k_collect"] == 12
     # everything else stays recipe-locked
-    assert result["learning_rate"] == 5e-7
+    assert result["learning_rate"] == recipe_lr
 
 
 def test_resolve_hyperparams_dpo_clamps_sampling_diversity_out_of_range():
