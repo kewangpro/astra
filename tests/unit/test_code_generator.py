@@ -455,6 +455,35 @@ def test_fix_checkpoint_paths_leaves_absolute_paths_alone():
     assert result == code
 
 
+def test_fix_execv_unpacking_rewrites_star_unpack():
+    """Real incident: os.execv(*argv) star-unpacks a ~40-element argv list into
+    that many positional arguments, but os.execv() only accepts 2 (path, args) —
+    raises TypeError instantly, before dpo_train.py/grpo_train.py ever runs.
+    The wrapper process dies near-instantly; SandboxManager treats it as "done"
+    and the evaluator falls back to re-scoring the previous iteration's stale
+    checkpoint, silently wasting the iteration. Confirmed live across 4+
+    iterations before being caught."""
+    code = (
+        "argv = [python_bin, script_path, \"--model\", \"x\"]\n"
+        "os.execv(*argv)\n"
+    )
+    result = CodeGenerator._fix_execv_unpacking(code)
+    assert "os.execv(*argv)" not in result
+    assert "os.execv(argv[0], argv)" in result
+
+
+def test_fix_execv_unpacking_leaves_correct_form_alone():
+    code = "os.execv(argv[0], argv)\n"
+    result = CodeGenerator._fix_execv_unpacking(code)
+    assert result == code
+
+
+def test_fix_execv_unpacking_leaves_unrelated_code_alone():
+    code = "subprocess.run(['echo', 'hi'])\nos.execv(python_bin, full_argv)\n"
+    result = CodeGenerator._fix_execv_unpacking(code)
+    assert result == code
+
+
 def test_generate_training_script_writes_train_config(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

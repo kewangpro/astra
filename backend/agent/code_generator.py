@@ -1168,6 +1168,8 @@ class CodeGenerator:
                 logger.info("CodeGenerator: injected curriculum (%d phases) for %s/%s", len(_curriculum_phases), env_id, _algo)
         # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
         code = self._fix_checkpoint_paths(code, checkpoint_dir)
+        # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
+        code = self._fix_execv_unpacking(code)
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -1526,6 +1528,31 @@ class CodeGenerator:
         fixed = re.sub(pattern, checkpoint_dir, code)
         if fixed != code:
             logger.info("CodeGenerator: replaced relative checkpoint paths with absolute: %s", checkpoint_dir)
+        return fixed
+
+    @staticmethod
+    def _fix_execv_unpacking(code: str) -> str:
+        """Rewrite os.execv(*argv) to os.execv(argv[0], argv).
+
+        Real incident: the dpo/grpo templates require os.execv(path, argv_list)
+        (2 arguments — see _DPO_TEMPLATE/_GRPO_TEMPLATE) but the LLM occasionally
+        writes os.execv(*argv) instead, star-unpacking a ~40-element argv list
+        into that many positional arguments. os.execv() only accepts 2 — this
+        raises TypeError immediately, before dpo_train.py/grpo_train.py ever
+        runs. The wrapper process then exits near-instantly; SandboxManager
+        sees it as "done" and the evaluator falls back to re-scoring the
+        previous iteration's stale checkpoint — silently wasting a full
+        iteration and feeding a duplicate score into the pivot engine's
+        plateau detection. Confirmed live across at least 4 iterations in one
+        mission's history before being caught. Same auto-fix pattern as
+        _fix_checkpoint_paths/_patch_undefined_logger — repair the known-bad
+        pattern rather than rejecting/retrying generation.
+        """
+        import re
+        pattern = r'os\.execv\(\*(\w+)\)'
+        fixed = re.sub(pattern, r'os.execv(\1[0], \1)', code)
+        if fixed != code:
+            logger.info("CodeGenerator: fixed os.execv(*argv) star-unpacking to os.execv(argv[0], argv)")
         return fixed
 
     @staticmethod
