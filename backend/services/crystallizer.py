@@ -25,7 +25,7 @@ from backend.models.mission import Mission
 from backend.models.recipe import RecipeRecord
 from backend.services import vector_memory
 from backend.services import recipe_library
-from backend.agent.code_generator import _VALID_ALGO_KEYS
+from backend.agent.code_generator import _VALID_ALGO_KEYS, _resolve_hyperparams
 
 logger = get_logger(__name__)
 
@@ -131,10 +131,30 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
     # Clean hyperparameters: strip trainer-irrelevant keys
     if task_type == "rl":
         hyperparams = _clean_rl_hyperparams(raw_hp, trainer_type=trainer_type, algorithm=algorithm)
+    elif task_type in ("dpo", "grpo"):
+        # Real incident: plan.hyperparameters for dpo/grpo is near-fiction — LeadAgent
+        # invents generic SFT-style keys (batch_size, iters, mask_prompt, unfilled
+        # "/path/to/adapter" placeholders) that code_generator.py's _resolve_hyperparams()
+        # almost entirely discards before ever dispatching a script (dpo/grpo hyperparams
+        # are recipe-authoritative, full stop — see that function's own docstring). Dumping
+        # raw_hp here crystallized a recipe that looked plausible (learning_rate: 0.001,
+        # num_layers: 5, curriculum phases with escalating batch_size/iters) but didn't
+        # resemble anything that actually trained the model — confirmed live against
+        # mission 43517dd5, whose real run used learning_rate=2e-6/num_layers=8 with no
+        # curriculum concept at all (dpo_train.py has no phases). Resolve through the same
+        # function code_generator.py uses at dispatch time instead, so the crystallized
+        # recipe reflects the real recipe-locked values (plus any pivot-accepted
+        # temp/k_collect delta) rather than the LLM's discarded proposal.
+        hyperparams = _resolve_hyperparams(
+            task_type, raw_hp, algorithm=algorithm, warm_start_adapter=mission.last_checkpoint_path,
+        )
     else:
         hyperparams = {k: v for k, v in raw_hp.items() if k != "dataset_path"}
 
-    curriculum = plan.get("curriculum_phases")
+    # dpo/grpo training has no phased-curriculum concept (dpo_train.py/grpo_train.py
+    # take a single flat hyperparameter set, no --phase flag) — the LLM's plan
+    # occasionally invents one anyway (see incident above); never crystallize it.
+    curriculum = plan.get("curriculum_phases") if task_type not in ("dpo", "grpo") else None
     lesson_notes = [l["text"][:120] for l in lessons[:3]] if lessons else []
     domain = _infer_domain(plan, task_type, mission.goal)
 

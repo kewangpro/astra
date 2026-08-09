@@ -83,6 +83,7 @@ def _make_mission(
     best_metric_value: float | None = None,
     current_iteration: int = 5,
     target_metric: dict | None = None,
+    last_checkpoint_path: str | None = None,
 ) -> MagicMock:
     m = MagicMock()
     m.id = id
@@ -92,6 +93,11 @@ def _make_mission(
     m.best_metric_value = best_metric_value
     m.current_iteration = current_iteration
     m.target_metric = target_metric
+    # Explicit default (not the MagicMock auto-attribute, which is truthy) —
+    # _build_recipe_content() passes this straight to _resolve_hyperparams()'s
+    # warm_start_adapter param for dpo/grpo, and a stray MagicMock there would
+    # get written into the crystallized recipe as a bogus "adapter" value.
+    m.last_checkpoint_path = last_checkpoint_path
     return m
 
 
@@ -203,6 +209,87 @@ class TestBuildRecipeContent:
 
     def test_curriculum_absent_when_not_in_plan(self):
         mission = _make_mission(current_plan={"task_type": "rl", "algorithm": "ppo", "hyperparameters": {}})
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert "curriculum" not in content
+
+    def test_dpo_hyperparams_resolved_not_dumped_from_plan(self):
+        """Real incident: mission 43517dd5 crystallized with plan.hyperparameters
+        dumped verbatim — learning_rate=0.001, num_layers=5, plus invented keys
+        (warm_start_adapter_path: "/path/to/adapter", batch_size, iters,
+        mask_prompt) that don't even exist in dpo_train.py's CLI. None of this
+        reflects what actually trained the model: code_generator.py's
+        _resolve_hyperparams() discards nearly all plan-proposed dpo/grpo
+        hyperparameters (recipe-authoritative, full stop) before ever
+        dispatching a script. The crystallized recipe must resolve through the
+        same function, not dump the LLM's discarded proposal."""
+        fictional_plan_hp = {
+            "warm_start_adapter_path": "/path/to/adapter",
+            "remote_finetune_dir": "/path/to/dir",
+            "num_layers": 5,
+            "batch_size": 32,
+            "learning_rate": 0.001,
+            "iters": 1000,
+            "mask_prompt": "mask_prompt.json",
+        }
+        mission = _make_mission(current_plan={
+            "task_type": "dpo", "algorithm": "DPO", "hyperparameters": fictional_plan_hp,
+        })
+        content = _build_recipe_content(mission, score=0.833, lessons=[])
+        result = content["hyperparameters"]
+        assert result["learning_rate"] != 0.001
+        assert result.get("num_layers") != 5
+        assert "warm_start_adapter_path" not in result
+        assert "mask_prompt" not in result
+        assert "iters" not in result
+        # Real recipe-locked fields must be present instead
+        assert "adapter" in result
+        assert "beta" in result
+
+    def test_dpo_allows_sampling_diversity_pivot_through(self):
+        """temp/k_collect are the one safelisted axis a pivot can actually
+        change (see code_generator.py's _DPO_GRPO_PIVOT_RANGES) — a
+        crystallized recipe from a mission that pivoted should keep the
+        pivot-accepted value, not silently revert to the recipe default."""
+        mission = _make_mission(current_plan={
+            "task_type": "dpo", "algorithm": "DPO",
+            "hyperparameters": {"temp": 0.9, "k_collect": 12},
+        })
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        result = content["hyperparameters"]
+        assert result["temp"] == 0.9
+        assert result["k_collect"] == 12
+
+    def test_dpo_warm_start_adapter_uses_mission_last_checkpoint(self):
+        mission = _make_mission(
+            current_plan={"task_type": "dpo", "algorithm": "DPO", "hyperparameters": {}},
+            last_checkpoint_path="adapters/astra_43517dd5",
+        )
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        assert content["hyperparameters"]["adapter"] == "adapters/astra_43517dd5"
+
+    def test_grpo_hyperparams_also_resolved(self):
+        """learning_rate is recipe-locked for grpo the same as dpo. `iters` is
+        a real GRPO hyperparameter (unlike dpo's fictional plan keys), so
+        assert the recipe's own value wins over the plan's fabricated 99999,
+        not that the key is absent."""
+        mission = _make_mission(current_plan={
+            "task_type": "grpo", "algorithm": "GRPO",
+            "hyperparameters": {"learning_rate": 0.5, "iters": 99999},
+        })
+        content = _build_recipe_content(mission, score=None, lessons=[])
+        result = content["hyperparameters"]
+        assert result["learning_rate"] != 0.5
+        assert result["iters"] != 99999
+
+    def test_dpo_curriculum_never_crystallized(self):
+        """dpo_train.py/grpo_train.py have no phased-curriculum concept at
+        all — a fabricated curriculum_phases block in the plan (the same
+        incident class as the hyperparameter dump above) must never survive
+        into the crystallized recipe."""
+        mission = _make_mission(current_plan={
+            "task_type": "dpo", "algorithm": "DPO", "hyperparameters": {},
+            "curriculum_phases": [{"phase": 1, "batch_size": 32, "iters": 1000}],
+        })
         content = _build_recipe_content(mission, score=None, lessons=[])
         assert "curriculum" not in content
 
