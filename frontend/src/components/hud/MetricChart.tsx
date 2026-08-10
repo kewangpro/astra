@@ -50,12 +50,28 @@ export function MetricChart({ events, targetMetric }: Props) {
       !(excludeGoalMetric && e.name === goalMetricName)
   );
 
-  // Find all run-reset boundaries (step counter drops back to low value).
+  // Find all run-reset boundaries — prefer the `iteration` field (present on
+  // every backend-emitted metric event) over the old step-decrease heuristic.
+  // Real bug: a step-decrease boundary assumes each run's step counter climbs
+  // from a low value and resets at the next run's start — true for RL's
+  // per-timestep counter, but false for dpo/grpo's `loss`, which is logged
+  // once per epoch. With the epochs=1 recipe (see recipes/ensemble_dpo_v1.yaml),
+  // every single iteration's one loss point sits at step=1, so `curr < prev`
+  // (1 < 1) never fires — every iteration was silently treated as the same
+  // run, each one overwriting the last at the same x-coordinate, collapsing
+  // the whole "Metric History" chart down to one lone point no matter how
+  // many iterations had actually run. `iteration` differing is a direct,
+  // reliable signal of a new run in every task type, not an inference from
+  // step-pattern shape.
   const resetIndices: number[] = [0];
   for (let i = 1; i < metricEvents.length; i++) {
-    const prev = metricEvents[i - 1].step ?? 0;
-    const curr = metricEvents[i].step ?? 0;
-    if (curr < prev) resetIndices.push(i);
+    const prevEvent = metricEvents[i - 1];
+    const currEvent = metricEvents[i];
+    const boundary =
+      prevEvent.iteration != null && currEvent.iteration != null
+        ? currEvent.iteration !== prevEvent.iteration
+        : (currEvent.step ?? 0) < (prevEvent.step ?? 0);
+    if (boundary) resetIndices.push(i);
   }
   const lastResetIdx = resetIndices[resetIndices.length - 1];
 
@@ -76,9 +92,15 @@ export function MetricChart({ events, targetMetric }: Props) {
     const globalIdx = startIdx + i;
     const e = visibleEvents[i];
     if (i > 0) {
-      const prev = visibleEvents[i - 1].step ?? 0;
+      const prevEvent = visibleEvents[i - 1];
+      const prev = prevEvent.step ?? 0;
       const curr = e.step ?? 0;
-      if (curr < prev) runOffset += prev;
+      // Same boundary rule as the resetIndices pass above — see its comment.
+      const boundary =
+        prevEvent.iteration != null && e.iteration != null
+          ? e.iteration !== prevEvent.iteration
+          : curr < prev;
+      if (boundary) runOffset += prev;
     }
     chartEvents.push({
       x: (e.step ?? 0) + runOffset,
