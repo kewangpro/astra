@@ -1525,8 +1525,8 @@ def test_finetune_checkpoint_dir_relative_matches_absolute_suffix():
     another that never gets written to."""
     from backend.agent.code_generator import finetune_checkpoint_dir, finetune_checkpoint_dir_relative
     mission_id = "7fd88324-9e19-4388-8d0c-fb3f482d0fd6"
-    absolute = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id)
-    relative = finetune_checkpoint_dir_relative(mission_id)
+    absolute = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 7)
+    relative = finetune_checkpoint_dir_relative(mission_id, 7)
     assert absolute.endswith(relative)
 
 
@@ -1732,8 +1732,22 @@ def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_ho
 
 def test_finetune_checkpoint_dir_uses_recipe_finetune_dir():
     from backend.agent.code_generator import finetune_checkpoint_dir
-    result = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, "abc12345-full-uuid")
-    assert result == "/Users/kewang/finetune/adapters/astra_abc12345"
+    result = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, "abc12345-full-uuid", 3)
+    assert result == "/Users/kewang/finetune/adapters/astra_abc12345_iter3"
+
+
+def test_finetune_checkpoint_dir_iteration_scoped_never_collides():
+    """Real incident: mission-level-only paths (no iteration in the path at
+    all) meant every iteration's --save-dir write clobbered whatever the
+    previous iteration had left there — including a genuine best checkpoint,
+    once Phase 35's chaining fix started reading a later iteration's
+    --adapter from that same shared directory. Different iterations of the
+    same mission must never resolve to the same directory."""
+    from backend.agent.code_generator import finetune_checkpoint_dir, finetune_checkpoint_dir_relative
+    mission_id = "abc12345-full-uuid"
+    assert finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 0) != \
+        finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 1)
+    assert finetune_checkpoint_dir_relative(mission_id, 0) != finetune_checkpoint_dir_relative(mission_id, 1)
 
 
 def test_detect_backend_ignores_sandbox_host():

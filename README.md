@@ -93,7 +93,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 842 unit tests across all core modules
+│   ├── unit/           # 856 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -154,6 +154,7 @@ make ports  # show port status for all services
 | 32 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
 | 33 | Pivot Engine: Competitive-Dip Suppression Guard Expiry & DPO/GRPO Sampling-Diversity Pivots — a metric orbiting just under its peak could suppress every pivot check indefinitely; separately, every dpo/grpo pivot was a complete no-op (full hyperparameter lockout), now given a safe, bounded search lever | ✅ Complete |
 | 34 | Nodes Panel — cluster visibility for missions running across local + remote (SSH) sandboxes at once: node reachability/memory in the HUD, per-mission host badges, no more manually SSHing in to check what's actually running where | ✅ Complete |
+| 35 | DPO/GRPO Checkpoint Chaining — a mission's own best result now carries forward into the next iteration instead of every iteration always restarting from the static recipe warm-start; a live regression in the fix itself (shared, non-iteration-scoped save directory letting iterations silently overwrite each other's checkpoints) found and closed by making every iteration's output directory permanently distinct | ✅ Complete |
 
 ## Hardware Target
 

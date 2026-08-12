@@ -1073,27 +1073,40 @@ def _resolve_hyperparams(
     return hp
 
 
-def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str) -> str:
+def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iteration: int) -> str:
     """Remote checkpoint/adapter output dir for dpo/grpo missions — under
     finetune_dir/adapters/, the same directory ensemble/finetune's own manual
     workflow uses (grpo_v<N>_min/, dpo_v<N>_min/, retrain_best/, ...), so
     astra-produced adapters are part of the normal inventory rather than a
     separate mission-scoped location. Shared by CodeGenerator.generate_training_script
     (to bake --save-dir into the wrapper script) and SandboxManager.launch (to know
-    where SSHSandbox._sync_back() should rsync the adapter from)."""
+    where SSHSandbox._sync_back() should rsync the adapter from).
+
+    Iteration-scoped (astra_<mission>_iter<N>), not just mission-scoped — a real
+    incident showed a mission-level-only path (every iteration sharing one
+    directory) let each iteration's --save-dir write silently clobber whatever
+    the previous iteration had left there, including a genuine best result: once
+    the Phase 35 checkpoint-chaining fix pointed a later iteration's --adapter
+    warm-start at that same shared directory, it was reading back an already-
+    overwritten, arbitrary state, not the checkpoint that actually produced the
+    best score. Scoping by iteration makes every iteration's output directory
+    permanently distinct — nothing can ever overwrite a prior iteration's
+    checkpoint again, so chaining from a specific past iteration's directory is
+    now structurally safe rather than relying on nothing else having run since."""
     hp = _resolve_hyperparams(task_type, plan.get("hyperparameters", {}))
     finetune_dir = hp.get("finetune_dir", "")
-    return os.path.join(finetune_dir, "adapters", f"astra_{mission_id[:8]}")
+    return os.path.join(finetune_dir, "adapters", f"astra_{mission_id[:8]}_iter{iteration}")
 
 
-def finetune_checkpoint_dir_relative(mission_id: str) -> str:
+def finetune_checkpoint_dir_relative(mission_id: str, iteration: int) -> str:
     """Same output directory as finetune_checkpoint_dir(), but relative to
     finetune_dir — the form dpo_train.py's --adapter flag expects (it resolves
     relative to the process's cwd, which the generated wrapper script chdir's
     to finetune_dir before exec'ing). Used to chain a dpo/grpo mission's own
     prior-best adapter into the next iteration's --adapter, instead of always
-    re-reading the recipe's static warm-start adapter."""
-    return os.path.join("adapters", f"astra_{mission_id[:8]}")
+    re-reading the recipe's static warm-start adapter. Iteration-scoped — see
+    finetune_checkpoint_dir()'s docstring for why."""
+    return os.path.join("adapters", f"astra_{mission_id[:8]}_iter{iteration}")
 
 
 class CodeGenerator:
@@ -1118,7 +1131,7 @@ class CodeGenerator:
         """
         task_type = plan.get("task_type", "rl")
         if task_type in _FINETUNE_REMOTE_TASK_TYPES and settings.sandbox_host:
-            checkpoint_dir = finetune_checkpoint_dir(task_type, plan, mission_id)
+            checkpoint_dir = finetune_checkpoint_dir(task_type, plan, mission_id, current_iteration)
         else:
             checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
             os.makedirs(checkpoint_dir, exist_ok=True)

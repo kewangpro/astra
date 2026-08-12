@@ -400,7 +400,7 @@ class LoopStateMachine:
                     await self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
                     await emit_status(mission_id, "Launching training sandbox…", event_type="info")
                     _remote_ckpt_dir = (
-                        finetune_checkpoint_dir(_mission_task_type, plan, mission_id)
+                        finetune_checkpoint_dir(_mission_task_type, plan, mission_id, current_iteration)
                         if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
                         else None
                     )
@@ -487,7 +487,7 @@ class LoopStateMachine:
                         _mission_task_type_for_eval = plan.get("task_type")
                         if _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
                             goal_val = await asyncio.to_thread(
-                                self._run_bare_eval, mission_id, plan
+                                self._run_bare_eval, mission_id, plan, current_iteration
                             )
                             if goal_val is None:
                                 # The official post-training eval failed/crashed
@@ -529,7 +529,7 @@ class LoopStateMachine:
                     plan.get("task_type") in ("dpo", "grpo")
                     and pivot_engine.best_metric_iteration() == current_iteration
                 ):
-                    _last_checkpoint_path = finetune_checkpoint_dir_relative(mission_id)
+                    _last_checkpoint_path = finetune_checkpoint_dir_relative(mission_id, current_iteration)
                     await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
                     logger.info(
                         "LoopStateMachine: new best — chaining dpo/grpo warm-start adapter to %s for mission=%s",
@@ -1635,7 +1635,7 @@ class LoopStateMachine:
             logger.warning("LoopStateMachine: goal metric eval error: %s", exc)
             return None
 
-    def _run_bare_eval(self, mission_id: str, plan: dict) -> Optional[float]:
+    def _run_bare_eval(self, mission_id: str, plan: dict, current_iteration: int) -> Optional[float]:
         """Post-training authoritative pass_rate check for dpo/grpo missions,
         via ensemble/finetune/bare_eval.py — the real adapter-discriminating
         eval tool (docs/FINETUNE.md: run_eval.py is saturated and doesn't
@@ -1645,6 +1645,12 @@ class LoopStateMachine:
         _run_goal_metric_eval for RL missions, which this task type can't use
         (no Gym env, no SB3/actor_critic checkpoint file — adapters are
         .safetensors, not .zip/.pth).
+
+        adapter_rel is iteration-scoped (see finetune_checkpoint_dir()'s
+        docstring) — the mission-level-only path this used to hardcode meant
+        every iteration's --save-dir write clobbered whatever the previous
+        iteration had left there, so this eval could silently score a
+        different iteration's checkpoint than the one that had just finished.
         """
         from backend.agent.code_generator import _resolve_hyperparams
 
@@ -1660,7 +1666,7 @@ class LoopStateMachine:
             )
             return None
 
-        adapter_rel = f"adapters/astra_{mission_id[:8]}/best"
+        adapter_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}/best"
         cmd = (
             f"cd {finetune_dir} && {python_bin} bare_eval.py "
             f"--adapter {adapter_rel} --prompt-template {prompt_template}"

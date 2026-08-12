@@ -27,7 +27,7 @@ class TestRunBareEval:
     def test_returns_none_when_sandbox_host_not_configured(self):
         sm = _bare_state_machine()
         with patch("backend.loop.state_machine.settings.sandbox_host", ""):
-            result = sm._run_bare_eval("mission-abc12345", _plan())
+            result = sm._run_bare_eval("mission-abc12345", _plan(), 5)
         assert result is None
 
     def test_parses_pass_rate_from_ssh_output(self):
@@ -37,7 +37,7 @@ class TestRunBareEval:
             mock_run.return_value = MagicMock(
                 stdout="Pass rate: 82.5% (55/66)  [11.3 min]\n", stderr="",
             )
-            result = sm._run_bare_eval("mission-abc12345", _plan())
+            result = sm._run_bare_eval("mission-abc12345", _plan(), 5)
 
         assert result == pytest.approx(0.825)
 
@@ -46,7 +46,7 @@ class TestRunBareEval:
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="Pass rate: 80.0% (16/20)\n", stderr="")
-            sm._run_bare_eval("mission-abc12345", _plan())
+            sm._run_bare_eval("mission-abc12345", _plan(), 5)
 
         call_args = mock_run.call_args_list[0].args[0]
         assert call_args[0] == "ssh"
@@ -54,7 +54,11 @@ class TestRunBareEval:
         cmd = call_args[2]
         assert "cd /Users/kewang/finetune" in cmd
         assert "bare_eval.py" in cmd
-        assert "--adapter adapters/astra_mission-" in cmd
+        # Iteration-scoped (see finetune_checkpoint_dir()'s docstring) — a real
+        # incident showed a mission-level-only path let every iteration's
+        # --save-dir write clobber whatever the previous iteration had left
+        # there, so bare_eval could silently score the wrong iteration.
+        assert "--adapter adapters/astra_mission-_iter5/best" in cmd
         assert "--prompt-template backend/prompts/conductor_min.md" in cmd
 
     def test_returns_none_when_no_pass_rate_line_found(self):
@@ -62,14 +66,14 @@ class TestRunBareEval:
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="Traceback...\nSomeError\n", stderr="")
-            result = sm._run_bare_eval("mission-abc12345", _plan())
+            result = sm._run_bare_eval("mission-abc12345", _plan(), 5)
         assert result is None
 
     def test_returns_none_on_subprocess_exception(self):
         sm = _bare_state_machine()
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run", side_effect=RuntimeError("ssh timeout")):
-            result = sm._run_bare_eval("mission-abc12345", _plan())
+            result = sm._run_bare_eval("mission-abc12345", _plan(), 5)
         assert result is None
 
     def test_uses_dpo_recipe_finetune_dir_for_dpo_task_type(self):
@@ -77,8 +81,8 @@ class TestRunBareEval:
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="Pass rate: 70.0% (14/20)\n", stderr="")
-            sm._run_bare_eval("mission-xyz98765", _plan(task_type="dpo"))
+            sm._run_bare_eval("mission-xyz98765", _plan(task_type="dpo"), 12)
 
         cmd = mock_run.call_args_list[0].args[0][2]
         assert "cd /Users/kewang/finetune" in cmd
-        assert "--adapter adapters/astra_mission-" in cmd
+        assert "--adapter adapters/astra_mission-_iter12/best" in cmd
