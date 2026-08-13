@@ -1518,16 +1518,28 @@ def test_resolve_hyperparams_dpo_warm_start_adapter_not_settable_via_plan_hp():
     assert result["adapter"] == "adapters/grpo_v9_min/best"
 
 
-def test_finetune_checkpoint_dir_relative_matches_absolute_suffix():
-    """The relative form (for --adapter) must point at the same directory the
-    absolute form (for --save-dir) does, just without the finetune_dir prefix —
-    otherwise a mission would train into one directory and warm-start from
-    another that never gets written to."""
+def test_finetune_checkpoint_dir_relative_points_at_best_subdir_not_bare_dir():
+    """Real incident: the relative form (for --adapter, warm-start chaining)
+    used to be identical to the absolute form's own path (for --save-dir) minus
+    the finetune_dir prefix — i.e. pointing at the bare iteration directory,
+    which dpo_train.py's --adapter resolves to <dir>/adapters.safetensors, the
+    raw final-epoch output. That's NOT the checkpoint that earned the mission
+    its reported best score: dpo_train.py separately tracks and saves
+    <save-dir>/best/adapters.safetensors whenever eval improves during that
+    run, and training within a run has repeatedly been observed to degrade
+    from its own starting point by the final epoch. Confirmed live: a
+    mission's reported new best of 0.773 only reproduced loading .../best/
+    directly (0.7727); the bare directory's final output reproduced 0.2424, a
+    completely different, much worse state. The relative form must therefore
+    be the *same directory the absolute form is* plus /best appended — not
+    equal to it."""
     from backend.agent.code_generator import finetune_checkpoint_dir, finetune_checkpoint_dir_relative
     mission_id = "7fd88324-9e19-4388-8d0c-fb3f482d0fd6"
     absolute = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 7)
     relative = finetune_checkpoint_dir_relative(mission_id, 7)
-    assert absolute.endswith(relative)
+    absolute_suffix = absolute.split("adapters/")[-1]
+    assert relative == f"adapters/{absolute_suffix}/best"
+    assert relative != f"adapters/{absolute_suffix}"
 
 
 def test_clamp_dpo_grpo_pivot_hp_drops_unrecognized_keys():

@@ -1099,14 +1099,32 @@ def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iterati
 
 
 def finetune_checkpoint_dir_relative(mission_id: str, iteration: int) -> str:
-    """Same output directory as finetune_checkpoint_dir(), but relative to
-    finetune_dir — the form dpo_train.py's --adapter flag expects (it resolves
-    relative to the process's cwd, which the generated wrapper script chdir's
-    to finetune_dir before exec'ing). Used to chain a dpo/grpo mission's own
+    """The --adapter-compatible relative path (dpo_train.py resolves it relative
+    to the process's cwd, which the generated wrapper script chdir's to
+    finetune_dir before exec'ing) for chaining a dpo/grpo mission's own
     prior-best adapter into the next iteration's --adapter, instead of always
     re-reading the recipe's static warm-start adapter. Iteration-scoped — see
-    finetune_checkpoint_dir()'s docstring for why."""
-    return os.path.join("adapters", f"astra_{mission_id[:8]}_iter{iteration}")
+    finetune_checkpoint_dir()'s docstring for why.
+
+    Points at finetune_checkpoint_dir()'s <iteration-dir>/best, NOT the bare
+    iteration directory finetune_checkpoint_dir() itself returns (that's the
+    --save-dir target, a different thing). Real incident: dpo_train.py writes
+    TWO adapters per run — <save-dir>/adapters.safetensors, the raw final-epoch
+    output, and <save-dir>/best/adapters.safetensors, the actual best checkpoint
+    seen at any point during that run's own eval checkpoints (whenever
+    pass_rate improved). Training within an iteration has repeatedly been
+    observed to degrade from its own starting point (the same pattern the
+    Phase 36 recipe retune exists to work around) — the *whole reason* a "best"
+    checkpoint is tracked separately from the final one at all. Pointing
+    warm-start at the bare directory silently chained every subsequent
+    iteration from the degraded final state instead of the genuine best score
+    it was supposedly built from: confirmed live — a mission's reported new
+    best of 0.773 only reproduced when loading .../best/adapters.safetensors
+    directly (0.7727, matching exactly); loading the bare directory's
+    adapters.safetensors instead reproduced 0.2424, a completely different,
+    much worse model state that happened to share a directory with the real
+    one."""
+    return os.path.join("adapters", f"astra_{mission_id[:8]}_iter{iteration}", "best")
 
 
 class CodeGenerator:
