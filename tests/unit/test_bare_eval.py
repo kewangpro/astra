@@ -45,10 +45,15 @@ class TestRunBareEval:
         sm = _bare_state_machine()
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout="Pass rate: 80.0% (16/20)\n", stderr="")
+            # First call: the best/ existence check (see _resolve_adapter_or_bare).
+            # Second call: the actual bare_eval.py invocation.
+            mock_run.side_effect = [
+                MagicMock(stdout="yes\n", stderr=""),
+                MagicMock(stdout="Pass rate: 80.0% (16/20)\n", stderr=""),
+            ]
             sm._run_bare_eval("mission-abc12345", _plan(), 5)
 
-        call_args = mock_run.call_args_list[0].args[0]
+        call_args = mock_run.call_args_list[-1].args[0]
         assert call_args[0] == "ssh"
         assert call_args[1] == "mac-mini.local"
         cmd = call_args[2]
@@ -80,9 +85,84 @@ class TestRunBareEval:
         sm = _bare_state_machine()
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout="Pass rate: 70.0% (14/20)\n", stderr="")
+            mock_run.side_effect = [
+                MagicMock(stdout="yes\n", stderr=""),
+                MagicMock(stdout="Pass rate: 70.0% (14/20)\n", stderr=""),
+            ]
             sm._run_bare_eval("mission-xyz98765", _plan(task_type="dpo"), 12)
 
-        cmd = mock_run.call_args_list[0].args[0][2]
+        cmd = mock_run.call_args_list[-1].args[0][2]
         assert "cd /Users/kewang/finetune" in cmd
         assert "--adapter adapters/astra_mission-_iter12/best" in cmd
+
+    def test_falls_back_to_bare_dir_when_best_checkpoint_missing(self):
+        """dpo_train.py only writes <save-dir>/best/ when it tracks a
+        best-during-training checkpoint that beats the final epoch's own
+        output; when the final epoch is itself the best, no best/ subdir is
+        written at all (confirmed ~50% of runs via filesystem audit). Real
+        incident: hardcoding /best unconditionally crashed dpo_train.py
+        instantly with FileNotFoundError the first time a best/-less
+        iteration became the mission's new best — silently looping the
+        mission for ~7h/558 iterations with no checkpoint ever produced."""
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(stdout="no\n", stderr=""),
+                MagicMock(stdout="Pass rate: 83.3% (55/66)\n", stderr=""),
+            ]
+            result = sm._run_bare_eval("mission-abc12345", _plan(task_type="dpo"), 134)
+
+        assert result == pytest.approx(0.833)
+        cmd = mock_run.call_args_list[-1].args[0][2]
+        assert "--adapter adapters/astra_mission-_iter134" in cmd
+        assert "--adapter adapters/astra_mission-_iter134/best" not in cmd
+
+
+class TestResolveAdapterOrBare:
+    """LoopStateMachine._resolve_adapter_or_bare — the existence-checked
+    resolution used by both _run_bare_eval and the dpo/grpo warm-start
+    chaining decision. See finetune_checkpoint_dir_relative()'s docstring for
+    why an unconditional /best append is unsafe."""
+
+    def test_appends_best_when_it_exists_remotely(self):
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="yes\n", stderr="")
+            result = sm._resolve_adapter_or_bare("/Users/kewang/finetune", "adapters/astra_abc12345_iter7")
+        assert result == "adapters/astra_abc12345_iter7/best"
+
+    def test_falls_back_to_bare_dir_when_best_missing_remotely(self):
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="no\n", stderr="")
+            result = sm._resolve_adapter_or_bare("/Users/kewang/finetune", "adapters/astra_abc12345_iter7")
+        assert result == "adapters/astra_abc12345_iter7"
+
+    def test_falls_back_to_bare_dir_on_ssh_exception(self):
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run", side_effect=RuntimeError("ssh timeout")):
+            result = sm._resolve_adapter_or_bare("/Users/kewang/finetune", "adapters/astra_abc12345_iter7")
+        assert result == "adapters/astra_abc12345_iter7"
+
+    def test_falls_back_to_bare_dir_when_sandbox_host_not_configured(self):
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", ""):
+            result = sm._resolve_adapter_or_bare("/Users/kewang/finetune", "adapters/astra_abc12345_iter7")
+        assert result == "adapters/astra_abc12345_iter7"
+
+    def test_checks_for_adapters_safetensors_specifically_not_just_the_dir(self):
+        """A best/ dir could theoretically exist without weights written into
+        it yet (partial write, race). Check for the actual weights file dpo_
+        train.py's own loader requires, matching bare_eval's own error
+        message ('is missing adapters.safetensors and/or adapter_config.json')."""
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="yes\n", stderr="")
+            sm._resolve_adapter_or_bare("/Users/kewang/finetune", "adapters/astra_abc12345_iter7")
+        cmd = mock_run.call_args.args[0][2]
+        assert "adapters/astra_abc12345_iter7/best/adapters.safetensors" in cmd

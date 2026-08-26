@@ -22,7 +22,7 @@ from backend.database import AsyncSessionLocal
 from backend.models.mission import Mission, MissionStatus
 from backend.models.approval import ApprovalGate, ApprovalStatus, GateType
 from backend.agent.lead_agent import LeadAgent
-from backend.agent.code_generator import CodeGenerator, finetune_checkpoint_dir, finetune_checkpoint_dir_relative
+from backend.agent.code_generator import CodeGenerator, finetune_checkpoint_dir
 from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
 from backend.sandbox.manager import SandboxManager, _FINETUNE_REMOTE_TASK_TYPES
@@ -529,7 +529,13 @@ class LoopStateMachine:
                     plan.get("task_type") in ("dpo", "grpo")
                     and pivot_engine.best_metric_iteration() == current_iteration
                 ):
-                    _last_checkpoint_path = finetune_checkpoint_dir_relative(mission_id, current_iteration)
+                    from backend.agent.code_generator import _resolve_hyperparams
+                    _hp_for_chain = _resolve_hyperparams(plan.get("task_type"), plan.get("hyperparameters", {}))
+                    _bare_rel_for_chain = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+                    _last_checkpoint_path = await asyncio.to_thread(
+                        self._resolve_adapter_or_bare,
+                        _hp_for_chain.get("finetune_dir", ""), _bare_rel_for_chain,
+                    )
                     await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
                     logger.info(
                         "LoopStateMachine: new best — chaining dpo/grpo warm-start adapter to %s for mission=%s",
@@ -1635,6 +1641,50 @@ class LoopStateMachine:
             logger.warning("LoopStateMachine: goal metric eval error: %s", exc)
             return None
 
+    def _resolve_adapter_or_bare(self, finetune_dir: str, bare_rel_dir: str) -> str:
+        """Return bare_rel_dir + '/best' if dpo_train.py actually wrote a best/
+        checkpoint for this run on the remote host, else bare_rel_dir itself.
+
+        dpo_train.py only creates <save-dir>/best/ when it tracks a
+        best-during-training checkpoint that beats the final epoch's own
+        output; when the final epoch's checkpoint is itself the best seen,
+        no best/ subdir is written at all. Confirmed via filesystem audit on
+        mac-mini: roughly half of mission ce2828f4's 113 checkpoint dirs have
+        no best/. Callers that hardcoded ".../best" unconditionally (both
+        here and in the chaining decision below) crashed dpo_train.py
+        instantly with FileNotFoundError the first time a best/-less
+        iteration became the mission's new best — silently looping the
+        mission for ~7h/558 iterations with no checkpoint ever produced and
+        error_log left null, since each crash just triggered a re-plan
+        instead of surfacing. A local rsync'd mirror can't answer this
+        reliably either: rsync never runs with --delete, so a stale best/
+        from an earlier iteration's sync can outlive the remote directory
+        that produced it — this must check the remote host directly."""
+        if not settings.sandbox_host:
+            return bare_rel_dir
+        check_cmd = (
+            f"test -f {finetune_dir}/{bare_rel_dir}/best/adapters.safetensors "
+            f"&& echo yes || echo no"
+        )
+        try:
+            result = subprocess.run(
+                ["ssh", settings.sandbox_host, check_cmd],
+                capture_output=True, text=True, timeout=30,
+            )
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: best/ existence check failed for %s (%s) — "
+                "falling back to bare checkpoint dir", bare_rel_dir, exc,
+            )
+            return bare_rel_dir
+        if result.stdout.strip() == "yes":
+            return os.path.join(bare_rel_dir, "best")
+        logger.info(
+            "LoopStateMachine: no best/ checkpoint for %s — using bare directory "
+            "(final-epoch output was itself the best seen this run)", bare_rel_dir,
+        )
+        return bare_rel_dir
+
     def _run_bare_eval(self, mission_id: str, plan: dict, current_iteration: int) -> Optional[float]:
         """Post-training authoritative pass_rate check for dpo/grpo missions,
         via ensemble/finetune/bare_eval.py — the real adapter-discriminating
@@ -1666,7 +1716,8 @@ class LoopStateMachine:
             )
             return None
 
-        adapter_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}/best"
+        bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+        adapter_rel = self._resolve_adapter_or_bare(finetune_dir, bare_rel)
         cmd = (
             f"cd {finetune_dir} && {python_bin} bare_eval.py "
             f"--adapter {adapter_rel} --prompt-template {prompt_template}"

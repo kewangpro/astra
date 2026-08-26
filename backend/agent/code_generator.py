@@ -1099,31 +1099,34 @@ def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iterati
 
 
 def finetune_checkpoint_dir_relative(mission_id: str, iteration: int) -> str:
-    """The --adapter-compatible relative path (dpo_train.py resolves it relative
-    to the process's cwd, which the generated wrapper script chdir's to
-    finetune_dir before exec'ing) for chaining a dpo/grpo mission's own
+    """The --adapter-compatible /best CANDIDATE path (dpo_train.py resolves it
+    relative to the process's cwd, which the generated wrapper script chdir's
+    to finetune_dir before exec'ing) for chaining a dpo/grpo mission's own
     prior-best adapter into the next iteration's --adapter, instead of always
     re-reading the recipe's static warm-start adapter. Iteration-scoped — see
     finetune_checkpoint_dir()'s docstring for why.
 
-    Points at finetune_checkpoint_dir()'s <iteration-dir>/best, NOT the bare
-    iteration directory finetune_checkpoint_dir() itself returns (that's the
-    --save-dir target, a different thing). Real incident: dpo_train.py writes
-    TWO adapters per run — <save-dir>/adapters.safetensors, the raw final-epoch
-    output, and <save-dir>/best/adapters.safetensors, the actual best checkpoint
-    seen at any point during that run's own eval checkpoints (whenever
-    pass_rate improved). Training within an iteration has repeatedly been
-    observed to degrade from its own starting point (the same pattern the
-    Phase 36 recipe retune exists to work around) — the *whole reason* a "best"
-    checkpoint is tracked separately from the final one at all. Pointing
-    warm-start at the bare directory silently chained every subsequent
-    iteration from the degraded final state instead of the genuine best score
-    it was supposedly built from: confirmed live — a mission's reported new
-    best of 0.773 only reproduced when loading .../best/adapters.safetensors
-    directly (0.7727, matching exactly); loading the bare directory's
-    adapters.safetensors instead reproduced 0.2424, a completely different,
-    much worse model state that happened to share a directory with the real
-    one."""
+    NOT guaranteed to exist: dpo_train.py writes <save-dir>/best/ only when it
+    tracks a best-during-training checkpoint that beats the final epoch's own
+    output — when the final epoch's checkpoint is itself the best seen, no
+    best/ subdir is written at all (confirmed ~50% of runs via filesystem
+    audit on mac-mini). Callers must not use this candidate path directly for
+    an actual --adapter warm-start; LoopStateMachine._resolve_adapter_or_bare()
+    checks the remote host and falls back to finetune_checkpoint_dir()'s bare
+    iteration directory when best/ doesn't exist. Skipping that check crashes
+    dpo_train.py instantly with FileNotFoundError (real incident: silently
+    looped a mission for ~7h/558 iterations with no checkpoint ever produced).
+
+    Still preferred over the bare directory whenever best/ does exist, though:
+    dpo_train.py's <save-dir>/adapters.safetensors is the raw final-epoch
+    output, while <save-dir>/best/adapters.safetensors is the actual best
+    checkpoint seen at any point during that run — training within an
+    iteration has repeatedly been observed to degrade from its own starting
+    point. Confirmed live: a mission's reported new best of 0.773 only
+    reproduced when loading .../best/adapters.safetensors directly (0.7727,
+    matching exactly); loading the bare directory's adapters.safetensors
+    instead reproduced 0.2424, a completely different, much worse model state
+    that happened to share a directory with the real one."""
     return os.path.join("adapters", f"astra_{mission_id[:8]}_iter{iteration}", "best")
 
 
