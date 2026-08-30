@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from backend.loop.pivots import PivotEngine
+from backend.loop.pivots import (
+    PivotEngine,
+    ESCALATION_FORCE_NOVEL,
+    STALL_ITERS_WITHOUT_BEST,
+)
 
 
 TARGET = {"mean_reward": 100.0}
@@ -466,3 +470,58 @@ def test_restore_best_policy_kwargs_not_overwritten_by_lower_metric_after_restor
     # new iteration scores lower — best_policy_kwargs must stay from restore
     e.record(0, {"mean_reward": 30.0}, policy_kwargs={"net_arch": [512, 512]})
     assert e.best_policy_kwargs() == {"net_arch": [256, 256, 128]}
+
+
+# ── convergence detection (is_converged / iters_since_best) ──────────────────
+
+def test_iters_since_best_counts_only_evaluated_iterations():
+    e = _engine()
+    e.record(0, {"mean_reward": 90.0})   # best
+    e.record(1, {"mean_reward": 80.0})
+    e.record(2, {"mean_reward": 85.0})
+    assert e.iters_since_best() == 2
+
+
+def test_iters_since_best_zero_when_best_is_latest():
+    e = _engine()
+    e.record(0, {"mean_reward": 50.0})
+    e.record(1, {"mean_reward": 90.0})
+    assert e.iters_since_best() == 0
+
+
+def test_not_converged_before_max_escalation():
+    e = _engine()
+    e.restore_pivot_count(ESCALATION_FORCE_NOVEL - 1)
+    e.record(0, {"mean_reward": 90.0})
+    for i in range(1, STALL_ITERS_WITHOUT_BEST + 5):
+        e.record(i, {"mean_reward": 50.0})
+    assert not e.is_converged()
+
+
+def test_not_converged_when_best_is_recent():
+    e = _engine()
+    e.restore_pivot_count(ESCALATION_FORCE_NOVEL + 3)
+    e.record(0, {"mean_reward": 90.0})
+    for i in range(1, 5):
+        e.record(i, {"mean_reward": 50.0})
+    assert not e.is_converged()
+
+
+def test_converged_when_escalation_maxed_and_no_new_best():
+    e = _engine()
+    e.restore_pivot_count(ESCALATION_FORCE_NOVEL)
+    e.record(0, {"mean_reward": 90.0})   # best, never beaten
+    for i in range(1, STALL_ITERS_WITHOUT_BEST + 1):
+        e.record(i, {"mean_reward": 50.0})
+    assert e.is_converged()
+
+
+def test_convergence_clears_after_new_best():
+    e = _engine()
+    e.restore_pivot_count(ESCALATION_FORCE_NOVEL + 2)
+    e.record(0, {"mean_reward": 90.0})
+    for i in range(1, STALL_ITERS_WITHOUT_BEST + 1):
+        e.record(i, {"mean_reward": 50.0})
+    assert e.is_converged()
+    e.record(STALL_ITERS_WITHOUT_BEST + 1, {"mean_reward": 95.0})  # breakthrough
+    assert not e.is_converged()

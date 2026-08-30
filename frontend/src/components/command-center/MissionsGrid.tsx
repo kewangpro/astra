@@ -12,6 +12,7 @@ const STATUS_COLOR: Record<string, string> = {
   evaluating: "#a78bfa",
   completed:  "#4ade80",
   failed:     "#f87171",
+  stalled:    "#fb923c",
 };
 
 // run/stop are both mission-control actions — keep them visually consistent

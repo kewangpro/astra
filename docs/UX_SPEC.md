@@ -13,7 +13,7 @@
 
 ### 2.1. The "Command Center" (Home)
 - **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200"). Domain field removed — task type is resolved automatically from the goal text (`taskType: "rl"` hardcoded for current RL-only missions).
-- **Active Missions**: A grid of running training loops with status badges (Planning, Running, Evaluating, Completed, Failed). Each card shows the best metric value and current iteration.
+- **Active Missions**: A grid of running training loops with status badges (Planning, Running, Evaluating, Completed, Failed, Stalled — converged below target, escalation exhausted). Each card shows the best metric value and current iteration.
 - **Global Metrics**: Total compute hours, models discovered, and successful recipes crystallized.
 
 ### 2.2. Live Training HUD (The "Loop" View)

@@ -61,6 +61,20 @@ hyperparameters:
   steps_per_eval: 15
   eval_max_tokens: 256
 
+# Empirically-observed ceiling for this recipe + gemma-3-12b-it-4bit + the
+# routing eval set. Missions whose target_metric exceeds this (beyond a small
+# noise margin) are rejected at creation — see backend/routers/missions.py.
+#   - mission 43517dd5 (target pass_rate 0.80): completed at 0.833 on the first
+#     evaluated iteration.
+#   - mission ce2828f4 (target pass_rate 0.85): 700+ iterations / 20 days, best
+#     0.833 (iters 98/134/710), never beaten. The routing model is already
+#     converged; one epoch of DPO from the 0.833 warm-start only overfits (peak
+#     ~0.82 at step 25 → collapse to ~0.44), and the dpo/grpo pivot safelist
+#     can't touch the levers that would matter. Raise this only with fresh
+#     evidence that the ceiling has genuinely moved.
+metric_ceiling:
+  pass_rate: 0.84
+
 # No astra-managed dataset — dpo_train.py's oracle is a hardcoded constant
 # (backend/core/eval_cases.yaml, relative to finetune_dir), not a CLI-configurable
 # parameter. Post-training goal-metric evaluation should use finetune/bare_eval.py

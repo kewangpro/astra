@@ -17,6 +17,11 @@ class MissionStatus(str, Enum):
     EVALUATING = "evaluating"
     COMPLETED = "completed"
     FAILED = "failed"
+    # Target not reached, but the search has exhausted every lever it has
+    # (escalation maxed, no new best for a long stretch). Terminal, like
+    # COMPLETED/FAILED — the loop stops and keeps the best checkpoint instead
+    # of burning compute indefinitely on an unreachable target.
+    STALLED = "stalled"
 
 
 class Mission(Base):

@@ -1011,6 +1011,16 @@ def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
         return {}
 
 
+def recipe_metric_ceiling(env_id: str, algorithm: str = "") -> dict:
+    """Return the recipe's declared `metric_ceiling` map ({metric_name: value}),
+    or {} if the recipe doesn't declare one. This is the empirically-observed
+    best a recipe+model+eval combo can reach; missions whose target exceeds it
+    are rejected at creation time (see backend/routers/missions.py) rather than
+    left to grind for weeks against an unreachable goal."""
+    ceiling = _load_recipe_for_env(env_id, algorithm).get("metric_ceiling")
+    return ceiling if isinstance(ceiling, dict) else {}
+
+
 # Real incident: with the recipe fully authoritative (see below), a stuck dpo/grpo mission's
 # pivots became complete no-ops — every escalation cycle relaunched the identical recipe-locked
 # run, with zero directed change, for 47+ consecutive iterations. Preference-pair sampling

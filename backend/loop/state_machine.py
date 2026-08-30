@@ -56,6 +56,19 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 _GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
 
+# dpo_train.py prints the warm-start adapter's own pass rate before training as
+# "Baseline: X% (n/total)", and the training plan as "... total_steps=N ...".
+# Both are needed to sanity-check an iteration's result (see _dpo_run_diagnostics).
+_DPO_BASELINE_RE = re.compile(r"Baseline:\s*([\d.]+)%")
+_DPO_TOTAL_STEPS_RE = re.compile(r"total_steps=(\d+)")
+
+# A dpo/grpo iteration whose scored pass_rate lands this far below the run's own
+# warm-start baseline is treated as a regression, not progress: the warm-start
+# adapter file is never modified by training, so the mission still has that score
+# in hand. The search-visible metric is floored to the baseline so the loop
+# neither records a false new best nor chases noise below its own starting point.
+DPO_BASELINE_FLOOR_MARGIN = 0.03
+
 # dpo_train.py's collect_pairs() phase (sampling K completions per case to build
 # preference pairs) runs before any epoch/loss line exists and is typically the
 # bulk of the wall-clock time (an hour+) — with nothing else to tail, the HUD
@@ -507,7 +520,51 @@ class LoopStateMachine:
                         if goal_val is not None:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
-                    if goal_val is not None:
+                    if goal_val is not None and plan.get("task_type") in ("dpo", "grpo"):
+                        # Record the true observed value to telemetry so the
+                        # Metric History chart stays honest…
+                        await self._append_telemetry_metric(
+                            mission_id, metric_name, goal_val, current_iteration
+                        )
+                        from backend.agent.code_generator import _resolve_hyperparams
+                        _eval_hp = _resolve_hyperparams(
+                            plan.get("task_type"), plan.get("hyperparameters", {})
+                        )
+                        try:
+                            _spe = int(_eval_hp.get("steps_per_eval", 0))
+                        except (TypeError, ValueError):
+                            _spe = 0
+                        _baseline, _reliable = self._dpo_run_diagnostics(mission_id, _spe)
+                        _raw_goal_val = goal_val
+                        if _baseline is not None and (
+                            not _reliable
+                            or goal_val < _baseline - DPO_BASELINE_FLOOR_MARGIN
+                        ):
+                            _why = (
+                                "best-checkpoint tracker never ran "
+                                f"(<{_spe} training steps) — scored the overfit final adapter"
+                                if not _reliable
+                                else f"raw {goal_val:.3f} < warm-start baseline {_baseline:.3f}"
+                            )
+                            goal_val = _baseline
+                            current_metrics[metric_name] = _baseline
+                            logger.warning(
+                                "LoopStateMachine: dpo/grpo iter %d mission=%s floored to warm-start "
+                                "baseline %.3f — %s", current_iteration, mission_id, _baseline, _why,
+                            )
+                            await emit_status(
+                                mission_id,
+                                "DPO result floored to warm-start baseline — training regressed this iteration",
+                                event_type="warn", value=_why, iteration=current_iteration,
+                            )
+                        logger.info(
+                            "LoopStateMachine: goal metric mission=%s %s raw=%.3f recorded=%.3f "
+                            "baseline=%s reliable=%s iter=%d",
+                            mission_id, metric_name, _raw_goal_val, goal_val,
+                            f"{_baseline:.3f}" if _baseline is not None else None,
+                            _reliable, current_iteration,
+                        )
+                    elif goal_val is not None:
                         await self._append_telemetry_metric(
                             mission_id, metric_name, goal_val, current_iteration
                         )
@@ -632,6 +689,35 @@ class LoopStateMachine:
                     await emit_status(mission_id, "Goal achieved!", event_type="success",
                                       value=str(best))
                     await self._transition(mission_id, MissionStatus.COMPLETED)
+                    await self._crystallize(mission_id, plan, best)
+                    return
+
+                # ── CONVERGENCE CHECK ─────────────────────────────────────
+                # Target not reached, but the search has exhausted every lever it
+                # has: escalation is maxed (pivot_count past ESCALATION_FORCE_NOVEL)
+                # and no new all-time best for STALL_ITERS_WITHOUT_BEST recorded
+                # iterations. Continuing just burns compute — stop, keep the best
+                # checkpoint, and crystallize what was learned. Real incident: DPO
+                # mission ce2828f4 ran 600+ iterations / 20 days stuck at best=0.833
+                # vs target=0.85, every pivot a structural no-op, with no terminal
+                # state to catch it.
+                if pivot_engine.is_converged():
+                    best = pivot_engine.best_metric_value()
+                    logger.warning(
+                        "LoopStateMachine: mission=%s converged below target — best=%s unbeaten for "
+                        "%d recorded iters at max escalation (pivot_count=%d); stopping",
+                        mission_id, best, pivot_engine.iters_since_best(), pivot_engine.pivot_count,
+                    )
+                    await self._save_best_metric(
+                        mission_id, best,
+                        best_iteration=pivot_engine.best_metric_iteration(),
+                    )
+                    await emit_status(
+                        mission_id,
+                        "Converged below target — stopping (every pivot lever exhausted)",
+                        event_type="warn", value=f"best={best}", iteration=current_iteration,
+                    )
+                    await self._transition(mission_id, MissionStatus.STALLED)
                     await self._crystallize(mission_id, plan, best)
                     return
 
@@ -1640,6 +1726,55 @@ class LoopStateMachine:
         except Exception as exc:
             logger.warning("LoopStateMachine: goal metric eval error: %s", exc)
             return None
+
+    def _dpo_run_diagnostics(
+        self, mission_id: str, steps_per_eval: int
+    ) -> tuple[Optional[float], bool]:
+        """Parse this iteration's DPO/GRPO training log for
+        (warm_start_baseline, eval_is_reliable).
+
+        warm_start_baseline: the "Baseline: X% (n/total)" pass rate dpo_train.py
+          prints from the warm-start adapter before any training step — the score
+          the mission already has in hand (the warm-start adapter file itself is
+          never modified by training). None if not found in the log.
+
+        eval_is_reliable: False when the run trained for fewer steps than
+          steps_per_eval, so dpo_train.py's in-training best-checkpoint eval never
+          fired once, no <save-dir>/best/ was written, and the only adapter left
+          to score is the fully overfit final-epoch one. Real incident: a
+          converged routing model yields only ~11 preference pairs → 11 steps <
+          steps_per_eval=15 → every iteration scored the overfit adapter at ~0.47
+          despite an 0.833 warm-start, for 600+ iterations, because the
+          2026-08-02 steps_per_eval tightening silently stopped taking effect
+          once pair counts dropped below it.
+        """
+        log_path = self._sandbox.get_log_path(mission_id)
+        if not os.path.isfile(log_path):
+            return None, True
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                text = f.read()
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: could not read log for dpo diagnostics mission=%s: %s",
+                mission_id, exc,
+            )
+            return None, True
+        baseline: Optional[float] = None
+        m = _DPO_BASELINE_RE.search(text)
+        if m:
+            try:
+                baseline = float(m.group(1)) / 100.0
+            except ValueError:
+                baseline = None
+        reliable = True
+        m = _DPO_TOTAL_STEPS_RE.search(text)
+        if m and steps_per_eval > 0:
+            try:
+                reliable = int(m.group(1)) >= steps_per_eval
+            except ValueError:
+                reliable = True
+        return baseline, reliable
 
     def _resolve_adapter_or_bare(self, finetune_dir: str, bare_rel_dir: str) -> str:
         """Return bare_rel_dir + '/best' if dpo_train.py actually wrote a best/

@@ -1531,3 +1531,75 @@ def test_request_approval_rejected_returns_none_flag(db_session, test_mission):
 
     assert approved is False
     assert is_auto is None
+
+
+# ── _dpo_run_diagnostics ─────────────────────────────────────────────────────
+
+def _sm_with_log(tmp_path, text):
+    from unittest.mock import MagicMock
+    log_path = tmp_path / "sandbox.log"
+    log_path.write_text(text)
+    sm = object.__new__(LoopStateMachine)
+    sm._sandbox = MagicMock()
+    sm._sandbox.get_log_path = MagicMock(return_value=str(log_path))
+    return sm
+
+
+_DPO_LOG_HEALTHY = """\
+Warm-start (reference): adapters/astra_x_iter134/adapters.safetensors
+--- Baseline eval (step 0) ---
+Baseline: 83.3% (55/66)
+DPO training: epochs=1  pairs=40  total_steps=40  beta=0.1  lr=2e-06
+=== Final Eval ===
+Pass rate: 84.8% (56/66)
+"""
+
+_DPO_LOG_TINY_BATCH = """\
+--- Baseline eval (step 0) ---
+Baseline: 83.3% (55/66)
+DPO training: epochs=1  pairs=11  total_steps=11  beta=0.1  lr=2e-06
+=== Final Eval ===
+Pass rate: 47.0% (31/66)
+Best pass rate during training: 0.0%
+"""
+
+
+def test_dpo_diagnostics_parses_baseline(tmp_path):
+    sm = _sm_with_log(tmp_path, _DPO_LOG_HEALTHY)
+    baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=15)
+    assert baseline == pytest.approx(0.833)
+    assert reliable is True
+
+
+def test_dpo_diagnostics_flags_tiny_batch_as_unreliable(tmp_path):
+    sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
+    baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=15)
+    assert baseline == pytest.approx(0.833)
+    assert reliable is False  # 11 steps < steps_per_eval=15
+
+
+def test_dpo_diagnostics_reliable_when_steps_meet_threshold(tmp_path):
+    sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
+    _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=11)
+    assert reliable is True
+
+
+def test_dpo_diagnostics_missing_log(tmp_path):
+    from unittest.mock import MagicMock
+    sm = object.__new__(LoopStateMachine)
+    sm._sandbox = MagicMock()
+    sm._sandbox.get_log_path = MagicMock(return_value=str(tmp_path / "nope.log"))
+    assert sm._dpo_run_diagnostics("m", steps_per_eval=15) == (None, True)
+
+
+def test_dpo_diagnostics_no_baseline_line(tmp_path):
+    sm = _sm_with_log(tmp_path, "some log\ntotal_steps=40\n")
+    baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=15)
+    assert baseline is None
+    assert reliable is True
+
+
+def test_dpo_diagnostics_steps_per_eval_zero_is_reliable(tmp_path):
+    sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
+    _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=0)
+    assert reliable is True

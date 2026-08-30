@@ -65,6 +65,7 @@ const STATUS_COLOR: Record<string, string> = {
   evaluating: "#a78bfa",
   completed:  "#4ade80",
   failed:     "#f87171",
+  stalled:    "#fb923c",
 };
 
 export default function MissionHUD({

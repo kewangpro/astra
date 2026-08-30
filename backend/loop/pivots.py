@@ -43,6 +43,16 @@ ESCALATION_REWARD = 6   # pivot count → allow reward shaping changes
 # 5-item oscillation window) and demands something structurally different.
 ESCALATION_FORCE_NOVEL = 15  # pivot count → force a never-tried architecture
 
+# Convergence: once escalation is already maxed (pivot_count past
+# ESCALATION_FORCE_NOVEL) AND the all-time best has not improved for this many
+# recorded goal-metric iterations, the loop treats the mission as converged
+# below target and stops — every pivot lever is exhausted and continuing just
+# burns compute. Real incident: DPO mission ce2828f4 ran 600+ iterations / 20
+# days stuck at best=0.833 vs target=0.85; the dpo/grpo pivot safelist
+# (temp/k_collect/num_generations only) can't change training dynamics, so all
+# 80 escalations were structural no-ops with no terminal state to catch it.
+STALL_ITERS_WITHOUT_BEST = 30
+
 # After an arch/algo pivot, if the new config's best is still this much below
 # the pre-pivot best after PLATEAU_WINDOW iters, revert to the old checkpoint.
 PIVOT_REGRESSION_THRESHOLD = 0.20
@@ -199,6 +209,32 @@ class PivotEngine:
         if self._pivot_count >= ESCALATION_ARCH:
             return 1
         return 0
+
+    def iters_since_best(self) -> int:
+        """Count of distinct recorded goal-metric iterations after the one that
+        set the all-time best. 0 if the best is the most recent (or the seed).
+        Iterations that produced no goal metric are not in _history and so don't
+        count — this measures real evaluated progress, not wall-clock loops."""
+        best_iter = self.best_metric_iteration()
+        if best_iter is None:
+            return 0
+        later = {
+            h.get("iteration")
+            for h in self._history
+            if isinstance(h.get("iteration"), int)
+            and h.get("iteration") > best_iter
+            and self._resolve_metric(self._metric_name, h) is not None
+        }
+        return len(later)
+
+    def is_converged(self) -> bool:
+        """True when the search has run out of moves: escalation is already maxed
+        (pivot_count past ESCALATION_FORCE_NOVEL) and the all-time best has not
+        improved for STALL_ITERS_WITHOUT_BEST recorded iterations. The caller
+        stops the mission and keeps the best checkpoint."""
+        if self._pivot_count < ESCALATION_FORCE_NOVEL:
+            return False
+        return self.iters_since_best() >= STALL_ITERS_WITHOUT_BEST
 
     def is_goal_met(self, metrics: dict) -> bool:
         if not self._metric_name:

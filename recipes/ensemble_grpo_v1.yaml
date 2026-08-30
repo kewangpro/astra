@@ -54,6 +54,14 @@ hyperparameters:
   save_every: 25
   routing_only: true
 
+# Empirically-observed ceiling for this recipe + gemma-3-12b-it-4bit + the
+# routing eval set. Missions whose target_metric exceeds this (beyond a small
+# noise margin) are rejected at creation — see backend/routers/missions.py.
+# GRPO on this converged routing model tracks the same ~0.83 plateau DPO hits
+# (shared warm-start lineage, same eval oracle). Raise only with fresh evidence.
+metric_ceiling:
+  pass_rate: 0.84
+
 # No astra-managed dataset — grpo_train.py's oracle is a hardcoded constant
 # (backend/core/eval_cases.yaml, relative to finetune_dir), not a CLI-configurable
 # parameter. Post-training goal-metric evaluation should use finetune/bare_eval.py

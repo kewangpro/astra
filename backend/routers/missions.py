@@ -15,6 +15,39 @@ from backend.schemas.mission import MissionCreate, MissionRead, MissionUpdate
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 
+# A target may sit this far above a recipe's declared ceiling before creation is
+# rejected — covers eval noise and small measurement drift, not a real gap.
+_CEILING_TARGET_MARGIN = 0.005
+
+
+def _reject_unreachable_target(task_type: str, target_metric: dict) -> None:
+    """Reject a mission whose target exceeds the recipe's empirically-observed
+    ceiling. Real incident: mission ce2828f4 (DPO, target pass_rate=0.85) ran
+    700+ iterations / 20 days stuck at 0.833 — the model was already converged
+    and no in-loop lever could close the last 0.017. Sister mission 43517dd5,
+    same recipe with target 0.80, completed at 0.833 immediately."""
+    if not task_type or not target_metric:
+        return
+    from backend.agent.code_generator import recipe_metric_ceiling
+
+    ceiling = recipe_metric_ceiling(task_type)
+    for name, tgt in target_metric.items():
+        cap = ceiling.get(name)
+        if cap is None:
+            continue
+        try:
+            if float(tgt) > float(cap) + _CEILING_TARGET_MARGIN:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"target {name}={tgt} exceeds the empirically-observed ceiling for the "
+                        f"'{task_type}' recipe ({name}≈{cap}). Lower the target, or raise "
+                        f"metric_ceiling in the recipe if that ceiling has genuinely been beaten."
+                    ),
+                )
+        except (TypeError, ValueError):
+            continue
+
 
 def _parse_target_metric(goal: str) -> dict:
     """Extract a target metric dict from free-text goal. Returns {} if nothing recognized."""
@@ -57,6 +90,9 @@ async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_
     payload_dict = payload.model_dump()
     if not payload_dict.get("target_metric"):
         payload_dict["target_metric"] = _parse_target_metric(payload.goal)
+    _reject_unreachable_target(
+        payload_dict.get("task_type", ""), payload_dict.get("target_metric") or {}
+    )
     mission = Mission(**payload_dict)
     db.add(mission)
     await db.commit()
