@@ -166,9 +166,9 @@ function MissionCard({ m }: { m: Mission }) {
 // (completed/failed/stalled) counts as active and lands in "Running".
 const MISSION_GROUPS: { key: string; label: string; match: (s: string) => boolean }[] = [
   { key: "running",   label: "Running",   match: (s) => !["completed", "failed", "stalled"].includes(s) },
-  { key: "completed", label: "Completed", match: (s) => s === "completed" },
   { key: "failed",    label: "Failed",    match: (s) => s === "failed" },
   { key: "stalled",   label: "Stalled",   match: (s) => s === "stalled" },
+  { key: "completed", label: "Completed", match: (s) => s === "completed" },
 ];
 
 function MissionSection({ label, missions }: { label: string; missions: Mission[] }) {

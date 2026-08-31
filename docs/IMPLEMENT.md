@@ -1460,4 +1460,6 @@ Root cause, confirmed via direct filesystem audit on mac-mini: `dpo_train.py` do
 
 **Problem:** the Command Center grid rendered every mission in one flat newest-first list, so a running mission could sit below a wall of old completed/stalled ones.
 
-- [x] **`MissionsGrid.tsx` groups cards into sections**: **Running** (any non-terminal status — `pending`/`planning`/`running`/`evaluating`/`paused` — via a catch-all match so a new status can't silently vanish), then **Completed**, **Failed**, **Stalled**. Each section has a small uppercase header with a count and renders its own responsive grid; empty sections are omitted. Newest-first ordering is preserved within each group. Pure presentational change — `MissionCard`, `STATUS_COLOR`, and the loading/error/empty states are untouched. `npx tsc --noEmit` clean.
+- [x] **`MissionsGrid.tsx` groups cards into sections** (`MISSION_GROUPS`): **Running** (any non-terminal status — `pending`/`planning`/`running`/`evaluating`/`paused` — via a catch-all match so a new status can't silently vanish), then **Failed**, **Stalled**, **Completed**. Each section (`MissionSection`) has a small uppercase header with a count and renders its own responsive grid; empty sections are omitted. Newest-first ordering is preserved within each group.
+- [x] **`GlobalStats` (`page.tsx`) stat row reordered** to match: Total, Running, Failed, Stalled, Completed.
+- [x] Pure presentational change — `MissionCard`, `STATUS_COLOR`, and the loading/error/empty states are untouched. `npx tsc --noEmit` clean.

@@ -13,8 +13,8 @@
 
 ### 2.1. The "Command Center" (Home)
 - **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200"). Domain field removed — task type is resolved automatically from the goal text (`taskType: "rl"` hardcoded for current RL-only missions).
-- **Active Missions**: A grid of running training loops with status badges (Planning, Running, Evaluating, Completed, Failed, Stalled — converged below target, escalation exhausted). Each card shows the best metric value and current iteration.
-- **Global Metrics**: Total compute hours, models discovered, and successful recipes crystallized.
+- **Active Missions**: A grid of training-loop cards with status badges (Planning, Running, Evaluating, Completed, Failed, Stalled — converged below target, escalation exhausted). Each card shows the best metric value, current iteration, and its compute node. Cards are grouped into labelled sections in order — **Running** (any non-terminal status), **Failed**, **Stalled**, **Completed** — each with a count; empty sections are hidden; newest-first within each group.
+- **Global Metrics**: A stat row — Total, then Running / Failed / Stalled / Completed mission counts (same order as the card sections).
 
 ### 2.2. Live Training HUD (The "Loop" View)
 - **The Metric Gap**: An arc gauge showing the all-time best metric value. Gap (`−X to close`) and percentage of target sit directly below the arc. Right column shows two lines: "best at iter N" (which iteration achieved the peak) and the current iteration's score when it differs from the best. This makes it unambiguous whether the displayed score is the historical peak or the latest result.

@@ -17,9 +17,9 @@ function GlobalStats() {
   const stats = [
     { label: "Total", value: missions.length },
     { label: "Running", value: counts.running ?? 0, color: "#14b8a6" },
-    { label: "Completed", value: counts.completed ?? 0, color: "#4ade80" },
     { label: "Failed", value: counts.failed ?? 0, color: "#f87171" },
     { label: "Stalled", value: counts.stalled ?? 0, color: "#fb923c" },
+    { label: "Completed", value: counts.completed ?? 0, color: "#4ade80" },
   ];
 
   return (

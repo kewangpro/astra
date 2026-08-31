@@ -64,7 +64,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Resource constraints (CPU/GPU/RAM) are enforced at the sandbox level to prevent runaway processes.
 
 ### 4.9. Training Recipes & Crystallization
-- **Recipe Generation**: Upon achieving a goal, ASTRA "crystallizes" the successful strategy into a **Training Recipe** (a package containing the optimized hyperparameters, reward/loss logic, curriculum phases, and model architecture).
+- **Recipe Generation**: Upon achieving a goal, ASTRA "crystallizes" the successful strategy into a **Training Recipe** (a package containing the optimized hyperparameters, reward/loss logic, curriculum phases, and model architecture). Fine-tuning task types (`dpo`/`grpo`) are excluded — their training dispatch always loads a fixed canonical recipe, so a per-mission crystallized recipe would be dead weight.
 - **Strategy Sharing**: Recipes are stored in a global library, allowing ASTRA to "warm-start" new, similar goals by retrieving and adapting existing recipes.
 - **Recipe Evolution**: ASTRA can treat a recipe as a "DNA" strand, mutating and improving it across different training runs to discover universal "Golden Recipes" for specific domains (e.g., "The Golden Snake Recipe").
 

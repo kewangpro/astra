@@ -8,7 +8,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 - **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, with no human intervention required
 - **GAN-style self-critique** — every plan is scored on safety, complexity, and overfitting risk before code is written, and revised on a low score
-- **Recipe crystallization & evolution** — completed missions are distilled into versioned recipes that can be mutated, selected, and promoted to "Golden" status after consecutive wins
+- **Recipe crystallization & evolution** — completed RL/SFT/ML missions are distilled into versioned recipes that can be mutated, selected, and promoted to "Golden" status after consecutive wins (DPO/GRPO missions dispatch from a fixed canonical recipe, so they are deliberately not crystallized)
 - **Autonomous error learning** — each fix is stored as a lesson so future missions avoid repeating the same mistake
 - **Auto-approve with LLM classification** — code execution is auto-approved via a two-stage classifier; unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — runs on Apple Silicon (Metal) or in Docker/CUDA containers, with automatic GPU pool assignment
@@ -157,6 +157,8 @@ make ports  # show port status for all services
 | 34 | Nodes Panel — cluster visibility for missions running across local + remote (SSH) sandboxes at once: node reachability/memory in the HUD, per-mission host badges, no more manually SSHing in to check what's actually running where | ✅ Complete |
 | 35 | DPO/GRPO Checkpoint Chaining — a mission's own best result now carries forward into the next iteration instead of every iteration always restarting from the static recipe warm-start; a live regression in the fix itself (shared, non-iteration-scoped save directory letting iterations silently overwrite each other's checkpoints) found and closed by making every iteration's output directory permanently distinct | ✅ Complete |
 | 36 | Unreachable-Target Missions Run Forever — a converged DPO mission ground for 20 days / 600+ iterations against a target above its ceiling; now the loop has a `STALLED` terminal state (escalation maxed + no new best for 30 iterations → stop and keep the best checkpoint), DPO iterations that regress below their own warm-start baseline are floored instead of recorded as progress, and recipes declare a `metric_ceiling` that rejects impossible targets at mission creation | ✅ Complete |
+| 37 | Stop Auto-Crystallizing DPO/GRPO Missions — training dispatch for these task types is hardcoded to the canonical recipe, so every crystallization produced an orphan recipe file + DB row + vector-index entry that nothing could load; `_crystallize()` now skips `dpo`/`grpo`, and the accumulated orphans were purged from disk, the DB, and ChromaDB | ✅ Complete |
+| 38 | Command Center: Group Mission Cards by Status — the mission grid was one flat list; cards are now grouped into Running / Failed / Stalled / Completed sections (each with a count), matching the global stat row | ✅ Complete |
 
 ## Hardware Target
 
