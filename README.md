@@ -94,7 +94,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 862 unit tests across all core modules
+│   ├── unit/           # 889 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)

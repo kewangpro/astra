@@ -1603,3 +1603,33 @@ def test_dpo_diagnostics_steps_per_eval_zero_is_reliable(tmp_path):
     sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
     _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=0)
     assert reliable is True
+
+
+# ── _crystallize task-type guard ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("task_type", ["dpo", "grpo", "DPO", "GRPO"])
+async def test_crystallize_skipped_for_fixed_recipe_task_types(task_type, monkeypatch):
+    """dpo/grpo dispatch from a hardcoded recipe (_ENV_RECIPE), so crystallizing
+    them only produces orphaned library entries — see dpo_dpo_v1/v2."""
+    called = []
+
+    async def _fake_crystallize(*args, **kwargs):
+        called.append((args, kwargs))
+
+    monkeypatch.setattr("backend.services.crystallizer.crystallize", _fake_crystallize)
+    sm = object.__new__(LoopStateMachine)
+    await sm._crystallize("m", {"task_type": task_type}, 0.83)
+    assert called == []
+
+
+async def test_crystallize_runs_for_rl(monkeypatch):
+    called = []
+
+    async def _fake_crystallize(*args, **kwargs):
+        called.append((args, kwargs))
+        return None
+
+    monkeypatch.setattr("backend.services.crystallizer.crystallize", _fake_crystallize)
+    sm = object.__new__(LoopStateMachine)
+    await sm._crystallize("m", {"task_type": "rl"}, 42.0)
+    assert len(called) == 1

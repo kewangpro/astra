@@ -1446,3 +1446,13 @@ Root cause, confirmed via direct filesystem audit on mac-mini: `dpo_train.py` do
 
     Total: **899 tests** (884 unit + 15 integration).
 
+## Phase 37 — Stop Auto-Crystallizing DPO/GRPO Missions
+
+**Problem:** Phase 29 fixed the *content* of DPO/GRPO crystallized recipes but not the fact that they should never be written at all. `code_generator.py`'s `_ENV_RECIPE` hardcodes `"dpo" → "ensemble_dpo_v1.yaml"` / `"grpo" → "ensemble_grpo_v1.yaml"`, so training dispatch for these task types *always* loads the canonical recipe regardless of what else exists under `recipes/`. Every crystallization from a completed/stalled DPO or GRPO mission produces a recipe file + DB row + Chroma index entry that nothing can ever load for dispatch — pure orphan clutter, and actively misleading to anyone who reads `recipes/` or the recipe library. Mission `89ae3595` completing (target 0.83, achieved 0.833) auto-crystallized `dpo_dpo_v2` again — the third such orphan after `dpo_dpo_v1`/`v2` were deleted in Phase 29 — and left the recipe library with `dpo_dpo_v1` still indexed after its YAML was gone.
+
+- [x] **`LoopStateMachine._crystallize()` skips `dpo`/`grpo`** (`loop/state_machine.py`). New `_NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo"})`; `_crystallize()` reads `plan["task_type"]` (case-insensitive) and returns early with an info log before importing/calling `crystallize()`. Both call sites (`manifest.is_complete()` → `COMPLETED`, `is_converged()` → `STALLED`) go through this method, so neither terminal path crystallizes a fixed-recipe task type.
+- [x] **Cleanup**: removed `recipes/dpo_dpo_v2.yaml` (disk), and both `dpo_dpo_v1` + `dpo_dpo_v2` from the `recipe_records` DB table and the Chroma semantic index (`recipe_library.remove_recipe()`). On-disk stores verified consistent (23 Chroma records, no orphaned metadata; DB recipe list down to `tetris_actor_critic_v1`). The running backend holds its own `chromadb.PersistentClient` and needs a restart to drop the deleted embeddings from its in-memory segment — `/recipes/search` returns 500 until then; the persisted files are correct.
+- [x] **5 new tests** (`test_state_machine_helpers.py`): `_crystallize()` does not call `crystallize()` for `dpo`/`grpo`/`DPO`/`GRPO` (parametrized), and still calls it once for `rl`.
+
+    Total: **904 tests** (889 unit + 15 integration).
+

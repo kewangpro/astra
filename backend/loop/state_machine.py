@@ -2035,8 +2035,22 @@ class LoopStateMachine:
 
     # ── Crystallization ────────────────────────────────────────────────────────
 
+    # Task types whose training dispatch is hardcoded to a canonical recipe
+    # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
+    # entirely. Crystallizing these only produces orphaned library entries —
+    # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo"})
+
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""
+        task_type = (plan or {}).get("task_type", "").lower()
+        if task_type in self._NO_CRYSTALLIZE_TASK_TYPES:
+            logger.info(
+                "LoopStateMachine: skipping crystallization for mission=%s — task_type=%s "
+                "dispatches from a fixed recipe and would only orphan a library entry",
+                mission_id, task_type,
+            )
+            return
         try:
             from backend.services.crystallizer import crystallize
             record = await crystallize(mission_id, plan=plan, score=score)
