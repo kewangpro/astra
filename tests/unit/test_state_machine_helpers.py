@@ -1605,6 +1605,37 @@ def test_dpo_diagnostics_steps_per_eval_zero_is_reliable(tmp_path):
     assert reliable is True
 
 
+# ── _clamp_finetune_sampling ─────────────────────────────────────────────────
+
+def test_clamp_finetune_sampling_temp_within_range_unchanged():
+    assert LoopStateMachine._clamp_finetune_sampling("temp", 1.1) == 1.1
+
+
+def test_clamp_finetune_sampling_temp_clamped_both_ends():
+    assert LoopStateMachine._clamp_finetune_sampling("temp", 3.0) == 1.5
+    assert LoopStateMachine._clamp_finetune_sampling("temp", 0.1) == 0.7
+
+
+def test_clamp_finetune_sampling_k_collect_clamped_and_int():
+    assert LoopStateMachine._clamp_finetune_sampling("k_collect", 99) == 16
+    assert LoopStateMachine._clamp_finetune_sampling("k_collect", 1) == 4
+    v = LoopStateMachine._clamp_finetune_sampling("k_collect", "12.4")
+    assert v == 12 and isinstance(v, int)
+
+
+def test_clamp_finetune_sampling_num_generations_clamped_and_int():
+    assert LoopStateMachine._clamp_finetune_sampling("num_generations", 10) == 4
+    assert LoopStateMachine._clamp_finetune_sampling("num_generations", 0) == 2
+
+
+def test_clamp_finetune_sampling_unknown_key_passthrough():
+    assert LoopStateMachine._clamp_finetune_sampling("learning_rate", 0.5) == 0.5
+
+
+def test_clamp_finetune_sampling_non_numeric_passthrough():
+    assert LoopStateMachine._clamp_finetune_sampling("temp", "hot") == "hot"
+
+
 # ── _crystallize task-type guard ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("task_type", ["dpo", "grpo", "DPO", "GRPO"])

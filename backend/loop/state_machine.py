@@ -69,6 +69,16 @@ _DPO_TOTAL_STEPS_RE = re.compile(r"total_steps=(\d+)")
 # neither records a false new best nor chases noise below its own starting point.
 DPO_BASELINE_FLOOR_MARGIN = 0.03
 
+# The only pivot adjustments that mean anything for a dpo/grpo mission — every
+# other hyperparameter is fixed by the recipe at dispatch. Bounds match the
+# ranges the pivot prompt (_PIVOT_SYSTEM) tells the LLM to stay within.
+_FINETUNE_PIVOT_KEYS = frozenset({"temp", "k_collect", "num_generations"})
+_FINETUNE_PIVOT_RANGES = {
+    "temp": (0.7, 1.5),
+    "k_collect": (4, 16),
+    "num_generations": (2, 4),
+}
+
 # dpo_train.py's collect_pairs() phase (sampling K completions per case to build
 # preference pairs) runs before any epoch/loss line exists and is typically the
 # bulk of the wall-clock time (an hour+) — with nothing else to tail, the HUD
@@ -492,6 +502,12 @@ class LoopStateMachine:
                 # benchmark didn't supply the value, then always write to telemetry so the
                 # MetricGap sparkline receives it.
                 metric_name = next(iter(mission.target_metric), None)
+                # dpo/grpo baseline-floor bookkeeping (see the floor block below).
+                # Bound here so the checkpoint-chaining guard can read them
+                # regardless of which eval branch ran.
+                _was_floored = False
+                _raw_goal_val: Optional[float] = None
+                _prev_best = pivot_engine.best_metric_value()
                 if metric_name and metric_name != "mean_reward":
                     if metric_name not in current_metrics:
                         await emit_status(
@@ -540,17 +556,35 @@ class LoopStateMachine:
                             not _reliable
                             or goal_val < _baseline - DPO_BASELINE_FLOOR_MARGIN
                         ):
+                            _was_floored = True
                             _why = (
                                 "best-checkpoint tracker never ran "
                                 f"(<{_spe} training steps) — scored the overfit final adapter"
                                 if not _reliable
                                 else f"raw {goal_val:.3f} < warm-start baseline {_baseline:.3f}"
                             )
-                            goal_val = _baseline
-                            current_metrics[metric_name] = _baseline
+                            if _prev_best is None:
+                                # First evaluated iteration regressed. There is no
+                                # chained checkpoint whose score the mission "still
+                                # has in hand" — the warm-start is the recipe's own
+                                # adapter, kept as long as this iteration's output is
+                                # not chained (guard below). Flooring the value here
+                                # would fabricate an all-time best that no saved
+                                # checkpoint can reproduce (real incident: mission
+                                # 15a1d093 iter 0 → phantom best 0.788 anchored to a
+                                # 0.682 checkpoint). Record the raw value instead.
+                                _why += " — no prior best to protect, recording raw"
+                            else:
+                                # Floor to the score the chained checkpoint already
+                                # holds (never above the prior best, in case on-disk
+                                # eval drifted the baseline up).
+                                _floored = min(_baseline, _prev_best)
+                                goal_val = _floored
+                                current_metrics[metric_name] = _floored
                             logger.warning(
-                                "LoopStateMachine: dpo/grpo iter %d mission=%s floored to warm-start "
-                                "baseline %.3f — %s", current_iteration, mission_id, _baseline, _why,
+                                "LoopStateMachine: dpo/grpo iter %d mission=%s regressed — %s "
+                                "(recorded=%.3f, will not chain checkpoint)",
+                                current_iteration, mission_id, _why, goal_val,
                             )
                             await emit_status(
                                 mission_id,
@@ -576,15 +610,23 @@ class LoopStateMachine:
                 _current_policy_kwargs = plan.get("hyperparameters", {}).get("policy_kwargs")
                 pivot_engine.record(current_iteration, current_metrics, policy_kwargs=_current_policy_kwargs)
                 await self._save_best_policy_kwargs(mission_id, pivot_engine.best_policy_kwargs())
-                # Chain dpo/grpo warm-start adapter forward only on a new best — not
-                # every iteration's raw output, since training within one iteration
-                # has repeatedly been observed to degrade pass_rate from its own
-                # starting point (see mission 7fd88324's history); chaining from a
-                # non-improving result would compound that decline instead of
-                # accumulating real progress.
+                # Chain dpo/grpo warm-start adapter forward only when this iteration's
+                # own training genuinely matched or beat the prior best — not every
+                # raw output (training within one iteration has repeatedly been
+                # observed to degrade pass_rate from its own starting point, see
+                # mission 7fd88324), and never when the result was floored (the
+                # floored score belongs to the warm-start, not to this iteration's
+                # checkpoint — chaining it anyway anchors the mission to a regressed
+                # adapter while the DB shows a best it can't reproduce; real
+                # incident: mission 15a1d093). Gated on the raw value vs the prior
+                # best rather than best_metric_iteration() so a genuine tie (fresher
+                # weights, same score) still chains and a floored phantom in the
+                # history can't block it.
                 if (
                     plan.get("task_type") in ("dpo", "grpo")
-                    and pivot_engine.best_metric_iteration() == current_iteration
+                    and not _was_floored
+                    and _raw_goal_val is not None
+                    and (_prev_best is None or _raw_goal_val >= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
                     _hp_for_chain = _resolve_hyperparams(plan.get("task_type"), plan.get("hyperparameters", {}))
@@ -780,6 +822,28 @@ class LoopStateMachine:
                     adjustments = self._clamp_rl_adjustments(
                         pivot.get("adjustments", {}), plan.get("task_type", "rl")
                     )
+                    # dpo/grpo dispatch is recipe-authoritative (code_generator.
+                    # _resolve_hyperparams): the ONLY pivot levers that survive to
+                    # the training command are the preference-pair sampling knobs.
+                    # Strip everything else the LLM proposed — env_kwargs, net_arch,
+                    # algorithm switches, stray hyperparameters — so the stored plan
+                    # and the pivot telemetry don't advertise changes that never
+                    # actually happen (real incident: mission 15a1d093 iter 4 pivot
+                    # logged Snake reward-shaping env_kwargs on a DPO mission).
+                    if plan.get("task_type") in ("dpo", "grpo"):
+                        _dropped = {k for k in adjustments if k not in _FINETUNE_PIVOT_KEYS}
+                        if _dropped:
+                            logger.warning(
+                                "LoopStateMachine: dropping non-sampling pivot keys for %s: %s",
+                                plan.get("task_type"), sorted(_dropped),
+                            )
+                        adjustments = {
+                            k: self._clamp_finetune_sampling(k, v)
+                            for k, v in adjustments.items()
+                            if k in _FINETUNE_PIVOT_KEYS
+                        }
+                        for _stray in ("env_kwargs", "policy_kwargs", "algorithm"):
+                            pivot.pop(_stray, None)
                     # Drop keys that aren't valid for the current algorithm so
                     # PPO-specific params (ent_coef, vf_coef) never land in a DQN pivot.
                     _valid_pivot_keys = CodeGenerator.valid_algo_keys(current_algo)
@@ -1484,6 +1548,21 @@ class LoopStateMachine:
                 pivot = {**pivot, "policy_kwargs": {"net_arch": inner["net_arch"]}}
 
         return pivot
+
+    @staticmethod
+    def _clamp_finetune_sampling(key: str, value):
+        """Clamp a dpo/grpo preference-pair sampling knob to its prompt-declared
+        range. Non-numeric or unknown keys pass through unchanged; k_collect /
+        num_generations are rounded to ints."""
+        rng = _FINETUNE_PIVOT_RANGES.get(key)
+        if rng is None:
+            return value
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return value
+        v = max(rng[0], min(rng[1], v))
+        return int(round(v)) if key in ("k_collect", "num_generations") else v
 
     @staticmethod
     def _clamp_rl_adjustments(adjustments: dict, task_type: str) -> dict:

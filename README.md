@@ -94,7 +94,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 889 unit tests across all core modules
+│   ├── unit/           # 895 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -159,6 +159,7 @@ make ports  # show port status for all services
 | 36 | Unreachable-Target Missions Run Forever — a converged DPO mission ground for 20 days / 600+ iterations against a target above its ceiling; now the loop has a `STALLED` terminal state (escalation maxed + no new best for 30 iterations → stop and keep the best checkpoint), DPO iterations that regress below their own warm-start baseline are floored instead of recorded as progress, and recipes declare a `metric_ceiling` that rejects impossible targets at mission creation | ✅ Complete |
 | 37 | Stop Auto-Crystallizing DPO/GRPO Missions — training dispatch for these task types is hardcoded to the canonical recipe, so every crystallization produced an orphan recipe file + DB row + vector-index entry that nothing could load; `_crystallize()` now skips `dpo`/`grpo`, and the accumulated orphans were purged from disk, the DB, and ChromaDB | ✅ Complete |
 | 38 | Command Center: Group Mission Cards by Status — the mission grid was one flat list; cards are now grouped into Running / Failed / Stalled / Completed sections (each with a count), matching the global stat row | ✅ Complete |
+| 39 | DPO Baseline-Floor Phantom Best + RL-Shaped Pivots on Fine-Tune Missions — the Phase 36 floor fabricated an unreproducible all-time best (and chained a regressed checkpoint) when a mission's first iteration regressed; separately, DPO/GRPO pivots silently accepted RL-only `env_kwargs`/`policy_kwargs`/`algorithm` fields into the plan. Floored iterations now never set a best or chain a checkpoint, and fine-tune pivots are restricted+clamped to the sampling knobs | ✅ Complete |
 
 ## Hardware Target
 
