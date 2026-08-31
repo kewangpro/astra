@@ -162,6 +162,32 @@ function MissionCard({ m }: { m: Mission }) {
   );
 }
 
+// Card groups, in display order. Any status not listed in a terminal group
+// (completed/failed/stalled) counts as active and lands in "Running".
+const MISSION_GROUPS: { key: string; label: string; match: (s: string) => boolean }[] = [
+  { key: "running",   label: "Running",   match: (s) => !["completed", "failed", "stalled"].includes(s) },
+  { key: "completed", label: "Completed", match: (s) => s === "completed" },
+  { key: "failed",    label: "Failed",    match: (s) => s === "failed" },
+  { key: "stalled",   label: "Stalled",   match: (s) => s === "stalled" },
+];
+
+function MissionSection({ label, missions }: { label: string; missions: Mission[] }) {
+  if (!missions.length) return null;
+  return (
+    <div>
+      <h3 className="text-[10px] text-[#64748b] tracking-widest uppercase mb-3 flex items-center gap-2">
+        {label}
+        <span className="text-[#475569]">{missions.length}</span>
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {missions.map((m) => (
+          <MissionCard key={m.id} m={m} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MissionsGrid() {
   const { data: missions, isLoading, error } = useMissions();
 
@@ -197,10 +223,17 @@ export function MissionsGrid() {
       </div>
     );
 
+  // Newest first within each group.
+  const ordered = [...missions].reverse();
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {[...missions].reverse().map((m) => (
-        <MissionCard key={m.id} m={m} />
+    <div className="space-y-8">
+      {MISSION_GROUPS.map((g) => (
+        <MissionSection
+          key={g.key}
+          label={g.label}
+          missions={ordered.filter((m) => g.match(m.status))}
+        />
       ))}
     </div>
   );
