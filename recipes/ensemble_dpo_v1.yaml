@@ -72,8 +72,39 @@ hyperparameters:
 #     ~0.82 at step 25 → collapse to ~0.44), and the dpo/grpo pivot safelist
 #     can't touch the levers that would matter. Raise this only with fresh
 #     evidence that the ceiling has genuinely moved.
+#   - 2026-09-02: dpo_train.py / grpo_train.py now exclude the 7 dynamic MCP
+#     routing cases (expected_skill = "mcp:Server:tool") from the fine-tune
+#     pass-rate. Those skill strings are absent from the training prompt, so
+#     every rollout failed identically — they contributed no preference signal
+#     and dragged the ceiling down by ~0.10 (7/66). The reported "Pass rate"
+#     lines telemetry parses are now over the 71-case static-skill routing set
+#     (12 teacher-verified cases were also added for starved skill classes —
+#     ensemble d0ab1db).
+#   - 2026-09-02 (cont.): on the corrected 71-case set the warm-start adapter
+#     grpo_v9_min/best scores 0.859 (61/71) *before any DPO* — the old 0.833
+#     "ceiling" was mostly the MCP artifact. Ceiling set to 0.87: just above the
+#     0.859 warm-start, leaving room for the new starved-class cases
+#     (route_report_*, route_calendar_*) that now have collected preference
+#     pairs, while still rejecting the fantasy targets. Note the warm-start IS
+#     the empirically-observed best so far — DPO has regressed grpo_v9_min/best
+#     on every evaluated iteration across 4 missions (8697c56b best 0.818 @
+#     iter8 = −0.04; 6320953e iter0 raw 0.775 = −0.08). A brief 0.90 target
+#     (2026-09-02) was set and reverted — it only guarantees a STALL.
+#   - 2026-09-02 (loss fix, ensemble-side): dpo_train.py's dpo_loss switched
+#     from mean-token log-prob to the SUMMED sequence log-likelihood
+#     (_seq_log_prob_sum). The mean divided the chosen−rejected margin by
+#     completion length (~40–80×), leaving a near-zero gradient at β≈0.1 — the
+#     mechanical reason every prior DPO run regressed the warm-start. With the
+#     sum, --learning-rate / --max-grad-norm likely need re-tuning DOWN from
+#     the current 2e-6 / 1.0 (stable only under the old damped signal).
+#   - STILL OPEN (coordinated ensemble + astra): no held-out split. Pairs are
+#     collected from all 71 static cases and best/ is selected by
+#     run_routing_eval on those same 71 — pure overfit-to-metric. The fix is a
+#     train/test split whose TEST-set pass-rate becomes the mission metric
+#     astra's telemetry parses. Until then a DPO best/ checkpoint should not be
+#     trusted, and 0.87 here is a placeholder, not a validated ceiling.
 metric_ceiling:
-  pass_rate: 0.84
+  pass_rate: 0.87
 
 # No astra-managed dataset — dpo_train.py's oracle is a hardcoded constant
 # (backend/core/eval_cases.yaml, relative to finetune_dir), not a CLI-configurable

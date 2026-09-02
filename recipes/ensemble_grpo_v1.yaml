@@ -59,6 +59,11 @@ hyperparameters:
 # noise margin) are rejected at creation — see backend/routers/missions.py.
 # GRPO on this converged routing model tracks the same ~0.83 plateau DPO hits
 # (shared warm-start lineage, same eval oracle). Raise only with fresh evidence.
+# 2026-09-02: grpo_train.py now excludes the 7 dynamic MCP routing cases
+# (expected_skill = "mcp:Server:tool") from the training pool and pass-rate —
+# their skill strings are absent from the training prompt, so they carry no
+# learnable signal. Telemetry "Pass rate" lines are now over the 71-case
+# static-skill routing set. See recipes/ensemble_dpo_v1.yaml for the rationale.
 metric_ceiling:
   pass_rate: 0.84
 
