@@ -54,9 +54,19 @@ hyperparameters:
   # steps_per_eval tightened 50 -> 15 so the best-checkpoint tracker samples
   # finely enough within that one epoch to actually catch the peak rather than
   # missing it between coarse checkpoints.
+  #
+  # 2026-09-02: the entire 2026-08-02 lr diagnostic above was run under the OLD
+  # mean-token-log-prob dpo_loss, now replaced by the summed sequence
+  # log-likelihood (ensemble 7b9f45a). The gradient is ~completion-length larger
+  # (~40-80x) at the same lr, so those three data points ("5e-7 too weak",
+  # "2e-6 overfits", "5e-6 collapses") no longer transfer. Per the ensemble
+  # guidance, lr dropped 2e-6 -> 3e-7 as the starting point for a fresh offline
+  # re-tune; treat 3e-7 as a guess, not a validated value. max_grad_norm stays
+  # 1.0 and is now load-bearing (with the large summed gradient the clip almost
+  # always binds, so lr ~= the actual per-step size).
   epochs: 1
   beta: 0.1
-  learning_rate: 0.000002       # 2e-6
+  learning_rate: 0.0000003      # 3e-7 — re-tune starting point under the summed-log-prob loss
   max_grad_norm: 1.0
   steps_per_eval: 15
   eval_max_tokens: 256
@@ -90,13 +100,14 @@ hyperparameters:
 #     on every evaluated iteration across 4 missions (8697c56b best 0.818 @
 #     iter8 = −0.04; 6320953e iter0 raw 0.775 = −0.08). A brief 0.90 target
 #     (2026-09-02) was set and reverted — it only guarantees a STALL.
-#   - 2026-09-02 (loss fix, ensemble-side): dpo_train.py's dpo_loss switched
-#     from mean-token log-prob to the SUMMED sequence log-likelihood
-#     (_seq_log_prob_sum). The mean divided the chosen−rejected margin by
-#     completion length (~40–80×), leaving a near-zero gradient at β≈0.1 — the
-#     mechanical reason every prior DPO run regressed the warm-start. With the
-#     sum, --learning-rate / --max-grad-norm likely need re-tuning DOWN from
-#     the current 2e-6 / 1.0 (stable only under the old damped signal).
+#   - 2026-09-02 (loss fix, ensemble 7b9f45a, deployed to mac-mini): dpo_train.py's
+#     dpo_loss switched from mean-token log-prob to the SUMMED sequence
+#     log-likelihood (_seq_log_prob_sum). The mean divided the chosen−rejected
+#     margin by completion length (~40–80×), leaving a near-zero gradient at
+#     β≈0.1 — the mechanical reason every prior DPO run regressed the warm-start.
+#     With the sum the gradient is ~length× larger, so learning_rate dropped
+#     2e-6 → 3e-7 (see the Phase 3 block above); the first mission under this
+#     loss is a re-tune, not a production run.
 #   - STILL OPEN (coordinated ensemble + astra): no held-out split. Pairs are
 #     collected from all 71 static cases and best/ is selected by
 #     run_routing_eval on those same 71 — pure overfit-to-metric. The fix is a

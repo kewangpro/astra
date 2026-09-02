@@ -1440,9 +1440,9 @@ def test_resolve_hyperparams_dpo_ignores_plan_override():
     run's pass_rate from a 62% baseline to 0% within 50 steps. PIVOT_SYSTEM
     doesn't document dpo/grpo hyperparameter ranges at all, so this must be a
     hard code-level guarantee, not just a prompt-level convention. (Recipe's
-    learning_rate later retuned to 2e-6 per Phase 35's follow-up diagnostic —
-    this test asserts against whatever the recipe says, not a hardcoded value,
-    so it can't go stale the way the literal above did.)"""
+    learning_rate has since moved 5e-7 → 2e-6 → 3e-7 as the loss and diagnostics
+    changed — this test asserts against whatever the recipe says, not a
+    hardcoded value, so it can't go stale the way the literal above did.)"""
     from backend.agent.code_generator import _resolve_hyperparams
     recipe_lr = _resolve_hyperparams("dpo", {})["learning_rate"]
     result = _resolve_hyperparams("dpo", {"learning_rate": 0.001, "num_layers": 5})
