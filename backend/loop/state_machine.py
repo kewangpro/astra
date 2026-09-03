@@ -732,6 +732,7 @@ class LoopStateMachine:
                                       value=str(best))
                     await self._transition(mission_id, MissionStatus.COMPLETED)
                     await self._crystallize(mission_id, plan, best)
+                    self._terminate_sandbox(mission_id, "completion")
                     return
 
                 # ── CONVERGENCE CHECK ─────────────────────────────────────
@@ -761,6 +762,7 @@ class LoopStateMachine:
                     )
                     await self._transition(mission_id, MissionStatus.STALLED)
                     await self._crystallize(mission_id, plan, best)
+                    self._terminate_sandbox(mission_id, "convergence stall")
                     return
 
                 # ── MISSION STATE (Step 7.5) ──────────────────────────────
@@ -1085,22 +1087,34 @@ class LoopStateMachine:
 
             except asyncio.CancelledError:
                 logger.info("LoopStateMachine: mission=%s cancelled (shutdown) — terminating sandbox and resetting to pending", mission_id)
-                try:
-                    self._sandbox.terminate(mission_id)
-                except Exception as _term_e:
-                    logger.warning("LoopStateMachine: sandbox terminate on cancel failed for mission=%s: %s", mission_id, _term_e)
+                self._terminate_sandbox(mission_id, "cancel")
                 await self._transition(mission_id, MissionStatus.PENDING)
                 raise  # propagate so asyncio knows the task is done
 
             except Exception as e:
                 logger.exception("LoopStateMachine: unhandled error in mission=%s: %s", mission_id, e)
-                try:
-                    self._sandbox.terminate(mission_id)
-                except Exception as _term_e:
-                    logger.warning("LoopStateMachine: sandbox terminate on failure failed for mission=%s: %s", mission_id, _term_e)
+                self._terminate_sandbox(mission_id, "failure")
                 await emit_status(mission_id, "Mission failed", event_type="error", value=str(e))
                 await self._transition(mission_id, MissionStatus.FAILED)
                 return
+
+    def _terminate_sandbox(self, mission_id: str, context: str) -> None:
+        """Kill this mission's sandbox and drop it from the manager registry.
+
+        Called on every loop exit — cancel, failure, and the two terminal-success
+        paths (COMPLETED / STALLED). Without it, a completed mission's sandbox
+        lingers in `SandboxManager._sandboxes` (keyed by mission_id, so nothing
+        evicts it) and shows up as a phantom mission in the Nodes panel until the
+        backend restarts. Best-effort — the training process has almost always
+        already exited by the time we get here.
+        """
+        try:
+            self._sandbox.terminate(mission_id)
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: sandbox terminate on %s failed for mission=%s: %s",
+                context, mission_id, exc,
+            )
 
     # ── DB helpers ─────────────────────────────────────────────────────────────
 

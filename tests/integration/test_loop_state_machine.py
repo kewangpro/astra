@@ -75,6 +75,7 @@ class _MockSandbox:
         self._tmp_dir = tmp_dir
         self._error_content = error_content
         self._log_paths: dict = {}
+        self.terminate_calls: list = []
 
     def launch(self, mission_id, script_path, **kwargs):
         log_path = os.path.join(self._tmp_dir, f"{mission_id}.log")
@@ -90,7 +91,7 @@ class _MockSandbox:
         return self._log_paths.get(mission_id, "")
 
     def terminate(self, mission_id):
-        pass
+        self.terminate_calls.append(mission_id)
 
 
 class _ErrorThenSuccessSandbox:
@@ -313,11 +314,12 @@ async def test_happy_path_goal_met(seeded_mission, db_session, patch_db, monkeyp
 
     with tempfile.TemporaryDirectory() as tmp:
         evaluator = _SequenceEvaluator([{"mean_reward": 200.0}])
+        sandbox = _MockSandbox(tmp)
         sm = _build_sm(
             _MockLeadAgent(),
             _MockCodeGen(tmp),
             _MockHealer(tmp),
-            _MockSandbox(tmp),
+            sandbox,
             evaluator,
         )
         with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
@@ -325,6 +327,10 @@ async def test_happy_path_goal_met(seeded_mission, db_session, patch_db, monkeyp
 
     await db_session.refresh(seeded_mission)
     assert seeded_mission.status == MissionStatus.COMPLETED.value
+    # The terminal-success path must also tear the sandbox down — otherwise a
+    # completed mission lingers in SandboxManager._sandboxes (keyed by mission_id,
+    # nothing evicts it) and shows as a phantom mission in the Nodes panel.
+    assert sandbox.terminate_calls == [seeded_mission.id]
 
 
 @pytest.mark.asyncio
