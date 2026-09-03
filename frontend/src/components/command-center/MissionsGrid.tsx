@@ -240,8 +240,13 @@ export function MissionsGrid() {
       </div>
     );
 
-  // Newest first within each group.
-  const ordered = [...missions].reverse();
+  // Newest first within each group, by creation time. (Don't rely on API order —
+  // GET /missions sorts created_at desc today, but sort explicitly so a change
+  // there can't silently flip the grid. The previous [...].reverse() assumed the
+  // opposite API order and rendered oldest-first.)
+  const ordered = [...missions].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
 
   return (
     <div className="space-y-8">

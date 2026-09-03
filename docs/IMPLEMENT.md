@@ -1508,5 +1508,6 @@ Root cause, confirmed via direct filesystem audit on mac-mini: `dpo_train.py` do
 - [x] **`MissionUpdate` gains `completed_at`** (`schemas/mission.py`) — so the one-time backfill can set it via `PATCH /missions/{id}` rather than a raw DB write.
 - [x] **Backfill** — script over `GET /missions`: for each terminal mission with a null `completed_at`, `PATCH {completed_at: <its updated_at>}` (the last-write timestamp ≈ when it ended). Approximate but useful; **requires the backend to be running the new schema first**.
 - [x] **Card display** (`MissionsGrid.tsx`, `lib/api.ts`) — `completed_at` added to the `Mission` type; each card shows a `created 9/2 22:48 · ended 9/3 01:04` line. New `fmtTs()` appends `"Z"` before parsing because the API serialises naive-ISO-but-UTC timestamps (same latent bug in `PivotTimeline`/`LogStream`, which still parse them as local — worth a follow-up).
+- [x] **Card order fixed** (`MissionsGrid.tsx`) — the timestamps made it obvious the grid rendered *oldest*-first: `GET /missions` sorts `created_at` desc but the component did `[...missions].reverse()` (a leftover from when the API returned oldest-first). Replaced with an explicit `sort` by `created_at` desc so it's newest-first regardless of API order.
 
     Total: **910 tests** (assertions added to existing tests). `npx tsc --noEmit` clean.
