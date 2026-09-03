@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMissions, useRunMission, useCancelMission } from "@/lib/hooks/useMissions";
 import type { Mission } from "@/lib/api";
+import { parseTs } from "@/lib/date";
 
 const STATUS_COLOR: Record<string, string> = {
   pending:    "#475569",
@@ -15,11 +16,8 @@ const STATUS_COLOR: Record<string, string> = {
   stalled:    "#fb923c",
 };
 
-// The API serialises timestamps as naive ISO (no "Z") but stores them in UTC,
-// so append "Z" before parsing or the browser reads them as local time.
 function fmtTs(iso: string): string {
-  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
-  return d.toLocaleString([], {
+  return parseTs(iso).toLocaleString([], {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -245,7 +243,7 @@ export function MissionsGrid() {
   // there can't silently flip the grid. The previous [...].reverse() assumed the
   // opposite API order and rendered oldest-first.)
   const ordered = [...missions].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) => parseTs(b.created_at).getTime() - parseTs(a.created_at).getTime(),
   );
 
   return (

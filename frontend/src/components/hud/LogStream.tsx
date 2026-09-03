@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { TelemetryEvent } from "@/lib/api";
+import { parseTs } from "@/lib/date";
 
 interface Props {
   events: TelemetryEvent[];
@@ -105,7 +106,7 @@ export function LogStream({ events, connected, missionStatus, className }: Props
           visible.map((e, i) => {
             const level = classify(e.type, e.name);
             const style = LEVEL_STYLES[level];
-            const ts = e.recorded_at ? new Date(e.recorded_at) : null;
+            const ts = e.recorded_at ? parseTs(e.recorded_at) : null;
             const msg = e.name != null
               ? e.value != null
                 ? `${e.name}: ${e.value}${e.step != null ? ` (step ${e.step})` : ""}`

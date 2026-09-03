@@ -1,6 +1,7 @@
 "use client";
 
 import type { TelemetryEvent } from "@/lib/api";
+import { parseTs } from "@/lib/date";
 
 interface Props {
   events: TelemetryEvent[];
@@ -28,7 +29,7 @@ export function PivotTimeline({ events }: Props) {
               {p.reason ?? "plateau detected"}
             </div>
             <div className="text-[10px] text-[#64748b] mt-0.5">
-              {p.recorded_at ? new Date(p.recorded_at).toLocaleString() : ""}
+              {p.recorded_at ? parseTs(p.recorded_at).toLocaleString() : ""}
             </div>
           </li>
         ))}
