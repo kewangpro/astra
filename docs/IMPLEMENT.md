@@ -1499,3 +1499,14 @@ Root cause, confirmed via direct filesystem audit on mac-mini: `dpo_train.py` do
 - [x] **`test_happy_path_goal_met`** (`test_loop_state_machine.py`) now asserts `sandbox.terminate_calls == [mission.id]` after the mission completes; `_MockSandbox.terminate()` records its calls (was a bare `pass`). The `STALLED` path shares the same helper call and isn't separately exercised (triggering `is_converged()` needs 75+ simulated no-improvement iterations).
 
     Total: **910 tests** (assertion added to an existing test, no new test function).
+
+## Phase 41 — Mission `completed_at` Populated + Shown on Cards
+
+**Problem:** `Mission.completed_at` existed in the model, the `MissionRead` schema, and the API response, but **nothing ever wrote it** — `_transition()` only set `status`. Every terminal mission (all 19, `9e7cc2df` included) had `completed_at: null` forever, and the Command Center cards showed no timing at all — no way to tell when a mission ran or how long it took.
+
+- [x] **`_transition()` stamps `completed_at`** (`loop/state_machine.py`) — new `_TERMINAL_STATUSES = {COMPLETED, FAILED, STALLED}` frozenset; reaching one adds `completed_at=datetime.now(timezone.utc)` to the same atomic `update(Mission)`. `PENDING` (from a cancel) is deliberately excluded — the mission resumes later. Assertions added to `test_happy_path_goal_met` (COMPLETED) and `test_max_retries_exceeded_marks_failed` (FAILED).
+- [x] **`MissionUpdate` gains `completed_at`** (`schemas/mission.py`) — so the one-time backfill can set it via `PATCH /missions/{id}` rather than a raw DB write.
+- [x] **Backfill** — script over `GET /missions`: for each terminal mission with a null `completed_at`, `PATCH {completed_at: <its updated_at>}` (the last-write timestamp ≈ when it ended). Approximate but useful; **requires the backend to be running the new schema first**.
+- [x] **Card display** (`MissionsGrid.tsx`, `lib/api.ts`) — `completed_at` added to the `Mission` type; each card shows a `created 9/2 22:48 · ended 9/3 01:04` line. New `fmtTs()` appends `"Z"` before parsing because the API serialises naive-ISO-but-UTC timestamps (same latent bug in `PivotTimeline`/`LogStream`, which still parse them as local — worth a follow-up).
+
+    Total: **910 tests** (assertions added to existing tests). `npx tsc --noEmit` clean.

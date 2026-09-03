@@ -13,6 +13,7 @@ export interface Mission {
   host: string | null;    // which node this mission's sandbox is/was running on
   created_at: string;
   updated_at: string;
+  completed_at: string | null;  // stamped when the mission reaches COMPLETED/FAILED/STALLED
 }
 
 export interface NodeMission {

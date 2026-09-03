@@ -331,6 +331,8 @@ async def test_happy_path_goal_met(seeded_mission, db_session, patch_db, monkeyp
     # completed mission lingers in SandboxManager._sandboxes (keyed by mission_id,
     # nothing evicts it) and shows as a phantom mission in the Nodes panel.
     assert sandbox.terminate_calls == [seeded_mission.id]
+    # ...and stamp completed_at, for the mission-card "ended" timestamp.
+    assert seeded_mission.completed_at is not None
 
 
 @pytest.mark.asyncio
@@ -372,6 +374,7 @@ async def test_max_retries_exceeded_marks_failed(seeded_mission, db_session, pat
 
     await db_session.refresh(seeded_mission)
     assert seeded_mission.status == MissionStatus.FAILED.value
+    assert seeded_mission.completed_at is not None  # FAILED is terminal → stamped
 
 
 @pytest.mark.asyncio

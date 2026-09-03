@@ -22,6 +22,7 @@ class MissionUpdate(BaseModel):
     current_plan: Optional[dict] = None
     last_checkpoint_path: Optional[str] = None
     error_log: Optional[str] = None
+    completed_at: Optional[datetime] = None
 
 
 class MissionRead(BaseModel):

@@ -15,6 +15,18 @@ const STATUS_COLOR: Record<string, string> = {
   stalled:    "#fb923c",
 };
 
+// The API serialises timestamps as naive ISO (no "Z") but stores them in UTC,
+// so append "Z" before parsing or the browser reads them as local time.
+function fmtTs(iso: string): string {
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+  return d.toLocaleString([], {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // run/stop are both mission-control actions — keep them visually consistent
 // (matching STATUS_COLOR.running) instead of tracking the card's current
 // per-status color, which made "run" (pending, gray) and "stop"
@@ -113,6 +125,11 @@ function MissionCard({ m }: { m: Mission }) {
                 : m.best_metric_value}
             </span>
           )}
+        </div>
+
+        <div className="mt-2 text-[9px] text-[#475569] tracking-wide">
+          created {fmtTs(m.created_at)}
+          {m.completed_at && <> · ended {fmtTs(m.completed_at)}</>}
         </div>
 
         {m.status === "pending" && (

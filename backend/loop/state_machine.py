@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -1137,13 +1138,22 @@ class LoopStateMachine:
         async with AsyncSessionLocal() as session:
             return await session.get(Mission, mission_id)
 
+    #: Statuses that end a mission's run — reaching one stamps completed_at.
+    #: PENDING (from a cancel) is deliberately absent: the mission resumes later.
+    _TERMINAL_STATUSES = frozenset(
+        {MissionStatus.COMPLETED, MissionStatus.FAILED, MissionStatus.STALLED}
+    )
+
     async def _transition(self, mission_id: str, status: MissionStatus) -> None:
+        values: dict = {"status": status.value}
+        if status in self._TERMINAL_STATUSES:
+            values["completed_at"] = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await session.execute(
                     update(Mission)
                     .where(Mission.id == mission_id)
-                    .values(status=status.value)
+                    .values(**values)
                 )
         logger.info("LoopStateMachine: mission=%s → %s", mission_id, status.value)
 
