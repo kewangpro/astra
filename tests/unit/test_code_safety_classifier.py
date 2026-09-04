@@ -187,6 +187,13 @@ def test_execv_grpo_dispatch_is_safe():
     assert v.classifier == "static"
 
 
+def test_execv_distill_dispatch_is_safe():
+    script = "import os\nos.execv('/x/bin/python', ['/x/bin/python', '/Users/kewang/finetune/distill_train.py', '--model', 'x'])\n"
+    v = _check(script)
+    assert v.safe
+    assert v.classifier == "static"
+
+
 def test_execv_to_unrelated_script_is_static_ambiguous():
     """os.execv alone isn't enough — must target dpo_train.py/grpo_train.py by
     name specifically, not any arbitrary script. Falls through to the LLM."""

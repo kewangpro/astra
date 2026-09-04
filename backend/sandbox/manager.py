@@ -40,7 +40,7 @@ def _detect_backend() -> str:
 # Fine-tune task types that wrap ensemble/finetune scripts living only on the
 # Mac Mini — these always dispatch via SSH to settings.sandbox_host, never
 # falling back to a local backend if it isn't configured.
-_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo"}
+_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo", "distill"}
 
 
 class GPUPool:

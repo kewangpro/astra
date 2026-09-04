@@ -112,6 +112,19 @@ class TestDpoGrpoEscalation:
         assert "k_collect" not in query
 
     @pytest.mark.asyncio
+    async def test_distill_escalation_mentions_iters_only(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"pass_rate": 0.75}, [], escalation_level=4,
+            current_algorithm="Distill", algorithm_locked=True,
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "iters" in query
+        assert "k_collect" not in query
+        assert "num_generations" not in query
+        assert "food_reward" not in query and "net_arch" not in query
+
+    @pytest.mark.asyncio
     async def test_dpo_escalation_case_insensitive_algorithm(self):
         agent = _agent()
         await agent.propose_pivot(

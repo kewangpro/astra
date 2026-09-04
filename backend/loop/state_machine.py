@@ -56,6 +56,8 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 # --save-steps allows).
 _GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
+# distill_train.py's interface mandates a per-step "Step N/M loss=X.XXXX" line.
+_DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=([\d.]+)")
 
 # dpo_train.py prints the warm-start adapter's own pass rate before training as
 # "Baseline: X% (n/total)", and the training plan as "... total_steps=N ...".
@@ -70,14 +72,20 @@ _DPO_TOTAL_STEPS_RE = re.compile(r"total_steps=(\d+)")
 # neither records a false new best nor chases noise below its own starting point.
 DPO_BASELINE_FLOOR_MARGIN = 0.03
 
-# The only pivot adjustments that mean anything for a dpo/grpo mission — every
-# other hyperparameter is fixed by the recipe at dispatch. Bounds match the
-# ranges the pivot prompt (_PIVOT_SYSTEM) tells the LLM to stay within.
-_FINETUNE_PIVOT_KEYS = frozenset({"temp", "k_collect", "num_generations"})
+# The only pivot adjustments that mean anything for a finetune-remote mission —
+# every other hyperparameter is fixed by the recipe at dispatch. Scoped per task
+# type (mirrors code_generator._FINETUNE_PIVOT_RANGES_BY_TASK) so a dpo pivot
+# can't advertise a distill-only key. Bounds match _PIVOT_SYSTEM.
+_FINETUNE_PIVOT_KEYS_BY_TASK = {
+    "dpo":     frozenset({"temp", "k_collect"}),
+    "grpo":    frozenset({"temp", "num_generations"}),
+    "distill": frozenset({"iters"}),
+}
 _FINETUNE_PIVOT_RANGES = {
     "temp": (0.7, 1.5),
     "k_collect": (4, 16),
     "num_generations": (2, 4),
+    "iters": (200, 800),
 }
 
 # dpo_train.py's collect_pairs() phase (sampling K completions per case to build
@@ -537,7 +545,7 @@ class LoopStateMachine:
                         if goal_val is not None:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
-                    if goal_val is not None and plan.get("task_type") in ("dpo", "grpo"):
+                    if goal_val is not None and plan.get("task_type") in ("dpo", "grpo", "distill"):
                         # Record the true observed value to telemetry so the
                         # Metric History chart stays honest…
                         await self._append_telemetry_metric(
@@ -624,7 +632,7 @@ class LoopStateMachine:
                 # weights, same score) still chains and a floored phantom in the
                 # history can't block it.
                 if (
-                    plan.get("task_type") in ("dpo", "grpo")
+                    plan.get("task_type") in ("dpo", "grpo", "distill")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and (_prev_best is None or _raw_goal_val >= _prev_best)
@@ -833,17 +841,18 @@ class LoopStateMachine:
                     # and the pivot telemetry don't advertise changes that never
                     # actually happen (real incident: mission 15a1d093 iter 4 pivot
                     # logged Snake reward-shaping env_kwargs on a DPO mission).
-                    if plan.get("task_type") in ("dpo", "grpo"):
-                        _dropped = {k for k in adjustments if k not in _FINETUNE_PIVOT_KEYS}
+                    if plan.get("task_type") in ("dpo", "grpo", "distill"):
+                        _safelist = _FINETUNE_PIVOT_KEYS_BY_TASK.get(plan.get("task_type"), frozenset())
+                        _dropped = {k for k in adjustments if k not in _safelist}
                         if _dropped:
                             logger.warning(
-                                "LoopStateMachine: dropping non-sampling pivot keys for %s: %s",
+                                "LoopStateMachine: dropping non-safelist pivot keys for %s: %s",
                                 plan.get("task_type"), sorted(_dropped),
                             )
                         adjustments = {
                             k: self._clamp_finetune_sampling(k, v)
                             for k, v in adjustments.items()
-                            if k in _FINETUNE_PIVOT_KEYS
+                            if k in _safelist
                         }
                         for _stray in ("env_kwargs", "policy_kwargs", "algorithm"):
                             pivot.pop(_stray, None)
@@ -1575,9 +1584,9 @@ class LoopStateMachine:
 
     @staticmethod
     def _clamp_finetune_sampling(key: str, value):
-        """Clamp a dpo/grpo preference-pair sampling knob to its prompt-declared
-        range. Non-numeric or unknown keys pass through unchanged; k_collect /
-        num_generations are rounded to ints."""
+        """Clamp a finetune-remote pivot knob to its prompt-declared range.
+        Non-numeric or unknown keys pass through unchanged; k_collect /
+        num_generations / iters are rounded to ints."""
         rng = _FINETUNE_PIVOT_RANGES.get(key)
         if rng is None:
             return value
@@ -1586,7 +1595,7 @@ class LoopStateMachine:
         except (TypeError, ValueError):
             return value
         v = max(rng[0], min(rng[1], v))
-        return int(round(v)) if key in ("k_collect", "num_generations") else v
+        return int(round(v)) if key in ("k_collect", "num_generations", "iters") else v
 
     @staticmethod
     def _clamp_rl_adjustments(adjustments: dict, task_type: str) -> dict:
@@ -2119,7 +2128,10 @@ class LoopStateMachine:
                 self._live_pass_rate_best[mission_id] = pct / 100.0
             pass_rate_step += 1
 
-        loss_re = _GRPO_LOSS_RE if task_type == "grpo" else _DPO_LOSS_RE
+        loss_re = {
+            "grpo": _GRPO_LOSS_RE,
+            "distill": _DISTILL_LOSS_RE,
+        }.get(task_type, _DPO_LOSS_RE)
         for match in loss_re.finditer(new_output):
             step_num = int(match.group(1))
             loss_val = float(match.group(2))
@@ -2142,7 +2154,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

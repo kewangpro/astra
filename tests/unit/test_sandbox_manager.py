@@ -209,6 +209,32 @@ class TestFinetuneRemoteDispatch:
             with pytest.raises(RuntimeError, match="sandbox_host"):
                 mgr.launch("test-mission", str(script), task_type="grpo")
 
+    def test_distill_raises_when_sandbox_host_not_configured(self, tmp_path):
+        mgr = _make_manager()
+        script = tmp_path / "train.py"
+        script.write_text("pass")
+
+        with patch("backend.sandbox.manager.settings.sandbox_host", ""):
+            with pytest.raises(RuntimeError, match="sandbox_host"):
+                mgr.launch("test-mission", str(script), task_type="distill")
+
+    def test_distill_forces_ssh_backend_when_sandbox_host_configured(self, tmp_path):
+        mgr = _make_manager()
+        script = tmp_path / "train.py"
+        script.write_text("pass")
+
+        new_sandbox = MagicMock()
+        new_sandbox.get_sandbox_id.return_value = None
+
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.sandbox.manager.settings.sandbox_data_path", "/tmp/astra"), \
+             patch("backend.sandbox.manager.SSHSandbox", return_value=new_sandbox) as mock_ssh, \
+             patch("backend.sandbox.manager.os.makedirs"):
+            mgr.launch("test-mission", str(script), task_type="distill")
+
+        mock_ssh.assert_called_once()
+        new_sandbox.launch.assert_called_once()
+
     def test_dpo_forces_ssh_backend_when_sandbox_host_configured(self, tmp_path):
         mgr = _make_manager()
         script = tmp_path / "train.py"

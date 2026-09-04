@@ -1542,10 +1542,17 @@ def test_finetune_checkpoint_dir_relative_points_at_best_subdir_not_bare_dir():
     assert relative != f"adapters/{absolute_suffix}"
 
 
-def test_clamp_dpo_grpo_pivot_hp_drops_unrecognized_keys():
-    from backend.agent.code_generator import _clamp_dpo_grpo_pivot_hp
-    result = _clamp_dpo_grpo_pivot_hp({"learning_rate": 0.001, "num_layers": 5, "temp": 1.0})
+def test_clamp_finetune_pivot_hp_drops_unrecognized_keys():
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp
+    result = _clamp_finetune_pivot_hp("dpo", {"learning_rate": 0.001, "num_layers": 5, "temp": 1.0})
     assert result == {"temp": 1.0}
+
+
+def test_clamp_finetune_pivot_hp_is_task_scoped():
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp
+    # iters is a distill-only knob — a dpo pivot proposing it is dropped
+    assert _clamp_finetune_pivot_hp("dpo", {"iters": 500}) == {}
+    assert _clamp_finetune_pivot_hp("distill", {"iters": 9999, "temp": 1.0}) == {"iters": 800}
 
 
 # ── grpo template ─────────────────────────────────────────────────────────────
@@ -1685,12 +1692,65 @@ def test_build_user_prompt_grpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
     assert 'os.chdir("/Users/kewang/finetune")' in prompt
 
 
+# ── distill template ──────────────────────────────────────────────────────────
+
+def _distill_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "distill", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    return gen._build_user_prompt("distill", "test-id", plan, str(tmp_path / "ckpt"))
+
+
+def test_build_user_prompt_distill_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):
+    prompt = _distill_prompt(tmp_path, monkeypatch)
+    assert "distill_train.py" in prompt
+    assert "do NOT reimplement" in prompt
+    assert "--teacher-model" in prompt and "--iters" in prompt
+
+
+def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
+    prompt = _distill_prompt(tmp_path, monkeypatch)
+    assert "gemma-3-12b-it-4bit" in prompt
+    assert "adapters/retrain_best" in prompt   # SFT-lineage warm-start, not grpo_v9_min/best
+    assert "/Users/kewang/finetune" in prompt
+
+
+def test_build_user_prompt_distill_uses_execv_and_chdir(tmp_path, monkeypatch):
+    prompt = _distill_prompt(tmp_path, monkeypatch)
+    assert "os.execv(" in prompt
+    assert "subprocess.run(" not in prompt
+    assert 'os.chdir("/Users/kewang/finetune")' in prompt
+
+
+def test_build_user_prompt_distill_no_network_calls(tmp_path, monkeypatch):
+    prompt = _distill_prompt(tmp_path, monkeypatch)
+    assert "do not\nadd any network calls" in prompt
+    assert "Do NOT import subprocess or requests" in prompt
+
+
+def test_resolve_hyperparams_distill_recipe_authoritative(tmp_path, monkeypatch):
+    from backend.agent.code_generator import _resolve_hyperparams
+    hp = _resolve_hyperparams("distill", {"learning_rate": 0.9, "num_layers": 99, "iters": 700})
+    assert hp["learning_rate"] == 1e-5      # recipe wins
+    assert hp["num_layers"] == 8            # recipe wins
+    assert hp["iters"] == 700               # the one plan/pivot-settable knob (in range)
+
+
+def test_resolve_hyperparams_distill_clamps_iters(tmp_path, monkeypatch):
+    from backend.agent.code_generator import _resolve_hyperparams
+    assert _resolve_hyperparams("distill", {"iters": 5000})["iters"] == 800
+    assert _resolve_hyperparams("distill", {"iters": 10})["iters"] == 200
+
+
 # ── manifest checkpoint patterns ──────────────────────────────────────────────
 
 def test_manifest_checkpoint_pattern_dpo_grpo():
     from backend.services.manifest_generator import _CHECKPOINT_PATTERNS
     assert _CHECKPOINT_PATTERNS["dpo"] == "checkpoints/best/"
     assert _CHECKPOINT_PATTERNS["grpo"] == "checkpoints/best/"
+    assert _CHECKPOINT_PATTERNS["distill"] == "checkpoints/best/"
 
 
 # ── sandbox_host scoping regression (must not leak to non-finetune task types) ─

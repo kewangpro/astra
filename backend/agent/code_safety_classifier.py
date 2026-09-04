@@ -254,11 +254,12 @@ class CodeSafetyClassifier:
                 classifier="static",
             )
 
-        # Static auto-approve for the dpo/grpo dispatch wrapper: no requests
+        # Static auto-approve for the finetune-remote dispatch wrapper: no requests
         # calls (already the strictest "no network access" case established
-        # above) and an os.execv(...) targeting dpo_train.py/grpo_train.py by
-        # name — this is exactly and only the shape the DPO/GRPO code-gen
-        # templates produce (code_generator.py's _DPO_TEMPLATE/_GRPO_TEMPLATE).
+        # above) and an os.execv(...) targeting dpo_train.py / grpo_train.py /
+        # distill_train.py by name — this is exactly and only the shape the
+        # dpo/grpo/distill code-gen templates produce (code_generator.py's
+        # _DPO_TEMPLATE / _GRPO_TEMPLATE / _DISTILL_TEMPLATE).
         # Matched loosely (os.execv anywhere + the script name anywhere) since
         # code-gen doesn't always produce identical call-site formatting (e.g.
         # args built as a separate list variable vs an inline list literal) —
@@ -269,11 +270,11 @@ class CodeSafetyClassifier:
         if (
             not has_any_request
             and re.search(r"\bos\.execv\s*\(", code_only)
-            and re.search(r"dpo_train\.py|grpo_train\.py", script)
+            and re.search(r"dpo_train\.py|grpo_train\.py|distill_train\.py", script)
         ):
             return SafetyVerdict(
                 safe=True,
-                reason="os.execv dispatch to dpo_train.py/grpo_train.py with no network calls — auto-approved",
+                reason="os.execv dispatch to dpo_train.py/grpo_train.py/distill_train.py with no network calls — auto-approved",
                 classifier="static",
             )
 

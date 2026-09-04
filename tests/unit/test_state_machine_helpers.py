@@ -1636,9 +1636,25 @@ def test_clamp_finetune_sampling_non_numeric_passthrough():
     assert LoopStateMachine._clamp_finetune_sampling("temp", "hot") == "hot"
 
 
+def test_clamp_finetune_sampling_iters_clamped_and_int():
+    assert LoopStateMachine._clamp_finetune_sampling("iters", 5000) == 800
+    assert LoopStateMachine._clamp_finetune_sampling("iters", 10) == 200
+    v = LoopStateMachine._clamp_finetune_sampling("iters", "450.7")
+    assert v == 451 and isinstance(v, int)
+
+
+def test_finetune_pivot_safelist_is_task_scoped():
+    from backend.loop.state_machine import _FINETUNE_PIVOT_KEYS_BY_TASK
+    assert _FINETUNE_PIVOT_KEYS_BY_TASK["dpo"] == {"temp", "k_collect"}
+    assert _FINETUNE_PIVOT_KEYS_BY_TASK["distill"] == {"iters"}
+    # iters is not a dpo knob; temp is not a distill knob
+    assert "iters" not in _FINETUNE_PIVOT_KEYS_BY_TASK["dpo"]
+    assert "temp" not in _FINETUNE_PIVOT_KEYS_BY_TASK["distill"]
+
+
 # ── _crystallize task-type guard ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("task_type", ["dpo", "grpo", "DPO", "GRPO"])
+@pytest.mark.parametrize("task_type", ["dpo", "grpo", "distill", "DPO", "GRPO", "Distill"])
 async def test_crystallize_skipped_for_fixed_recipe_task_types(task_type, monkeypatch):
     """dpo/grpo dispatch from a hardcoded recipe (_ENV_RECIPE), so crystallizing
     them only produces orphaned library entries — see dpo_dpo_v1/v2."""

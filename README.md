@@ -8,7 +8,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 - **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, with no human intervention required
 - **GAN-style self-critique** — every plan is scored on safety, complexity, and overfitting risk before code is written, and revised on a low score
-- **Recipe crystallization & evolution** — completed RL/SFT/ML missions are distilled into versioned recipes that can be mutated, selected, and promoted to "Golden" status after consecutive wins (DPO/GRPO missions dispatch from a fixed canonical recipe, so they are deliberately not crystallized)
+- **Recipe crystallization & evolution** — completed RL/SFT/ML missions are distilled into versioned recipes that can be mutated, selected, and promoted to "Golden" status after consecutive wins (DPO/GRPO/distill missions dispatch from a fixed canonical recipe, so they are deliberately not crystallized)
 - **Autonomous error learning** — each fix is stored as a lesson so future missions avoid repeating the same mistake
 - **Auto-approve with LLM classification** — code execution is auto-approved via a two-stage classifier; unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — runs on Apple Silicon (Metal) or in Docker/CUDA containers, with automatic GPU pool assignment
@@ -20,7 +20,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Persistent escalating pivot strategy** — stuck missions escalate through hyperparameter tuning → architecture change → algorithm switch → reward shaping, with escalation state surviving server restarts
 - **Best-architecture memory** — the system remembers which network architecture produced the best result for a mission and prefers reusing it over randomly cycling through others
 - **Resilient warm-start across architecture pivots** — training resumes from whatever learned weights are still compatible with a new architecture, rather than a single change discarding all prior learning
-- **Task-appropriate pivot search** — RL missions escalate through hyperparameters, architecture, and reward shaping; fine-tuning missions (DPO/GRPO) instead get a small set of safe, bounded sampling-diversity knobs, so a plateaued mission always has a real, actionable search lever rather than proposals that silently get discarded
+- **Task-appropriate pivot search** — RL missions escalate through hyperparameters, architecture, and reward shaping; fine-tuning missions (DPO/GRPO/distill) instead get a small, bounded per-task-type safelist (sampling-diversity knobs for DPO/GRPO, training-step count for distill), so a plateaued mission always has a real, actionable search lever rather than proposals that silently get discarded
 - **Knows when to stop** — a mission whose target is out of reach (escalation maxed, no new best for many iterations, or a target above the recipe's declared ceiling) is stopped and marked `stalled` with its best checkpoint kept, instead of burning compute indefinitely; impossible targets are rejected at creation
 - **Dual metric tracking** — the training signal (e.g. reward) and the actual goal metric (e.g. food eaten, lines cleared) are tracked separately, so the two can be compared and diverging trends are visible
 - **Robust state recovery** — an interrupted mission's still-alive training run is reattached and resumed on restart, rather than killed; only a genuinely gone run gets reset and relaunched from the last checkpoint
@@ -51,7 +51,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task Types
 
-ASTRA supports six training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
+ASTRA supports seven training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
 
 ## Quick Start
 
@@ -94,7 +94,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 895 unit tests across all core modules
+│   ├── unit/           # 913 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -162,6 +162,7 @@ make ports  # show port status for all services
 | 39 | DPO Baseline-Floor Phantom Best + RL-Shaped Pivots on Fine-Tune Missions — the Phase 36 floor fabricated an unreproducible all-time best (and chained a regressed checkpoint) when a mission's first iteration regressed; separately, DPO/GRPO pivots silently accepted RL-only `env_kwargs`/`policy_kwargs`/`algorithm` fields into the plan. Floored iterations now never set a best or chain a checkpoint, and fine-tune pivots are restricted+clamped to the sampling knobs. **Follow-up:** the persistent DPO plateau below a 0.84 target was traced to 7 eval cases expecting runtime `mcp:Server:tool` skills the training prompt never shows — fixed in the `ensemble` repo (excluded from the fine-tune pass-rate; +12 teacher-verified cases for starved classes, static routing set 66 → 71). On the corrected set the warm-start already scores 0.859 and DPO has never beaten it, so the `dpo` `metric_ceiling` was set to 0.87 (just above the warm-start); astra code is unchanged | ✅ Complete |
 | 40 | Terminal-Success Sandbox Teardown — `LoopStateMachine` terminated the sandbox on cancel/failure but not on `COMPLETED`/`STALLED`, so a finished mission's entry lingered in `SandboxManager._sandboxes` and showed as a phantom mission in the Nodes panel until the next backend restart; all four loop-exit paths now go through one `_terminate_sandbox()` helper | ✅ Complete |
 | 41 | Mission `completed_at` Populated + Shown on Cards — the column existed in the model/schema/API but nothing ever wrote it (all 19 terminal missions had `null`); `_transition()` now stamps it on `COMPLETED`/`FAILED`/`STALLED`, old rows were backfilled from `updated_at`, and Command Center cards show a `created … · ended …` line | ✅ Complete |
+| 42 | Distillation Task Type — `dpo`/`grpo` are exhausted for the routing model (ceiling ~86%), so added `distill`: a strong teacher generates correct routing completions and the student is SFT'd to imitate them. Fully wired as a fine-tune-remote task type (SSH dispatch, recipe-authoritative, `iters`-only pivot, `metric_ceiling` 0.95) mirroring `dpo`/`grpo`. astra-side scaffolding only — `ensemble/finetune/distill_train.py` is a documented precondition | ✅ Complete |
 
 ## Hardware Target
 

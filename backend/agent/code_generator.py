@@ -900,6 +900,69 @@ The script must:
    comma, as its own list element) or omitted entirely if empty — do not insert
    an empty string element in the list.)"""
 
+_DISTILL_TEMPLATE = """\
+Generate a script that runs knowledge-distillation fine-tuning by invoking the
+EXISTING distill_train.py script — do NOT reimplement teacher generation, the
+mlx_lm.lora training, or the routing eval yourself. This script is a thin
+orchestration wrapper only — it does NOT report telemetry itself. Astra tails
+this process's own log remotely and parses "Pass rate" lines on its own; do not
+add any network calls (no requests, no HTTP) to this script.
+
+Mission ID: {mission_id}
+Finetune dir (remote host, distill_train.py lives here): {finetune_dir}
+Python interpreter (has mlx_lm installed): {python_bin}
+Base model: {base_model}
+Warm-start adapter: {adapter}
+Prompt template (student target): {prompt_template}
+Teacher: {teacher_model} via {ollama_url}
+LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
+Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
+save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
+Adapter output: {checkpoint_dir}
+
+The script must:
+1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
+   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
+   sandbox tracks this wrapper process's own pid as "the training process." If
+   this script fork+execs distill_train.py as a child (subprocess.run/Popen), the
+   child gets a DIFFERENT pid that astra never learns and can never clean up. os.execv
+   REPLACES this process's image in place (no fork, same pid) so the wrapper's
+   tracked pid and the actual training process's pid are always identical.
+2. First os.chdir("{finetune_dir}") — distill_train.py resolves --prompt-template
+   AND its own hardcoded eval-cases path relative to the process's working
+   directory. Without this chdir, both relative-path loads fail.
+3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path, C-style
+   exec convention) — this call does not return; the process image becomes
+   distill_train.py and its exit code becomes this process's exit code:
+       os.execv(
+           "{python_bin}",
+           [
+               "{python_bin}", "{finetune_dir}/distill_train.py",
+               "--model", "{base_model}",
+               "--adapter", "{adapter}",
+               "--save-dir", "{checkpoint_dir}",
+               "--prompt-template", "{prompt_template}",
+               "--teacher-model", "{teacher_model}",
+               "--ollama-url", "{ollama_url}",
+               "--num-layers", "{num_layers}",
+               "--lora-rank", "{lora_rank}",
+               "--lora-scale", "{lora_scale}",
+               "--lora-dropout", "{lora_dropout}",
+               "--iters", "{iters}",
+               "--batch-size", "{batch_size}",
+               "--learning-rate", "{learning_rate}",
+               "--steps-per-eval", "{steps_per_eval}",
+               "--save-every", "{save_every}",
+               "--max-seq-len", "{max_seq_len}",
+               "--eval-max-tokens", "{eval_max_tokens}",
+               {mask_prompt_flag}
+               {routing_only_flag}
+           ],
+       )
+   ({mask_prompt_flag} and {routing_only_flag} are each either a single string list
+   element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
+   omitted entirely if empty. Do not insert an empty string element in the list.)"""
+
 _ML_TEMPLATE = """\
 Generate a complete ML training script.
 
@@ -993,6 +1056,7 @@ _ENV_RECIPE: dict = {
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
+    "distill": "ensemble_distill_v1.yaml",
 }
 
 
@@ -1030,17 +1094,20 @@ def recipe_metric_ceiling(env_id: str, algorithm: str = "") -> dict:
 # sane: k_collect/num_generations too high blows up wall-clock per case; too low starves DPO/GRPO
 # of contrast. num_generations capped at 4 specifically because K=4 regressed in grpo_v10_min
 # per ensemble_grpo_v1.yaml's own changelog.
-_DPO_GRPO_PIVOT_RANGES = {
-    "temp": (0.7, 1.5),
-    "k_collect": (4, 16),
-    "num_generations": (2, 4),
+# distill has no sampling phase — its one safe pivot knob is `iters` (train longer/shorter).
+# Scoped per task type so a dpo recipe never picks up a distill key (or vice versa).
+_FINETUNE_PIVOT_RANGES_BY_TASK = {
+    "dpo":     {"temp": (0.7, 1.5), "k_collect": (4, 16)},
+    "grpo":    {"temp": (0.7, 1.5), "num_generations": (2, 4)},
+    "distill": {"iters": (200, 800)},
 }
 
 
-def _clamp_dpo_grpo_pivot_hp(plan_hp: dict) -> dict:
-    """Clamp the small safelist of dpo/grpo keys a pivot may vary; silently drop everything else."""
+def _clamp_finetune_pivot_hp(task_type: str, plan_hp: dict) -> dict:
+    """Clamp the small safelist of pivot keys valid for this finetune-remote task
+    type; silently drop everything else."""
     clamped = {}
-    for k, (lo, hi) in _DPO_GRPO_PIVOT_RANGES.items():
+    for k, (lo, hi) in _FINETUNE_PIVOT_RANGES_BY_TASK.get(task_type, {}).items():
         if k not in plan_hp:
             continue
         try:
@@ -1056,7 +1123,7 @@ def _resolve_hyperparams(
 ) -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
-    if env_id in ("dpo", "grpo"):
+    if env_id in ("dpo", "grpo", "distill"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -1066,7 +1133,7 @@ def _resolve_hyperparams(
         # old setdefault-only merge below, collapsing a DPO run's pass_rate from a 62%
         # baseline to 0% within 50 steps.
         hp = dict(recipe_hp)
-        hp.update(_clamp_dpo_grpo_pivot_hp(plan_hp))
+        hp.update(_clamp_finetune_pivot_hp(env_id, plan_hp))
         # warm_start_adapter comes from Mission.last_checkpoint_path (state_machine,
         # system-controlled), never from plan_hp/the LLM pivot — deliberately outside
         # the plan_hp merge above so it can't be spoofed through the same channel the
@@ -1397,6 +1464,14 @@ class CodeGenerator:
                 **base,
             }
             return _GRPO_TEMPLATE.format(**ctx)
+        if task_type == "distill":
+            ctx = {
+                **hp,
+                "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
+                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                **base,
+            }
+            return _DISTILL_TEMPLATE.format(**ctx)
         # ml
         ctx = {
             "framework": "sklearn",

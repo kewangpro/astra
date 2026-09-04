@@ -14,6 +14,7 @@ from backend.routers.missions import _CEILING_TARGET_MARGIN, _reject_unreachable
 # derive from the live ceiling so they don't rebreak on a deliberate re-tune.
 _DPO_CEILING = 0.87
 _GRPO_CEILING = 0.84
+_DISTILL_CEILING = 0.95
 
 
 def test_dpo_recipe_declares_pass_rate_ceiling():
@@ -23,6 +24,17 @@ def test_dpo_recipe_declares_pass_rate_ceiling():
 
 def test_grpo_recipe_declares_pass_rate_ceiling():
     assert recipe_metric_ceiling("grpo").get("pass_rate") == pytest.approx(_GRPO_CEILING)
+
+
+def test_distill_recipe_declares_pass_rate_ceiling():
+    assert recipe_metric_ceiling("distill").get("pass_rate") == pytest.approx(_DISTILL_CEILING)
+
+
+def test_distill_target_above_ceiling_is_rejected():
+    ceiling = recipe_metric_ceiling("distill")["pass_rate"]
+    with pytest.raises(HTTPException) as exc:
+        _reject_unreachable_target("distill", {"pass_rate": ceiling + 0.03})
+    assert exc.value.status_code == 422
 
 
 def test_unknown_task_type_has_no_ceiling():

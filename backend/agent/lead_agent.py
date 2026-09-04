@@ -23,7 +23,7 @@ You are ASTRA's Lead Agent — an autonomous ML training strategist.
 Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
-Consider: task type (rl/sft/ml/mlx_lora/dpo/grpo), algorithm selection, hyperparameters,
+Consider: task type (rl/sft/ml/mlx_lora/dpo/grpo/distill), algorithm selection, hyperparameters,
 curriculum phases, and how you will measure success against the target metric.
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
@@ -34,14 +34,16 @@ For mlx_lora tasks (Apple Silicon MLX fine-tuning), include "dataset" as a top-l
 with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lora_scale,
 lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
 
-For dpo/grpo tasks (Ensemble routing model fine-tuning via the existing
-ensemble/finetune/dpo_train.py and grpo_train.py scripts): leave "hyperparameters" as an
-empty object {}. Do NOT invent or guess values — the warm-start adapter path, remote
+For dpo/grpo/distill tasks (Ensemble routing model fine-tuning via existing scripts in
+ensemble/finetune/ — dpo_train.py, grpo_train.py, distill_train.py): leave "hyperparameters"
+as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, remote
 finetune_dir/python_bin paths, LoRA config, and all training hyperparameters are supplied
-entirely by the recipe (ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml) and are known-good,
-verified values. A guessed adapter path or mismatched num_layers will crash the run. The
-only fields you should set are "task_type" ("dpo" or "grpo"), "algorithm" (a short label,
-e.g. "DPO" or "GRPO"), and "reasoning".
+entirely by the recipe (ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml)
+and are known-good, verified values. A guessed adapter path or mismatched num_layers will
+crash the run. The only fields you should set are "task_type" ("dpo", "grpo", or "distill"),
+"algorithm" (a short label, e.g. "DPO", "GRPO", "Distill"), and "reasoning". Use "distill"
+when the goal is to teach the routing model correct decisions from a stronger teacher model
+(knowledge distillation / targeted SFT); use "dpo"/"grpo" for preference/RL fine-tuning.
 
 For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
 Available environments:
@@ -57,19 +59,20 @@ You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaue
 Given the current metrics, training history, and escalation level, propose a strategic pivot.
 Respond with valid JSON.
 
-For dpo/grpo tasks (Ensemble routing model fine-tuning): almost every hyperparameter is
+For dpo/grpo/distill tasks (Ensemble routing model fine-tuning): almost every hyperparameter is
 recipe-locked and CANNOT be changed by a pivot — the warm-start adapter path, LoRA config,
 learning_rate, beta, epochs, and everything else are known-good values tuned against a specific
-adapter (ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml); any other value you propose for them is
-silently ignored, and so is any algorithm switch (task type is locked). The PPO/DQN ranges and
-escalation-level guidance below do NOT apply to dpo/grpo. The ONLY hyperparameters a dpo/grpo
-pivot can actually affect are these preference-pair sampling-diversity knobs, within these
-bounds:
-  - "temp" (sampling temperature): 0.7 – 1.5
+adapter (ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml); any other
+value you propose for them is silently ignored, and so is any algorithm switch (task type is
+locked). The PPO/DQN ranges and escalation-level guidance below do NOT apply to these. The ONLY
+hyperparameters one of these pivots can actually affect, within these bounds:
+  - "temp" (sampling temperature): 0.7 – 1.5           (dpo/grpo only)
   - "k_collect" (DPO only — candidates sampled per case): 4 – 16
   - "num_generations" (GRPO only — generations per group): 2 – 4
-If a dpo/grpo run is plateaued, propose a small change to these within range via "adjustments"
-and explain your reasoning in "reason" — do not propose anything else, it will be ignored.
+  - "iters" (distill only — mlx_lm.lora training steps): 200 – 800
+If such a run is plateaued, propose a small change to the knob(s) valid for its task type via
+"adjustments" and explain your reasoning in "reason" — do not propose anything else, it will be
+ignored.
 
 Escalation levels — follow the level provided in the user message (RL task types only):
   Level 0 (first plateau): tune hyperparameters only. Small changes — adjust learning_rate,
@@ -109,7 +112,7 @@ _PLAN_SCHEMA = {
         "plan": {
             "type": "object",
             "properties": {
-                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo"]},
+                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill"]},
                 "algorithm": {"type": "string"},
                 "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},
@@ -212,16 +215,22 @@ class LeadAgent:
                 f"{json.dumps(tried_architectures)}. Propose something structurally different in "
                 f"depth or width (e.g. a different number of layers, not just resized existing ones)."
             )
-        if current_algorithm.upper() in ("DPO", "GRPO"):
-            _sampling_key = "num_generations" if current_algorithm.upper() == "GRPO" else "k_collect"
+        if current_algorithm.upper() in ("DPO", "GRPO", "DISTILL"):
+            if current_algorithm.upper() == "DISTILL":
+                _lever_desc = "\"iters\" (200–800), the mlx_lm.lora training-step count"
+            else:
+                _sampling_key = "num_generations" if current_algorithm.upper() == "GRPO" else "k_collect"
+                _lever_desc = (
+                    f"\"temp\" (0.7–1.5) and \"{_sampling_key}\" (see the bounds above), "
+                    f"to vary preference-pair sampling diversity"
+                )
             escalation_desc = (
                 f"This is a {current_algorithm.upper()} fine-tuning task, not RL — the "
                 f"escalation levels and PPO/DQN guidance below do NOT apply, at any level. "
                 f"There is no reward shaping, architecture, or algorithm lever available for "
                 f"this task type; a switch to another algorithm is always ignored. The only "
-                f"levers you can actually pull are \"temp\" (0.7–1.5) and \"{_sampling_key}\" "
-                f"(see the bounds above) in \"adjustments\", to vary preference-pair sampling "
-                f"diversity. Propose a small, incremental change to these."
+                f"lever you can actually pull is {_lever_desc} in \"adjustments\". "
+                f"Propose a small, incremental change."
             )
         elif algorithm_locked:
             escalation_desc = {

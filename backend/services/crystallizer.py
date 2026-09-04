@@ -131,7 +131,7 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
     # Clean hyperparameters: strip trainer-irrelevant keys
     if task_type == "rl":
         hyperparams = _clean_rl_hyperparams(raw_hp, trainer_type=trainer_type, algorithm=algorithm)
-    elif task_type in ("dpo", "grpo"):
+    elif task_type in ("dpo", "grpo", "distill"):
         # Real incident: plan.hyperparameters for dpo/grpo is near-fiction — LeadAgent
         # invents generic SFT-style keys (batch_size, iters, mask_prompt, unfilled
         # "/path/to/adapter" placeholders) that code_generator.py's _resolve_hyperparams()
@@ -154,7 +154,7 @@ def _build_recipe_content(mission: Mission, score: Optional[float], lessons: lis
     # dpo/grpo training has no phased-curriculum concept (dpo_train.py/grpo_train.py
     # take a single flat hyperparameter set, no --phase flag) — the LLM's plan
     # occasionally invents one anyway (see incident above); never crystallize it.
-    curriculum = plan.get("curriculum_phases") if task_type not in ("dpo", "grpo") else None
+    curriculum = plan.get("curriculum_phases") if task_type not in ("dpo", "grpo", "distill") else None
     lesson_notes = [l["text"][:120] for l in lessons[:3]] if lessons else []
     domain = _infer_domain(plan, task_type, mission.goal)
 

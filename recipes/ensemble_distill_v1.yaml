@@ -1,0 +1,78 @@
+name: ensemble_distill_v1
+version: "1.0.0"
+created_at: "2026-09-04"
+task_type: distill
+domain: NLP
+description: >
+  Knowledge distillation for the Ensemble routing model. A strong teacher
+  (conductor_gemma.md + gemma3:12b via Ollama) generates correct routing
+  completions for the eval cases; the weak student (conductor_min.md +
+  gemma-3-12b-it-4bit) is SFT'd via mlx_lm.lora to imitate them, then scored by
+  the same routing oracle dpo/grpo use. Wraps ensemble/finetune/distill_train.py
+  — astra only orchestrates dispatch, telemetry, and pivoting. Runs on the Mac
+  Mini (~/finetune holds the script + adapters, ~/finetune-env has mlx_lm, the
+  teacher is served by the mini's own Ollama on :11434).
+
+hyperparameters:
+  # ── Remote host block ──────────────────────────────────────────────────────
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  finetune_dir: /Users/kewang/finetune          # remote host path to the ensemble/finetune checkout
+  python_bin: /Users/kewang/finetune-env/bin/python
+  adapter: adapters/retrain_best                 # warm-start = the ensemble SFT baseline (SFT continues the SFT lineage, NOT grpo_v9_min/best which is post-RL)
+  prompt_template: backend/prompts/conductor_min.md   # the sole fine-tuning target prompt
+  teacher_model: gemma3:12b                      # served by the mini's Ollama
+  ollama_url: http://localhost:11434             # localhost on the mac-mini (the teacher call is the only network call distill_train.py makes)
+  routing_only: true
+
+  # ── LoRA (must match the warm-start adapter's config) ──────────────────────
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # ── mlx_lm.lora training ──────────────────────────────────────────────────
+  # Starting point, not yet tuned against distill_train.py (which does not exist
+  # yet — see the note below). iters is the ONLY hyperparameter a pivot may vary
+  # (200–800); everything else is recipe-locked, same policy as dpo/grpo.
+  iters: 500
+  batch_size: 1
+  learning_rate: 0.00001          # 1e-5 — mlx_lm.lora's usual range for a 12B 4-bit LoRA
+  steps_per_eval: 50
+  save_every: 50
+  max_seq_len: 2560
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# Empirically-observed ceiling for this recipe + gemma-3-12b-it-4bit + the
+# routing eval set. Set generously: unlike dpo/grpo — which cannot beat the
+# converged grpo_v9_min/best warm-start (0.859 on the 71-case static set; see
+# ensemble_dpo_v1.yaml's 2026-09-03 sweep) — SFT/distillation is not bounded by
+# that overfitting dynamic; SFT-only previously reached ~0.96 on the old
+# 133-case full eval. Missions above 0.95 (beyond the noise margin) are rejected
+# at creation. Tighten once distill_train.py has produced real numbers.
+metric_ceiling:
+  pass_rate: 0.95
+
+# NOT YET RUNNABLE. ensemble/finetune/distill_train.py does not exist. astra's
+# distill task type is fully wired (Phase 42) and dispatches a
+# {finetune_dir}/distill_train.py os.execv wrapper with the args above — but a
+# distill mission fails at launch until that script is authored on the Mac Mini
+# side. It is a thin chain of functions that already exist:
+#   - prepare_finetune_data.generate_teacher_completions(cases, ollama_url) +
+#     build_routing_examples(...) → data_ft/{train,valid}.jsonl
+#   - mlx_lm.lora --train --data ~/finetune/data_ft --adapter-path <save-dir> ...
+#   - grpo_train.run_routing_eval(...) every --steps-per-eval, save <save-dir>/best/
+# Expected CLI + stdout contract (parsed by astra):
+#   args: --model --adapter --save-dir --prompt-template --teacher-model
+#         --ollama-url --num-layers --lora-rank --lora-scale --lora-dropout
+#         --iters --batch-size --learning-rate --steps-per-eval --save-every
+#         --max-seq-len --mask-prompt [--focus-cases id,id,...]
+#   stdout: "Baseline: X% (n/total)" once; "total_steps=N" once;
+#           "Step N/M loss=X.XXXX" per step; "Pass rate: X% (n/total)" per eval
+#           + final; "Best pass rate during training: X%" at the end
+#   writes: <save-dir>/adapters.safetensors and (on a new best) <save-dir>/best/
+#
+# No astra-managed dataset — the routing oracle is a hardcoded constant
+# (backend/core/eval_cases.yaml, relative to finetune_dir). Post-training
+# goal-metric eval reuses finetune/bare_eval.py --adapter <checkpoint_dir>/best,
+# same as dpo/grpo.

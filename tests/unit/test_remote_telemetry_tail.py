@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.loop.state_machine import (
-    LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE, _COLLECT_PROGRESS_RE,
+    LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE, _DISTILL_LOSS_RE,
+    _COLLECT_PROGRESS_RE,
 )
 
 
@@ -50,6 +51,14 @@ def test_dpo_loss_regex_matches_epoch_line():
     assert match is not None
     assert match.group(1) == "2"
     assert match.group(2) == "0.5891"
+
+
+def test_distill_loss_regex_matches_step_line():
+    line = "Step   40/500  epoch=1  loss=0.4210  312s"
+    match = _DISTILL_LOSS_RE.search(line)
+    assert match is not None
+    assert match.group(1) == "40"
+    assert match.group(2) == "0.4210"
 
 
 # ── _tail_remote_metrics ───────────────────────────────────────────────────────
