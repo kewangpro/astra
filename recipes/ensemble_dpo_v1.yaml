@@ -61,12 +61,29 @@ hyperparameters:
   # (~40-80x) at the same lr, so those three data points ("5e-7 too weak",
   # "2e-6 overfits", "5e-6 collapses") no longer transfer. Per the ensemble
   # guidance, lr dropped 2e-6 -> 3e-7 as the starting point for a fresh offline
-  # re-tune; treat 3e-7 as a guess, not a validated value. max_grad_norm stays
-  # 1.0 and is now load-bearing (with the large summed gradient the clip almost
-  # always binds, so lr ~= the actual per-step size).
+  # re-tune. max_grad_norm stays 1.0 and is now load-bearing (with the large
+  # summed gradient the clip almost always binds, so lr ~= the per-step size).
+  #
+  # 2026-09-03: offline 3x3 beta/lr sweep (beta {0.1,0.3,0.5} x lr {3e-7,1e-6,
+  # 3e-6}, --load-pairs on 9e7cc2df's 69 pairs, epochs=1, 71-case static eval,
+  # warm=grpo_v9_min/best @ 85.9%). best-during-training -> final per config:
+  #   0.1: 3e-7 85.9->83.1 | 1e-6 84.5->81.7 | 3e-6 83.1->7.0
+  #   0.3: 3e-7 85.9->85.9 | 1e-6 87.3->78.9 | 3e-6 84.5->63.4
+  #   0.5: 3e-7 87.3->83.1 | 1e-6 85.9->77.5 | 3e-6 76.1->59.2
+  # Conclusions: (1) NOTHING held a gain to end-of-training — best final is
+  # 85.9% (= warm-start). (2) The peak ever seen is 87.3% (62/71, +1 case), a
+  # transient mid-training spike, non-reproducible (dpo_train shuffles unseeded).
+  # (3) lr 3e-6 collapses at every beta; 3e-7 is the only stable lr; beta barely
+  # matters. DPO does not improve this converged checkpoint — hyperparameters
+  # are exhausted. The remaining routing gains need targeted SFT / prompt work
+  # (the 9 cases failing on warm-start AND every sweep config: 3 shell,
+  # route_aws_cost_visualize_regression, route_meta_mcp_servers,
+  # route_tier_awareness_core_skill_available, route_mission_queued_status,
+  # 2 starved-class), not DPO tuning. Keeping beta 0.1 / lr 3e-7 as the least
+  # harmful config; a DPO mission here will at best tie the warm-start.
   epochs: 1
   beta: 0.1
-  learning_rate: 0.0000003      # 3e-7 — re-tune starting point under the summed-log-prob loss
+  learning_rate: 0.0000003      # 3e-7 — only stable lr under the summed-log-prob loss (2026-09-03 sweep)
   max_grad_norm: 1.0
   steps_per_eval: 15
   eval_max_tokens: 256
