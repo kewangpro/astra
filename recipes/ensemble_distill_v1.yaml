@@ -18,7 +18,10 @@ hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to the ensemble/finetune checkout
   python_bin: /Users/kewang/finetune-env/bin/python
-  adapter: adapters/retrain_best                 # warm-start = the ensemble SFT baseline (SFT continues the SFT lineage, NOT grpo_v9_min/best which is post-RL)
+  adapter: adapters/retrain_best                 # warm-start = the current best adapter. NOTE: retrain_best IS grpo_v9_min/best,
+                                                 # byte-identical (MD5 f37512c9, 24,936,525 bytes, verified on both machines
+                                                 # 2026-09-05) since the 2026-07-02 promotion — see FINETUNE.md:149 and :540.
+                                                 # It is NOT a separate pre-RL SFT baseline; distill warm-starts from post-RL weights.
   prompt_template: backend/prompts/conductor_min.md   # the sole fine-tuning target prompt
   teacher_model: gemma3:12b                      # served by the mini's Ollama
   ollama_url: http://localhost:11434             # localhost on the mac-mini (the teacher call is the only network call distill_train.py makes)

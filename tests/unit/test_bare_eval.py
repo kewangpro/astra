@@ -154,6 +154,50 @@ class TestRunBareEval:
         assert "--adapter adapters/astra_mission-_iter134/best" not in cmd
 
 
+class TestDistillHeldOutMetric:
+    """LoopStateMachine._distill_held_out_metric — distill's goal metric comes
+    from the training log's held-out "Best pass rate during training:" line, NOT
+    a full-set bare_eval.py run (which leaks training cases and reports a
+    different number than the floor's held-out "Baseline:" line — that mismatch
+    doom-looped mission b790c69d for ~9h)."""
+
+    def _sm_with_log(self, tmp_path, contents):
+        sm = _bare_state_machine()
+        log = tmp_path / "sandbox.log"
+        log.write_text(contents)
+        sm._sandbox = MagicMock()
+        sm._sandbox.get_log_path.return_value = str(log)
+        return sm
+
+    def test_parses_best_pass_rate_during_training(self, tmp_path):
+        sm = self._sm_with_log(tmp_path,
+            "Baseline: 87.5% (7/8)\n"
+            "Pass rate: 87.5% (7/8)\n"
+            "Pass rate: 100.0% (8/8)\n"
+            "=== Final Eval ===\n"
+            "Pass rate: 87.5% (7/8)\n"
+            "Best pass rate during training: 100.0%\n"
+        )
+        assert sm._distill_held_out_metric("m-123") == pytest.approx(1.0)
+
+    def test_falls_back_to_last_pass_rate_line(self, tmp_path):
+        # crashed before the summary line — use the final in-log held-out eval
+        sm = self._sm_with_log(tmp_path,
+            "Baseline: 87.5% (7/8)\nPass rate: 87.5% (7/8)\nPass rate: 75.0% (6/8)\n"
+        )
+        assert sm._distill_held_out_metric("m-123") == pytest.approx(0.75)
+
+    def test_returns_none_when_log_missing(self, tmp_path):
+        sm = _bare_state_machine()
+        sm._sandbox = MagicMock()
+        sm._sandbox.get_log_path.return_value = str(tmp_path / "nope.log")
+        assert sm._distill_held_out_metric("m-123") is None
+
+    def test_returns_none_when_no_pass_rate_at_all(self, tmp_path):
+        sm = self._sm_with_log(tmp_path, "Loading model...\nTraceback\n")
+        assert sm._distill_held_out_metric("m-123") is None
+
+
 class TestResolveAdapterOrBare:
     """LoopStateMachine._resolve_adapter_or_bare — the existence-checked
     resolution used by both _run_bare_eval and the dpo/grpo warm-start

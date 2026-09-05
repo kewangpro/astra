@@ -59,6 +59,37 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 # This is the metric bare_eval.py itself labels authoritative, so prefer it.
 _BARE_EVAL_STATIC_RE = re.compile(r"Static-skill routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
 
+# distill_train.py trains on a train split and reports "Pass rate:" / "Baseline:"
+# against a held-out split (unlike dpo/grpo, whose "Pass rate:" is the full case
+# set). Its goal metric must therefore come from the SAME held-out population the
+# floor's "Baseline:" line does — not from a full-set bare_eval.py run, which
+# both leaks training cases and reports a different number (~0.89 vs a held-out
+# 1.0), which floored every iteration and doom-looped mission b790c69d for ~9h.
+_DISTILL_BEST_RE = re.compile(r"Best pass rate during training:\s*([\d.]+)%")
+
+# distill_train.py samples batches with replacement for a fixed --iters, so its
+# "total_steps=N" is always the flag value and can't signal a degenerate run the
+# way dpo's shrinking pair count does. Its training-example count can: a run left
+# with a handful of usable teacher labels memorises them and reports a fake-high
+# held-out score. Heuristic floor — below this the run is definitely degenerate;
+# above it, the held-out set size (ensemble-side) is what governs trust.
+_DISTILL_EXAMPLES_RE = re.compile(r"(\d+)\s+examples ready for training")
+DISTILL_MIN_TRAIN_EXAMPLES = 10
+
+# distill's held-out split is a function of the input case list, not just the
+# per-mission seed: removing or adding a single case in eval_cases.yaml reshuffles
+# which cases land in the held-out set even at an identical seed (verified
+# ensemble-side). That file is actively edited — 14 cases were added mid-project —
+# so a multi-hour mission can silently end up comparing iteration N's held-out
+# score against iteration N-1's baseline measured on a *different* population:
+# exactly the apples-to-oranges bug the _distill_held_out_metric fix closed,
+# re-entering through a different door. "Case split: A train / B held-out valid"
+# gives a free per-iteration fingerprint (A+B) with no extra remote call; when it
+# moves mid-mission the baseline comparison is suppressed rather than trusted.
+# Count-only for now — upgrade to hashing the held-out ids once distill_train.py
+# logs them (requested ensemble-side).
+_DISTILL_CASE_SPLIT_RE = re.compile(r"Case split:\s*(\d+)\s+train\s*/\s*(\d+)\s+held-out")
+
 # Training-signal metric ("loss") shown continuously in MetricChart's history,
 # same relationship pass_rate has to mean_reward for RL, or eval_loss doubling
 # as both signal and goal metric for ml/sft. grpo_train.py prints loss every
@@ -535,7 +566,14 @@ class LoopStateMachine:
                             mission_id, f"Evaluating {metric_name}…", event_type="info"
                         )
                         _mission_task_type_for_eval = plan.get("task_type")
-                        if _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
+                        if _mission_task_type_for_eval == "distill":
+                            # distill's "Pass rate:" / "Baseline:" are a held-out
+                            # split, not the full case set — score it against that
+                            # same population, not a leaky full-set bare_eval.
+                            goal_val = self._distill_held_out_metric(mission_id)
+                            if goal_val is None:
+                                goal_val = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
+                        elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
                             goal_val = await asyncio.to_thread(
                                 self._run_bare_eval, mission_id, plan, current_iteration
                             )
@@ -571,7 +609,9 @@ class LoopStateMachine:
                             _spe = int(_eval_hp.get("steps_per_eval", 0))
                         except (TypeError, ValueError):
                             _spe = 0
-                        _baseline, _reliable = self._dpo_run_diagnostics(mission_id, _spe)
+                        _baseline, _reliable = self._dpo_run_diagnostics(
+                            mission_id, _spe, task_type=plan.get("task_type", "dpo"),
+                        )
                         _raw_goal_val = goal_val
                         if _baseline is not None and (
                             not _reliable
@@ -1852,9 +1892,9 @@ class LoopStateMachine:
             return None
 
     def _dpo_run_diagnostics(
-        self, mission_id: str, steps_per_eval: int
+        self, mission_id: str, steps_per_eval: int, task_type: str = "dpo",
     ) -> tuple[Optional[float], bool]:
-        """Parse this iteration's DPO/GRPO training log for
+        """Parse this iteration's fine-tune training log for
         (warm_start_baseline, eval_is_reliable).
 
         warm_start_baseline: the "Baseline: X% (n/total)" pass rate dpo_train.py
@@ -1871,6 +1911,15 @@ class LoopStateMachine:
           despite an 0.833 warm-start, for 600+ iterations, because the
           2026-08-02 steps_per_eval tightening silently stopped taking effect
           once pair counts dropped below it.
+
+          That step-count gate is meaningless for `distill`: distill_train.py
+          samples batches with replacement for a fixed --iters, so it always
+          reports total_steps=500 no matter how few teacher labels actually
+          succeeded — a run with 2 usable training examples looks identical to a
+          healthy one, overfits them, and reports a fake-high held-out score.
+          For distill the gate is the training-example count instead
+          ("N examples ready for training"), floored at
+          DISTILL_MIN_TRAIN_EXAMPLES.
         """
         log_path = self._sandbox.get_log_path(mission_id)
         if not os.path.isfile(log_path):
@@ -1892,6 +1941,44 @@ class LoopStateMachine:
             except ValueError:
                 baseline = None
         reliable = True
+        if task_type == "distill":
+            # Suppress the baseline comparison if the underlying case list moved
+            # since the last iteration — the held-out split reshuffles with it,
+            # so this iteration's score and the stored baseline are no longer the
+            # same population.
+            m = _DISTILL_CASE_SPLIT_RE.search(text)
+            if m:
+                try:
+                    _total = int(m.group(1)) + int(m.group(2))
+                except ValueError:
+                    _total = None
+                if _total is not None:
+                    if not hasattr(self, "_eval_case_total"):
+                        self._eval_case_total: dict = {}
+                    _prev_total = self._eval_case_total.get(mission_id)
+                    self._eval_case_total[mission_id] = _total
+                    if _prev_total is not None and _prev_total != _total:
+                        logger.warning(
+                            "LoopStateMachine: eval_cases.yaml changed mid-mission=%s "
+                            "(%d → %d cases) — held-out split reshuffled, suppressing "
+                            "the baseline comparison for this iteration",
+                            mission_id, _prev_total, _total,
+                        )
+                        return None, True
+            m = _DISTILL_EXAMPLES_RE.search(text)
+            if m:
+                try:
+                    _n_examples = int(m.group(1))
+                except ValueError:
+                    return baseline, True
+                reliable = _n_examples >= DISTILL_MIN_TRAIN_EXAMPLES
+                if not reliable:
+                    logger.warning(
+                        "LoopStateMachine: distill run trained on only %d example(s) "
+                        "(< %d) mission=%s — held-out score treated as unreliable",
+                        _n_examples, DISTILL_MIN_TRAIN_EXAMPLES, mission_id,
+                    )
+            return baseline, reliable
         m = _DPO_TOTAL_STEPS_RE.search(text)
         if m and steps_per_eval > 0:
             try:
@@ -1944,11 +2031,56 @@ class LoopStateMachine:
         )
         return bare_rel_dir
 
+    def _distill_held_out_metric(self, mission_id: str) -> Optional[float]:
+        """distill's goal metric = the held-out pass rate distill_train.py itself
+        reports ("Best pass rate during training: X%"), read from this iteration's
+        synced training log.
+
+        NOT a full-set bare_eval.py run: distill_train.py trains on the train
+        split, so the full case set includes training cases (leakage), and its
+        full-set number (~0.89) never matches the held-out "Baseline:" line
+        _dpo_run_diagnostics reads (~1.0 once a checkpoint saturates the small
+        held-out set) — that mismatch floored every iteration and doom-looped
+        mission b790c69d for ~9h. Reading the same held-out number keeps the
+        goal metric and the floor baseline on one population.
+        """
+        log_path = self._sandbox.get_log_path(mission_id)
+        if not os.path.isfile(log_path):
+            return None
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                text = f.read()
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: could not read distill log mission=%s: %s", mission_id, exc,
+            )
+            return None
+        m = _DISTILL_BEST_RE.search(text)
+        if m:
+            try:
+                return float(m.group(1)) / 100.0
+            except ValueError:
+                pass
+        # Fall back to the last in-log "Pass rate:" line (the final held-out eval).
+        pr = _PASS_RATE_RE.findall(text)
+        if pr:
+            try:
+                return float(pr[-1][0]) / 100.0
+            except (ValueError, IndexError):
+                pass
+        logger.warning(
+            "LoopStateMachine: no held-out pass rate in distill log mission=%s", mission_id,
+        )
+        return None
+
     def _run_bare_eval(self, mission_id: str, plan: dict, current_iteration: int) -> Optional[float]:
         """Post-training authoritative pass_rate check for dpo/grpo missions,
         via ensemble/finetune/bare_eval.py — the real adapter-discriminating
         eval tool (docs/FINETUNE.md: run_eval.py is saturated and doesn't
         distinguish between adapters; bare_eval.py is the one that does).
+
+        NOT used for distill — bare_eval.py scores the full case set, which for
+        distill includes training cases; see _distill_held_out_metric.
 
         Runs on the Mac Mini over SSH (~12 min per docs); analogous to
         _run_goal_metric_eval for RL missions, which this task type can't use

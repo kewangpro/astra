@@ -1605,6 +1605,73 @@ def test_dpo_diagnostics_steps_per_eval_zero_is_reliable(tmp_path):
     assert reliable is True
 
 
+# distill's reliability gate is the training-example count, not total_steps —
+# distill_train.py samples with replacement for a fixed --iters, so total_steps
+# is always the flag value and can't signal a degenerate run.
+
+_DISTILL_LOG_HEALTHY = """\
+Case split: 127 train / 22 held-out valid
+44 examples ready for training
+total_steps=500
+Baseline: 85.7% (12/14)
+Best pass rate during training: 92.9%
+"""
+
+_DISTILL_LOG_STARVED = """\
+Case split: 5 train / 1 held-out valid
+2 examples ready for training
+total_steps=500
+Baseline: 100.0% (1/1)
+Best pass rate during training: 100.0%
+"""
+
+
+def test_distill_diagnostics_healthy_example_count_is_reliable(tmp_path):
+    sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
+    baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert baseline == pytest.approx(0.857)
+    assert reliable is True
+
+
+def test_distill_diagnostics_too_few_examples_is_unreliable(tmp_path):
+    """total_steps=500 looks healthy, but 2 training examples means the model
+    memorised them — the 100% held-out score is an artifact, not a result."""
+    sm = _sm_with_log(tmp_path, _DISTILL_LOG_STARVED)
+    _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert reliable is False
+
+
+def test_distill_diagnostics_suppresses_baseline_when_case_list_changed(tmp_path):
+    """The held-out split is a function of the input case list, not just the seed:
+    editing eval_cases.yaml mid-mission reshuffles it, so iteration N's score and
+    the stored baseline stop being the same population. Detected via the
+    "Case split:" totals; the baseline is suppressed rather than trusted."""
+    sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)          # 127 + 22 = 149
+    baseline, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert baseline == pytest.approx(0.857)                    # first iteration: trusted
+
+    sm2 = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY.replace("127 train", "129 train"))
+    sm2._eval_case_total = sm._eval_case_total                 # same mission, next iteration
+    baseline2, reliable2 = sm2._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert baseline2 is None                                   # comparison suppressed
+    assert reliable2 is True                                   # but not floored either
+
+
+def test_distill_diagnostics_stable_case_list_keeps_baseline(tmp_path):
+    sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
+    sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    baseline2, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert baseline2 == pytest.approx(0.857)
+
+
+def test_distill_diagnostics_ignores_total_steps_gate(tmp_path):
+    """A distill run with total_steps far below steps_per_eval is still reliable
+    if it had enough training examples — the dpo step-count gate must not apply."""
+    sm = _sm_with_log(tmp_path, "40 examples ready for training\ntotal_steps=5\nBaseline: 80.0% (8/10)\n")
+    _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert reliable is True
+
+
 # ── _clamp_finetune_sampling ─────────────────────────────────────────────────
 
 def test_clamp_finetune_sampling_temp_within_range_unchanged():
