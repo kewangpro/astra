@@ -15,7 +15,7 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from sqlalchemy import select, update
 
@@ -56,8 +56,75 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 # number instead of bare_eval.py's independent, adapter-discriminating check
 # (confirmed live: mission 551839b7's bare_eval ran its full ~19min and printed
 # a real result, but _run_bare_eval logged "no parseable pass rate" both times).
-# This is the metric bare_eval.py itself labels authoritative, so prefer it.
+#
+# THE GOAL METRIC IS THE BLENDED (ALL-CASES) NUMBER, not the static split.
+# bare_eval.py labels the static line "fine-tune target metric" and the blended
+# line "historical bare-oracle number, not the selector"; those labels are
+# backwards and following them cost this project real work. Measured 2026-09-05
+# on the three production-relevant configs:
+#
+#                                              static(71)  mcp(7)  blended(78)
+#   raw 4B + conductor_gemma.md (shipped)       59 (83.1%)  3       62 (79.5%)
+#   grpo_v9_min/best 12B + conductor_min.md     61 (85.9%)  0       61 (78.2%)
+#   distill iter2    12B + conductor_min.md     58 (81.7%)  3       61 (78.2%)
+#
+# Static-only ranks grpo_v9_min/best top and would reject distill iter2 as a
+# 3-case regression (61 -> 58). Blended shows what actually happened: iter2
+# traded 3 static cases for 3 MCP cases against its own warm-start — a wash, not
+# a regression. Static-only cannot see that trade, because it excludes exactly
+# the cases that moved. It also cannot see that the fine-tuned 12B loses to the
+# raw 4B already in production once all 78 cases are counted. A metric that
+# excludes a capability silently excludes it from the objective too: grpo_v9's
+# MCP 0/7 is a capability the base model had (3/7) and training destroyed
+# unpenalised. Blended is the selector; static and MCP are diagnostics, recorded
+# alongside it so an MCP-for-static trade shows in the HUD instead of hiding
+# inside a flat blended line.
+_BARE_EVAL_BLENDED_RE = re.compile(r"Blended \(all cases\):\s*\d+/\d+\s*\(([\d.]+)%\)")
 _BARE_EVAL_STATIC_RE = re.compile(r"Static-skill routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
+_BARE_EVAL_MCP_RE = re.compile(r"Dynamic MCP routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
+
+
+class BareEvalReport(NamedTuple):
+    """One bare_eval.py run, split into selector and diagnostics.
+
+    ``goal`` is what the loop optimises and compares against target_metric;
+    ``static`` and ``mcp`` are recorded but never drive a decision.
+    """
+
+    goal: Optional[float]
+    static: Optional[float]
+    mcp: Optional[float]
+
+
+def _parse_bare_eval_report(stdout: str) -> BareEvalReport:
+    """Parse bare_eval.py stdout into a goal metric plus split diagnostics.
+
+    Two output shapes exist. The split report (whenever the case pool includes
+    MCP cases — every real dpo/grpo/distill mission) prints all three of
+    "Static-skill routing:", "Dynamic MCP routing:" and "Blended (all cases):";
+    the goal is the blended line. A non-split run (``--ids`` scoped to a pure
+    static subset) prints only "Pass rate:", which is already the whole pool it
+    was asked about, so it is the goal on its own terms and leaves both
+    diagnostics None. "Pass rate:" is NOT read as a fallback for a split report
+    that is missing its blended line: bare_eval.py prints the two in mutually
+    exclusive branches, so a split report without "Blended" means the output
+    shape changed and guessing would resurrect the population mismatch this
+    whole change exists to close.
+    """
+    def _pct(pattern, text):
+        m = pattern.search(text)
+        return float(m.group(1)) / 100.0 if m else None
+
+    static = _pct(_BARE_EVAL_STATIC_RE, stdout)
+    mcp = _pct(_BARE_EVAL_MCP_RE, stdout)
+    blended = _pct(_BARE_EVAL_BLENDED_RE, stdout)
+
+    if static is None and mcp is None:
+        m = _PASS_RATE_RE.search(stdout)
+        return BareEvalReport(
+            goal=float(m.group(1)) / 100.0 if m else None, static=None, mcp=None
+        )
+    return BareEvalReport(goal=blended, static=static, mcp=mcp)
 
 # distill_train.py trains on a train split and reports "Pass rate:" / "Baseline:"
 # against a held-out split (unlike dpo/grpo, whose "Pass rate:" is the full case
@@ -65,7 +132,39 @@ _BARE_EVAL_STATIC_RE = re.compile(r"Static-skill routing:\s*\d+/\d+\s*\(([\d.]+)
 # floor's "Baseline:" line does — not from a full-set bare_eval.py run, which
 # both leaks training cases and reports a different number (~0.89 vs a held-out
 # 1.0), which floored every iteration and doom-looped mission b790c69d for ~9h.
-_DISTILL_BEST_RE = re.compile(r"Best pass rate during training:\s*([\d.]+)%")
+# distill_train.py's headline "Baseline:" / "Pass rate:" lines carry the STATIC
+# numbers (that anchor is a documented contract — see ensemble docs/FINETUNE.md
+# Method D — because _PASS_RATE_RE and _DPO_BASELINE_RE key on the colon sitting
+# immediately after the phrase). The static/MCP/blended breakdown goes on
+# indented follow-up lines beneath each anchor:
+#
+#   Baseline: 90.9% (10/11)
+#     static skills: 10/11 (90.9%)  ← learnable subset only; drives selection
+#     dynamic MCP:   0/7 (0.0%)     ← runtime-only, absent from the prompt
+#     blended:       11/12 (91.7%)  ← overall capability; quote THIS
+#
+# distill's goal metric is blended, so its floor baseline must be blended too.
+# Reading the headline "Baseline:" for a distill mission would compare a blended
+# goal against a STATIC baseline, and blended sits below static whenever the MCP
+# subset scores worse than the static one — i.e. essentially always (85.9 static
+# vs 78.2 blended for grpo_v9_min/best). Every iteration would floor against an
+# unreachable baseline: the b790c69d doom loop again, one population apart.
+_DISTILL_BLENDED_LINE_RE = re.compile(
+    r"^[ \t]+blended:\s*(\d+)/(\d+)\s*\(([\d.]+)%\)", re.MULTILINE
+)
+
+# End-of-run summary. distill_train.py selects best/ on the STATIC rate — MCP
+# skills are absent from the training prompt, so letting them move selection
+# would be noise — but reports the blended rate *of the selected checkpoint*,
+# captured at the moment of selection. That is the number to record and floor:
+# it describes the weights actually written to best/ and chained forward, not
+# the final step's. The static figure is kept as a selection-scale diagnostic.
+_DISTILL_BEST_BLENDED_RE = re.compile(
+    r"Best blended pass rate during training:\s*([\d.]+)%"
+)
+_DISTILL_BEST_STATIC_RE = re.compile(
+    r"Best static pass rate during training:\s*([\d.]+)%"
+)
 
 # distill_train.py samples batches with replacement for a fixed --iters, so its
 # "total_steps=N" is always the flag value and can't signal a degenerate run the
@@ -577,6 +676,22 @@ class LoopStateMachine:
                             goal_val = await asyncio.to_thread(
                                 self._run_bare_eval, mission_id, plan, current_iteration
                             )
+                            # Record the static/MCP split alongside the blended
+                            # goal. Diagnostics only — nothing reads these back
+                            # to make a decision. Without them a run that trades
+                            # MCP cases for static ones (distill iter2 did
+                            # exactly that: -3 static, +3 MCP) shows up as a
+                            # flat blended line with no indication anything moved.
+                            _split = getattr(self, "_bare_eval_split", {}).pop(mission_id, None)
+                            if _split is not None:
+                                for _diag_name, _diag_val in (
+                                    ("pass_rate_static", _split.static),
+                                    ("pass_rate_mcp", _split.mcp),
+                                ):
+                                    if _diag_val is not None:
+                                        await self._append_telemetry_metric(
+                                            mission_id, _diag_name, _diag_val, current_iteration
+                                        )
                             if goal_val is None:
                                 # The official post-training eval failed/crashed
                                 # (e.g. missing checkpoint, transient SSH error) —
@@ -613,16 +728,23 @@ class LoopStateMachine:
                             mission_id, _spe, task_type=plan.get("task_type", "dpo"),
                         )
                         _raw_goal_val = goal_val
+                        if plan.get("task_type") == "distill":
+                            _margin = self._distill_floor_margin(
+                                getattr(self, "_distill_blended_total", {}).get(mission_id)
+                            )
+                        else:
+                            _margin = DPO_BASELINE_FLOOR_MARGIN
                         if _baseline is not None and (
                             not _reliable
-                            or goal_val < _baseline - DPO_BASELINE_FLOOR_MARGIN
+                            or goal_val < _baseline - _margin
                         ):
                             _was_floored = True
                             _why = (
                                 "best-checkpoint tracker never ran "
                                 f"(<{_spe} training steps) — scored the overfit final adapter"
                                 if not _reliable
-                                else f"raw {goal_val:.3f} < warm-start baseline {_baseline:.3f}"
+                                else f"raw {goal_val:.3f} < warm-start baseline {_baseline:.3f} "
+                                     f"(margin {_margin:.3f})"
                             )
                             if _prev_best is None:
                                 # First evaluated iteration regressed. There is no
@@ -1940,6 +2062,30 @@ class LoopStateMachine:
                 baseline = float(m.group(1)) / 100.0
             except ValueError:
                 baseline = None
+        if task_type == "distill":
+            # The headline "Baseline:" line is the STATIC rate, but distill's
+            # goal metric is blended — floor like-for-like or not at all. Take
+            # the blended figure from the indented breakdown directly beneath
+            # that anchor (not the file's first blended line, which for a
+            # resumed/re-tailed log could belong to a later periodic eval).
+            _blended = self._blended_under_anchor(text, m) if m else None
+            # Remember the held-out blended denominator so the floor margin can
+            # be scaled to one case of movement (see _distill_floor_margin).
+            _bm = _DISTILL_BLENDED_LINE_RE.search(text, m.end()) if m else None
+            if _bm:
+                if not hasattr(self, "_distill_blended_total"):
+                    self._distill_blended_total: dict = {}
+                try:
+                    self._distill_blended_total[mission_id] = int(_bm.group(2))
+                except (ValueError, IndexError):
+                    pass
+            if _blended is None:
+                logger.warning(
+                    "LoopStateMachine: distill log has a Baseline: line but no blended "
+                    "breakdown under it mission=%s — suppressing the floor rather than "
+                    "comparing a blended goal against a static baseline", mission_id,
+                )
+            baseline = _blended
         reliable = True
         if task_type == "distill":
             # Suppress the baseline comparison if the underlying case list moved
@@ -2031,6 +2177,41 @@ class LoopStateMachine:
         )
         return bare_rel_dir
 
+    @staticmethod
+    def _distill_floor_margin(blended_total: Optional[int]) -> float:
+        """Floor margin for distill, widened to tolerate one case of movement.
+
+        distill's held-out slice is small (~23 cases) and its MCP stratum is
+        exactly 1 case, so a single case flipping moves the blended rate by
+        ~1/total — about 4.3 points at 23, well past the 3-point
+        DPO_BASELINE_FLOOR_MARGIN. At the fixed margin, ordinary one-case noise
+        reads as a regression and floors the iteration; a floored iteration is a
+        non-result that never chains, so the mission would stall on noise alone.
+        Scale the margin to just over one case so only a genuine multi-case drop
+        floors. Never narrower than the dpo/grpo default.
+        """
+        if not blended_total:
+            return DPO_BASELINE_FLOOR_MARGIN
+        return max(DPO_BASELINE_FLOOR_MARGIN, 1.05 / blended_total)
+
+    @staticmethod
+    def _blended_under_anchor(text: str, anchor: "re.Match") -> Optional[float]:
+        """Blended rate from the indented breakdown directly under ``anchor``.
+
+        distill_train.py prints the breakdown immediately beneath each
+        "Baseline:" / "Pass rate:" line, so the blended figure belonging to a
+        given anchor is the first indented "blended:" line after it. Scanning
+        the whole log instead would pick up whichever eval happened to print
+        first, which is only the same thing when the log holds exactly one.
+        """
+        m = _DISTILL_BLENDED_LINE_RE.search(text, anchor.end())
+        if not m:
+            return None
+        try:
+            return float(m.group(3)) / 100.0
+        except (ValueError, IndexError):
+            return None
+
     def _distill_held_out_metric(self, mission_id: str) -> Optional[float]:
         """distill's goal metric = the held-out pass rate distill_train.py itself
         reports ("Best pass rate during training: X%"), read from this iteration's
@@ -2055,19 +2236,29 @@ class LoopStateMachine:
                 "LoopStateMachine: could not read distill log mission=%s: %s", mission_id, exc,
             )
             return None
-        m = _DISTILL_BEST_RE.search(text)
+        m = _DISTILL_BEST_BLENDED_RE.search(text)
         if m:
             try:
                 return float(m.group(1)) / 100.0
             except ValueError:
                 pass
-        # Fall back to the last in-log "Pass rate:" line (the final held-out eval).
-        pr = _PASS_RATE_RE.findall(text)
-        if pr:
-            try:
-                return float(pr[-1][0]) / 100.0
-            except (ValueError, IndexError):
-                pass
+        # Fall back to the blended breakdown under the LAST "Pass rate:" anchor
+        # (the final held-out eval). Note this describes the final adapter, not
+        # the best/ checkpoint that gets chained — they differ whenever the peak
+        # was not the last step — so it is a degraded answer, not an equivalent
+        # one. Never fall back to the "Pass rate:" headline itself: that is the
+        # static rate, and returning it as a blended-scale goal metric is the
+        # population mismatch this whole path exists to prevent.
+        anchors = list(_PASS_RATE_RE.finditer(text))
+        if anchors:
+            blended = self._blended_under_anchor(text, anchors[-1])
+            if blended is not None:
+                logger.warning(
+                    "LoopStateMachine: distill log has no 'Best blended pass rate during "
+                    "training' line mission=%s — falling back to the final eval's blended "
+                    "rate, which describes the final adapter rather than best/", mission_id,
+                )
+                return blended
         logger.warning(
             "LoopStateMachine: no held-out pass rate in distill log mission=%s", mission_id,
         )
@@ -2122,22 +2313,23 @@ class LoopStateMachine:
             logger.warning("LoopStateMachine: bare_eval failed mission=%s: %s", mission_id, exc)
             return None
 
-        # Prefer the static-skill split metric (bare_eval.py's own "fine-tune
-        # target metric" label) when present; fall back to the blended
-        # "Pass rate:" line for a non-split run (e.g. --ids scoped to pure
-        # static cases, where bare_eval.py never enters the split branch).
-        static_match = _BARE_EVAL_STATIC_RE.search(result.stdout)
-        if static_match:
-            return float(static_match.group(1)) / 100.0
-        match = _PASS_RATE_RE.search(result.stdout)
-        if not match:
+        report = _parse_bare_eval_report(result.stdout)
+
+        # Stash the split for the caller to record as diagnostics. Keyed by
+        # mission so a concurrent mission's report can't be misattributed.
+        if report.static is not None or report.mcp is not None:
+            if not hasattr(self, "_bare_eval_split"):
+                self._bare_eval_split = {}
+            self._bare_eval_split[mission_id] = report
+
+        if report.goal is None:
             logger.warning(
                 "LoopStateMachine: bare_eval produced no parseable pass rate mission=%s "
                 "stdout_tail=%s stderr_tail=%s",
                 mission_id, result.stdout[-500:], result.stderr[-500:],
             )
             return None
-        return float(match.group(1)) / 100.0
+        return report.goal
 
     async def _append_telemetry_metric(
         self, mission_id: str, name: str, value: float, iteration: int

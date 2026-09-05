@@ -12,9 +12,15 @@ from backend.routers.missions import _CEILING_TARGET_MARGIN, _reject_unreachable
 # — see recipes/ensemble_dpo_v1.yaml). The "declares X" tests below pin the
 # current values so an accidental recipe edit is caught; the enforcement tests
 # derive from the live ceiling so they don't rebreak on a deliberate re-tune.
-_DPO_CEILING = 0.87
-_GRPO_CEILING = 0.84
-_DISTILL_CEILING = 0.95
+#
+# 2026-09-05: all three rebased from the 71-case static scale to the blended
+# all-78-case scale when pass_rate's meaning changed (see the comment on
+# _BARE_EVAL_BLENDED_RE in backend/loop/state_machine.py). These are NOT a
+# re-tune of the same quantity — they measure a different population, and the
+# old values would have become near-unreachable targets had they been left.
+_DPO_CEILING = 0.85
+_GRPO_CEILING = 0.83
+_DISTILL_CEILING = 0.92
 
 
 def test_dpo_recipe_declares_pass_rate_ceiling():

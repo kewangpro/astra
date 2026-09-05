@@ -41,13 +41,17 @@ class TestRunBareEval:
 
         assert result == pytest.approx(0.825)
 
-    def test_parses_static_skill_split_metric_when_present(self):
+    def test_parses_blended_metric_from_split_report(self):
         """bare_eval.py switches to a static/dynamic-MCP split report whenever the
         case pool has MCP cases (true for every real dpo/grpo/distill mission) —
         it then prints "Static-skill routing:", never "Pass rate:", so this must
         not silently fall through to "no parseable pass rate" (real incident:
         mission 551839b7's bare_eval ran its full ~19 min and produced a genuine
-        result that _run_bare_eval failed to parse both times it ran)."""
+        result that _run_bare_eval failed to parse both times it ran).
+
+        The goal metric is the BLENDED line, not the static split, despite
+        bare_eval.py's own labels claiming the reverse — see the module-level
+        comment on _BARE_EVAL_BLENDED_RE for the measurements that settled it."""
         sm = _bare_state_machine()
         stdout = (
             "Model:    mlx-community/gemma-3-12b-it-4bit\n"
@@ -60,12 +64,57 @@ class TestRunBareEval:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
             result = sm._run_bare_eval("mission-abc12345", _plan(task_type="distill"), 2)
 
-        assert result == pytest.approx(0.909)
+        assert result == pytest.approx(0.872)
+        # The split is stashed for the caller to record as diagnostics.
+        split = sm._bare_eval_split["mission-abc12345"]
+        assert split.static == pytest.approx(0.909)
+        assert split.mcp == pytest.approx(0.0)
 
-    def test_falls_back_to_blended_pass_rate_when_no_static_split(self):
+    def test_split_report_without_blended_line_returns_none(self):
+        """A split report missing its blended line means bare_eval.py's output
+        shape changed. Falling back to the static line would silently reinstate
+        the static-scale selector this change removed — and comparing a static
+        number against a blended-scale target_metric is the same population
+        mismatch that doom-looped mission b790c69d. Fail loudly instead."""
+        sm = _bare_state_machine()
+        stdout = (
+            "Static-skill routing: 61/71 (85.9%)\n"
+            "Dynamic MCP routing:  0/7 (0.0%)\n"
+        )
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout=stdout, stderr="")
+            result = sm._run_bare_eval("mission-abc12345", _plan(), 5)
+
+        assert result is None
+
+    def test_blended_selector_prefers_wash_over_static_regression(self):
+        """The case that motivated the change. distill iter2 scored 58/71 static
+        (down 3 from its grpo_v9_min/best warm-start's 61) but 3/7 MCP (up 3
+        from 0), for an identical 61/78 blended. Static-only rejects it as a
+        regression; blended reports the wash it actually is."""
+        sm = _bare_state_machine()
+        stdout = (
+            "Static-skill routing: 58/71 (81.7%)\n"
+            "Dynamic MCP routing:  3/7 (42.9%)\n"
+            "Blended (all cases):  61/78 (78.2%)\n"
+        )
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout=stdout, stderr="")
+            result = sm._run_bare_eval("mission-abc12345", _plan(task_type="distill"), 2)
+
+        assert result == pytest.approx(0.782)
+        split = sm._bare_eval_split["mission-abc12345"]
+        assert split.static == pytest.approx(0.817)
+        assert split.mcp == pytest.approx(0.429)
+
+    def test_parses_plain_pass_rate_when_report_is_not_split(self):
         """A non-split bare_eval run (e.g. --ids scoped to pure static cases) has
         no "Static-skill routing:" line at all — must still parse the plain
-        "Pass rate:" line rather than treating its absence as a hard requirement."""
+        "Pass rate:" line rather than treating its absence as a hard requirement.
+        That number is the whole pool the run was asked about, so it is the goal
+        on its own terms and leaves both diagnostics unset."""
         sm = _bare_state_machine()
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
@@ -169,23 +218,46 @@ class TestDistillHeldOutMetric:
         sm._sandbox.get_log_path.return_value = str(log)
         return sm
 
-    def test_parses_best_pass_rate_during_training(self, tmp_path):
+    def test_parses_best_blended_pass_rate_during_training(self, tmp_path):
+        """The goal metric is the BLENDED rate of the checkpoint written to
+        best/ — captured by distill_train.py at the moment of selection, so it
+        describes the weights astra chains forward. The headline "Pass rate:"
+        and "Best static pass rate" lines are the static (selection) scale and
+        must not be mistaken for it."""
+        sm = self._sm_with_log(tmp_path,
+            "Baseline: 90.9% (10/11)\n"
+            "  static skills: 10/11 (90.9%)\n"
+            "  dynamic MCP:   0/7 (0.0%)\n"
+            "  blended:       11/12 (91.7%)\n"
+            "Pass rate: 100.0% (11/11)\n"
+            "  blended:       12/18 (66.7%)\n"
+            "Best static pass rate during training: 100.0%\n"
+            "Best blended pass rate during training: 91.7% (11/12)\n"
+        )
+        assert sm._distill_held_out_metric("m-123") == pytest.approx(0.917)
+
+    def test_falls_back_to_blended_under_last_pass_rate_anchor(self, tmp_path):
+        """Crashed before the summary line — use the final eval's blended
+        breakdown. Degraded, not equivalent: it describes the final adapter
+        rather than best/. Must take the blended line under the LAST anchor,
+        not the file's first."""
         sm = self._sm_with_log(tmp_path,
             "Baseline: 87.5% (7/8)\n"
-            "Pass rate: 87.5% (7/8)\n"
-            "Pass rate: 100.0% (8/8)\n"
-            "=== Final Eval ===\n"
-            "Pass rate: 87.5% (7/8)\n"
-            "Best pass rate during training: 100.0%\n"
+            "  blended:       10/15 (66.7%)\n"
+            "Pass rate: 75.0% (6/8)\n"
+            "  blended:       11/15 (73.3%)\n"
         )
-        assert sm._distill_held_out_metric("m-123") == pytest.approx(1.0)
+        assert sm._distill_held_out_metric("m-123") == pytest.approx(0.733)
 
-    def test_falls_back_to_last_pass_rate_line(self, tmp_path):
-        # crashed before the summary line — use the final in-log held-out eval
+    def test_never_falls_back_to_static_headline(self, tmp_path):
+        """A log with anchors but no blended breakdown at all must return None.
+        Returning the "Pass rate:" headline would feed a static number to a
+        blended-scale target and ceiling — the exact population mismatch that
+        doom-looped b790c69d, re-entering through the fallback path."""
         sm = self._sm_with_log(tmp_path,
-            "Baseline: 87.5% (7/8)\nPass rate: 87.5% (7/8)\nPass rate: 75.0% (6/8)\n"
+            "Baseline: 87.5% (7/8)\nPass rate: 75.0% (6/8)\n"
         )
-        assert sm._distill_held_out_metric("m-123") == pytest.approx(0.75)
+        assert sm._distill_held_out_metric("m-123") is None
 
     def test_returns_none_when_log_missing(self, tmp_path):
         sm = _bare_state_machine()

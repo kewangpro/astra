@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from backend.loop.state_machine import LoopStateMachine
+from backend.loop.state_machine import DPO_BASELINE_FLOOR_MARGIN, LoopStateMachine
 
 
 # ── _clamp_rl_adjustments ─────────────────────────────────────────────────────
@@ -1609,12 +1609,23 @@ def test_dpo_diagnostics_steps_per_eval_zero_is_reliable(tmp_path):
 # distill_train.py samples with replacement for a fixed --iters, so total_steps
 # is always the flag value and can't signal a degenerate run.
 
+# The headline "Baseline:" carries the STATIC rate; distill's goal metric is
+# blended, so the floor baseline comes from the indented blended breakdown
+# beneath that anchor. Flooring a blended goal against the static headline would
+# compare across populations — and since blended sits below static whenever the
+# MCP subset scores worse (essentially always), every iteration would floor
+# against an unreachable baseline: the b790c69d doom loop, one scale apart.
+
 _DISTILL_LOG_HEALTHY = """\
 Case split: 127 train / 22 held-out valid
 44 examples ready for training
 total_steps=500
 Baseline: 85.7% (12/14)
-Best pass rate during training: 92.9%
+  static skills: 12/14 (85.7%)
+  dynamic MCP:   1/7 (14.3%)
+  blended:       13/21 (61.9%)
+Best static pass rate during training: 92.9%
+Best blended pass rate during training: 66.7% (14/21)
 """
 
 _DISTILL_LOG_STARVED = """\
@@ -1622,14 +1633,19 @@ Case split: 5 train / 1 held-out valid
 2 examples ready for training
 total_steps=500
 Baseline: 100.0% (1/1)
-Best pass rate during training: 100.0%
+  static skills: 1/1 (100.0%)
+  dynamic MCP:   0/7 (0.0%)
+  blended:       1/8 (12.5%)
+Best static pass rate during training: 100.0%
+Best blended pass rate during training: 12.5% (1/8)
 """
 
 
 def test_distill_diagnostics_healthy_example_count_is_reliable(tmp_path):
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
     baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    assert baseline == pytest.approx(0.857)
+    # blended (13/21), NOT the 85.7% static headline
+    assert baseline == pytest.approx(0.619)
     assert reliable is True
 
 
@@ -1648,7 +1664,7 @@ def test_distill_diagnostics_suppresses_baseline_when_case_list_changed(tmp_path
     "Case split:" totals; the baseline is suppressed rather than trusted."""
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)          # 127 + 22 = 149
     baseline, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    assert baseline == pytest.approx(0.857)                    # first iteration: trusted
+    assert baseline == pytest.approx(0.619)                    # first iteration: trusted
 
     sm2 = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY.replace("127 train", "129 train"))
     sm2._eval_case_total = sm._eval_case_total                 # same mission, next iteration
@@ -1661,7 +1677,42 @@ def test_distill_diagnostics_stable_case_list_keeps_baseline(tmp_path):
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
     sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
     baseline2, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    assert baseline2 == pytest.approx(0.857)
+    assert baseline2 == pytest.approx(0.619)
+
+
+def test_distill_baseline_is_blended_not_static_headline(tmp_path):
+    """The floor must compare like-for-like. distill's goal metric is blended,
+    so its baseline is the indented blended breakdown — never the "Baseline:"
+    headline, which is the static (selection) rate. Blended sits below static
+    whenever the MCP subset scores worse, i.e. essentially always, so taking the
+    headline would floor every iteration against a baseline the blended metric
+    can never reach."""
+    sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
+    baseline, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert baseline == pytest.approx(0.619)      # blended 13/21
+    assert baseline != pytest.approx(0.857)      # not the static headline
+
+
+def test_distill_baseline_suppressed_when_no_blended_breakdown(tmp_path):
+    """A "Baseline:" line with no blended breakdown under it means the log shape
+    changed. Suppress the floor rather than silently comparing scales."""
+    sm = _sm_with_log(tmp_path,
+        "Case split: 127 train / 22 held-out valid\n"
+        "44 examples ready for training\n"
+        "Baseline: 85.7% (12/14)\n"
+    )
+    baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
+    assert baseline is None
+    assert reliable is True
+
+
+def test_dpo_baseline_still_reads_the_headline(tmp_path):
+    """The blended-baseline rule is distill-only — dpo/grpo score the full case
+    set through bare_eval and their "Baseline:" headline is already the right
+    population. This must not regress into a shared code path."""
+    sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
+    baseline, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="dpo")
+    assert baseline == pytest.approx(0.857)
 
 
 def test_distill_diagnostics_ignores_total_steps_gate(tmp_path):
@@ -1747,3 +1798,48 @@ async def test_crystallize_runs_for_rl(monkeypatch):
     sm = object.__new__(LoopStateMachine)
     await sm._crystallize("m", {"task_type": "rl"}, 42.0)
     assert len(called) == 1
+
+
+# ── distill floor margin ─────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("blended_total", [12, 8, 20])
+def test_distill_floor_margin_tolerates_exactly_one_case(blended_total):
+    """One case of movement must not floor; two must.
+
+    Mind the two denominators — we nearly used the wrong one. The held-out
+    slice is ~23 cases, but only ~12 of those are SCORED: eval_cases.yaml is
+    151 cases of which 78 are scoreable routing (71 static + 7 MCP), the rest
+    being mode: quality / e2e that run_routing_eval never grades. The blended:
+    line therefore reads n/12, so one case is ~8.3 points, not the ~4.3 that 23
+    would suggest — and 1.05/23 = 4.6% would sit BELOW one case, flooring on
+    exactly the MCP noise this margin exists to absorb. Asserted relative to
+    blended_total rather than pinned to a literal so it stays honest if the
+    scoreable population grows."""
+    m = LoopStateMachine._distill_floor_margin(blended_total)
+    assert m > 1.0 / blended_total          # one case does not floor
+    assert m < 2.0 / blended_total          # two cases still do
+
+
+def test_distill_floor_margin_absorbs_the_whole_mcp_stratum():
+    """The MCP stratum is exactly 1 case of the ~12 scored, and best/ selection
+    ignores MCP entirely — so blended can move for a reason selection cannot see
+    or act on. The margin absorbs one case, i.e. all of it, which means MCP
+    movement alone never floors. Consequence, recorded deliberately: for distill,
+    blended floors on static regressions and reports MCP. Widening the MCP case
+    population is the only thing that makes it do more."""
+    assert LoopStateMachine._distill_floor_margin(12) > 1.0 / 12
+
+
+def test_distill_floor_margin_never_narrower_than_default():
+    assert LoopStateMachine._distill_floor_margin(100) == pytest.approx(
+        DPO_BASELINE_FLOOR_MARGIN
+    )
+
+
+def test_distill_floor_margin_defaults_when_total_unknown():
+    assert LoopStateMachine._distill_floor_margin(None) == pytest.approx(
+        DPO_BASELINE_FLOOR_MARGIN
+    )
+    assert LoopStateMachine._distill_floor_margin(0) == pytest.approx(
+        DPO_BASELINE_FLOOR_MARGIN
+    )

@@ -53,8 +53,18 @@ hyperparameters:
 # that overfitting dynamic; SFT-only previously reached ~0.96 on the old
 # 133-case full eval. Missions above 0.95 (beyond the noise margin) are rejected
 # at creation. Tighten once distill_train.py has produced real numbers.
+#
+# 2026-09-05 (BLENDED METRIC): pass_rate now means the BLENDED all-78-case
+# number, not the 71-case static split, so 0.95 no longer transfers — it was a
+# static-scale figure inherited from the retired 133-case eval. Rebased to 0.92.
+# Reasoning: unlike dpo/grpo, distillation demonstrably CAN move the MCP cases
+# (iter2 of mission 551839b7 took them 0/7 -> 3/7 against its own warm-start,
+# while giving back 3 static — 61 blended either way), so its plausible best is
+# a strong static score with MCP largely recovered: ~87% static + 7/7 MCP =
+# 88.2% blended. 0.92 keeps the creation-time guard generous rather than
+# blocking legitimate missions. Judgment call, not a measurement.
 metric_ceiling:
-  pass_rate: 0.95
+  pass_rate: 0.92
 
 # NOT YET RUNNABLE. ensemble/finetune/distill_train.py does not exist. astra's
 # distill task type is fully wired (Phase 42) and dispatches a

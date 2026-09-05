@@ -64,8 +64,17 @@ hyperparameters:
 # their skill strings are absent from the training prompt, so they carry no
 # learnable signal. Telemetry "Pass rate" lines are now over the 71-case
 # static-skill routing set. See recipes/ensemble_dpo_v1.yaml for the rationale.
+# 2026-09-05 (BLENDED METRIC): pass_rate now means the BLENDED all-78-case
+# number, not the 71-case static split, so 0.84 no longer transfers — it was a
+# static-scale figure. Rebased to 0.83. Reasoning matches dpo (see
+# ensemble_dpo_v1.yaml): GRPO trains on static cases only and cannot improve the
+# 7 MCP cases, so its plausible best is a strong static score with MCP held at
+# the warm-start's rate. Note this recipe's own lineage is the cautionary case —
+# grpo_v9_min/best took MCP from the base model's 3/7 to 0/7 while the
+# static-only metric recorded that as a clean win. Judgment call, not a
+# measurement.
 metric_ceiling:
-  pass_rate: 0.84
+  pass_rate: 0.83
 
 # No astra-managed dataset — grpo_train.py's oracle is a hardcoded constant
 # (backend/core/eval_cases.yaml, relative to finetune_dir), not a CLI-configurable
