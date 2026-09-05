@@ -41,11 +41,23 @@ from backend.services.telemetry_emitter import emit_status, emit_critique, emit_
 
 logger = get_logger(__name__)
 
-# dpo/grpo (see _FINETUNE_REMOTE_TASK_TYPES) print "Pass rate: X% (n/total)" to
+# dpo/grpo/distill (see _FINETUNE_REMOTE_TASK_TYPES) print "Pass rate: X% (n/total)" to
 # stdout — that stdout only lands in the remote log, so we tail it over SSH and
 # record the metric ourselves rather than requiring the remote script to POST
 # telemetry.
 _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
+
+# bare_eval.py switches to a static/dynamic-MCP split report whenever the case
+# pool includes MCP cases (true for every dpo/grpo/distill mission, since none
+# scope --ids to a pure static subset): it then prints "Static-skill routing:
+# X/Y (Z%) <- fine-tune target metric" instead of "Pass rate:", so _PASS_RATE_RE
+# alone silently never matches _run_bare_eval's output — that call has been
+# quietly returning None on every mission and falling back to the live-tailed
+# number instead of bare_eval.py's independent, adapter-discriminating check
+# (confirmed live: mission 551839b7's bare_eval ran its full ~19min and printed
+# a real result, but _run_bare_eval logged "no parseable pass rate" both times).
+# This is the metric bare_eval.py itself labels authoritative, so prefer it.
+_BARE_EVAL_STATIC_RE = re.compile(r"Static-skill routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
 
 # Training-signal metric ("loss") shown continuously in MetricChart's history,
 # same relationship pass_rate has to mean_reward for RL, or eval_loss doubling
@@ -1978,6 +1990,13 @@ class LoopStateMachine:
             logger.warning("LoopStateMachine: bare_eval failed mission=%s: %s", mission_id, exc)
             return None
 
+        # Prefer the static-skill split metric (bare_eval.py's own "fine-tune
+        # target metric" label) when present; fall back to the blended
+        # "Pass rate:" line for a non-split run (e.g. --ids scoped to pure
+        # static cases, where bare_eval.py never enters the split branch).
+        static_match = _BARE_EVAL_STATIC_RE.search(result.stdout)
+        if static_match:
+            return float(static_match.group(1)) / 100.0
         match = _PASS_RATE_RE.search(result.stdout)
         if not match:
             logger.warning(

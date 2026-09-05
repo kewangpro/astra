@@ -94,7 +94,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 913 unit tests across all core modules
+│   ├── unit/           # 915 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -162,7 +162,7 @@ make ports  # show port status for all services
 | 39 | DPO Baseline-Floor Phantom Best + RL-Shaped Pivots on Fine-Tune Missions — the Phase 36 floor fabricated an unreproducible all-time best (and chained a regressed checkpoint) when a mission's first iteration regressed; separately, DPO/GRPO pivots silently accepted RL-only `env_kwargs`/`policy_kwargs`/`algorithm` fields into the plan. Floored iterations now never set a best or chain a checkpoint, and fine-tune pivots are restricted+clamped to the sampling knobs. **Follow-up:** the persistent DPO plateau below a 0.84 target was traced to 7 eval cases expecting runtime `mcp:Server:tool` skills the training prompt never shows — fixed in the `ensemble` repo (excluded from the fine-tune pass-rate; +12 teacher-verified cases for starved classes, static routing set 66 → 71). On the corrected set the warm-start already scores 0.859 and DPO has never beaten it, so the `dpo` `metric_ceiling` was set to 0.87 (just above the warm-start); astra code is unchanged | ✅ Complete |
 | 40 | Terminal-Success Sandbox Teardown — `LoopStateMachine` terminated the sandbox on cancel/failure but not on `COMPLETED`/`STALLED`, so a finished mission's entry lingered in `SandboxManager._sandboxes` and showed as a phantom mission in the Nodes panel until the next backend restart; all four loop-exit paths now go through one `_terminate_sandbox()` helper | ✅ Complete |
 | 41 | Mission `completed_at` Populated + Shown on Cards — the column existed in the model/schema/API but nothing ever wrote it (all 19 terminal missions had `null`); `_transition()` now stamps it on `COMPLETED`/`FAILED`/`STALLED`, old rows were backfilled from `updated_at`, and Command Center cards show a `created … · ended …` line | ✅ Complete |
-| 42 | Distillation Task Type — `dpo`/`grpo` are exhausted for the routing model (ceiling ~86%), so added `distill`: a strong teacher generates correct routing completions and the student is SFT'd to imitate them. Fully wired as a fine-tune-remote task type (SSH dispatch, recipe-authoritative, `iters`-only pivot, `metric_ceiling` 0.95) mirroring `dpo`/`grpo`. astra-side scaffolding only — `ensemble/finetune/distill_train.py` is a documented precondition | ✅ Complete |
+| 42 | Distillation Task Type — `dpo`/`grpo` are exhausted for the routing model (ceiling ~86%), so added `distill`: a strong teacher generates correct routing completions and the student is SFT'd to imitate them. Fully wired as a fine-tune-remote task type (SSH dispatch, recipe-authoritative, `iters`-only pivot, `metric_ceiling` 0.95) mirroring `dpo`/`grpo`. **Follow-up:** `ensemble/finetune/distill_train.py` was written and the first real mission completed (target 0.90, achieved 1.000 held-out at iter 2); also fixed `_run_bare_eval`'s stdout parsing, which had been silently failing to read `bare_eval.py`'s split-report format on every fine-tune-remote mission | ✅ Complete |
 
 ## Hardware Target
 

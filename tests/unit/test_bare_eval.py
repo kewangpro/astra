@@ -41,6 +41,41 @@ class TestRunBareEval:
 
         assert result == pytest.approx(0.825)
 
+    def test_parses_static_skill_split_metric_when_present(self):
+        """bare_eval.py switches to a static/dynamic-MCP split report whenever the
+        case pool has MCP cases (true for every real dpo/grpo/distill mission) —
+        it then prints "Static-skill routing:", never "Pass rate:", so this must
+        not silently fall through to "no parseable pass rate" (real incident:
+        mission 551839b7's bare_eval ran its full ~19 min and produced a genuine
+        result that _run_bare_eval failed to parse both times it ran)."""
+        sm = _bare_state_machine()
+        stdout = (
+            "Model:    mlx-community/gemma-3-12b-it-4bit\n"
+            "Static-skill routing: 10/11 (90.9%)  ← fine-tune target metric  [19.3 min]\n"
+            "Dynamic MCP routing:  0/7 (0.0%)  ← needs MCP skills in the prompt (separate project)\n"
+            "Blended (all cases):  68/78 (87.2%)  ← historical bare-oracle number, not the selector\n"
+        )
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout=stdout, stderr="")
+            result = sm._run_bare_eval("mission-abc12345", _plan(task_type="distill"), 2)
+
+        assert result == pytest.approx(0.909)
+
+    def test_falls_back_to_blended_pass_rate_when_no_static_split(self):
+        """A non-split bare_eval run (e.g. --ids scoped to pure static cases) has
+        no "Static-skill routing:" line at all — must still parse the plain
+        "Pass rate:" line rather than treating its absence as a hard requirement."""
+        sm = _bare_state_machine()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                stdout="Pass rate: 100.0% (3/3)  [2.1 min]\nAll routing cases pass ✓\n", stderr="",
+            )
+            result = sm._run_bare_eval("mission-abc12345", _plan(), 5)
+
+        assert result == pytest.approx(1.0)
+
     def test_ssh_command_uses_finetune_dir_and_astra_adapter_path(self):
         sm = _bare_state_machine()
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
