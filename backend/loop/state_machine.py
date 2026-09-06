@@ -166,6 +166,17 @@ _DISTILL_BEST_STATIC_RE = re.compile(
     r"Best static pass rate during training:\s*([\d.]+)%"
 )
 
+# Per-case eval failures look like:
+#   [1/11] route_mcp_traxis_predict_visualize: FAILED (TimeoutError: timed out)
+# These are ordinary graded results — a case the model got wrong, or one whose
+# generation timed out — not a crashed run. But they carry an exception name, so
+# the substring "Error" test in _detect_fatal_error flagged them as fatal and
+# threw the whole run away. Real incident: mission 594322b2 iteration 0 ran to
+# completion in 114.9 min, printed its full summary, and was discarded and
+# relaunched because ONE baseline case reported TimeoutError on log line 6.
+# A case that fails is data; a traceback is a fault.
+_EVAL_CASE_FAILURE_RE = re.compile(r"^\s*\[\d+/\d+\]\s+\S+:\s+FAILED\s*\(")
+
 # distill_train.py samples batches with replacement for a fixed --iters, so its
 # "total_steps=N" is always the flag value and can't signal a degenerate run the
 # way dpo's shrinking pair count does. Its training-example count can: a run left
@@ -670,8 +681,19 @@ class LoopStateMachine:
                             # split, not the full case set — score it against that
                             # same population, not a leaky full-set bare_eval.
                             goal_val = self._distill_held_out_metric(mission_id)
-                            if goal_val is None:
-                                goal_val = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
+                            # NO live-tailed fallback here, unlike dpo/grpo below.
+                            # _live_pass_rate_best is fed by _PASS_RATE_RE, which
+                            # matches distill_train.py's "Pass rate:" HEADLINE —
+                            # and that headline is the STATIC rate, while distill's
+                            # goal metric, target_metric and metric_ceiling are all
+                            # blended. Substituting it would record a static number
+                            # as a blended result (observed live in mission
+                            # 594322b2: headline 0.818 = 9/11 static, against a
+                            # blended denominator of 12). Recording no metric for
+                            # the iteration is the honest outcome; a wrong-scale
+                            # one silently corrupts the mission's best and its
+                            # chaining decision.
+                            getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
                         elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
                             goal_val = await asyncio.to_thread(
                                 self._run_bare_eval, mission_id, plan, current_iteration
@@ -2419,6 +2441,7 @@ class LoopStateMachine:
                 if ("Traceback" in line or "Error" in line)
                 and "Telemetry error" not in line
                 and "Warm-start skipped" not in line
+                and not _EVAL_CASE_FAILURE_RE.match(line)
             ]
             if fatal_lines:
                 return content
@@ -2454,9 +2477,15 @@ class LoopStateMachine:
         if not new_output:
             return pass_rate_step
 
+        # For distill, "Pass rate:" is the STATIC held-out rate, not the blended
+        # goal metric (see _distill_held_out_metric). Emitting it as "pass_rate"
+        # would put a static-scale series on the same HUD axis as a blended-scale
+        # target and best — two populations under one label, which is the failure
+        # this whole metric change exists to remove. Name it for what it is.
+        _live_name = "pass_rate_static_live" if task_type == "distill" else "pass_rate"
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
-            await emit_metric(mission_id, "pass_rate", pct / 100.0, step=pass_rate_step, iteration=current_iteration)
+            await emit_metric(mission_id, _live_name, pct / 100.0, step=pass_rate_step, iteration=current_iteration)
             # Track the best live-tailed reading in memory only (NOT written to
             # Mission.best_metric_value/current_metric_value here) — Metric Gap
             # must only update once per completed iteration, exactly like RL's
@@ -2464,6 +2493,10 @@ class LoopStateMachine:
             # purely as a fallback in run()'s evaluate step, for the case where
             # the official post-training _run_bare_eval check fails/crashes
             # despite training having produced real, already-observed progress.
+            # dpo/grpo ONLY — distill deliberately does not use this fallback,
+            # because for distill this value is the static rate and the goal is
+            # blended. It is still tracked here so the two task types share one
+            # tail path; distill's evaluate step discards it.
             if not hasattr(self, "_live_pass_rate_best"):
                 self._live_pass_rate_best: dict = {}
             prev_best = self._live_pass_rate_best.get(mission_id)

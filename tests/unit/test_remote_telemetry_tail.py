@@ -334,3 +334,71 @@ class TestLivePassRateFallbackConsumption:
             )
 
         mock_emit.assert_awaited_once_with("mission-1", "pass_rate", 0.9, step=0, iteration=4)
+
+
+# ── distill: live tail is static-scale, goal metric is blended ───────────────
+
+class TestDistillLiveTailScale:
+    """distill_train.py's "Pass rate:" headline is the STATIC held-out rate,
+    while distill's goal metric, target_metric and metric_ceiling are all
+    blended. Observed live in mission 594322b2: the headline read 0.818 (9/11
+    static) against a blended denominator of 12. Emitting that under the name
+    "pass_rate" would put two populations on one HUD axis, and feeding it in as
+    a goal-metric fallback would record a static number as a blended result."""
+
+    def test_distill_live_pass_rate_emitted_under_static_name(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "distill", 0)
+            )
+
+        mock_emit.assert_awaited_once_with(
+            "mission-1", "pass_rate_static_live", 0.818, step=0, iteration=0
+        )
+
+    def test_dpo_live_pass_rate_keeps_the_plain_name(self):
+        """dpo/grpo score the full case set, so their headline IS the goal
+        population — this rename must stay distill-only."""
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0)
+            )
+
+        mock_emit.assert_awaited_once_with(
+            "mission-1", "pass_rate", 0.818, step=0, iteration=0
+        )
+
+
+# ── per-case eval failures are not fatal errors ──────────────────────────────
+
+class TestEvalCaseFailureNotFatal:
+    """A graded case that fails — including one whose generation times out —
+    carries an exception name, but it is a result, not a crash. Real incident:
+    mission 594322b2 iteration 0 ran 114.9 min to completion and printed its
+    full summary, then was discarded and relaunched because ONE baseline case
+    logged "FAILED (TimeoutError: timed out)" on line 6."""
+
+    def test_timeout_case_failure_is_not_fatal(self):
+        from backend.loop.state_machine import _EVAL_CASE_FAILURE_RE
+        line = "  [1/11] route_mcp_traxis_predict_visualize: FAILED (TimeoutError: timed out)"
+        assert _EVAL_CASE_FAILURE_RE.match(line)
+
+    def test_plain_case_failure_is_not_fatal(self):
+        from backend.loop.state_machine import _EVAL_CASE_FAILURE_RE
+        line = "[7/11] route_meta_what_schedule: FAILED (ValueError: bad skill)"
+        assert _EVAL_CASE_FAILURE_RE.match(line)
+
+    def test_real_traceback_line_is_still_fatal(self):
+        from backend.loop.state_machine import _EVAL_CASE_FAILURE_RE
+        for line in (
+            "Traceback (most recent call last):",
+            "RuntimeError: Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)",
+            "  File \"distill_train.py\", line 200, in report_eval",
+        ):
+            assert not _EVAL_CASE_FAILURE_RE.match(line), line
