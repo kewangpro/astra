@@ -89,3 +89,10 @@ metric_ceiling:
 # (backend/core/eval_cases.yaml, relative to finetune_dir). Post-training
 # goal-metric eval reuses finetune/bare_eval.py --adapter <checkpoint_dir>/best,
 # same as dpo/grpo.
+
+# NOT THE ACTIVE DISTILL RECIPE as of 2026-09-05. _ENV_RECIPE["distill"] now
+# points at ensemble_distill_prerl_v1.yaml. This config — warm-starting from
+# retrain_best, which is byte-identical to grpo_v9_min/best (post-RL) — is a
+# measured negative: mission 594322b2 ran three scored iterations (0.833 ==
+# baseline, 0.667 floored, 0.750 below best) and never beat its own warm-start.
+# Kept for the record and to restore by swapping _ENV_RECIPE back.

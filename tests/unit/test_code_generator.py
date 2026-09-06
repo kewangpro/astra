@@ -1550,9 +1550,16 @@ def test_clamp_finetune_pivot_hp_drops_unrecognized_keys():
 
 def test_clamp_finetune_pivot_hp_is_task_scoped():
     from backend.agent.code_generator import _clamp_finetune_pivot_hp
-    # iters is a distill-only knob — a dpo pivot proposing it is dropped
+    # iters was a distill-only knob — a dpo pivot proposing it is dropped
     assert _clamp_finetune_pivot_hp("dpo", {"iters": 500}) == {}
-    assert _clamp_finetune_pivot_hp("distill", {"iters": 9999, "temp": 1.0}) == {"iters": 800}
+    # distill has NO pivot lever while the pre-RL warm-start experiment runs:
+    # a plan-settable iters overrode the recipe (mission 472e226c launched at
+    # 800 against a recipe declaring 500), which would have made the warm-start
+    # not the only changed variable versus its comparator.
+    assert _clamp_finetune_pivot_hp("distill", {"iters": 9999, "temp": 1.0}) == {}
+    # dpo/grpo levers are untouched by that pin.
+    assert _clamp_finetune_pivot_hp("dpo", {"temp": 9.0}) == {"temp": 1.5}
+    assert _clamp_finetune_pivot_hp("grpo", {"num_generations": 99}) == {"num_generations": 4}
 
 
 # ── grpo template ─────────────────────────────────────────────────────────────
@@ -1713,7 +1720,19 @@ def test_build_user_prompt_distill_wraps_existing_script_not_reimplemented(tmp_p
 def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
     prompt = _distill_prompt(tmp_path, monkeypatch)
     assert "gemma-3-12b-it-4bit" in prompt
-    assert "adapters/retrain_best" in prompt   # SFT-lineage warm-start, not grpo_v9_min/best
+    # The active distill recipe (ensemble_distill_prerl_v1) warm-starts from the
+    # PRE-RL ancestor. Named as a FILE, not a directory: retrain_v53_min/ also
+    # holds a top-level adapters.safetensors, which is the iter500 save rather
+    # than the iter400 checkpoint grpo_v9_min was GRPO-trained from — and the
+    # directory form is still valid input, so it would load iter500 silently.
+    assert "adapters/retrain_v53_min/0000400_adapters.safetensors" in prompt
+    # Guards the trap directly: the bare directory must never be what we pass.
+    assert "adapters/retrain_v53_min\n" not in prompt
+    # NOT the post-RL warm-start. retrain_best is byte-identical to
+    # grpo_v9_min/best (MD5 f37512c9) — the earlier claim that it was a separate
+    # SFT baseline was false, and mission 594322b2 showed that lineage never
+    # beating its own warm-start across three scored iterations.
+    assert "adapters/retrain_best" not in prompt
     assert "/Users/kewang/finetune" in prompt
 
 
@@ -1735,13 +1754,16 @@ def test_resolve_hyperparams_distill_recipe_authoritative(tmp_path, monkeypatch)
     hp = _resolve_hyperparams("distill", {"learning_rate": 0.9, "num_layers": 99, "iters": 700})
     assert hp["learning_rate"] == 1e-5      # recipe wins
     assert hp["num_layers"] == 8            # recipe wins
-    assert hp["iters"] == 700               # the one plan/pivot-settable knob (in range)
+    assert hp["iters"] == 500               # recipe wins too — iters is pinned, no pivot lever
 
 
-def test_resolve_hyperparams_distill_clamps_iters(tmp_path, monkeypatch):
+def test_resolve_hyperparams_distill_iters_is_pinned_to_recipe(tmp_path, monkeypatch):
+    """No plan value can move iters while the pre-RL experiment runs — the
+    recipe's 500 must survive any proposal, in range or out."""
     from backend.agent.code_generator import _resolve_hyperparams
-    assert _resolve_hyperparams("distill", {"iters": 5000})["iters"] == 800
-    assert _resolve_hyperparams("distill", {"iters": 10})["iters"] == 200
+    assert _resolve_hyperparams("distill", {"iters": 5000})["iters"] == 500
+    assert _resolve_hyperparams("distill", {"iters": 10})["iters"] == 500
+    assert _resolve_hyperparams("distill", {"iters": 700})["iters"] == 500
 
 
 # ── manifest checkpoint patterns ──────────────────────────────────────────────

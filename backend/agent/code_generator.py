@@ -1056,7 +1056,16 @@ _ENV_RECIPE: dict = {
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
-    "distill": "ensemble_distill_v1.yaml",
+    # 2026-09-05: pointed at the PRE-RL warm-start experiment. The post-RL
+    # config (ensemble_distill_v1.yaml, warm-starting from retrain_best =
+    # grpo_v9_min/best) is a measured negative — mission 594322b2 ran three
+    # scored iterations and never beat its own warm-start. astra maps one
+    # recipe per task_type and recipe_metric_ceiling() is called without an
+    # algorithm, so an algorithm-suffixed override cannot drive selection;
+    # repointing the default is the only mechanism that reliably picks the
+    # intended recipe. Restore by swapping this value back — both files are
+    # kept and both declare pass_rate 0.92.
+    "distill": "ensemble_distill_prerl_v1.yaml",
 }
 
 
@@ -1099,7 +1108,15 @@ def recipe_metric_ceiling(env_id: str, algorithm: str = "") -> dict:
 _FINETUNE_PIVOT_RANGES_BY_TASK = {
     "dpo":     {"temp": (0.7, 1.5), "k_collect": (4, 16)},
     "grpo":    {"temp": (0.7, 1.5), "num_generations": (2, 4)},
-    "distill": {"iters": (200, 800)},
+    # distill: NO pivot lever as of 2026-09-05. `iters` was the one safe knob, but
+    # it let a plan override the recipe's value — _resolve_hyperparams applies
+    # recipe_hp then hp.update(clamped plan keys), so the LeadAgent's proposal
+    # wins. Mission 472e226c launched at iters=800 (the clamp ceiling) against a
+    # recipe declaring 500, which would have made the warm-start NOT the only
+    # changed variable versus its comparator 594322b2 — the entire point of the
+    # pre-RL experiment. Empty until that experiment concludes; restore
+    # {"iters": (200, 800)} to re-enable pivoting.
+    "distill": {},
 }
 
 

@@ -1,0 +1,108 @@
+name: ensemble_distill_prerl_v1
+version: "1.0.0"
+created_at: "2026-09-05"
+task_type: distill
+domain: NLP
+description: >
+  Knowledge distillation for the Ensemble routing model, warm-started from the
+  PRE-RL SFT ancestor (retrain_v53_min iter400) instead of the post-RL
+  retrain_best. Identical to ensemble_distill_v1 in every other respect —
+  same teacher (conductor_gemma.md + gemma3:12b via Ollama), same student
+  prompt (conductor_min.md), same LoRA block, same oracle. This is a DIFFERENT
+  EXPERIMENT, not a re-run: see the warm-start block below for what changed and
+  what that means for reading the result.
+
+hyperparameters:
+  # ── Remote host block ──────────────────────────────────────────────────────
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  # ── Warm-start: the pre-RL SFT ancestor ────────────────────────────────────
+  # NAME THE FILE, NOT THE DIRECTORY. adapters/retrain_v53_min/ also contains a
+  # top-level adapters.safetensors, which is the iter500 save — NOT the iter400
+  # checkpoint grpo_v9_min was GRPO-trained from (FINETUNE.md: "GRPO warm-start
+  # retrain_v53_min iter400"). distill_train.py accepts a directory OR a file as
+  # of ensemble 74a729d; the directory form remains valid input and would
+  # silently load iter500, so the file path is load-bearing, not stylistic.
+  adapter: adapters/retrain_v53_min/0000400_adapters.safetensors
+  #
+  # Verified on the Mac Mini 2026-09-05 (mx.load, tensor-by-tensor):
+  #                          tensors   LoRA   non-LoRA   size
+  #   v53_min/0000400          112      112       0      21,837,260 B   20e8d58a
+  #   retrain_best             401      112     289      24,936,525 B   f37512c9
+  # LoRA blocks are IDENTICAL — layers 40-47, modules q/k/v/o/gate/up/down_proj,
+  # rank 8, same shapes — so the LoRA block below is correct for this warm-start
+  # and needed no change.
+  #
+  # ⚠ SECOND CHANGED VARIABLE. The 289-tensor difference is full layernorm
+  # weights across ALL layers 0-47 (input_layernorm, post_attention_layernorm,
+  # pre/post_feedforward_layernorm, self_attn.q_norm, self_attn.k_norm, and the
+  # final model.norm). retrain_best carries tuned norms for the whole network;
+  # this adapter carries none, so the run uses BASE-MODEL layernorms. Switching
+  # warm-starts is therefore NOT a clean pre-RL/post-RL A/B. If this run comes
+  # out worse than the post-RL lineage, "pre-RL weights are worse" and "the
+  # tuned norms were carrying real signal" are both live explanations and this
+  # experiment cannot separate them. distill_train.py prints
+  # "loaded N/M LoRA + K non-LoRA tensors" (ensemble 74a729d) — K=0 confirms the
+  # LoRA-only warm-start actually took effect.
+
+  prompt_template: backend/prompts/conductor_min.md
+  teacher_model: gemma3:12b
+  ollama_url: http://localhost:11434
+  routing_only: true
+
+  # ── LoRA (verified to match the warm-start adapter — see the table above) ───
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # ── Training ───────────────────────────────────────────────────────────────
+  # UNVALIDATED for this warm-start. iters 500 / lr 1e-5 were chosen for what was
+  # believed to be a pre-RL SFT baseline — which retrain_best turned out not to
+  # be (it is byte-identical to grpo_v9_min/best, MD5 f37512c9, since the
+  # 2026-07-02 promotion). This recipe is the first time those values meet the
+  # starting point they were picked for, but they have still never been tuned
+  # against a measured result. iters is the ONLY pivot lever (200-800);
+  # everything else is recipe-locked, same policy as dpo/grpo.
+  iters: 500
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 50
+  save_every: 50
+  max_seq_len: 2560
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# Held at 0.92 to match ensemble_distill_v1 (decision 2026-09-05).
+#
+# ⚠ READ THE RESULT AS A DELTA, NOT AGAINST THIS NUMBER. 0.92 is an absolute
+# blended-scale target chosen for the POST-RL lineage. This recipe starts from
+# that lineage's ancestor, before GRPO improved it, and additionally runs with
+# base-model layernorms — so its baseline is a different quantity and its
+# distance from 0.92 carries no information about whether distillation worked.
+# A run ending at 0.80 from a 0.72 baseline is a clear positive and still misses
+# 0.92; a run ending at 0.84 from a 0.84 baseline is a null result that looks
+# better beside it. The success criterion is FINAL BLENDED vs ITER-0 BASELINE
+# BLENDED, both reported absolutely. Do not plot this series against the post-RL
+# lineage's numbers — different warm-start, different norms, not comparable.
+# Let the first "Baseline:" line establish the starting point rather than
+# predicting it; neither direction has been asserted.
+metric_ceiling:
+  pass_rate: 0.92
+
+# Selection note: astra maps ONE recipe per task_type (_ENV_RECIPE in
+# backend/agent/code_generator.py). As of 2026-09-05 this file IS the active
+# distill recipe — _ENV_RECIPE["distill"] points here, so every distill mission
+# uses the pre-RL warm-start until that is swapped back. The post-RL config is
+# kept at ensemble_distill_v1.yaml; both declare pass_rate 0.92.
+#
+# stdout contract (parsed by astra, unchanged from ensemble_distill_v1):
+#   "Baseline: X% (n/total)" + indented static/dynamic-MCP/blended breakdown;
+#   "N examples ready for training"; "Case split: A train / B held-out valid";
+#   "Step N/M loss=X.XXXX"; "Pass rate: X% (n/total)" + breakdown per eval;
+#   "Best static pass rate during training: X%" and
+#   "Best blended pass rate during training: X% (n/total)" at the end.
+# The goal metric is the BLENDED figure; the headline "Baseline:"/"Pass rate:"
+# lines are STATIC (selection scale). See backend/loop/state_machine.py.
