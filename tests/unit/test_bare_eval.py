@@ -317,3 +317,72 @@ class TestResolveAdapterOrBare:
             sm._resolve_adapter_or_bare("/Users/kewang/finetune", "adapters/astra_abc12345_iter7")
         cmd = mock_run.call_args.args[0][2]
         assert "adapters/astra_abc12345_iter7/best/adapters.safetensors" in cmd
+
+
+class TestWarmStartBareEval:
+    """distill's floor baseline is the warm-start's own bare_eval — same tool,
+    same 78 cases as the goal metric. Measured once per mission and cached.
+    Before 2026-09-06 it came from the training log's "Baseline:" line, which is
+    the ~12-case held-out slice; flooring a 78-case goal against that compares
+    across populations, which is the bug class the blended change closed."""
+
+    def _sm(self):
+        sm = _bare_state_machine()
+        sm._warm_start_score = {}
+        return sm
+
+    def test_scores_the_recipe_warm_start_not_the_iteration_checkpoint(self):
+        sm = self._sm()
+        stdout = (
+            "Static-skill routing: 59/71 (83.1%)\n"
+            "Dynamic MCP routing:  3/7 (42.9%)\n"
+            "Blended (all cases):  62/78 (79.5%)\n"
+        )
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout=stdout, stderr="")
+            score = sm._warm_start_bare_eval("mission-abc12345", _plan(task_type="distill"))
+
+        assert score == pytest.approx(0.795)
+        cmd = mock_run.call_args_list[-1].args[0][2]
+        # The recipe's warm-start, NOT adapters/astra_<mission>_iterN/best.
+        assert "--adapter adapters/retrain_v53_min/0000400_adapters.safetensors" in cmd
+        assert "astra_mission-" not in cmd
+
+    def test_measured_once_per_mission_and_cached(self):
+        """~15-25 min per call. A re-plan or resume must not pay it again, and
+        the warm-start cannot change mid-mission — it is recipe-locked."""
+        sm = self._sm()
+        stdout = "Blended (all cases):  62/78 (79.5%)\n"
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout=stdout, stderr="")
+            first = sm._warm_start_bare_eval("m-1", _plan(task_type="distill"))
+            calls_after_first = mock_run.call_count
+            second = sm._warm_start_bare_eval("m-1", _plan(task_type="distill"))
+
+        assert first == second == pytest.approx(0.795)
+        assert mock_run.call_count == calls_after_first   # no second ssh
+
+    def test_failure_caches_none_so_the_floor_is_disabled_not_wrong(self):
+        """No floor beats a floor against the wrong population."""
+        sm = self._sm()
+        with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.loop.state_machine.subprocess.run",
+                   side_effect=RuntimeError("ssh died")):
+            assert sm._warm_start_bare_eval("m-1", _plan(task_type="distill")) is None
+        assert sm._warm_start_score["m-1"] is None
+
+
+def test_bare_eval_adapter_override_replaces_the_iteration_path():
+    sm = _bare_state_machine()
+    with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
+         patch("backend.loop.state_machine.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            stdout="Blended (all cases):  62/78 (79.5%)\n", stderr="")
+        sm._run_bare_eval("mission-abc12345", _plan(task_type="distill"), 3,
+                          adapter_override="adapters/some_warm_start")
+
+    cmd = mock_run.call_args_list[-1].args[0][2]
+    assert "--adapter adapters/some_warm_start" in cmd
+    assert "_iter3" not in cmd

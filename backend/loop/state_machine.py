@@ -79,7 +79,7 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 # unpenalised. Blended is the selector; static and MCP are diagnostics, recorded
 # alongside it so an MCP-for-static trade shows in the HUD instead of hiding
 # inside a flat blended line.
-_BARE_EVAL_BLENDED_RE = re.compile(r"Blended \(all cases\):\s*\d+/\d+\s*\(([\d.]+)%\)")
+_BARE_EVAL_BLENDED_RE = re.compile(r"Blended \(all cases\):\s*(\d+)/(\d+)\s*\(([\d.]+)%\)")
 _BARE_EVAL_STATIC_RE = re.compile(r"Static-skill routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
 _BARE_EVAL_MCP_RE = re.compile(r"Dynamic MCP routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
 
@@ -94,6 +94,11 @@ class BareEvalReport(NamedTuple):
     goal: Optional[float]
     static: Optional[float]
     mcp: Optional[float]
+    #: Denominator of the blended line (78 for the full routing set). Feeds
+    #: _distill_floor_margin, which scales the floor to one case of movement —
+    #: at 78 that is 1.3 points and the margin collapses to the flat 0.03, vs
+    #: 8.75% on the 12-case held-out slice this replaced.
+    blended_total: Optional[int] = None
 
 
 def _parse_bare_eval_report(stdout: str) -> BareEvalReport:
@@ -117,14 +122,28 @@ def _parse_bare_eval_report(stdout: str) -> BareEvalReport:
 
     static = _pct(_BARE_EVAL_STATIC_RE, stdout)
     mcp = _pct(_BARE_EVAL_MCP_RE, stdout)
-    blended = _pct(_BARE_EVAL_BLENDED_RE, stdout)
+    bm = _BARE_EVAL_BLENDED_RE.search(stdout)
+    blended = float(bm.group(3)) / 100.0 if bm else None
+    blended_total = int(bm.group(2)) if bm else None
 
-    if static is None and mcp is None:
-        m = _PASS_RATE_RE.search(stdout)
+    # A blended line is the goal whenever one is present, regardless of whether
+    # the split lines came with it — it already names the whole population.
+    if blended is not None:
         return BareEvalReport(
-            goal=float(m.group(1)) / 100.0 if m else None, static=None, mcp=None
+            goal=blended, static=static, mcp=mcp, blended_total=blended_total
         )
-    return BareEvalReport(goal=blended, static=static, mcp=mcp)
+    # Split report with no blended line: the output shape changed. Do NOT fall
+    # through to "Pass rate:" or the static line — both would hand back a
+    # different population than the goal metric is defined over.
+    if static is not None or mcp is not None:
+        return BareEvalReport(goal=None, static=static, mcp=mcp, blended_total=None)
+    # Non-split run (--ids scoped to a pure subset): "Pass rate:" is the whole
+    # pool it was asked about, so it is the goal on its own terms.
+    m = _PASS_RATE_RE.search(stdout)
+    return BareEvalReport(
+        goal=float(m.group(1)) / 100.0 if m else None, static=None, mcp=None,
+        blended_total=int(m.group(3)) if m else None,
+    )
 
 # distill_train.py trains on a train split and reports "Pass rate:" / "Baseline:"
 # against a held-out split (unlike dpo/grpo, whose "Pass rate:" is the full case
@@ -676,28 +695,40 @@ class LoopStateMachine:
                             mission_id, f"Evaluating {metric_name}…", event_type="info"
                         )
                         _mission_task_type_for_eval = plan.get("task_type")
-                        if _mission_task_type_for_eval == "distill":
-                            # distill's "Pass rate:" / "Baseline:" are a held-out
-                            # split, not the full case set — score it against that
-                            # same population, not a leaky full-set bare_eval.
-                            goal_val = self._distill_held_out_metric(mission_id)
-                            # NO live-tailed fallback here, unlike dpo/grpo below.
-                            # _live_pass_rate_best is fed by _PASS_RATE_RE, which
-                            # matches distill_train.py's "Pass rate:" HEADLINE —
-                            # and that headline is the STATIC rate, while distill's
-                            # goal metric, target_metric and metric_ceiling are all
-                            # blended. Substituting it would record a static number
-                            # as a blended result (observed live in mission
-                            # 594322b2: headline 0.818 = 9/11 static, against a
-                            # blended denominator of 12). Recording no metric for
-                            # the iteration is the honest outcome; a wrong-scale
-                            # one silently corrupts the mission's best and its
-                            # chaining decision.
-                            getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
-                        elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
+                        if _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
+                            # distill included as of 2026-09-06. Its goal metric
+                            # was the ~12-case held-out slice, which proved
+                            # BIASED rather than merely coarse: mission 6470e2db
+                            # scored 11/12 (91.7%) held-out and 61/78 (78.2%) on
+                            # bare_eval with identical weights. A slice that
+                            # cannot be reconciled with the population it is
+                            # drawn from cannot be the number a 2h run is judged
+                            # by, however carefully it is parsed.
                             goal_val = await asyncio.to_thread(
                                 self._run_bare_eval, mission_id, plan, current_iteration
                             )
+                            if goal_val is None:
+                                # The official post-training eval failed/crashed
+                                # (e.g. missing checkpoint, transient SSH error) —
+                                # fall back to the best live-tailed pass_rate seen
+                                # during this iteration's training run, so a crash
+                                # right after a successful run doesn't erase real,
+                                # already-observed progress. dpo/grpo only: for
+                                # distill that value is the STATIC held-out rate,
+                                # a different population AND a different scale
+                                # from the blended 78-case goal.
+                                _live = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
+                                goal_val = None if _mission_task_type_for_eval == "distill" else _live
+                            if _mission_task_type_for_eval == "distill":
+                                # Held-out is now a PROGRESS SIGNAL ONLY. Recorded
+                                # so a run's within-training trajectory stays
+                                # visible, never read back to gate chaining or set
+                                # a best.
+                                _ho = self._distill_held_out_metric(mission_id)
+                                if _ho is not None:
+                                    await self._append_telemetry_metric(
+                                        mission_id, "pass_rate_heldout", _ho, current_iteration
+                                    )
                             # Record the static/MCP split alongside the blended
                             # goal. Diagnostics only — nothing reads these back
                             # to make a decision. Without them a run that trades
@@ -706,6 +737,10 @@ class LoopStateMachine:
                             # flat blended line with no indication anything moved.
                             _split = getattr(self, "_bare_eval_split", {}).pop(mission_id, None)
                             if _split is not None:
+                                if _split.blended_total:
+                                    if not hasattr(self, "_distill_blended_total"):
+                                        self._distill_blended_total: dict = {}
+                                    self._distill_blended_total[mission_id] = _split.blended_total
                                 for _diag_name, _diag_val in (
                                     ("pass_rate_static", _split.static),
                                     ("pass_rate_mcp", _split.mcp),
@@ -714,17 +749,6 @@ class LoopStateMachine:
                                         await self._append_telemetry_metric(
                                             mission_id, _diag_name, _diag_val, current_iteration
                                         )
-                            if goal_val is None:
-                                # The official post-training eval failed/crashed
-                                # (e.g. missing checkpoint, transient SSH error) —
-                                # fall back to the best live-tailed pass_rate seen
-                                # during this iteration's training run, so a crash
-                                # right after a successful run doesn't erase real,
-                                # already-observed progress. Only used as a
-                                # fallback: Metric Gap still updates once per
-                                # completed iteration, same as RL's food_eaten,
-                                # never mid-training.
-                                goal_val = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
                         else:
                             goal_val = await asyncio.to_thread(
                                 self._run_goal_metric_eval, mission_id, plan, metric_name
@@ -749,6 +773,15 @@ class LoopStateMachine:
                         _baseline, _reliable = self._dpo_run_diagnostics(
                             mission_id, _spe, task_type=plan.get("task_type", "dpo"),
                         )
+                        if plan.get("task_type") == "distill":
+                            # Baseline from the warm-start's OWN bare_eval, same
+                            # tool and same 78 cases as the goal metric. Measured
+                            # once per mission and cached; None (floor disabled)
+                            # if that measurement failed, because no floor beats
+                            # a floor against the wrong population.
+                            _baseline = await asyncio.to_thread(
+                                self._warm_start_bare_eval, mission_id, plan
+                            )
                         _raw_goal_val = goal_val
                         if plan.get("task_type") == "distill":
                             _margin = self._distill_floor_margin(
@@ -2085,11 +2118,15 @@ class LoopStateMachine:
             except ValueError:
                 baseline = None
         if task_type == "distill":
-            # The headline "Baseline:" line is the STATIC rate, but distill's
-            # goal metric is blended — floor like-for-like or not at all. Take
-            # the blended figure from the indented breakdown directly beneath
-            # that anchor (not the file's first blended line, which for a
-            # resumed/re-tailed log could belong to a later periodic eval).
+            # DEAD PATH as of 2026-09-06, kept only to serve the reliability
+            # gate below. distill's goal metric is now bare_eval over all 78
+            # cases, so its floor baseline comes from _warm_start_bare_eval —
+            # the same tool on the same population — not from this log at all.
+            # The blended figure under the "Baseline:" anchor is the ~12-case
+            # held-out number; flooring a 78-case goal against it would compare
+            # across populations, which is the bug class this whole change
+            # exists to close. Parsed and discarded so the drift fingerprint and
+            # the example-count gate keep working.
             _blended = self._blended_under_anchor(text, m) if m else None
             # Remember the held-out blended denominator so the floor margin can
             # be scaled to one case of movement (see _distill_floor_margin).
@@ -2101,13 +2138,8 @@ class LoopStateMachine:
                     self._distill_blended_total[mission_id] = int(_bm.group(2))
                 except (ValueError, IndexError):
                     pass
-            if _blended is None:
-                logger.warning(
-                    "LoopStateMachine: distill log has a Baseline: line but no blended "
-                    "breakdown under it mission=%s — suppressing the floor rather than "
-                    "comparing a blended goal against a static baseline", mission_id,
-                )
-            baseline = _blended
+            # Never used as the baseline any more — see above.
+            baseline = None
         reliable = True
         if task_type == "distill":
             # Suppress the baseline comparison if the underlying case list moved
@@ -2286,14 +2318,84 @@ class LoopStateMachine:
         )
         return None
 
-    def _run_bare_eval(self, mission_id: str, plan: dict, current_iteration: int) -> Optional[float]:
-        """Post-training authoritative pass_rate check for dpo/grpo missions,
+    def _warm_start_bare_eval(self, mission_id: str, plan: dict) -> Optional[float]:
+        """bare_eval of the recipe's warm-start adapter, measured once per
+        mission and cached.
+
+        The Phase 36 floor compares an iteration's goal metric against the
+        warm-start's own score, and that comparison is only meaningful if both
+        come from the same population. While distill's goal was the held-out
+        slice, the baseline could be read free from the training log's
+        "Baseline:" line. Now that the goal is bare_eval over all 78 cases, the
+        log's baseline is the wrong population — it is the ~12-case held-out
+        number, and flooring a 78-case goal against it would compare across
+        populations exactly as the pre-2026-09-05 code did.
+
+        So measure the warm-start the same way the goal is measured. It costs
+        one extra bare_eval per MISSION (not per iteration) — ~15-25 min against
+        ~2h of training — and it is the only way to floor like-for-like. Cached
+        on the instance: a mission that re-plans or resumes must not pay it
+        twice, and the warm-start cannot change mid-mission (it is recipe-locked
+        and chaining only moves last_checkpoint_path, which is not what this
+        scores).
+        """
+        if not hasattr(self, "_warm_start_score"):
+            self._warm_start_score: dict = {}
+        if mission_id in self._warm_start_score:
+            return self._warm_start_score[mission_id]
+
+        from backend.agent.code_generator import _resolve_hyperparams
+        hp = _resolve_hyperparams(plan.get("task_type", ""), plan.get("hyperparameters", {}))
+        adapter = hp.get("adapter", "")
+        if not adapter:
+            logger.warning(
+                "LoopStateMachine: no warm-start adapter in recipe mission=%s — "
+                "baseline floor disabled for this mission", mission_id,
+            )
+            self._warm_start_score[mission_id] = None
+            return None
+
+        logger.info(
+            "LoopStateMachine: measuring warm-start %s for mission=%s (once per mission)",
+            adapter, mission_id,
+        )
+        score = self._run_bare_eval(mission_id, plan, 0, adapter_override=adapter)
+        self._warm_start_score[mission_id] = score
+        if score is None:
+            logger.warning(
+                "LoopStateMachine: warm-start bare_eval failed mission=%s — floor "
+                "disabled rather than compared against a different population",
+                mission_id,
+            )
+        return score
+
+    def _run_bare_eval(
+        self, mission_id: str, plan: dict, current_iteration: int,
+        adapter_override: Optional[str] = None,
+    ) -> Optional[float]:
+        """Post-training authoritative pass_rate check for finetune-remote
+        missions,
         via ensemble/finetune/bare_eval.py — the real adapter-discriminating
         eval tool (docs/FINETUNE.md: run_eval.py is saturated and doesn't
         distinguish between adapters; bare_eval.py is the one that does).
 
-        NOT used for distill — bare_eval.py scores the full case set, which for
-        distill includes training cases; see _distill_held_out_metric.
+        USED FOR DISTILL TOO as of 2026-09-06. It previously was not, on the
+        reasoning that bare_eval scores the full case set and distill trains on
+        part of it — so the score is inflated by training cases. That reasoning
+        was right about the leak and wrong about which number to prefer: the
+        held-out slice it was replaced with turned out to be BIASED, not merely
+        optimistic. Mission 6470e2db scored 11/12 (91.7%) held-out and 61/78
+        (78.2%) on bare_eval with the same weights — a 13-point gap that 12
+        cases at 8.3 points each cannot produce by variance. A leaky number over
+        the real population beats an unbiased-looking one over a slice that does
+        not represent it, because the leak is a known, bounded, constant offset
+        and the sampling bias is none of those. Held-out is now a progress
+        signal only (pass_rate_heldout telemetry) and never gates chaining.
+
+        ``adapter_override`` scores an arbitrary adapter path instead of this
+        iteration's checkpoint — used to measure the warm-start once per mission
+        so the baseline floor compares like-for-like (see
+        _warm_start_bare_eval).
 
         Runs on the Mac Mini over SSH (~12 min per docs); analogous to
         _run_goal_metric_eval for RL missions, which this task type can't use
@@ -2320,8 +2422,11 @@ class LoopStateMachine:
             )
             return None
 
-        bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
-        adapter_rel = self._resolve_adapter_or_bare(finetune_dir, bare_rel)
+        if adapter_override:
+            adapter_rel = adapter_override
+        else:
+            bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+            adapter_rel = self._resolve_adapter_or_bare(finetune_dir, bare_rel)
         cmd = (
             f"cd {finetune_dir} && {python_bin} bare_eval.py "
             f"--adapter {adapter_rel} --prompt-template {prompt_template}"
@@ -2329,7 +2434,13 @@ class LoopStateMachine:
         try:
             result = subprocess.run(
                 ["ssh", settings.sandbox_host, cmd],
-                capture_output=True, text=True, timeout=1800,
+                # 30 min was sized for an adapter-guided 12B (~15-25 min). A
+                # measured raw 12B on conductor_gemma.md took 69 min — untrained
+                # models generate long completions and hit eval_max_tokens on
+                # most cases. Since this call is now the goal metric rather than
+                # a cross-check, a timeout loses the iteration's only real
+                # number, so allow for the slow case.
+                capture_output=True, text=True, timeout=5400,
             )
         except Exception as exc:
             logger.warning("LoopStateMachine: bare_eval failed mission=%s: %s", mission_id, exc)

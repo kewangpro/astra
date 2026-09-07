@@ -1644,8 +1644,11 @@ Best blended pass rate during training: 12.5% (1/8)
 def test_distill_diagnostics_healthy_example_count_is_reliable(tmp_path):
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
     baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    # blended (13/21), NOT the 85.7% static headline
-    assert baseline == pytest.approx(0.619)
+    # As of 2026-09-06 distill NEVER takes its floor baseline from the training
+    # log — the goal metric is bare_eval over all 78 cases and the baseline comes
+    # from _warm_start_bare_eval, the same tool on the same population. This
+    # function still runs for distill, but only to serve the reliability gate.
+    assert baseline is None
     assert reliable is True
 
 
@@ -1664,7 +1667,7 @@ def test_distill_diagnostics_suppresses_baseline_when_case_list_changed(tmp_path
     "Case split:" totals; the baseline is suppressed rather than trusted."""
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)          # 127 + 22 = 149
     baseline, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    assert baseline == pytest.approx(0.619)                    # first iteration: trusted
+    assert baseline is None                                    # log baseline unused
 
     sm2 = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY.replace("127 train", "129 train"))
     sm2._eval_case_total = sm._eval_case_total                 # same mission, next iteration
@@ -1677,20 +1680,20 @@ def test_distill_diagnostics_stable_case_list_keeps_baseline(tmp_path):
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
     sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
     baseline2, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    assert baseline2 == pytest.approx(0.619)
+    assert baseline2 is None
 
 
-def test_distill_baseline_is_blended_not_static_headline(tmp_path):
-    """The floor must compare like-for-like. distill's goal metric is blended,
-    so its baseline is the indented blended breakdown — never the "Baseline:"
-    headline, which is the static (selection) rate. Blended sits below static
-    whenever the MCP subset scores worse, i.e. essentially always, so taking the
-    headline would floor every iteration against a baseline the blended metric
-    can never reach."""
+def test_distill_never_floors_against_a_training_log_number(tmp_path):
+    """The floor must compare like-for-like. distill's goal is bare_eval over
+    all 78 cases, so NO number from the training log is a valid baseline for it
+    — not the static "Baseline:" headline (wrong scale) and not the indented
+    blended line (right scale, wrong population: ~12 held-out cases). Both are
+    available in this fixture and neither may be returned."""
     sm = _sm_with_log(tmp_path, _DISTILL_LOG_HEALTHY)
     baseline, _ = sm._dpo_run_diagnostics("m", steps_per_eval=50, task_type="distill")
-    assert baseline == pytest.approx(0.619)      # blended 13/21
-    assert baseline != pytest.approx(0.857)      # not the static headline
+    assert baseline is None
+    for wrong in (0.857, 0.619):                 # static headline, held-out blended
+        assert baseline != pytest.approx(wrong)
 
 
 def test_distill_baseline_suppressed_when_no_blended_breakdown(tmp_path):
