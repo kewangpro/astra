@@ -2347,10 +2347,25 @@ class LoopStateMachine:
         from backend.agent.code_generator import _resolve_hyperparams
         hp = _resolve_hyperparams(plan.get("task_type", ""), plan.get("hyperparameters", {}))
         adapter = hp.get("adapter", "")
+        if hp.get("no_adapter", False):
+            # Cold start BY DESIGN: LoRA weights are freshly initialised, so
+            # there is no prior artifact whose score the mission "still has in
+            # hand" and nothing for the Phase 36 floor to protect. The run
+            # establishes a baseline rather than being measured against one.
+            # Distinguished from the misconfiguration case below so a reader
+            # can tell an intended cold start from a recipe missing its adapter.
+            logger.info(
+                "LoopStateMachine: cold start mission=%s — no warm-start to measure, "
+                "floor disabled by design (this run establishes the baseline)", mission_id,
+            )
+            self._warm_start_score[mission_id] = None
+            return None
         if not adapter:
             logger.warning(
-                "LoopStateMachine: no warm-start adapter in recipe mission=%s — "
-                "baseline floor disabled for this mission", mission_id,
+                "LoopStateMachine: no warm-start adapter in recipe mission=%s and "
+                "no_adapter not set — baseline floor disabled. If this recipe is a "
+                "cold start, declare no_adapter: true so the intent is explicit",
+                mission_id,
             )
             self._warm_start_score[mission_id] = None
             return None

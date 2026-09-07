@@ -912,7 +912,7 @@ Mission ID: {mission_id}
 Finetune dir (remote host, distill_train.py lives here): {finetune_dir}
 Python interpreter (has mlx_lm installed): {python_bin}
 Base model: {base_model}
-Warm-start adapter: {adapter}
+Warm-start: {warm_start_desc}
 Prompt template (student target): {prompt_template}
 Teacher: {teacher_model} via {ollama_url}
 LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
@@ -939,7 +939,7 @@ The script must:
            [
                "{python_bin}", "{finetune_dir}/distill_train.py",
                "--model", "{base_model}",
-               "--adapter", "{adapter}",
+               {adapter_arg}
                "--save-dir", "{checkpoint_dir}",
                "--prompt-template", "{prompt_template}",
                "--teacher-model", "{teacher_model}",
@@ -1056,6 +1056,10 @@ _ENV_RECIPE: dict = {
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
+    # 2026-09-06: pointed at the conductor_gemma.md 4B cold-start experiment.
+    # The pre-RL arm (ensemble_distill_prerl_v1.yaml) is also a measured
+    # negative now: mission 6470e2db scored 11/12 held-out but 61/78 on
+    # bare_eval, tying every other fine-tune and losing to the raw 4B's 62.
     # 2026-09-05: pointed at the PRE-RL warm-start experiment. The post-RL
     # config (ensemble_distill_v1.yaml, warm-starting from retrain_best =
     # grpo_v9_min/best) is a measured negative — mission 594322b2 ran three
@@ -1065,7 +1069,7 @@ _ENV_RECIPE: dict = {
     # repointing the default is the only mechanism that reliably picks the
     # intended recipe. Restore by swapping this value back — both files are
     # kept and both declare pass_rate 0.92.
-    "distill": "ensemble_distill_prerl_v1.yaml",
+    "distill": "ensemble_distill_gemma4b_v1.yaml",
 }
 
 
@@ -1160,6 +1164,15 @@ def _resolve_hyperparams(
         # 26 days on mission 7fd88324 never once built on each other as a result.
         if warm_start_adapter:
             hp["adapter"] = warm_start_adapter
+            # A cold-start recipe is cold for iteration 0 ONLY. Once an
+            # iteration has produced a checkpoint, later iterations chain from
+            # it and are ordinary warm starts — leaving no_adapter set would
+            # emit --no-adapter alongside a real adapter path, which
+            # distill_train.py rejects as mutually exclusive (ensemble 73c8fd2),
+            # and would silently discard every iteration's progress if it
+            # didn't. Clearing it here rather than in the template keeps the
+            # rule with the value it depends on.
+            hp["no_adapter"] = False
         return hp
     hp = dict(plan_hp)
     for k, v in recipe_hp.items():
@@ -1482,8 +1495,20 @@ class CodeGenerator:
             }
             return _GRPO_TEMPLATE.format(**ctx)
         if task_type == "distill":
+            # Cold start: no warm-start adapter exists for this base model, so
+            # LoRA weights are freshly initialised and the run ESTABLISHES a
+            # baseline rather than testing against one. distill_train.py
+            # requires exactly one of --adapter / --no-adapter (ensemble
+            # 73c8fd2) and rejects both or neither, so this is a real fork in
+            # the emitted argv, not a value substitution.
+            _cold = bool(hp.get("no_adapter", False))
             ctx = {
                 **hp,
+                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
+                "warm_start_desc": (
+                    "NONE — cold start (--no-adapter); this run establishes a baseline"
+                    if _cold else hp.get("adapter", "")
+                ),
                 "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
                 **base,

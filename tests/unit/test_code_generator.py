@@ -1718,6 +1718,14 @@ def test_build_user_prompt_distill_wraps_existing_script_not_reimplemented(tmp_p
 
 
 def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
+    # Pin the pre-RL warm-start recipe. This test is about a WARM start's
+    # rendered adapter path; the active default is a cold start as of
+    # 2026-09-06, and letting the test follow _ENV_RECIPE would make it assert
+    # whatever is current rather than the behaviour it names.
+    monkeypatch.setitem(
+        __import__("backend.agent.code_generator", fromlist=["x"])._ENV_RECIPE,
+        "distill", "ensemble_distill_prerl_v1.yaml",
+    )
     prompt = _distill_prompt(tmp_path, monkeypatch)
     assert "gemma-3-12b-it-4bit" in prompt
     # The active distill recipe (ensemble_distill_prerl_v1) warm-starts from the
@@ -2096,3 +2104,51 @@ def test_valid_algo_keys_case_insensitive():
 
 def test_valid_algo_keys_unknown_returns_empty():
     assert CodeGenerator.valid_algo_keys("UNKNOWN_ALGO") == set()
+
+
+# ── distill cold start ───────────────────────────────────────────────────────
+
+def _cold_recipe(monkeypatch):
+    """Point the distill task type at the cold-start 4B recipe."""
+    monkeypatch.setitem(
+        __import__("backend.agent.code_generator", fromlist=["x"])._ENV_RECIPE,
+        "distill", "ensemble_distill_gemma4b_v1.yaml",
+    )
+
+
+def test_cold_start_recipe_emits_no_adapter_not_adapter(tmp_path, monkeypatch):
+    """distill_train.py requires EXACTLY ONE of --adapter / --no-adapter and
+    rejects both or neither (ensemble 73c8fd2), so this is a fork in the emitted
+    argv rather than a value substitution."""
+    _cold_recipe(monkeypatch)
+    prompt = _distill_prompt(tmp_path, monkeypatch)
+    assert '"--no-adapter",' in prompt
+    assert '"--adapter"' not in prompt
+
+
+def test_cold_start_recipe_passes_the_production_prompt_and_long_context(tmp_path, monkeypatch):
+    """conductor_gemma.md is 5,144 tokens. distill_train.py silently DROPS any
+    example exceeding --max-seq-len, so the 2560 every conductor_min recipe uses
+    would drop every example and report "0 examples ready for training"."""
+    _cold_recipe(monkeypatch)
+    prompt = _distill_prompt(tmp_path, monkeypatch)
+    assert "backend/prompts/conductor_gemma.md" in prompt
+    assert "6144" in prompt
+    assert "gemma-3-4b-it-4bit" in prompt
+
+
+def test_chaining_clears_cold_start(tmp_path, monkeypatch):
+    """A cold-start recipe is cold for iteration 0 ONLY. Once an iteration has
+    produced a checkpoint, later iterations chain from it — emitting
+    --no-adapter alongside a real adapter path would be rejected as mutually
+    exclusive, and would discard every iteration's progress if it weren't."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    _cold_recipe(monkeypatch)
+    cold = _resolve_hyperparams("distill", {})
+    assert cold["no_adapter"] is True
+    assert not cold.get("adapter")
+
+    warm = _resolve_hyperparams(
+        "distill", {}, warm_start_adapter="adapters/astra_abc12345_iter0/best")
+    assert warm["no_adapter"] is False
+    assert warm["adapter"] == "adapters/astra_abc12345_iter0/best"

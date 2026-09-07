@@ -1,0 +1,99 @@
+name: ensemble_distill_gemma4b_v1
+version: "1.0.0"
+created_at: "2026-09-06"
+task_type: distill
+domain: NLP
+description: >
+  Distillation for the Ensemble routing model against conductor_gemma.md — the
+  PRODUCTION prompt — on the 4B base, cold-started. This is the first fine-tune
+  in the project trained on a prompt that actually contains the skill strings it
+  is graded on. Every prior run targeted conductor_min.md, which omits the MCP
+  skills entirely, so the 7 dynamic-MCP cases were unlearnable by construction
+  and we never tested that assumption.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit   # production's model — see WHY 4B below
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  # ── Cold start ─────────────────────────────────────────────────────────────
+  # No 4B adapter lineage exists (the inventory holds 12B lineages plus a 1B
+  # retrain_1b_v4), and a 12B adapter cannot warm-start a 4B — the dims differ
+  # and distill_train.py's key-intersection guard rejects it. So LoRA weights
+  # start freshly initialised. distill_train.py requires exactly one of
+  # --adapter / --no-adapter and rejects both or neither (ensemble 73c8fd2).
+  #
+  # CONSEQUENCE FOR READING THE RESULT: iteration 0 ESTABLISHES a baseline; it
+  # does not test the hypothesis. The Phase 36 floor is disabled for it — there
+  # is no prior artifact whose score the mission still has in hand. The number
+  # that tests the hypothesis is the full-78 bare_eval against the raw 4B's
+  # measured 62/78, NOT a warm-start delta.
+  no_adapter: true
+
+  prompt_template: backend/prompts/conductor_gemma.md   # 5,144 tokens vs conductor_min's 111
+  teacher_model: gemma3:12b
+  ollama_url: http://localhost:11434
+  routing_only: true
+
+  # ── LoRA ───────────────────────────────────────────────────────────────────
+  # num_layers is RELATIVE — linear_to_lora_layers converts "the last N blocks"
+  # against whatever depth the loaded model has, so 8 lands on the 4B's last 8
+  # rather than the 12B's 40-47. Verified ensemble-side; the 40-47 in the
+  # adapter inventory is a consequence of 8-from-the-end on a 48-layer model,
+  # not a hardcoded range. NOTE: 8 blocks is a larger FRACTION of a 4B than of a
+  # 12B, so this is inherited rather than tuned, and is a candidate to revisit
+  # if the first run underfits. FINETUNE.md records a prior 4B/16L run.
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # ── Training ───────────────────────────────────────────────────────────────
+  # max_seq_len MUST clear the prompt. distill_train.py silently DROPS any
+  # example where prompt + completion exceeds it:
+  #     if args.max_seq_len and len(prompt_ids) + len(comp_ids) > max_seq_len: continue
+  # conductor_gemma.md is 5,144 tokens (measured on the Mini with the 12B
+  # tokenizer, 18,193 chars), so the 2560 used by every conductor_min recipe
+  # would drop EVERY example and the run would report "0 examples ready for
+  # training". 6144 leaves ~1000 tokens for the query and completion.
+  # This is also why the 4B arm was chosen over the 12B: a 6k context at 12B on
+  # a 24GB Mini is an OOM risk and finetune/ has no --grad-checkpoint flag.
+  max_seq_len: 6144
+  iters: 500
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 50
+  save_every: 50
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# Blended all-78-case scale, as with every distill recipe since 2026-09-05.
+# Held at 0.92 to match its siblings. As always for this task type, distance
+# from the ceiling is not the result — but the comparison here is NOT a
+# warm-start delta, because a cold start has no warm-start. The number to beat
+# is the RAW 4B's measured 62/78 (79.5%) on the same 78 cases with this same
+# prompt, since that is the config in production today.
+#
+# WHY 4B, measured 2026-09-06: raw 12B + conductor_gemma.md scores 59/71 static,
+# 3/7 MCP, 62/78 blended in 69.0 min — IDENTICAL on all three splits to raw 4B +
+# conductor_gemma.md (59/3/62, 22.1 min). Tripling the model buys nothing and
+# costs 3.1x wall clock. Note the failure SETS differ (16 each, only 10 shared),
+# so that is two competencies netting to the same score, not the two models
+# agreeing — do not read it as "the 12B is the same model".
+#
+# THE HYPOTHESIS: raw 4B gets 3/7 MCP from this prompt with no training at all.
+# If distillation teaches the MCP cases, the ceiling is 59 static + 7 MCP =
+# 66/78 — the first real gain over production this project would have. If it
+# does not, the prompt was never the constraint either, and the fine-tuning
+# programme has exhausted its hypotheses.
+metric_ceiling:
+  pass_rate: 0.92
+
+# Selection: astra maps ONE recipe per task_type (_ENV_RECIPE in
+# backend/agent/code_generator.py). As of 2026-09-06 this file IS the active
+# distill recipe, so every distill mission cold-starts a 4B against
+# conductor_gemma.md until that is swapped back. The two predecessors are kept
+# and both are measured negatives: ensemble_distill_v1 (post-RL warm-start,
+# mission 594322b2 never beat its own baseline) and ensemble_distill_prerl_v1
+# (pre-RL warm-start, mission 6470e2db scored 11/12 held-out but 61/78 on
+# bare_eval — tying every other fine-tune and losing to the raw 4B's 62).

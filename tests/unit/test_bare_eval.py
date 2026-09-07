@@ -331,7 +331,23 @@ class TestWarmStartBareEval:
         sm._warm_start_score = {}
         return sm
 
-    def test_scores_the_recipe_warm_start_not_the_iteration_checkpoint(self):
+    @staticmethod
+    def _pin_warm_recipe(monkeypatch):
+        """Pin a WARM-START recipe rather than inheriting whichever recipe
+        _ENV_RECIPE["distill"] currently points at. distill is
+        recipe-authoritative, so plan hyperparameters cannot carry this — the
+        recipe mapping is the only lever. The active default is a cold start as
+        of 2026-09-06 and has no adapter to score, which would make these tests
+        track the default rather than the behaviour they name."""
+        from backend.agent import code_generator as _cg
+        monkeypatch.setitem(_cg._ENV_RECIPE, "distill", "ensemble_distill_prerl_v1.yaml")
+
+    @staticmethod
+    def _warm_plan():
+        return _plan(task_type="distill")
+
+    def test_scores_the_recipe_warm_start_not_the_iteration_checkpoint(self, monkeypatch):
+        self._pin_warm_recipe(monkeypatch)
         sm = self._sm()
         stdout = (
             "Static-skill routing: 59/71 (83.1%)\n"
@@ -341,7 +357,7 @@ class TestWarmStartBareEval:
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
-            score = sm._warm_start_bare_eval("mission-abc12345", _plan(task_type="distill"))
+            score = sm._warm_start_bare_eval("mission-abc12345", self._warm_plan())
 
         assert score == pytest.approx(0.795)
         cmd = mock_run.call_args_list[-1].args[0][2]
@@ -349,7 +365,8 @@ class TestWarmStartBareEval:
         assert "--adapter adapters/retrain_v53_min/0000400_adapters.safetensors" in cmd
         assert "astra_mission-" not in cmd
 
-    def test_measured_once_per_mission_and_cached(self):
+    def test_measured_once_per_mission_and_cached(self, monkeypatch):
+        self._pin_warm_recipe(monkeypatch)
         """~15-25 min per call. A re-plan or resume must not pay it again, and
         the warm-start cannot change mid-mission — it is recipe-locked."""
         sm = self._sm()
@@ -357,20 +374,21 @@ class TestWarmStartBareEval:
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
-            first = sm._warm_start_bare_eval("m-1", _plan(task_type="distill"))
+            first = sm._warm_start_bare_eval("m-1", self._warm_plan())
             calls_after_first = mock_run.call_count
-            second = sm._warm_start_bare_eval("m-1", _plan(task_type="distill"))
+            second = sm._warm_start_bare_eval("m-1", self._warm_plan())
 
         assert first == second == pytest.approx(0.795)
         assert mock_run.call_count == calls_after_first   # no second ssh
 
-    def test_failure_caches_none_so_the_floor_is_disabled_not_wrong(self):
+    def test_failure_caches_none_so_the_floor_is_disabled_not_wrong(self, monkeypatch):
+        self._pin_warm_recipe(monkeypatch)
         """No floor beats a floor against the wrong population."""
         sm = self._sm()
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run",
                    side_effect=RuntimeError("ssh died")):
-            assert sm._warm_start_bare_eval("m-1", _plan(task_type="distill")) is None
+            assert sm._warm_start_bare_eval("m-1", self._warm_plan()) is None
         assert sm._warm_start_score["m-1"] is None
 
 
