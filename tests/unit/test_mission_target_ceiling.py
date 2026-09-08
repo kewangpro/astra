@@ -14,13 +14,17 @@ from backend.routers.missions import _CEILING_TARGET_MARGIN, _reject_unreachable
 # derive from the live ceiling so they don't rebreak on a deliberate re-tune.
 #
 # 2026-09-05: all three rebased from the 71-case static scale to the blended
-# all-78-case scale when pass_rate's meaning changed (see the comment on
-# _BARE_EVAL_BLENDED_RE in backend/loop/state_machine.py). These are NOT a
-# re-tune of the same quantity — they measure a different population, and the
-# old values would have become near-unreachable targets had they been left.
-_DPO_CEILING = 0.85
-_GRPO_CEILING = 0.83
-_DISTILL_CEILING = 0.92
+# all-78-case scale when pass_rate's meaning changed. 2026-09-08: rebased AGAIN
+# to the MODEL-ROUTED 54-case scale, after 17 of the 78 turned out to be cases
+# the pipeline resolves before the LLM (plus the 7 MCP cases) — 22% of the
+# denominator was work the product never asks the model to do. These are NOT
+# re-tunes of the same quantity; each time they measure a different population,
+# and leaving them would have made every target mean something it did not say.
+# Measured on one frozen clock and proven repeatable: raw 4B 48/54, distill
+# 6470e2db 48/54, raw 12B 47/54, grpo_v9_min/best 46/54. One case = 1.85 points.
+_DPO_CEILING = 0.93        # admits up to 50/54
+_GRPO_CEILING = 0.91       # admits up to 49/54
+_DISTILL_CEILING = 0.96    # admits up to 52/54
 
 
 def test_dpo_recipe_declares_pass_rate_ceiling():

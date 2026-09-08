@@ -79,6 +79,8 @@ _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 # unpenalised. Blended is the selector; static and MCP are diagnostics, recorded
 # alongside it so an MCP-for-static trade shows in the HUD instead of hiding
 # inside a flat blended line.
+_BARE_EVAL_MODEL_ROUTED_RE = re.compile(r"Model-routed:\s*(\d+)/(\d+)\s*\(([\d.]+)%\)")
+_BARE_EVAL_PRELLM_RE = re.compile(r"Pre-LLM shortcut:\s*\d+/\d+\s*\(([\d.]+)%\)")
 _BARE_EVAL_BLENDED_RE = re.compile(r"Blended \(all cases\):\s*(\d+)/(\d+)\s*\(([\d.]+)%\)")
 _BARE_EVAL_STATIC_RE = re.compile(r"Static-skill routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
 _BARE_EVAL_MCP_RE = re.compile(r"Dynamic MCP routing:\s*\d+/\d+\s*\(([\d.]+)%\)")
@@ -94,6 +96,8 @@ class BareEvalReport(NamedTuple):
     goal: Optional[float]
     static: Optional[float]
     mcp: Optional[float]
+    prellm: Optional[float] = None
+    blended: Optional[float] = None
     #: Denominator of the blended line (78 for the full routing set). Feeds
     #: _distill_floor_margin, which scales the floor to one case of movement —
     #: at 78 that is 1.3 points and the margin collapses to the flat 0.03, vs
@@ -122,21 +126,31 @@ def _parse_bare_eval_report(stdout: str) -> BareEvalReport:
 
     static = _pct(_BARE_EVAL_STATIC_RE, stdout)
     mcp = _pct(_BARE_EVAL_MCP_RE, stdout)
+    prellm = _pct(_BARE_EVAL_PRELLM_RE, stdout)
     bm = _BARE_EVAL_BLENDED_RE.search(stdout)
     blended = float(bm.group(3)) / 100.0 if bm else None
-    blended_total = int(bm.group(2)) if bm else None
+    mr = _BARE_EVAL_MODEL_ROUTED_RE.search(stdout)
 
-    # A blended line is the goal whenever one is present, regardless of whether
-    # the split lines came with it — it already names the whole population.
-    if blended is not None:
+    # The MODEL-ROUTED line is the goal (ensemble c565034). It counts only cases
+    # the pipeline actually asks the model to route. The blended 78-case
+    # denominator it replaced included 17 cases resolved BEFORE the LLM — a
+    # shortcut in _create_plan answers them and the model is never consulted —
+    # plus the 7 dynamic-MCP cases, so 22% of the old metric was work the product
+    # does not ask the model to do. Every recipe's metric_ceiling is on this
+    # 54-case scale as of 2026-09-08; reading blended here would compare a
+    # 78-case number against a 54-case ceiling.
+    if mr is not None:
         return BareEvalReport(
-            goal=blended, static=static, mcp=mcp, blended_total=blended_total
+            goal=float(mr.group(3)) / 100.0, static=static, mcp=mcp,
+            prellm=prellm, blended=blended, blended_total=int(mr.group(2)),
         )
-    # Split report with no blended line: the output shape changed. Do NOT fall
-    # through to "Pass rate:" or the static line — both would hand back a
-    # different population than the goal metric is defined over.
-    if static is not None or mcp is not None:
-        return BareEvalReport(goal=None, static=static, mcp=mcp, blended_total=None)
+    # Split report with no model-routed line: the output shape changed. Do NOT
+    # fall through to blended, "Pass rate:" or the static line — each is a
+    # different population than the goal metric is defined over, and silently
+    # substituting one is the exact failure this parser has had twice.
+    if static is not None or mcp is not None or blended is not None:
+        return BareEvalReport(goal=None, static=static, mcp=mcp,
+                              prellm=prellm, blended=blended, blended_total=None)
     # Non-split run (--ids scoped to a pure subset): "Pass rate:" is the whole
     # pool it was asked about, so it is the goal on its own terms.
     m = _PASS_RATE_RE.search(stdout)
@@ -789,6 +803,16 @@ class LoopStateMachine:
                                 for _diag_name, _diag_val in (
                                     ("pass_rate_static", _split.static),
                                     ("pass_rate_mcp", _split.mcp),
+                                    # Cases production answers WITHOUT the model.
+                                    # Recorded because grpo_v9_min/best scored
+                                    # 15/17 here while scoring worst of four on
+                                    # the goal metric — a checkpoint optimised
+                                    # into the stratum that does not matter.
+                                    ("pass_rate_prellm", _split.prellm),
+                                    # The historical 78-case denominator, kept so
+                                    # a run stays comparable to pre-2026-09-08
+                                    # numbers. Never a decision input.
+                                    ("pass_rate_blended", _split.blended),
                                 ):
                                     if _diag_val is not None:
                                         await self._append_telemetry_metric(

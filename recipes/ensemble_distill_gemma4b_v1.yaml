@@ -86,8 +86,27 @@ hyperparameters:
 # 66/78 — the first real gain over production this project would have. If it
 # does not, the prompt was never the constraint either, and the fine-tuning
 # programme has exhausted its hypotheses.
+#
+# 2026-09-08 (MODEL-ROUTED SCALE): pass_rate now means the MODEL-ROUTED
+# all-54-case number, not the blended 78-case one. bare_eval's old denominator
+# included 17 cases the pipeline resolves BEFORE the LLM (mock_llm_response:
+# null — a shortcut in _create_plan answers them and the model is never asked)
+# plus the 7 dynamic-MCP cases. 22% of the metric was work the product does not
+# ask the model to do. Rebased from 0.92 to 0.96.
+#
+# Measured 2026-09-08, all five runs at ENSEMBLE_FROZEN_NOW=2026-09-08T09:00:00,
+# and PROVEN REPEATABLE — a repeat of raw 4B at the same instant reproduced its
+# counts and its exact failure set:
+#     raw 4B + conductor_gemma.md (production)  48/54  (88.9%)
+#     distill 6470e2db (pre-RL)                 48/54  (88.9%)
+#     raw 12B + conductor_gemma.md              47/54  (87.0%)
+#     grpo_v9_min/best                          46/54  (85.2%)
+# One case is 1.85 points, so ceilings sit just above a case boundary to stay
+# interpretable. 0.96 admits up to 52/54, matching ensemble_distill_prerl_v1. The number
+# to BEAT remains the raw 4B production config's 48/54 on this same scale —
+# not the ceiling, and not a warm-start delta, since this recipe cold-starts.
 metric_ceiling:
-  pass_rate: 0.92
+  pass_rate: 0.96
 
 # Selection: astra maps ONE recipe per task_type (_ENV_RECIPE in
 # backend/agent/code_generator.py). As of 2026-09-06 this file IS the active

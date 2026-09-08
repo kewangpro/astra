@@ -41,7 +41,7 @@ class TestRunBareEval:
 
         assert result == pytest.approx(0.825)
 
-    def test_parses_blended_metric_from_split_report(self):
+    def test_parses_model_routed_metric_from_split_report(self):
         """bare_eval.py switches to a static/dynamic-MCP split report whenever the
         case pool has MCP cases (true for every real dpo/grpo/distill mission) —
         it then prints "Static-skill routing:", never "Pass rate:", so this must
@@ -49,26 +49,31 @@ class TestRunBareEval:
         mission 551839b7's bare_eval ran its full ~19 min and produced a genuine
         result that _run_bare_eval failed to parse both times it ran).
 
-        The goal metric is the BLENDED line, not the static split, despite
-        bare_eval.py's own labels claiming the reverse — see the module-level
-        comment on _BARE_EVAL_BLENDED_RE for the measurements that settled it."""
+        The goal metric is the MODEL-ROUTED line as of 2026-09-08 — the cases the
+        pipeline actually asks the model to route. It replaced blended, whose
+        78-case denominator included 17 cases resolved before the LLM plus the 7
+        MCP cases: 22% of the metric was work the product never asks for."""
         sm = _bare_state_machine()
         stdout = (
             "Model:    mlx-community/gemma-3-12b-it-4bit\n"
-            "Static-skill routing: 10/11 (90.9%)  ← fine-tune target metric  [19.3 min]\n"
-            "Dynamic MCP routing:  0/7 (0.0%)  ← needs MCP skills in the prompt (separate project)\n"
-            "Blended (all cases):  68/78 (87.2%)  ← historical bare-oracle number, not the selector\n"
+            "Model-routed:         48/54 (88.9%)  ← QUOTE THIS\n"
+            "Pre-LLM shortcut:     10/17 (58.8%)\n"
+            "Static-skill routing: 10/11 (90.9%)\n"
+            "Dynamic MCP routing:  0/7 (0.0%)\n"
+            "Blended (all cases):  68/78 (87.2%)  ← historical, not the selector\n"
         )
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
             result = sm._run_bare_eval("mission-abc12345", _plan(task_type="distill"), 2)
 
-        assert result == pytest.approx(0.872)
-        # The split is stashed for the caller to record as diagnostics.
+        assert result == pytest.approx(0.889)          # model-routed, NOT blended
         split = sm._bare_eval_split["mission-abc12345"]
         assert split.static == pytest.approx(0.909)
         assert split.mcp == pytest.approx(0.0)
+        assert split.prellm == pytest.approx(0.588)
+        assert split.blended == pytest.approx(0.872)   # kept as a diagnostic only
+        assert split.blended_total == 54               # the goal's denominator
 
     def test_split_report_without_blended_line_returns_none(self):
         """A split report missing its blended line means bare_eval.py's output
@@ -88,13 +93,16 @@ class TestRunBareEval:
 
         assert result is None
 
-    def test_blended_selector_prefers_wash_over_static_regression(self):
-        """The case that motivated the change. distill iter2 scored 58/71 static
-        (down 3 from its grpo_v9_min/best warm-start's 61) but 3/7 MCP (up 3
-        from 0), for an identical 61/78 blended. Static-only rejects it as a
-        regression; blended reports the wash it actually is."""
+    def test_model_routed_selector_ignores_the_prellm_stratum(self):
+        """grpo_v9_min/best scored 46/54 model-routed — worst of four configs —
+        while scoring 15/17 on the pre-LLM cases, best of four. It optimised into
+        the stratum production never asks it about, because the metric it was
+        selected on included those cases. The goal must read 46/54, not a number
+        the pre-LLM stratum inflates."""
         sm = _bare_state_machine()
         stdout = (
+            "Model-routed:         46/54 (85.2%)\n"
+            "Pre-LLM shortcut:     15/17 (88.2%)\n"
             "Static-skill routing: 58/71 (81.7%)\n"
             "Dynamic MCP routing:  3/7 (42.9%)\n"
             "Blended (all cases):  61/78 (78.2%)\n"
@@ -104,8 +112,9 @@ class TestRunBareEval:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
             result = sm._run_bare_eval("mission-abc12345", _plan(task_type="distill"), 2)
 
-        assert result == pytest.approx(0.782)
+        assert result == pytest.approx(0.852)          # 46/54, the goal
         split = sm._bare_eval_split["mission-abc12345"]
+        assert split.prellm == pytest.approx(0.882)    # 15/17 — recorded, never read
         assert split.static == pytest.approx(0.817)
         assert split.mcp == pytest.approx(0.429)
 
@@ -350,6 +359,7 @@ class TestWarmStartBareEval:
         self._pin_warm_recipe(monkeypatch)
         sm = self._sm()
         stdout = (
+            "Model-routed:         48/54 (88.9%)\n"
             "Static-skill routing: 59/71 (83.1%)\n"
             "Dynamic MCP routing:  3/7 (42.9%)\n"
             "Blended (all cases):  62/78 (79.5%)\n"
@@ -359,7 +369,7 @@ class TestWarmStartBareEval:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
             score = sm._warm_start_bare_eval("mission-abc12345", self._warm_plan())
 
-        assert score == pytest.approx(0.795)
+        assert score == pytest.approx(0.889)
         cmd = mock_run.call_args_list[-1].args[0][2]
         # The recipe's warm-start, NOT adapters/astra_<mission>_iterN/best.
         assert "--adapter adapters/retrain_v53_min/0000400_adapters.safetensors" in cmd
@@ -370,7 +380,7 @@ class TestWarmStartBareEval:
         """~15-25 min per call. A re-plan or resume must not pay it again, and
         the warm-start cannot change mid-mission — it is recipe-locked."""
         sm = self._sm()
-        stdout = "Blended (all cases):  62/78 (79.5%)\n"
+        stdout = "Model-routed:         48/54 (88.9%)\n"
         with patch("backend.loop.state_machine.settings.sandbox_host", "mac-mini.local"), \
              patch("backend.loop.state_machine.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=stdout, stderr="")
@@ -378,7 +388,7 @@ class TestWarmStartBareEval:
             calls_after_first = mock_run.call_count
             second = sm._warm_start_bare_eval("m-1", self._warm_plan())
 
-        assert first == second == pytest.approx(0.795)
+        assert first == second == pytest.approx(0.889)
         assert mock_run.call_count == calls_after_first   # no second ssh
 
     def test_failure_caches_none_so_the_floor_is_disabled_not_wrong(self, monkeypatch):
