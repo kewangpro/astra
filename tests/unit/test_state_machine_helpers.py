@@ -1878,3 +1878,56 @@ def test_ordinary_script_errors_are_still_healable():
                  "FileNotFoundError: Adapter not found: adapters/nope",
                  "TimeoutError: timed out"):
         assert not _ENVIRONMENTAL_ERROR_RE.search(line), line
+
+
+# ── preflight: remote training script exists ─────────────────────────────────
+
+def _preflight():
+    from backend.services.preflight import PreflightChecker
+    return PreflightChecker()
+
+
+def test_remote_script_check_skipped_for_local_task_types():
+    """Only finetune-remote types dispatch a {finetune_dir}/{type}_train.py
+    wrapper. An rl/sft/ml mission has no remote script to check."""
+    for tt in ("rl", "sft", "ml", "mlx_lora"):
+        assert _preflight()._check_remote_script(tt) == [], tt
+
+
+def test_remote_script_check_passes_when_present():
+    with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
+         patch("backend.services.preflight.subprocess.run") as run:
+        run.return_value = MagicMock(stdout="yes\n", stderr="")
+        out = _preflight()._check_remote_script("distill")
+    assert out[0]["passed"] is True
+    assert out[0]["detail"].endswith("/distill_train.py")
+    # It must probe the DEPLOYED path, not a repo-relative one.
+    cmd = run.call_args_list[-1].args[0][2]
+    assert "test -f /Users/kewang/finetune/distill_train.py" in cmd
+    assert "finetune/finetune" not in cmd
+
+
+def test_remote_script_check_fails_when_missing_and_names_the_layout_trap():
+    """Mission a8675c39 died at launch on a missing remote script. The failure
+    detail must point at the actual cause — finetune_dir aimed at a repo
+    checkout rather than the deployed directory, whose layouts differ by one
+    level (the same mismatch that produced ensemble's finetune/finetune/ path)."""
+    with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
+         patch("backend.services.preflight.subprocess.run") as run:
+        run.return_value = MagicMock(stdout="no\n", stderr="")
+        out = _preflight()._check_remote_script("dpo")
+    assert out[0]["passed"] is False
+    assert "not found" in out[0]["detail"]
+    assert "DEPLOYED" in out[0]["detail"]
+    assert "layouts differ" in out[0]["detail"]
+
+
+def test_remote_script_check_does_not_block_on_unreachable_host():
+    """Preflight warns, it never blocks. A transient SSH failure must not stop a
+    mission that would otherwise run."""
+    with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
+         patch("backend.services.preflight.subprocess.run",
+               side_effect=RuntimeError("ssh timeout")):
+        out = _preflight()._check_remote_script("grpo")
+    assert out[0]["passed"] is True
+    assert "unreachable" in out[0]["detail"]
