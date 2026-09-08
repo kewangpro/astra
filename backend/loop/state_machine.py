@@ -244,6 +244,26 @@ _DPO_TOTAL_STEPS_RE = re.compile(r"total_steps=(\d+)")
 # neither records a false new best nor chases noise below its own starting point.
 DPO_BASELINE_FLOOR_MARGIN = 0.03
 
+# Failures the healer cannot fix, because they are not about the script.
+# A finetune-remote train.py is an os.execv wrapper around distill_train.py /
+# dpo_train.py — rewriting it cannot free GPU memory or make a disk bigger, so
+# feeding these to ErrorAnalyzer burns an iteration to rediscover the same wall.
+# Real incident: mission ac3ae22d OOMed Metal on iterations 0, 1 and 2, was
+# "healed" each time, and recorded no metric — the cause was 15.5GB of idle
+# Ollama models resident on the Mac Mini (gemma3:12b + an unrelated
+# llama3.1:8b), leaving ~8GB for a 4B LoRA at a 6144-token context. Unloading
+# them took free memory from 26% to 92%. That is an operator fix, and the
+# mission should say so rather than retry.
+_ENVIRONMENTAL_ERROR_RE = re.compile(
+    r"kIOGPUCommandBufferCallbackErrorOutOfMemory"
+    r"|Insufficient Memory"
+    r"|MTLCommandBuffer.*[Oo]ut [Oo]f [Mm]emory"
+    r"|OutOfMemoryError"
+    r"|No space left on device"
+    r"|Cannot allocate memory",
+    re.IGNORECASE,
+)
+
 # The only pivot adjustments that mean anything for a finetune-remote mission —
 # every other hyperparameter is fixed by the recipe at dispatch. Scoped per task
 # type (mirrors code_generator._FINETUNE_PIVOT_RANGES_BY_TASK) so a dpo pivot
@@ -639,6 +659,31 @@ class LoopStateMachine:
                         logger.error("LoopStateMachine: max retries exceeded — failing mission")
                         await emit_status(mission_id, "Max retries exceeded", event_type="error")
                         await self._transition(mission_id, MissionStatus.FAILED)
+                        return
+                    if _ENVIRONMENTAL_ERROR_RE.search(error_output):
+                        # Resource exhaustion on the training host. Not a script
+                        # defect, so healing cannot address it and every retry
+                        # costs a full iteration to hit the same wall.
+                        _hint = (
+                            "Resource exhaustion on the training host — the training "
+                            "script is an os.execv wrapper, so rewriting it cannot fix "
+                            "this. Check what else holds memory on the sandbox host "
+                            "(on the Mac Mini, `curl localhost:11434/api/ps` — Ollama "
+                            "keeps teacher models resident after use and they are not "
+                            "unloaded when a mission ends)."
+                        )
+                        logger.error(
+                            "LoopStateMachine: environmental failure mission=%s — failing "
+                            "without healing. %s", mission_id, _hint,
+                        )
+                        await emit_status(
+                            mission_id, "Training host out of resources", event_type="error",
+                            value=_hint,
+                        )
+                        await self._transition(
+                            mission_id, MissionStatus.FAILED,
+                            error_log=f"{_hint}\n\n{error_output[-2000:]}",
+                        )
                         return
                     logger.warning("LoopStateMachine: sandbox error (attempt %d/%d) — healing", error_count, MAX_RETRIES)
                     await emit_status(
@@ -1382,10 +1427,18 @@ class LoopStateMachine:
         {MissionStatus.COMPLETED, MissionStatus.FAILED, MissionStatus.STALLED}
     )
 
-    async def _transition(self, mission_id: str, status: MissionStatus) -> None:
+    async def _transition(
+        self, mission_id: str, status: MissionStatus, error_log: Optional[str] = None,
+    ) -> None:
         values: dict = {"status": status.value}
         if status in self._TERMINAL_STATUSES:
             values["completed_at"] = datetime.now(timezone.utc)
+        if error_log is not None:
+            # A terminal transition that knows WHY should say so. Missions that
+            # died in a crash-loop historically left error_log null because each
+            # crash re-planned instead of terminating (see the note in
+            # _resolve_adapter_or_bare), which left no record of the cause.
+            values["error_log"] = error_log
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await session.execute(

@@ -1846,3 +1846,35 @@ def test_distill_floor_margin_defaults_when_total_unknown():
     assert LoopStateMachine._distill_floor_margin(0) == pytest.approx(
         DPO_BASELINE_FLOOR_MARGIN
     )
+
+
+# ── environmental failures are not healable ──────────────────────────────────
+
+def test_metal_oom_is_environmental():
+    """Real incident: mission ac3ae22d OOMed Metal on iterations 0, 1 and 2 and
+    was "healed" each time, recording no metric. The cause was 15.5GB of idle
+    Ollama models resident on the Mac Mini — an operator fix. A finetune-remote
+    train.py is an os.execv wrapper, so rewriting it cannot free GPU memory."""
+    from backend.loop.state_machine import _ENVIRONMENTAL_ERROR_RE
+    oom = ("libc++abi: terminating due to uncaught exception of type "
+           "std::runtime_error: [METAL] Command buffer execution failed: "
+           "Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)")
+    assert _ENVIRONMENTAL_ERROR_RE.search(oom)
+
+
+def test_disk_and_host_alloc_failures_are_environmental():
+    from backend.loop.state_machine import _ENVIRONMENTAL_ERROR_RE
+    for line in ("OSError: [Errno 28] No space left on device",
+                 "RuntimeError: Cannot allocate memory"):
+        assert _ENVIRONMENTAL_ERROR_RE.search(line), line
+
+
+def test_ordinary_script_errors_are_still_healable():
+    """The healer must keep its job. Only resource exhaustion is carved out —
+    a NameError or a bad flag IS a script defect and rewriting it is the fix."""
+    from backend.loop.state_machine import _ENVIRONMENTAL_ERROR_RE
+    for line in ("NameError: name 'mx' is not defined",
+                 "distill_train.py: error: unrecognized arguments: --bogus",
+                 "FileNotFoundError: Adapter not found: adapters/nope",
+                 "TimeoutError: timed out"):
+        assert not _ENVIRONMENTAL_ERROR_RE.search(line), line
