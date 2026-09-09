@@ -2202,3 +2202,52 @@ def test_rft_pivot_lever_is_k_samples_and_temp():
     assert _clamp_finetune_pivot_hp("rft", {"k_samples": 1}) == {"k_samples": 4}
     # iters is distill's lever, not rft's — and distill's is pinned empty.
     assert _clamp_finetune_pivot_hp("rft", {"iters": 700}) == {}
+
+
+# ── prompt (prompt-variant optimization) ─────────────────────────────────────
+
+def _prompt_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "prompt", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    return gen._build_user_prompt("prompt", "test-id", plan, str(tmp_path / "ckpt"))
+
+
+def test_prompt_template_never_rewrites_the_base_prompt(tmp_path, monkeypatch):
+    """astra must not edit ensemble's committed conductor prompt. A mission
+    reads it and appends to a COPY written into its own checkpoint dir; a
+    winning variant is a proposal a human promotes."""
+    p = _prompt_prompt(tmp_path, monkeypatch)
+    assert "Read-then-append ONLY" in p
+    assert "never open the base prompt for writing" in p.lower()
+    assert "conductor_variant.md" in p
+
+
+def test_prompt_template_forbids_reproducing_the_base(tmp_path, monkeypatch):
+    """conductor_gemma.md is ~5,144 tokens. Asking a codegen model to restate it
+    would silently drop content and score worse for a reason invisible in the
+    diff — so the template tells it not to try."""
+    p = _prompt_prompt(tmp_path, monkeypatch)
+    assert "must not try to reproduce it" in p
+    assert "EXTRA_RULES" in p
+
+
+def test_prompt_template_freezes_the_clock(tmp_path, monkeypatch):
+    """bare_eval does NOT freeze its own clock — only ensemble's two eval entry
+    points do, and this dispatches bare_eval directly. Without the env var the
+    prompt carries a live date and iterations are not comparable: five cases
+    produced 4 distinct outputs across 4 dates at temperature 0."""
+    p = _prompt_prompt(tmp_path, monkeypatch)
+    assert "ENSEMBLE_FROZEN_NOW" in p
+    assert "2026-09-08T09:00:00" in p
+
+
+def test_prompt_template_execs_bare_eval_with_the_variant(tmp_path, monkeypatch):
+    p = _prompt_prompt(tmp_path, monkeypatch)
+    assert "bare_eval.py" in p
+    assert "os.execv(" in p
+    assert "subprocess.run(" not in p
+    assert '"--prompt-template"' in p
+    assert "--no-adapter" in p          # scores the prompt, not an adapter

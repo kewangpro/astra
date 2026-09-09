@@ -270,11 +270,11 @@ class CodeSafetyClassifier:
         if (
             not has_any_request
             and re.search(r"\bos\.execv\s*\(", code_only)
-            and re.search(r"dpo_train\.py|grpo_train\.py|distill_train\.py|rft_train\.py", script)
+            and re.search(r"dpo_train\.py|grpo_train\.py|distill_train\.py|rft_train\.py|bare_eval\.py", script)
         ):
             return SafetyVerdict(
                 safe=True,
-                reason="os.execv dispatch to dpo_train.py/grpo_train.py/distill_train.py/rft_train.py with no network calls — auto-approved",
+                reason="os.execv dispatch to a known finetune/eval script (dpo/grpo/distill/rft_train.py, bare_eval.py) with no network calls — auto-approved",
                 classifier="static",
             )
 

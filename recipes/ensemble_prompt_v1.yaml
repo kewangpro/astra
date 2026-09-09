@@ -1,0 +1,65 @@
+name: ensemble_prompt_v1
+version: "1.0.0"
+created_at: "2026-09-08"
+task_type: prompt
+domain: NLP
+description: >
+  Prompt optimization for the Ensemble routing model. Each iteration proposes a
+  block of additional routing rules, appends it to the production conductor
+  prompt, and scores the result with bare_eval on the model-routed metric. The
+  best variant is preserved as the candidate proposal.
+
+  Why this exists: the prompt is the ONLY lever measured to move the number.
+  conductor_gemma.md beats conductor_min.md; four fine-tuned checkpoints moved
+  nothing (all 46-48/54 against production's 48/54). It is also the cheapest
+  loop astra has — ~25 min per iteration against ~2h for a training run — and
+  directly deployable, since production serves a prompt, not an adapter.
+
+  ASTRA NEVER EDITS THE BASE PROMPT. backend/prompts/conductor_gemma.md belongs
+  to the ensemble repo. A mission reads it, appends to a COPY, and writes that
+  copy into its own checkpoint directory. A winning variant is a proposal for a
+  human to promote, not a change astra makes.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit    # production's model
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  base_prompt: backend/prompts/conductor_gemma.md
+  eval_max_tokens: 256
+
+  # Every score must be taken at the same instant or iterations are not
+  # comparable. bare_eval does NOT freeze its own clock — only ensemble's two
+  # eval entry points do, and this dispatches bare_eval directly — so the
+  # generated script sets it explicitly. Measured: five cases produced 4 distinct
+  # outputs across 4 dates at temperature 0, one changing its routed skill.
+  # Keep this value FIXED for the life of a comparison; changing it silently
+  # invalidates every earlier iteration.
+  frozen_now: "2026-09-08T09:00:00"
+
+# MODEL-ROUTED 54-case scale. The number to BEAT is the raw 4B production
+# config's 48/54 (88.9%), measured on this same frozen instant and proven
+# repeatable — the variant is scored against the exact prompt it extends, so
+# unlike every fine-tune recipe this is a true like-for-like delta.
+#
+# 0.96 admits up to 52/54, matching the distill and rft recipes. Prompt work has
+# more headroom than any weights method measured so far, but the ceiling is a
+# creation-time guard against fantasy targets, not a prediction.
+metric_ceiling:
+  pass_rate: 0.96
+
+# APPEND-ONLY, deliberately. The generated script reads the base prompt at
+# runtime and appends a rules block; it never rewrites or restructures it.
+# conductor_gemma.md is ~5,144 tokens, and asking a codegen model to reproduce it
+# would silently drop content — scoring worse for a reason invisible in the diff.
+# The cost of this choice is real: a variant cannot fix a rule that is WRONG in
+# the base prompt, only add rules that override or clarify. If a base rule needs
+# changing, that is a human edit in the ensemble repo, not a mission.
+#
+# KNOWN RISK — overfitting 54 cases. Editing rules against a 54-case scorer is a
+# search with a very small validation set, and this project has already been
+# burned by a metric that did not represent its population (a 12-case held-out
+# slice read 91.7% where the full set read 78.2%). A winning variant should be
+# treated as a HYPOTHESIS until it is checked against cases it was not tuned on.
+# The pre-LLM and MCP strata are reported by bare_eval and are NOT part of the
+# goal metric, so they serve as a partial holdout: a variant that lifts
+# model-routed while dropping those is probably fitting the scorer.

@@ -26,6 +26,10 @@ _CHECKPOINT_PATTERNS: dict = {
     "grpo": "checkpoints/best/",
     "distill": "checkpoints/best/",
     "rft": "checkpoints/best/",
+    # A prompt mission's artifact is a candidate PROMPT FILE, not an adapter —
+    # astra never edits ensemble's committed conductor prompt, so a winning
+    # variant is a proposal a human promotes, not a change astra makes.
+    "prompt": "checkpoints/conductor_variant.md",
 }
 
 # For metrics where lower is better, flip the operator

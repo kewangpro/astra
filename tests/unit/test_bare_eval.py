@@ -414,3 +414,42 @@ def test_bare_eval_adapter_override_replaces_the_iteration_path():
     cmd = mock_run.call_args_list[-1].args[0][2]
     assert "--adapter adapters/some_warm_start" in cmd
     assert "_iter3" not in cmd
+
+
+class TestPromptVariantMetric:
+    """A prompt mission's goal metric comes from its OWN log — the run IS the
+    eval. _run_bare_eval would score the production adapter path instead of the
+    variant the mission produced."""
+
+    def _sm_with_log(self, tmp_path, contents):
+        sm = _bare_state_machine()
+        log = tmp_path / "sandbox.log"
+        log.write_text(contents)
+        sm._sandbox = MagicMock()
+        sm._sandbox.get_log_path.return_value = str(log)
+        return sm
+
+    def test_reads_model_routed_from_the_missions_own_log(self, tmp_path):
+        sm = self._sm_with_log(tmp_path,
+            "Model-routed:         50/54 (92.6%)\n"
+            "Pre-LLM shortcut:     10/17 (58.8%)\n"
+            "Static-skill routing: 60/71 (84.5%)\n"
+            "Dynamic MCP routing:  3/7 (42.9%)\n"
+            "Blended (all cases):  63/78 (80.8%)\n"
+        )
+        assert sm._prompt_variant_metric("m-1") == pytest.approx(0.926)
+        split = sm._bare_eval_split["m-1"]
+        assert split.prellm == pytest.approx(0.588)
+        assert split.static == pytest.approx(0.845)
+
+    def test_returns_none_when_the_variant_eval_did_not_finish(self, tmp_path):
+        """A run that died before printing Model-routed has no score. Returning
+        None records no metric rather than inventing one from a partial log."""
+        sm = self._sm_with_log(tmp_path, "Loading model...\nwriting variant\n")
+        assert sm._prompt_variant_metric("m-1") is None
+
+    def test_returns_none_when_log_missing(self, tmp_path):
+        sm = _bare_state_machine()
+        sm._sandbox = MagicMock()
+        sm._sandbox.get_log_path.return_value = str(tmp_path / "nope.log")
+        assert sm._prompt_variant_metric("m-1") is None

@@ -51,7 +51,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task Types
 
-ASTRA supports eight training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `rft` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
+ASTRA supports nine training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `rft`, `prompt` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
 
 ## Quick Start
 

@@ -1027,6 +1027,69 @@ The script must:
    element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
    omitted entirely if empty. Do not insert an empty string element in the list.)"""
 
+_PROMPT_TEMPLATE = """\
+Generate a script that evaluates a CANDIDATE PROMPT VARIANT by invoking the
+EXISTING bare_eval.py — do NOT reimplement the eval, the scoring, or the routing
+oracle. This script writes one file and then execs bare_eval.py. It does NOT
+report telemetry itself; astra tails this process's log and parses the
+"Model-routed:" line on its own. Do not add any network calls.
+
+Mission ID: {mission_id}
+Finetune dir (remote host, bare_eval.py lives here): {finetune_dir}
+Python interpreter: {python_bin}
+Base model: {base_model}
+BASE PROMPT (read at runtime, never rewritten): {base_prompt}
+Variant output path: {variant_path}
+Frozen clock instant: {frozen_now}
+
+THE TASK: propose additional routing rules that raise model-routed accuracy, and
+write them as an APPENDED block. You are NOT rewriting the base prompt — you
+cannot see it and must not try to reproduce it. It is ~5,100 tokens of existing
+rules; any attempt to restate it will silently drop content and score worse for a
+reason no one will be able to see. The script reads the base file at runtime and
+appends your block to it.
+
+What the appended block should contain: a short, specific set of routing rules,
+in the same imperative style the base prompt uses. Target genuine routing
+ambiguities — a rule that repeats something the base prompt already says is
+wasted, and a rule that contradicts it makes the model worse. Prefer few strong
+rules over many weak ones.
+
+The script must:
+1. Import os and sys only. Do NOT import subprocess or requests. Do NOT make any
+   network calls. Use os.execv, NOT subprocess.run — astra tracks this wrapper
+   process's own pid as the running job; a fork+exec child gets a pid astra never
+   learns and can never clean up.
+2. First os.chdir("{finetune_dir}") — bare_eval.py resolves --prompt-template and
+   its own eval-cases path relative to the working directory.
+3. Define your proposed rules as a module-level string literal named EXTRA_RULES.
+4. Read the base prompt, append EXTRA_RULES, and write the result to
+   "{variant_path}", creating parent directories if needed:
+       with open("{base_prompt}") as f:
+           base = f.read()
+       os.makedirs(os.path.dirname("{variant_path}"), exist_ok=True)
+       with open("{variant_path}", "w") as f:
+           f.write(base + "\n\n" + EXTRA_RULES)
+   Read-then-append ONLY. Never open the base prompt for writing — it is
+   ensemble's committed file and this mission proposes a variant, it does not
+   edit the original.
+5. Set the frozen clock so the score is comparable across iterations and
+   missions. bare_eval does not freeze its own clock, and the prompt carries a
+   date that changes the model's output:
+       os.environ["ENSEMBLE_FROZEN_NOW"] = "{frozen_now}"
+6. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path,
+   C-style exec convention) — this call does not return:
+       os.execv(
+           "{python_bin}",
+           [
+               "{python_bin}", "{finetune_dir}/bare_eval.py",
+               "--model", "{base_model}",
+               "--no-adapter",
+               "--prompt-template", "{variant_path}",
+               "--eval-max-tokens", "{eval_max_tokens}",
+           ],
+       )"""
+
 _ML_TEMPLATE = """\
 Generate a complete ML training script.
 
@@ -1135,6 +1198,7 @@ _ENV_RECIPE: dict = {
     # kept and both declare pass_rate 0.92.
     "distill": "ensemble_distill_gemma4b_v1.yaml",
     "rft": "ensemble_rft_v1.yaml",
+    "prompt": "ensemble_prompt_v1.yaml",
 }
 
 
@@ -1214,7 +1278,7 @@ def _resolve_hyperparams(
 ) -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
-    if env_id in ("dpo", "grpo", "distill", "rft"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "prompt"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -1600,6 +1664,13 @@ class CodeGenerator:
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)
+        if task_type == "prompt":
+            ctx = {
+                **hp,
+                "variant_path": f"{checkpoint_dir}/conductor_variant.md",
+                **base,
+            }
+            return _PROMPT_TEMPLATE.format(**ctx)
         # ml
         ctx = {
             "framework": "sklearn",

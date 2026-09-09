@@ -760,7 +760,26 @@ class LoopStateMachine:
                             mission_id, f"Evaluating {metric_name}…", event_type="info"
                         )
                         _mission_task_type_for_eval = plan.get("task_type")
-                        if _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
+                        if _mission_task_type_for_eval == "prompt":
+                            # A prompt run IS the eval — the generated script
+                            # writes a variant and execs bare_eval on it — so the
+                            # score is already in this mission's own log. Checked
+                            # BEFORE the finetune-remote branch because "prompt"
+                            # is a member of that set: it dispatches remotely, but
+                            # there is no adapter to re-score afterwards, and
+                            # _run_bare_eval would score the production adapter
+                            # path instead of the variant this mission produced.
+                            goal_val = self._prompt_variant_metric(mission_id)
+                            _split = getattr(self, "_bare_eval_split", {}).pop(mission_id, None)
+                            if _split is not None:
+                                for _dn, _dv in (("pass_rate_static", _split.static),
+                                                 ("pass_rate_mcp", _split.mcp),
+                                                 ("pass_rate_prellm", _split.prellm),
+                                                 ("pass_rate_blended", _split.blended)):
+                                    if _dv is not None:
+                                        await self._append_telemetry_metric(
+                                            mission_id, _dn, _dv, current_iteration)
+                        elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
                             # distill included as of 2026-09-06. Its goal metric
                             # was the ~12-case held-out slice, which proved
                             # BIASED rather than merely coarse: mission 6470e2db
@@ -2349,6 +2368,43 @@ class LoopStateMachine:
         except (ValueError, IndexError):
             return None
 
+    def _prompt_variant_metric(self, mission_id: str) -> Optional[float]:
+        """A prompt mission's goal metric, read from its OWN log.
+
+        Unlike every other remote task type, a prompt run is not a training run
+        followed by a separate scoring pass — the run IS the scoring pass. The
+        generated script writes a variant and execs bare_eval on it, so the
+        "Model-routed:" line in this mission's log is already the authoritative
+        number over the same 54 cases every recipe ceiling is set against. There
+        is nothing to re-score afterwards, and calling _run_bare_eval would score
+        the production ADAPTER path rather than the variant prompt this mission
+        produced.
+        """
+        log_path = self._sandbox.get_log_path(mission_id)
+        if not os.path.isfile(log_path):
+            return None
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                text = f.read()
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: could not read prompt log mission=%s: %s", mission_id, exc,
+            )
+            return None
+        report = _parse_bare_eval_report(text)
+        if report.goal is None:
+            logger.warning(
+                "LoopStateMachine: no Model-routed line in prompt log mission=%s — the "
+                "variant eval did not complete, or bare_eval's output shape changed",
+                mission_id,
+            )
+            return None
+        if report.static is not None or report.mcp is not None:
+            if not hasattr(self, "_bare_eval_split"):
+                self._bare_eval_split = {}
+            self._bare_eval_split[mission_id] = report
+        return report.goal
+
     def _distill_held_out_metric(self, mission_id: str) -> Optional[float]:
         """distill's goal metric = the held-out pass rate distill_train.py itself
         reports ("Best pass rate during training: X%"), read from this iteration's
@@ -2742,7 +2798,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "prompt"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

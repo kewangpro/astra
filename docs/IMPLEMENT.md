@@ -1573,3 +1573,19 @@ Added `distill` as a **fine-tune-remote task type**, mirroring `dpo`/`grpo`: SSH
 **Ensemble-side precondition:** `ensemble/finetune/rft_train.py` does not exist. It is a recombination of code that does — `grpo_train.py` already samples K completions and scores them with the same reward function; `distill_train.py` already does the SFT, held-out split and eval/checkpoint loop. A mission now fails at **preflight**, by name, rather than after the SSH round-trip.
 
     Total: **974 tests**.
+
+---
+
+## Phase 45 — `prompt` Task Type (Prompt-Variant Optimization)
+
+**Problem:** the prompt is the only lever measured to move the number, and astra had no way to search it. `conductor_gemma.md` scores 48/54 where `conductor_min.md`-trained checkpoints score 46–48; the pre-LLM discovery came from reading prompts, not weights. Meanwhile every training run costs ~2h to move nothing.
+
+- [x] **`prompt` wired as a ninth task type** — schema enum, `_FINETUNE_REMOTE_TASK_TYPES` (it dispatches to the Mini because scoring a variant means running the model, even though it trains nothing), `_NO_CRYSTALLIZE_TASK_TYPES`, crystallizer skip, `_ENV_RECIPE`, and `bare_eval.py` added to the `os.execv` static auto-approve allowlist.
+- [x] **The artifact is a prompt file, not an adapter.** `_CHECKPOINT_PATTERNS["prompt"] = "checkpoints/conductor_variant.md"`. **astra never edits `backend/prompts/conductor_gemma.md`** — that file belongs to the ensemble repo. The generated script reads it, appends an LLM-authored `EXTRA_RULES` block, and writes the result into the mission's own checkpoint directory. A winning variant is a proposal for a human to promote, not a change astra makes.
+- [x] **Append-only, deliberately.** The base prompt is ~5,144 tokens; asking a codegen model to reproduce it would silently drop content and score worse for a reason invisible in the diff. The template states this and forbids reproducing the base. The cost is real and documented in the recipe: a variant can add rules that override or clarify, but cannot fix a rule that is *wrong* in the base — that stays a human edit.
+- [x] **The run is its own eval.** `_prompt_variant_metric()` reads `Model-routed:` from the mission's own log. `_run_bare_eval` would score the production adapter path instead of the variant the mission produced, and there is no adapter to re-score. The baseline floor is disabled: there is no warm-start artifact to protect, and a variant scoring below the base prompt is simply a worse proposal.
+- [x] **The generated script sets `ENSEMBLE_FROZEN_NOW` itself.** `bare_eval` does not freeze its own clock — only ensemble's two eval entry points do, and this dispatches `bare_eval` directly. Without it the prompt carries a live date and iterations are not comparable; measured, five cases produced 4 distinct outputs across 4 dates at temperature 0.
+
+**Known risk, recorded in the recipe rather than discovered later:** editing rules against a 54-case scorer is a search with a very small validation set, and this project has already been burned by a metric that did not represent its population. A winning variant is a **hypothesis** until checked against cases it was not tuned on. The pre-LLM and MCP strata are reported but excluded from the goal metric, so they act as a partial holdout — a variant that lifts model-routed while dropping those is probably fitting the scorer.
+
+    Total: **981 tests**.

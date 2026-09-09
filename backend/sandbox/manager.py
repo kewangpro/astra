@@ -40,7 +40,10 @@ def _detect_backend() -> str:
 # Fine-tune task types that wrap ensemble/finetune scripts living only on the
 # Mac Mini — these always dispatch via SSH to settings.sandbox_host, never
 # falling back to a local backend if it isn't configured.
-_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo", "distill", "rft"}
+# "prompt" trains nothing, but it still runs remotely: scoring a prompt variant
+# means running the model over the eval set, which belongs on the Mini for the
+# same memory reasons every other remote type does.
+_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo", "distill", "rft", "prompt"}
 
 
 class GPUPool:

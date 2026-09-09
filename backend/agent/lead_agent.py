@@ -125,7 +125,7 @@ _PLAN_SCHEMA = {
         "plan": {
             "type": "object",
             "properties": {
-                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill", "rft"]},
+                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill", "rft", "prompt"]},
                 "algorithm": {"type": "string"},
                 "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},

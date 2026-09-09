@@ -18,12 +18,16 @@ def test_plan_schema_task_type_enum_includes_finetune_types():
     # it is not capped by what gemma3:12b routes correctly — the teacher
     # mis-routes 14 of 78 cases, which can therefore never be distilled.
     assert "rft" in enum
+    # prompt: edits the conductor prompt, not the weights. The only lever
+    # measured to move the number, and directly deployable — production serves a
+    # prompt, not an adapter.
+    assert "prompt" in enum
 
 
 def test_plan_schema_task_type_enum_unchanged_for_existing_types():
     enum = _PLAN_SCHEMA["properties"]["plan"]["properties"]["task_type"]["enum"]
     assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill",
-                         "rft"}
+                         "rft", "prompt"}
 
 
 def test_planning_system_prompt_instructs_empty_hyperparameters_for_finetune():
