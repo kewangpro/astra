@@ -75,7 +75,11 @@ export function MetricGap({ mission, events = [] }: Props) {
   const tm = mission.target_metric;
   const [metricName, targetValue] = tm && Object.keys(tm).length > 0
     ? [Object.keys(tm)[0], Object.values(tm)[0] as number]
-    : ["metric", 0.92];
+    : (() => {
+        const match = mission.goal?.match(/(\d+(?:\.\d+)?)\s*%/);
+        const val = match ? parseFloat(match[1]) / 100 : 1.0;
+        return ["metric", val];
+      })();
 
   const isRaw = targetValue > 1;
 

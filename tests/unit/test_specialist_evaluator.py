@@ -59,3 +59,17 @@ def test_returns_only_file_when_one_checkpoint(tmp_path):
     ckpt.write_bytes(b"ckpt")
     result = SpecialistEvaluator._latest_checkpoint(str(tmp_path))
     assert result == str(ckpt)
+
+
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_evaluate_with_none_env_id(tmp_path, monkeypatch):
+    from backend.config import settings
+    monkeypatch.setattr(settings, "data_path", str(tmp_path))
+    evaluator = SpecialistEvaluator()
+    plan = {"task_type": "rft", "env_id": None, "domain": "nlp"}
+    res = await evaluator.evaluate("test-mission", plan)
+    assert res["verdict"] == "no_checkpoint"
+

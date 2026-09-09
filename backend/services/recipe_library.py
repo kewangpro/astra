@@ -136,12 +136,14 @@ def search_recipes(
     return hits
 
 
-def get_warm_start_hint(goal: str, domain: str) -> Optional[dict]:
+def get_warm_start_hint(goal: str, domain: Optional[str] = None) -> Optional[dict]:
     """
     Return the hyperparameters of the best matching past recipe as a
     warm-start hint for the LeadAgent, or None if the index is empty.
     """
-    hits = search_recipes(goal, domain=domain, n_results=1)
+    hits = search_recipes(goal, domain=domain, n_results=1) if domain else []
+    if not hits:
+        hits = search_recipes(goal, domain=None, n_results=1)
     if not hits:
         return None
     return {"best_matching_recipe": hits[0]["name"], "distance": hits[0]["distance"]}

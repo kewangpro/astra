@@ -8,7 +8,7 @@ from backend.models.mission import MissionStatus
 
 class MissionCreate(BaseModel):
     goal: str
-    task_type: str
+    task_type: Optional[str] = "rl"
     target_metric: dict = Field(default_factory=dict)
     autonomy_mode: str = "supervised"
 

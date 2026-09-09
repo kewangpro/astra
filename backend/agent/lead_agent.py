@@ -176,10 +176,10 @@ class LeadAgent:
         warm_hint = self._get_warm_start_hint(goal, task_type)
         query = (
             f"Goal: {goal}\n"
-            f"Task type: {task_type}\n"
+            f"Task type hint: {task_type}\n"
             f"Target metric: {json.dumps(target_metric)}\n"
             + (f"Warm-start hint (best matching past recipe): {json.dumps(warm_hint)}\n" if warm_hint else "")
-            + "\nDesign the optimal training plan. Return JSON."
+            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/prompt) that best matches the Goal. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PLAN_SCHEMA)
@@ -412,8 +412,8 @@ class LeadAgent:
         """
         try:
             from backend.services.recipe_library import get_warm_start_hint
-            # Derive domain from task_type as a rough signal
-            hint = get_warm_start_hint(goal, task_type)
+            # Search without restricting to task_type as domain so relevant recipes in other domains are found
+            hint = get_warm_start_hint(goal, domain=None)
             if hint:
                 logger.info("LeadAgent: warm-start hint from recipe '%s'", hint.get("best_matching_recipe"))
             return hint

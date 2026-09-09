@@ -29,7 +29,7 @@ class SpecialistEvaluator:
         Returns a dict with metrics, benchmark results, and stress test results.
         """
         task_type = plan.get("task_type", "rl")
-        env_id = plan.get("env_id", "")
+        env_id = plan.get("env_id") or ""
         if "tetris" in env_id.lower():
             domain = "tetris"
         elif "snake" in env_id.lower():

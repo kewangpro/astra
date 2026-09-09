@@ -75,7 +75,7 @@ export const api = {
   createMission: (goal: string, taskType?: string) =>
     req<Mission>("/missions", {
       method: "POST",
-      body: JSON.stringify({ goal, task_type: taskType ?? "rl" }),
+      body: JSON.stringify({ goal, ...(taskType ? { task_type: taskType } : {}) }),
     }),
   runMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/run`, { method: "POST" }),

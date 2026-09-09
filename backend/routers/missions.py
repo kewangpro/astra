@@ -49,34 +49,69 @@ def _reject_unreachable_target(task_type: str, target_metric: dict) -> None:
             continue
 
 
+def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
+    """Infer task_type from semantic keywords in the goal text."""
+    g = goal.lower()
+    if "rejection-sampling" in g or "rejection sampling" in g or re.search(r"\brft\b", g):
+        return "rft"
+    if "distill" in g or "distillation" in g:
+        return "distill"
+    if re.search(r"\bdpo\b", g):
+        return "dpo"
+    if re.search(r"\bgrpo\b", g):
+        return "grpo"
+    if "prompt" in g and any(k in g for k in ("optimi", "variant", "conductor", "routing")):
+        return "prompt"
+    if re.search(r"\bsft\b", g) or "supervised fine-tuning" in g:
+        return "sft"
+    if re.search(r"\bmlx[-_ ]lora\b", g):
+        return "mlx_lora"
+    if any(k in g for k in ("scikit-learn", "sklearn", "classifier", "randomforest", "logisticregression", "iris", "digits", "breast_cancer", "wine")):
+        return "ml"
+    return default
+
+
 def _parse_target_metric(goal: str) -> dict:
     """Extract a target metric dict from free-text goal. Returns {} if nothing recognized."""
-    m = re.search(r"(\d+(?:\.\d+)?)\s*%\s*accuracy", goal, re.IGNORECASE)
+    # 1. Percentages: e.g. 90% accuracy, 90% pass rate, 90% pass_rate
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%\s*(accuracy|pass_?rate|pass\s+rate)", goal, re.IGNORECASE)
     if m:
-        return {"accuracy": float(m.group(1)) / 100}
-    m = re.search(r"accuracy\s+of\s+(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
+        name = "pass_rate" if "pass" in m.group(2).lower() else "accuracy"
+        return {name: float(m.group(1)) / 100}
+
+    # 2. 'accuracy/pass_rate of X' or 'pass rate to/reach X'
+    m = re.search(r"(accuracy|pass_?rate|pass\s+rate)\s+(?:of|to|reach|at\s+least|>=?)\s*(\d+(?:\.\d+)?)%?", goal, re.IGNORECASE)
     if m:
-        val = float(m.group(1))
-        return {"accuracy": val if val <= 1.0 else val / 100}
+        val = float(m.group(2))
+        name = "pass_rate" if "pass" in m.group(1).lower() else "accuracy"
+        return {name: val if val <= 1.0 else val / 100}
+
+    # 3. 'reach/achieve/target/hit X% [metric]'
+    m = re.search(r"(?:reach|achieve|target|hit|hitting)\s+(?:a\s+)?(\d+(?:\.\d+)?)\s*%\s*([\w\s]+?)(?:\s+(?:in|per|on|within)\b|$)", goal, re.IGNORECASE)
+    if m:
+        metric_name = re.sub(r"\s+", "_", m.group(2).strip().lower())
+        return {metric_name: float(m.group(1)) / 100}
+
+    # 4. Standard reward / loss patterns
     m = re.search(r"(?:mean_?)?reward\s+of\s+(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
     if m:
         return {"mean_reward": float(m.group(1))}
     m = re.search(r"(?:eval_)?loss\s+(?:of\s+|<=?\s*)(\d+(?:\.\d+)?)", goal, re.IGNORECASE)
     if m:
         return {"eval_loss": float(m.group(1))}
-    # Generic: "achieve {metric name} of {value}" — supports multi-word names like
-    # "food eaten" (→ food_eaten) and single-word names like "lines_cleared".
+
+    # 5. Generic: "(achieve|reach|target|hit) {metric name} of {value}"
     m = re.search(
-        r"achieve\s+([\w][\w\s]*?)\s+of\s+(\d+(?:\.\d+)?)",
+        r"(?:achieve|reach|target|hit)\s+([\w][\w\s]*?)\s+of\s+(\d+(?:\.\d+)?)",
         goal, re.IGNORECASE,
     )
     if m:
         metric_name = re.sub(r"\s+", "_", m.group(1).strip().lower())
         return {metric_name: float(m.group(2))}
-    # Generic: "achieve {value} {metric name}" — number-first phrasing like
-    # "achieve 20 food eaten" or "achieve 30 lines cleared in one game".
+
+    # 6. Generic: "(achieve|reach|target|hit) {value} {metric name}"
     m = re.search(
-        r"achieve\s+(\d+(?:\.\d+)?)\s+([\w][\w\s]*?)(?:\s+(?:in|per|on|within)\b|$)",
+        r"(?:achieve|reach|target|hit)\s+(\d+(?:\.\d+)?)\s+([\w][\w\s]*?)(?:\s+(?:in|per|on|within)\b|$)",
         goal, re.IGNORECASE,
     )
     if m:
@@ -90,6 +125,15 @@ async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_
     payload_dict = payload.model_dump()
     if not payload_dict.get("target_metric"):
         payload_dict["target_metric"] = _parse_target_metric(payload.goal)
+
+    # Reconcile task_type if omitted or if "rl" was submitted as default but goal indicates another paradigm
+    submitted_type = payload_dict.get("task_type")
+    inferred_type = _infer_task_type_from_goal(payload.goal, default="rl")
+    if not submitted_type or submitted_type == "auto":
+        payload_dict["task_type"] = inferred_type
+    elif submitted_type == "rl" and inferred_type != "rl":
+        payload_dict["task_type"] = inferred_type
+
     _reject_unreachable_target(
         payload_dict.get("task_type", ""), payload_dict.get("target_metric") or {}
     )

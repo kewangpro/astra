@@ -1589,3 +1589,25 @@ Added `distill` as a **fine-tune-remote task type**, mirroring `dpo`/`grpo`: SSH
 **Known risk, recorded in the recipe rather than discovered later:** editing rules against a 54-case scorer is a search with a very small validation set, and this project has already been burned by a metric that did not represent its population. A winning variant is a **hypothesis** until checked against cases it was not tuned on. The pre-LLM and MCP strata are reported but excluded from the goal metric, so they act as a partial holdout — a variant that lifts model-routed while dropping those is probably fitting the scorer.
 
     Total: **981 tests**.
+
+---
+
+## Phase 46 — Task Type Auto-Inference, Metric Parsing & Cross-Domain Recipe Search
+
+**Problem:** A mission launched via the dashboard with goal `"Rejection-sampling fine-tuning to reach 90% pass rate"` ran as a Snake-v0 PPO RL mission instead of an RFT fine-tuning mission, and the live HUD displayed `-92% to close` against a target of 92% instead of 90%.
+
+Three root causes interacted:
+1. **Frontend hardcoded default**: `GoalInput.tsx` submitted `{ goal, taskType: "rl" }` without letting the user select or detect the training paradigm.
+2. **Target metric regex mismatch & HUD fallback**: `_parse_target_metric()` only checked `accuracy`, `reward`, and `loss`, returning `{}` for `pass_rate` and `reach 90%` phrasings. In `MetricGap.tsx`, when `target_metric` was empty, the component fell back to a hardcoded `["metric", 0.92]`.
+3. **Over-constrained recipe warm-start lookup**: `LeadAgent.plan()` passed `task_type="rl"` to `get_warm_start_hint()`, which queried ChromaDB with `domain="rl"`. This completely filtered out `recipes/ensemble_rft_v1.yaml` (`domain: NLP`). As a result, the Lead Agent anchored on Snake-v0 PPO and hallucinated rejection sampling as trajectory filtering for Snake.
+
+- [x] **Semantic task_type auto-inference** (`backend/routers/missions.py`): added `_infer_task_type_from_goal(goal)` detecting keywords for `rft`, `distill`, `dpo`, `grpo`, `prompt`, `sft`, `mlx_lora`, `ml`, falling back to `rl`. Reconciles submitted task types so an implicit `"rl"` default never overrides non-RL semantic goals.
+- [x] **Expanded target metric parser** (`backend/routers/missions.py`): supports `pass_rate`, percentages, and phrasing with verbs `reach`, `achieve`, `target`, `hit`, `hitting` followed by `%` or `of X`.
+- [x] **Unconstrained recipe search fallback** (`backend/services/recipe_library.py`, `backend/agent/lead_agent.py`): `get_warm_start_hint` now searches globally across all domains if domain-filtered search returns no results, and `LeadAgent` queries recipes without rigid domain constraints while prompting the planner with `Task type hint: ...` allowing paradigm flexibility.
+- [x] **Frontend task selector & API flexibility** (`frontend/src/components/command-center/GoalInput.tsx`, `frontend/src/lib/api.ts`): `GoalInput` includes a task type selector (`auto (detect)`, `rft`, `distill`, `dpo`, `grpo`, `prompt`, `rl`, `sft`, `ml`, `mlx_lora`), passing `undefined` when `auto` is selected so backend inference takes effect.
+- [x] **Evaluator None env_id guard & sandbox error pattern expansion** (`backend/evaluator/specialist.py`, `backend/loop/state_machine.py`): plans for NLP/fine-tuning missions have `env_id: null`; `SpecialistEvaluator.evaluate()` now uses `plan.get("env_id") or ""` avoiding `AttributeError: 'NoneType' object has no attribute 'lower'`. Expanded `_wait_for_sandbox` fatal line patterns to include `[Errno ` and `can't open file` for host execution failures.
+- [x] **Unit tests** (`tests/unit/test_missions_router.py`, `tests/unit/test_specialist_evaluator.py`): added coverage for `pass_rate` extraction, `reach 90%` phrasings, task inference across all paradigms, and `SpecialistEvaluator.evaluate()` with `env_id=None`.
+
+    Total: **986 tests** (971 unit + 15 integration).
+
+

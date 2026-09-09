@@ -94,7 +94,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 924 unit tests across all core modules
+│   ├── unit/           # 971 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
@@ -163,6 +163,10 @@ make ports  # show port status for all services
 | 40 | Terminal-Success Sandbox Teardown — `LoopStateMachine` terminated the sandbox on cancel/failure but not on `COMPLETED`/`STALLED`, so a finished mission's entry lingered in `SandboxManager._sandboxes` and showed as a phantom mission in the Nodes panel until the next backend restart; all four loop-exit paths now go through one `_terminate_sandbox()` helper | ✅ Complete |
 | 41 | Mission `completed_at` Populated + Shown on Cards — the column existed in the model/schema/API but nothing ever wrote it (all 19 terminal missions had `null`); `_transition()` now stamps it on `COMPLETED`/`FAILED`/`STALLED`, old rows were backfilled from `updated_at`, and Command Center cards show a `created … · ended …` line | ✅ Complete |
 | 42 | Distillation Task Type — `dpo`/`grpo` are exhausted for the routing model (ceiling ~86%), so added `distill`: a strong teacher generates correct routing completions and the student is SFT'd to imitate them. Fully wired as a fine-tune-remote task type (SSH dispatch, recipe-authoritative, `iters`-only pivot, `metric_ceiling` 0.95) mirroring `dpo`/`grpo`. **Follow-up:** `ensemble/finetune/distill_train.py` was written and run for real; also fixed `_run_bare_eval`'s stdout parsing (silently failing to read `bare_eval.py`'s split-report format on every fine-tune-remote mission), and — after a mission doom-looped for ~9h — made `distill`'s goal metric read the held-out pass rate from the training log rather than a full-set `bare_eval` (which mismatched the floor's held-out baseline) | ✅ Complete |
+| 43 | Fixing the Measurement Instrument — aligned eval populations across methods, deterministic frozen clocks, environmental failure detection | ✅ Complete |
+| 44 | `rft` Task Type (Rejection-Sampling Fine-Tuning) — STaR-style self-improvement over candidate samples, sampling diversity pivots, bypasses teacher limits | ✅ Complete |
+| 45 | `prompt` Task Type (Prompt-Variant Optimization) — search prompt rules and extra context without modifying model weights, proposal-only checkpoints | ✅ Complete |
+| 46 | Task Type Auto-Inference, Metric Parsing & Cross-Domain Recipe Search — auto-detect task type from goal text, parse pass rate and target percentages, cross-domain warm-start recipe discovery, and UI task selector | ✅ Complete |
 
 ## Hardware Target
 

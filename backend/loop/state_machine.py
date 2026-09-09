@@ -2703,7 +2703,7 @@ class LoopStateMachine:
             # and only flag real Python errors with a traceback.
             fatal_lines = [
                 line for line in content.splitlines()
-                if ("Traceback" in line or "Error" in line)
+                if ("Traceback" in line or "Error" in line or "[Errno " in line or "can't open file" in line)
                 and "Telemetry error" not in line
                 and "Warm-start skipped" not in line
                 and not _EVAL_CASE_FAILURE_RE.match(line)

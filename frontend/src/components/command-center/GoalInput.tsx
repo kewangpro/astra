@@ -8,6 +8,7 @@ const MAX = 280;
 
 export function GoalInput() {
   const [goal, setGoal] = useState("");
+  const [taskType, setTaskType] = useState("auto");
   const [focused, setFocused] = useState(false);
   const router = useRouter();
   const create = useCreateMission();
@@ -15,7 +16,10 @@ export function GoalInput() {
 
   const submit = async () => {
     if (!goal.trim()) return;
-    const mission = await create.mutateAsync({ goal: goal.trim(), taskType: "rl" });
+    const mission = await create.mutateAsync({
+      goal: goal.trim(),
+      taskType: taskType === "auto" ? undefined : taskType,
+    });
     await run.mutateAsync(mission.id);
     router.push(`/missions/${mission.id}`);
   };
@@ -37,10 +41,29 @@ export function GoalInput() {
       }}
     >
       {/* Terminal header bar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[rgba(20,184,166,0.08)]">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[rgba(20,184,166,0.08)]">
         <span className="text-[10px] text-[#64748b] tracking-widest uppercase">
           mission.objective
         </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-[#64748b]">task:</span>
+          <select
+            value={taskType}
+            onChange={(e) => setTaskType(e.target.value)}
+            className="bg-[#0f172a] text-[#14b8a6] text-[10px] px-2 py-0.5 rounded border border-[rgba(20,184,166,0.2)] focus:outline-none cursor-pointer"
+          >
+            <option value="auto">auto (detect)</option>
+            <option value="rft">rft</option>
+            <option value="distill">distill</option>
+            <option value="dpo">dpo</option>
+            <option value="grpo">grpo</option>
+            <option value="prompt">prompt</option>
+            <option value="rl">rl</option>
+            <option value="sft">sft</option>
+            <option value="ml">ml</option>
+            <option value="mlx_lora">mlx_lora</option>
+          </select>
+        </div>
       </div>
 
       {/* Input area */}

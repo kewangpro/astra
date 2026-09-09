@@ -143,3 +143,33 @@ def test_parse_number_first_does_not_clobber_metric_of_value():
     # "achieve food eaten of 30" should still use the existing pattern (metric-first)
     result = _parse_target_metric("achieve food eaten of 30")
     assert result == {"food_eaten": 30.0}
+
+
+# ── pass_rate and reach patterns ──────────────────────────────────────────────
+
+def test_parse_rejection_sampling_reach_pass_rate():
+    result = _parse_target_metric("Rejection-sampling fine-tuning to reach 90% pass rate")
+    assert result == {"pass_rate": 0.9}
+
+
+def test_parse_pass_rate_percentage():
+    assert _parse_target_metric("achieve 92% pass_rate") == {"pass_rate": 0.92}
+    assert _parse_target_metric("reach 95% pass rate") == {"pass_rate": 0.95}
+
+
+def test_parse_pass_rate_of():
+    assert _parse_target_metric("pass rate of 0.88") == {"pass_rate": 0.88}
+    assert _parse_target_metric("pass_rate of 85%") == {"pass_rate": 0.85}
+
+
+# ── Task type inference ───────────────────────────────────────────────────────
+
+def test_infer_task_type_from_goal():
+    from backend.routers.missions import _infer_task_type_from_goal
+    assert _infer_task_type_from_goal("Rejection-sampling fine-tuning to reach 90% pass rate") == "rft"
+    assert _infer_task_type_from_goal("Train a scikit-learn classifier on iris to 95% accuracy") == "ml"
+    assert _infer_task_type_from_goal("Fine-tune the Ensemble routing model with DPO") == "dpo"
+    assert _infer_task_type_from_goal("Distill conductor_gemma to 82% pass rate") == "distill"
+    assert _infer_task_type_from_goal("Prompt optimization for conductor prompt") == "prompt"
+    assert _infer_task_type_from_goal("Train a Snake-v0 PPO agent to achieve 100 food eaten") == "rl"
+
