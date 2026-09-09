@@ -627,10 +627,13 @@ class LoopStateMachine:
 
                 # ── SANDBOXING ────────────────────────────────────────────
                 log_path = self._sandbox.get_log_path(mission_id)
-                log_offset = os.path.getsize(log_path) if os.path.isfile(log_path) else 0
+                _mission_task_type = plan.get("task_type")
+                log_offset = (
+                    0 if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
+                    else (os.path.getsize(log_path) if os.path.isfile(log_path) else 0)
+                )
                 tel_path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
                 tel_offset = os.path.getsize(tel_path) if os.path.isfile(tel_path) else 0
-                _mission_task_type = plan.get("task_type")
                 if _skip_launch:
                     # Sandbox is already running (reattached by SandboxManager.recover()
                     # during boot-time state recovery) — don't launch a new one.
@@ -2697,7 +2700,10 @@ class LoopStateMachine:
             # mission (confirmed via a real incident: byte 0x96 mid-log killed a
             # run that had already finished all 3 training epochs).
             with open(log_path, "r", errors="replace") as f:
-                f.seek(log_offset)
+                f.seek(0, os.SEEK_END)
+                file_size = f.tell()
+                actual_offset = log_offset if log_offset <= file_size else 0
+                f.seek(actual_offset)
                 content = f.read()
             # Ignore benign warnings (telemetry timeouts, warm-start mismatches)
             # and only flag real Python errors with a traceback.
