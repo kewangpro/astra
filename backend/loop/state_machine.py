@@ -961,6 +961,7 @@ class LoopStateMachine:
                     plan.get("task_type") in ("dpo", "grpo", "distill", "rft")
                     and not _was_floored
                     and _raw_goal_val is not None
+                    and _raw_goal_val > 0.0
                     and (_prev_best is None or _raw_goal_val >= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
@@ -2584,9 +2585,11 @@ class LoopStateMachine:
         else:
             bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
             adapter_rel = self._resolve_adapter_or_bare(finetune_dir, bare_rel)
+        model_name = hp.get("base_model") or hp.get("model") or plan.get("model") or ""
+        model_flag = f"--model {model_name} " if model_name else ""
         cmd = (
             f"cd {finetune_dir} && {python_bin} bare_eval.py "
-            f"--adapter {adapter_rel} --prompt-template {prompt_template}"
+            f"{model_flag}--adapter {adapter_rel} --prompt-template {prompt_template}"
         )
         try:
             result = subprocess.run(
