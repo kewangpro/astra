@@ -308,6 +308,7 @@ _FINETUNE_PIVOT_RANGES = {
 # event (not a metric — its 0..total scale has nothing to do with loss/pass_rate
 # and would distort those chart axes if mixed in).
 _COLLECT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+pairs\s+\((\d+)s\)")
+_RFT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+survivors\s+\((\d+)s\)")
 
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
@@ -2796,6 +2797,15 @@ class LoopStateMachine:
             await emit_status(
                 mission_id,
                 f"Collecting preference pairs: {i}/{total} cases ({n_pairs} pairs, {int(elapsed_s) // 60}m elapsed)",
+                event_type="info",
+            )
+
+        rft_matches = list(_RFT_PROGRESS_RE.finditer(new_output))
+        if rft_matches:
+            i, total, n_survivors, elapsed_s = rft_matches[-1].groups()
+            await emit_status(
+                mission_id,
+                f"Rejection sampling: {i}/{total} cases ({n_survivors} survivors, {int(elapsed_s) // 60}m elapsed)",
                 event_type="info",
             )
 

@@ -40,9 +40,9 @@ hyperparameters:
   # temp MUST stay > 0. At temp 0 every one of the K samples is identical and
   # rejection sampling has nothing to reject — the method silently degenerates
   # into SFT on whatever the model already does.
-  k_samples: 8
-  temp: 1.0
-  max_tokens: 96
+  k_samples: 4
+  temp: 0.8
+  max_tokens: 256
 
   # ── LoRA ───────────────────────────────────────────────────────────────────
   # num_layers is RELATIVE ("the last N blocks", resolved against the loaded
@@ -58,11 +58,11 @@ hyperparameters:
   # (measured), and rft_train.py drops any example exceeding this limit, so the
   # 2560 used by the conductor_min recipes would drop every example.
   max_seq_len: 6144
-  iters: 500
+  iters: 100
   batch_size: 1
   learning_rate: 0.00001
-  steps_per_eval: 50
-  save_every: 50
+  steps_per_eval: 10
+  save_every: 10
   mask_prompt: true
   eval_max_tokens: 256
 
