@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
+
 from backend.routers.missions import _parse_target_metric
 
 
@@ -173,3 +175,42 @@ def test_infer_task_type_from_goal():
     assert _infer_task_type_from_goal("Prompt optimization for conductor prompt") == "prompt"
     assert _infer_task_type_from_goal("Train a Snake-v0 PPO agent to achieve 100 food eaten") == "rl"
 
+
+
+# ── incoherent task_type / target_metric ─────────────────────────────────────
+
+def test_rl_with_pass_rate_target_is_rejected():
+    """task_type became Optional[str]="rl" on 2026-09-08, so an omitted field and
+    an explicit "rl" both arrive as "rl". _infer_task_type_from_goal catches
+    goals that NAME their method, but an unnamed one falls through to the default
+    — and an RL mission is scored by rollout in a Gym env, so it can never
+    produce a routing pass_rate. Before task_type was optional this was a 422 on
+    the missing field; keep it loud rather than dispatching down a path that
+    cannot report the goal's own number (mission 6d999c84 did exactly that:
+    a rejection-sampling goal, dispatched as rl, "completed" in 9 minutes with
+    no metric)."""
+    from backend.routers.missions import _reject_incoherent_task_type
+    with pytest.raises(HTTPException) as exc:
+        _reject_incoherent_task_type("rl", {"pass_rate": 0.9})
+    assert exc.value.status_code == 422
+    assert "cannot produce" in exc.value.detail
+    # The message must say how to fix it, not just what is wrong.
+    assert "task_type explicitly" in exc.value.detail
+
+
+def test_rl_with_an_rl_metric_is_accepted():
+    from backend.routers.missions import _reject_incoherent_task_type
+    for metric in ({"mean_reward": 200.0}, {"food_eaten": 100.0}, {"lines_cleared": 300.0}):
+        _reject_incoherent_task_type("rl", metric)      # must not raise
+
+
+def test_finetune_types_may_target_pass_rate():
+    """The guard is rl-only — pass_rate is exactly what these types produce."""
+    from backend.routers.missions import _reject_incoherent_task_type
+    for tt in ("rft", "distill", "dpo", "grpo", "prompt"):
+        _reject_incoherent_task_type(tt, {"pass_rate": 0.9})   # must not raise
+
+
+def test_guard_is_inert_without_a_target():
+    from backend.routers.missions import _reject_incoherent_task_type
+    _reject_incoherent_task_type("rl", {})

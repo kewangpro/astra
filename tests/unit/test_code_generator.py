@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -2180,8 +2181,17 @@ def test_rft_passes_sampling_args(tmp_path, monkeypatch):
     ones that score correct. temp must be > 0 or every candidate is identical
     and rejection sampling has nothing to reject."""
     p = _rft_prompt(tmp_path, monkeypatch)
-    assert '"--k-samples", "8"' in p
-    assert '"--temp", "1.0"' in p
+    # Assert the INVARIANT, not the tuned values — k_samples and temp are the
+    # recipe's two pivot levers and are expected to move (they were retuned
+    # 8/1.0 -> 4/0.8 on 2026-09-09). What must never change is that temp is
+    # ABOVE ZERO: at temp 0 all K samples are identical, rejection sampling has
+    # nothing to reject, and RFT silently degenerates into SFT on what the model
+    # already does — a failure that looks like a normal run.
+    m = re.search(r'"--temp", "([\d.]+)"', p)
+    assert m, "rft must pass --temp"
+    assert float(m.group(1)) > 0.0, f"temp must be > 0, got {m.group(1)}"
+    k = re.search(r'"--k-samples", "(\d+)"', p)
+    assert k and int(k.group(1)) >= 2, "rejection sampling needs at least 2 candidates"
     assert "--no-adapter" in p          # cold start: no 4B lineage exists
     assert '"--adapter"' not in p
 

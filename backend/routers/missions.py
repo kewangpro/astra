@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
+from backend.logging_config import get_logger
 from backend.database import get_db
 from backend.models.mission import Mission, MissionStatus
 from backend.models.manifest import RequirementManifest
@@ -120,6 +121,48 @@ def _parse_target_metric(goal: str) -> dict:
     return {}
 
 
+logger = get_logger(__name__)
+
+
+#: Goal metrics that only a fine-tune/prompt mission can produce. An RL mission
+#: scores via _run_goal_metric_eval, which needs a Gym env and an SB3/actor-critic
+#: checkpoint; it has no way to produce a routing pass_rate at all.
+_FINETUNE_ONLY_METRICS = frozenset({"pass_rate"})
+
+#: task_type is Optional[str] = "rl" in the schema, so an omitted field and an
+#: explicit "rl" both arrive as "rl". _infer_task_type_from_goal catches goals
+#: that NAME their method, but an unnamed one ("fine-tune the model to 90% pass
+#: rate") falls through to the default and would dispatch down the RL path —
+#: the same failure as mission 6d999c84, now originating server-side rather than
+#: from the UI. Before task_type became optional this was a 422; keep it loud.
+_RL_TASK_TYPES = frozenset({"rl"})
+
+
+def _reject_incoherent_task_type(task_type: str, target_metric: dict) -> None:
+    """422 when the task type cannot produce the metric the goal asks for.
+
+    Cheap to check at creation, and the alternative is a mission that dispatches,
+    trains something, and reports success without ever producing the number its
+    goal named.
+    """
+    if task_type not in _RL_TASK_TYPES or not target_metric:
+        return
+    clash = _FINETUNE_ONLY_METRICS & set(target_metric)
+    if not clash:
+        return
+    name = sorted(clash)[0]
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"task_type 'rl' cannot produce '{name}' — RL missions are scored by "
+            f"rollout in a Gym environment and have no routing eval. The goal text "
+            f"did not name a method, so task_type fell back to the 'rl' default. "
+            f"Set task_type explicitly (rft / distill / dpo / grpo / prompt / sft / "
+            f"mlx_lora / ml), or name the method in the goal."
+        ),
+    )
+
+
 @router.post("", response_model=MissionRead, status_code=status.HTTP_201_CREATED)
 async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_db)):
     payload_dict = payload.model_dump()
@@ -132,8 +175,23 @@ async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_
     if not submitted_type or submitted_type == "auto":
         payload_dict["task_type"] = inferred_type
     elif submitted_type == "rl" and inferred_type != "rl":
+        # "rl" is the schema default, so an explicit rl and an omitted field are
+        # indistinguishable here — the override exists because the frontend used
+        # to send "rl" for everything (mission 6d999c84 was a rejection-sampling
+        # goal dispatched down the RL path, completing in 9 minutes with no
+        # metric). Log it: silently reinterpreting a caller's stated intent is
+        # the one case where this rule is wrong, and a line in the log is the
+        # difference between "astra chose for me" and "astra ignored me".
+        logger.info(
+            "Mission create: task_type 'rl' overridden to '%s' from goal text — "
+            "pass an explicit non-rl task_type, or 'auto', to silence this",
+            inferred_type,
+        )
         payload_dict["task_type"] = inferred_type
 
+    _reject_incoherent_task_type(
+        payload_dict.get("task_type", ""), payload_dict.get("target_metric") or {}
+    )
     _reject_unreachable_target(
         payload_dict.get("task_type", ""), payload_dict.get("target_metric") or {}
     )
