@@ -1610,4 +1610,23 @@ Three root causes interacted:
 
     Total: **986 tests** (971 unit + 15 integration).
 
+---
+
+## Phase 47 — Remote Fine-Tune Evaluation Alignment & Chaining Floor
+
+**Problem:** In RFT mission `07cb4da9-f0f6-4cd6-b230-6269b08af478`, in-memory fine-tuning achieved 90.9% pass rate at Step 150, but post-training evaluation reported `0.0%` pass rate and chained the 0.0 checkpoint into Iteration 1.
+
+Two root causes were diagnosed:
+1. **Model Architecture Mismatch in `bare_eval.py`**:
+   `_run_bare_eval` in `state_machine.py` called `bare_eval.py` without passing `--model`. `bare_eval.py` defaulted to `mlx-community/gemma-3-12b-it-4bit`, mounting a 4B LoRA adapter onto a 12B model. Mismatched layer dimensions caused 0.0% generation across all 78 cases.
+2. **Cold-Start Prompt Setup Bug in `rft_train.py`**:
+   `rft_train.py` assigned to non-existent `pfd._ROUTING_PROMPT_TEMPLATE` instead of setting `pfd.CONDUCTOR_PROMPT` and calling `pfd._build_routing_system()`. The base model lacked routing instructions, producing conversational text and scoring 0.0% at cold start.
+3. **Chaining Gate Floor Absence**:
+   `_raw_goal_val >= _prev_best` on iteration 0 chained `0.0` because `_prev_best` was `None`.
+
+- [x] **Auto-detect model in `bare_eval.py` & pass `--model` in `_run_bare_eval`** (`bare_eval.py`, `backend/loop/state_machine.py`): `bare_eval.py` infers `model` from `adapter_config.json` when not explicitly provided on CLI. `_run_bare_eval()` passes `--model <base_model>` from recipe hyperparameters/plan.
+- [x] **Fix prompt template initialization in `rft_train.py`** (`rft_train.py`): sets `pfd.CONDUCTOR_PROMPT` and invokes `pfd._build_routing_system()`.
+- [x] **Add `_raw_goal_val > 0.0` guard to chaining gate** (`backend/loop/state_machine.py`): degenerate zero-score checkpoints are never chained forward.
+- [x] **Route fine-tune task types to domain `"nlp"` in specialist evaluator** (`backend/evaluator/specialist.py`): prevents stray `env_id` defaults from invoking RL Snake/Tetris benchmark suites on fine-tune models.
+
 
