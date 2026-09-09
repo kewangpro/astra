@@ -25,6 +25,7 @@ _CHECKPOINT_PATTERNS: dict = {
     "dpo":  "checkpoints/best/",
     "grpo": "checkpoints/best/",
     "distill": "checkpoints/best/",
+    "rft": "checkpoints/best/",
 }
 
 # For metrics where lower is better, flip the operator

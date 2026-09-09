@@ -2152,3 +2152,53 @@ def test_chaining_clears_cold_start(tmp_path, monkeypatch):
         "distill", {}, warm_start_adapter="adapters/astra_abc12345_iter0/best")
     assert warm["no_adapter"] is False
     assert warm["adapter"] == "adapters/astra_abc12345_iter0/best"
+
+
+# ── rft (rejection-sampling fine-tuning) ─────────────────────────────────────
+
+def _rft_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "rft", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    return gen._build_user_prompt("rft", "test-id", plan, str(tmp_path / "ckpt"))
+
+
+def test_rft_template_wraps_the_existing_script(tmp_path, monkeypatch):
+    """Same os.execv discipline as dpo/grpo/distill: astra tracks the wrapper's
+    own pid, so a fork+exec child would get a pid astra never learns."""
+    p = _rft_prompt(tmp_path, monkeypatch)
+    assert "rft_train.py" in p
+    assert "os.execv(" in p
+    assert "subprocess.run(" not in p
+    assert 'os.chdir("/Users/kewang/finetune")' in p
+
+
+def test_rft_passes_sampling_args(tmp_path, monkeypatch):
+    """k_samples and temp ARE the method — sampling K candidates and keeping the
+    ones that score correct. temp must be > 0 or every candidate is identical
+    and rejection sampling has nothing to reject."""
+    p = _rft_prompt(tmp_path, monkeypatch)
+    assert '"--k-samples", "8"' in p
+    assert '"--temp", "1.0"' in p
+    assert "--no-adapter" in p          # cold start: no 4B lineage exists
+    assert '"--adapter"' not in p
+
+
+def test_rft_uses_production_prompt_and_long_context(tmp_path, monkeypatch):
+    """conductor_gemma.md is 5,144 tokens; a 2560 max_seq_len would drop every
+    training example, as it would for the distill recipe."""
+    p = _rft_prompt(tmp_path, monkeypatch)
+    assert "backend/prompts/conductor_gemma.md" in p
+    assert "6144" in p
+    assert "gemma-3-4b-it-4bit" in p
+
+
+def test_rft_pivot_lever_is_k_samples_and_temp():
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp
+    assert _clamp_finetune_pivot_hp("rft", {"k_samples": 99, "temp": 9.0}) == {
+        "k_samples": 16, "temp": 1.5}
+    assert _clamp_finetune_pivot_hp("rft", {"k_samples": 1}) == {"k_samples": 4}
+    # iters is distill's lever, not rft's — and distill's is pinned empty.
+    assert _clamp_finetune_pivot_hp("rft", {"iters": 700}) == {}

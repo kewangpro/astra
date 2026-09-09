@@ -1,0 +1,105 @@
+name: ensemble_rft_v1
+version: "1.0.0"
+created_at: "2026-09-08"
+task_type: rft
+domain: NLP
+description: >
+  Rejection-sampling fine-tuning (STaR-style) for the Ensemble routing model.
+  Sample K completions per case from the model ITSELF, keep only those whose
+  routed skill matches expected_skill, and SFT on the survivors. No teacher.
+
+  Why this exists rather than another distill run: distillation is capped by the
+  teacher. gemma3:12b mis-routes 14 of the 78 routing cases, and
+  generate_teacher_completions skips a case whose teacher output is wrong rather
+  than caching it — so those 14 have no label and can never be taught, whatever
+  the student is capable of. Three of them are MCP cases. RFT's ceiling is
+  instead "what the model can produce at least once in K samples", which is
+  strictly higher than "what a 12B gets right on the first try".
+
+  It also addresses the borderline-case problem directly. Cases that pass only
+  sometimes are a coin toss for any method scored on a single sample; for RFT
+  they are the ideal training signal, because one correct completion out of K is
+  all it needs to produce a supervised example.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit    # matches production; 4B and 12B measured identical (48 vs 47 model-routed)
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  # Cold start — no 4B adapter lineage exists, and a 12B adapter cannot warm-start
+  # a 4B (dims differ; the key-intersection guard rejects it). Iteration 0
+  # ESTABLISHES a baseline rather than testing against one, so the Phase 36 floor
+  # is disabled for it. The number that matters is the full model-routed score
+  # against the raw 4B's measured 48/54.
+  no_adapter: true
+
+  prompt_template: backend/prompts/conductor_gemma.md   # the production prompt
+  routing_only: true
+
+  # ── Sampling (the rejection half) ──────────────────────────────────────────
+  # temp MUST stay > 0. At temp 0 every one of the K samples is identical and
+  # rejection sampling has nothing to reject — the method silently degenerates
+  # into SFT on whatever the model already does.
+  k_samples: 8
+  temp: 1.0
+  max_tokens: 96
+
+  # ── LoRA ───────────────────────────────────────────────────────────────────
+  # num_layers is RELATIVE ("the last N blocks", resolved against the loaded
+  # model's depth), so 8 lands on the 4B's last 8. Inherited from the distill
+  # recipes rather than tuned for this method.
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # ── Training (the fine-tune half) ──────────────────────────────────────────
+  # max_seq_len must clear the prompt: conductor_gemma.md is 5,144 tokens
+  # (measured), and rft_train.py drops any example exceeding this limit, so the
+  # 2560 used by the conductor_min recipes would drop every example.
+  max_seq_len: 6144
+  iters: 500
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 50
+  save_every: 50
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# MODEL-ROUTED 54-case scale, as with every recipe since 2026-09-08. Matches the
+# distill recipes' 0.96 (admits up to 52/54). RFT is given the same headroom as
+# distillation because it is not capped by a teacher, so if any method has room
+# above the measured best it is this one.
+#
+# The number to BEAT is the raw 4B production config's 48/54 (88.9%), measured on
+# a frozen clock and proven repeatable — not the ceiling, and not a warm-start
+# delta, since this recipe cold-starts.
+metric_ceiling:
+  pass_rate: 0.96
+
+# NOT YET RUNNABLE. ensemble/finetune/rft_train.py does not exist. astra's rft
+# task type is fully wired and dispatches a {finetune_dir}/rft_train.py os.execv
+# wrapper with the args above, but a mission fails at preflight (which now checks
+# for the remote script) until it is authored. It is a recombination of scripts
+# that already exist:
+#   - grpo_train.py already samples K completions per case and scores them with
+#     the same reward function (expected_skill in [t["skill"] for t in tasks]) —
+#     RFT is that sampling+scoring loop, keeping the winners instead of computing
+#     advantages.
+#   - distill_train.py already does the SFT step, the held-out split, and the
+#     eval/checkpoint loop — RFT feeds it self-generated examples instead of
+#     teacher-generated ones.
+# Expected CLI: --model --adapter|--no-adapter --save-dir --prompt-template
+#   --k-samples --temp --max-tokens --num-layers --lora-rank --lora-scale
+#   --lora-dropout --iters --batch-size --learning-rate --steps-per-eval
+#   --save-every --max-seq-len --eval-max-tokens [--mask-prompt] [--routing-only]
+# Expected stdout (parsed by astra, same contract as distill_train.py):
+#   "Baseline: X% (n/total)" + indented static/dynamic-MCP/blended breakdown;
+#   "N examples ready for training"; "Case split: A train / B held-out valid";
+#   "Step N/M loss=X.XXXX"; "Pass rate: X% (n/total)" + breakdown per eval;
+#   "Best static pass rate during training: X%" and
+#   "Best blended pass rate during training: X% (n/total)".
+# One RFT-specific line worth emitting: how many of the K*cases samples survived
+# filtering. A run where almost nothing survives is learning from a handful of
+# memorised examples, which is the failure mode DISTILL_MIN_TRAIN_EXAMPLES
+# already guards for on the distill side.

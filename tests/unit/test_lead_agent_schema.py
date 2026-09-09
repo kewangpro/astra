@@ -14,11 +14,16 @@ def test_plan_schema_task_type_enum_includes_finetune_types():
     assert "dpo" in enum
     assert "grpo" in enum
     assert "distill" in enum
+    # rft: rejection-sampling fine-tuning. Unlike distill it has NO teacher, so
+    # it is not capped by what gemma3:12b routes correctly — the teacher
+    # mis-routes 14 of 78 cases, which can therefore never be distilled.
+    assert "rft" in enum
 
 
 def test_plan_schema_task_type_enum_unchanged_for_existing_types():
     enum = _PLAN_SCHEMA["properties"]["plan"]["properties"]["task_type"]["enum"]
-    assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill"}
+    assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill",
+                         "rft"}
 
 
 def test_planning_system_prompt_instructs_empty_hyperparameters_for_finetune():
