@@ -54,6 +54,22 @@ from envs.tetris_env import register as _register_tetris
 _register_tetris()
 """
 
+_GAME2048_SETUP = """\
+import sys as _sys
+_sys.path.insert(0, "{project_root}")
+import gymnasium as gym
+from envs.game2048_env import register as _register_2048
+_register_2048()
+"""
+
+_MINATAR_SETUP = """\
+import sys as _sys
+_sys.path.insert(0, "{project_root}")
+import gymnasium as gym
+from envs.minatar_env import register as _register_minatar
+_register_minatar()
+"""
+
 _RL_TEMPLATE = """\
 Generate a complete RL training script using Stable-Baselines3.
 {env_setup}
@@ -1192,6 +1208,9 @@ _ENV_RECIPE: dict = {
     "Snake-v0": "snake_ppo_v1.yaml",
     "Snake-v0/DQN": "snake_dqn_v1.yaml",   # algorithm-specific override
     "Tetris-v0": "tetris_actor_critic_v1.yaml",
+    "Game2048-v0": "game2048_dqn_v1.yaml",
+    "MinAtar-Breakout-v0": "minatar_breakout_dqn_v1.yaml",
+    "MinAtar-v0": "minatar_breakout_dqn_v1.yaml",
     "sft": "sft_llama_lora_v1.yaml",       # keyed by task_type for non-RL tasks
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
@@ -1448,6 +1467,12 @@ class CodeGenerator:
             elif env_id == "Tetris-v0" and "register" not in code:
                 code = _TETRIS_SETUP.format(project_root=_proj_root) + "\n" + code
                 logger.info("CodeGenerator: injected Tetris-v0 registration preamble")
+            elif env_id in ("Game2048-v0", "2048") and "register" not in code:
+                code = _GAME2048_SETUP.format(project_root=_proj_root) + "\n" + code
+                logger.info("CodeGenerator: injected Game2048-v0 registration preamble")
+            elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar", "minatar-breakout") and "register" not in code:
+                code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
+                logger.info("CodeGenerator: injected MinAtar registration preamble")
             # Inject curriculum loop if recipe defines phases
             _algo = plan.get("algorithm", "PPO")
             _recipe = _load_recipe_for_env(env_id, _algo)

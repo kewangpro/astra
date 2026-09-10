@@ -1,13 +1,13 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 50 complete  
+**Status:** Phase 51 complete  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
 
 ## 1. Executive Summary
-ASTRA is an autonomous agent designed to manage the end-to-end lifecycle of Reinforcement Learning (RL) and Machine Learning (ML) training. It leverages lessons from high-performance Snake and Tetris AI implementations to automate curriculum shifts, reward shaping, and competitive benchmarking.
+ASTRA is an autonomous agent designed to manage the end-to-end lifecycle of Reinforcement Learning (RL) and Machine Learning (ML) training. It leverages lessons from high-performance Snake, Tetris, 2048, and MinAtar Breakout AI implementations to automate curriculum shifts, reward shaping, and competitive benchmarking.
 
 ## 2. Problem Statement
 Manual ML training is repetitive and error-prone. Engineers often spend hours:
@@ -20,7 +20,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Autonomy**: Reduce human intervention in the training loop by 80%.
 - **Optimization**: Discover better hyperparameter and reward configurations through automated experimentation.
 - **Observability**: Provide high-fidelity insights into *why* a model is performing via feature map analysis.
-- **Portability**: Create a system that can be easily plugged into different environments (Snake, Tetris, Finance, etc.).
+- **Portability**: Create a system that can be easily plugged into different environments (Snake, Tetris, 2048, MinAtar Breakout, Finance, etc.).
 
 ## 4. Key Features
 
@@ -69,7 +69,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Recipe Evolution**: ASTRA can treat a recipe as a "DNA" strand, mutating and improving it across different training runs to discover universal "Golden Recipes" for specific domains (e.g., "The Golden Snake Recipe").
 
 ### 4.10. Predefined "Golden" Recipes
-- ASTRA ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., the workspace's existing Snake and Tetris models).
+- ASTRA ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., the workspace's existing Snake, Tetris, 2048, and MinAtar Breakout models).
 - These recipes serve as the "Initial Knowledge" of the system, allowing users to achieve expert-level results on day one for common tasks.
 
 ### 4.11. Crash-Safe Mission Persistence

@@ -1688,3 +1688,45 @@ Two root causes were diagnosed:
 - [x] **Color & Theme Preservation**: 100% adherence to dark slate palette (`#0f172a`, `#1e293b`, `rgba(255,255,255,0.05)`, `#64748b`, `#94a3b8`, `#cbd5e1`).
 
     Total: **993 tests** (clean build; frontend validated via `npm run build`).
+
+---
+
+## Phase 51 — 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players
+
+**Motivation:** Astra's autonomous RL capabilities were previously focused exclusively on Snake-v0 and Tetris-v0. To expand Astra's game evaluation and RL training benchmark suite to classic puzzle and arcade benchmarks without introducing heavyweight external dependencies or native C++ build chains (such as native Atari ALE or external pip `minatar`), we implemented two high-throughput pure Python/NumPy Gymnasium environments along with end-to-end training, evaluation, WebSocket streaming, and interactive HUD canvas players.
+
+- [x] **2048 Custom Environment** (`envs/game2048_env.py`):
+  - 4x4 discrete puzzle grid with 4 actions (UP, DOWN, LEFT, RIGHT).
+  - Observation space `Box(0.0, 1.0, shape=(16,), dtype=np.float32)` with normalized log2 tile encoding ($v > 0 \implies \log_2(v)/16$).
+  - Full authentic slide & merge mechanics, spawn dynamics ($90\%$ 2, $10\%$ 4), and game-over detection.
+  - Lookahead state access via `get_next_states()`, enabling direct compatibility with Astra's Lookahead Actor-Critic and Lookahead DQN trainers.
+  - Optional reward shaping parameters (`merge_multiplier`, `empty_tile_bonus`, `corner_bonus`) and `get_viewer_grid()` 16-element integer tile array.
+  - Auto-registered as `Game2048-v0`.
+- [x] **MinAtar Breakout Custom Environment** (`envs/minatar_env.py`):
+  - Minimalist 10x10 symbolic Breakout environment (Young & Tian, 2019) in pure Python/NumPy running at $>50,000$ steps/sec with zero external dependencies.
+  - 3 actions (NOOP, LEFT, RIGHT), 2-cell paddle, ball deflection physics, multi-row breakable bricks, and full board respawn bonus.
+  - Observation space `Box(0.0, 1.0, shape=(400,), dtype=np.float32)` representing 4 binary 10x10 planes (paddle, ball, bricks, velocity direction).
+  - `get_viewer_grid()` returning a 100-element categorical integer array (`0: empty, 1: paddle, 2: ball, 3: brick`).
+  - Auto-registered as `MinAtar-Breakout-v0` and alias `MinAtar-v0`.
+- [x] **Canonical DQN Recipes** (`recipes/game2048_dqn_v1.yaml`, `recipes/minatar_breakout_dqn_v1.yaml`):
+  - Target score 2048 for `Game2048-v0` with `learning_rate: 0.0003`, `buffer_size: 50000`, `exploration_fraction: 0.2`.
+  - Target score 15 for `MinAtar-Breakout-v0` with `learning_rate: 0.00025`, `buffer_size: 100000`, `exploration_fraction: 0.15`.
+- [x] **Code Generator & Pipeline Integration** (`backend/agent/code_generator.py`, `backend/loop/state_machine.py`, `backend/evaluator/benchmark.py`):
+  - Injected `_GAME2048_SETUP` and `_MINATAR_SETUP` preambles into generated training code.
+  - Mapped `Game2048-v0` and `MinAtar-Breakout-v0` / `MinAtar-v0` in `_ENV_RECIPE`.
+  - Added environment registration and goal metric evaluation support in `state_machine.py` and `benchmark.py`.
+  - Safelisted `merge_multiplier`, `empty_tile_bonus`, `corner_bonus`, `brick_reward`, `paddle_hit_reward`, `death_penalty` in pivot `_KNOWN` env kwargs.
+- [x] **Live Inference WebSocket Streaming** (`backend/routers/play.py`):
+  - Extended `play_ws` to register and detect `Game2048Env` and `MinAtarBreakoutEnv`.
+  - Emits real-time viewer frames with `score`, `max_tile`, and 16-tile arrays for 2048.
+  - Emits real-time viewer frames with `score`, `bricks_cleared`, and 100-cell arrays for MinAtar.
+- [x] **Interactive HUD Canvas Players** (`frontend/src/components/hud/Game2048Player.tsx`, `frontend/src/components/hud/MinAtarPlayer.tsx`, `frontend/src/app/missions/[id]/page.tsx`):
+  - `Game2048Player`: 320x320 canvas rendering authentic tile colors matching classic 2048 (from 2 up to 2048+), live score and max tile badges, step counter, start/stop toggle, and FPS slider.
+  - `MinAtarPlayer`: 240x240 retro arcade canvas rendering cyan paddle, amber ball, neon green/orange/yellow brick rows with drop shadows, live score and bricks cleared badges, start/stop toggle, and FPS slider.
+  - Conditionally rendered in Mission HUD based on `mission.goal`.
+- [x] **Dedicated Unit Test Suites** (`tests/unit/test_game2048_env.py`, `tests/unit/test_minatar_env.py`):
+  - 17 unit tests for `Game2048Env` covering observation and action spaces, row sliding, multi-directional simulation, invalid move penalties, lookahead `get_next_states()`, game over detection, viewer grid, and gym registration.
+  - 14 unit tests for `MinAtarBreakoutEnv` covering observation and action spaces, paddle movement and boundary clamping, brick collisions, paddle bounces, death penalties, board resets, viewer grid, and gym registration.
+
+    Total: **1024 tests** (1009 unit + 15 integration; clean build; frontend validated via `npm run build`).
+

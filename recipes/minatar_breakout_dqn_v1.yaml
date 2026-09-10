@@ -1,0 +1,39 @@
+name: minatar_breakout_dqn_v1
+version: "1.0.0"
+created_at: "2026-09-10"
+task_type: rl
+domain: MinAtar
+env_id: MinAtar-Breakout-v0
+algorithm: DQN
+target_metric:
+  score: 15
+description: >
+  DQN recipe for MinAtar Breakout. Observes 4 flattened 10x10 binary channels
+  (paddle, ball, bricks, velocity direction = 400 features) and controls paddle
+  movement (NOOP, LEFT, RIGHT) to intercept the ball and destroy bricks.
+
+architecture:
+  type: MLP
+  net_arch: [256, 256]
+
+hyperparameters:
+  learning_rate: 0.0003
+  buffer_size: 50000
+  learning_starts: 1000
+  batch_size: 64
+  gamma: 0.99
+  train_freq: 4
+  gradient_steps: 1
+  target_update_interval: 1000
+  exploration_fraction: 0.2
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.05
+  total_timesteps: 300000
+
+reward_shaping:
+  brick_reward: 1.0
+  paddle_hit_reward: 0.1
+  death_penalty: -1.0
+
+env_kwargs:
+  max_steps: 1500

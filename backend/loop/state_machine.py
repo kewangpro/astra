@@ -1795,6 +1795,9 @@ class LoopStateMachine:
         _KNOWN: dict = {
             "Snake-v0": {"food_reward", "death_penalty", "distance_weight", "survival_bonus"},
             "Tetris-v0": {"max_steps", "line_clear_multiplier", "piece_placement", "death_penalty"},
+            "Game2048-v0": {"max_steps", "merge_multiplier", "empty_tile_bonus", "corner_bonus"},
+            "MinAtar-Breakout-v0": {"max_steps", "brick_reward", "paddle_hit_reward", "death_penalty"},
+            "MinAtar-v0": {"max_steps", "brick_reward", "paddle_hit_reward", "death_penalty"},
         }
         _RANGES = {
             "food_reward":    (5.0, 50.0),
@@ -2124,6 +2127,12 @@ class LoopStateMachine:
                 register()
             elif env_id == "Snake-v0":
                 from envs.snake_env import register
+                register()
+            elif env_id in ("Game2048-v0", "2048"):
+                from envs.game2048_env import register
+                register()
+            elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
+                from envs.minatar_env import register
                 register()
 
             import gymnasium as gym

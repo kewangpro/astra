@@ -11,6 +11,8 @@ import { PivotTimeline } from "@/components/hud/PivotTimeline";
 import { CritiqueTrace } from "@/components/hud/CritiqueTrace";
 import { SnakePlayer } from "@/components/hud/SnakePlayer";
 import { TetrisPlayer } from "@/components/hud/TetrisPlayer";
+import { Game2048Player } from "@/components/hud/Game2048Player";
+import { MinAtarPlayer } from "@/components/hud/MinAtarPlayer";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
 import type { TelemetryEvent } from "@/lib/api";
 
@@ -200,6 +202,12 @@ export default function MissionHUD({
       )}
       {mission.goal.includes("Tetris-v0") && (
         <TetrisPlayer missionId={missionId} envId="Tetris-v0" />
+      )}
+      {(mission.goal.includes("2048") || mission.goal.toLowerCase().includes("game2048")) && (
+        <Game2048Player missionId={missionId} envId="Game2048-v0" />
+      )}
+      {(mission.goal.toLowerCase().includes("minatar") || mission.goal.toLowerCase().includes("breakout")) && (
+        <MinAtarPlayer missionId={missionId} envId="MinAtar-Breakout-v0" />
       )}
 
       {/* Log + Critic Trace + Pivots */}

@@ -168,6 +168,19 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
         if model is None:
             return 0.0, {}
 
+        if env_id == "Tetris-v0":
+            from envs.tetris_env import register as _reg
+            _reg()
+        elif env_id == "Snake-v0":
+            from envs.snake_env import register as _reg
+            _reg()
+        elif env_id in ("Game2048-v0", "2048"):
+            from envs.game2048_env import register as _reg
+            _reg()
+        elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
+            from envs.minatar_env import register as _reg
+            _reg()
+
         env = gym.make(env_id, **(env_kwargs or {}))
         rewards, info_accum = [], {}
         for _ in range(n_episodes):

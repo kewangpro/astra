@@ -182,8 +182,10 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     done = False
     truncated = False
     base_env = env.unwrapped
-    is_tetris = hasattr(base_env, '_board')
-    is_snake = hasattr(base_env, '_snake')
+    is_tetris = hasattr(base_env, "_lines_cleared_episode")
+    is_snake = hasattr(base_env, "_snake")
+    is_2048 = hasattr(base_env, "_max_tile")
+    is_minatar = hasattr(base_env, "_bricks")
     while not done and not truncated:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, _ = env.step(action)
@@ -193,6 +195,10 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             grid = _tetris_viewer_grid(base_env)
         elif is_snake:
             grid = _snake_viewer_grid(base_env)
+        elif is_2048:
+            grid = base_env.get_viewer_grid()
+        elif is_minatar:
+            grid = base_env.get_viewer_grid()
         else:
             grid = obs.tolist()
         frame: dict = {
@@ -206,6 +212,12 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             frame["food_eaten"] = base_env._food_eaten
         elif is_tetris:
             frame["lines_cleared"] = base_env._lines_cleared_episode
+        elif is_2048:
+            frame["score"] = int(base_env._score)
+            frame["max_tile"] = int(base_env._max_tile)
+        elif is_minatar:
+            frame["score"] = round(base_env._score, 2)
+            frame["bricks_cleared"] = int(base_env._bricks_cleared)
         frames.append(frame)
     return frames, round(episode_reward, 2)
 
@@ -249,6 +261,12 @@ async def play_ws(
                 _reg()
             elif resolved_env_id == "Tetris-v0":
                 from envs.tetris_env import register as _reg
+                _reg()
+            elif resolved_env_id in ("Game2048-v0", "2048"):
+                from envs.game2048_env import register as _reg
+                _reg()
+            elif resolved_env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar"):
+                from envs.minatar_env import register as _reg
                 _reg()
 
             env = gym.make(resolved_env_id, **env_kwargs)

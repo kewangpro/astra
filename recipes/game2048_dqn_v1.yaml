@@ -1,0 +1,40 @@
+name: game2048_dqn_v1
+version: "1.0.0"
+created_at: "2026-09-10"
+task_type: rl
+domain: Game2048
+env_id: Game2048-v0
+algorithm: DQN
+target_metric:
+  score: 2048
+description: >
+  DQN recipe for the 2048 puzzle game. Observes a 16-element log2-normalized
+  tile board and outputs discrete directional slides (UP, DOWN, LEFT, RIGHT).
+  Rewards merging tiles with bonuses for preserving empty tiles and anchoring
+  high tiles into corners.
+
+architecture:
+  type: MLP
+  net_arch: [256, 256]
+
+hyperparameters:
+  learning_rate: 0.0005
+  buffer_size: 50000
+  learning_starts: 1000
+  batch_size: 64
+  gamma: 0.99
+  train_freq: 4
+  gradient_steps: 1
+  target_update_interval: 1000
+  exploration_fraction: 0.2
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.05
+  total_timesteps: 300000
+
+reward_shaping:
+  merge_multiplier: 1.0
+  empty_tile_bonus: 0.1
+  corner_bonus: 0.5
+
+env_kwargs:
+  max_steps: 2000

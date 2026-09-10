@@ -13,8 +13,8 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Auto-approve with LLM classification** — code execution is auto-approved via a two-stage classifier; unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — runs on Apple Silicon (Metal) or in Docker/CUDA containers, with automatic GPU pool assignment
 - **Live mission HUD** — real-time metric charts, log stream, pivot timeline, and critic trace, with history back-filled on reconnect
-- **Custom RL environments** — Snake-v0 and Tetris-v0, with observations rich enough (board features plus piece identity for Tetris) that standard RL algorithms — not just a custom lookahead trainer — can learn real placements
-- **Live agent viewer** — watch the trained agent play Snake-v0 or Tetris-v0 in real time, for any supported trainer type
+- **Custom RL environments** — Snake-v0, Tetris-v0, Game2048-v0, and MinAtar-Breakout-v0, with rich observations, lookahead state access, and high throughput (>50k steps/sec)
+- **Live agent viewer** — watch the trained agent play Snake-v0, Tetris-v0, Game2048-v0, or MinAtar Breakout in real time, for any supported trainer type
 - **Curriculum training** — Snake-v0 missions can progress through increasing grid sizes within a single run, transferring learned weights between phases
 - **Algorithm-aware code generation** — PPO, DQN, SAC, A2C, and TD3 each get their own correct set of hyperparameters, rather than being silently filtered down to a generic subset
 - **Persistent escalating pivot strategy** — stuck missions escalate through hyperparameter tuning → architecture change → algorithm switch → reward shaping, with escalation state surviving server restarts
@@ -94,10 +94,10 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 971 unit tests across all core modules
+│   ├── unit/           # 1009 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
-├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0)
+├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar-Breakout-v0)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
@@ -171,6 +171,7 @@ make ports  # show port status for all services
 | 48 | Prompt Optimization Loop Hardening & Guidance — LeadAgent prompt planning system instructions (preventing neural net HP hallucinations), pivot key dropping for prompt tasks, `last_checkpoint_path` persistence for winning prompt variants, canonical skill taxonomy and concrete few-shot guidance in `_PROMPT_TEMPLATE`, and recipe `metric_ceiling` raised to 1.0 | ✅ Complete |
 | 49 | Command Center: Kanban Board Redesign — parallel status columns (Running, Completed, Stalled, Failed) with independent vertical scrolling, enhanced mission cards (monospace ID, task-type badge, remote node indicator, animated pulse dot, structured metric & progress bar, relative timestamps, icon controls), and aligned GlobalStats stat row | ✅ Complete |
 | 50 | Mission Checkpoint Visibility & Query Optimization — added composite index on (status, created_at), surfaced task_type and winning checkpoint/variant path in Mission HUD header, aligned frontend API Mission types | ✅ Complete |
+| 51 | 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players — pure Gymnasium environments (`Game2048-v0`, `MinAtar-Breakout-v0`), canonical DQN recipes, code generation preambles, state machine eval, WebSocket frame streaming, and retro interactive canvas players | ✅ Complete |
 
 ## Hardware Target
 
