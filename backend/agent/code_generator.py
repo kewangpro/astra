@@ -1086,7 +1086,7 @@ The script must:
                "--model", "{base_model}",
                "--no-adapter",
                "--prompt-template", "{variant_path}",
-               "--eval-max-tokens", "{eval_max_tokens}",
+               "--max-tokens", "{eval_max_tokens}",
            ],
        )"""
 

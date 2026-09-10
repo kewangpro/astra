@@ -111,7 +111,7 @@ class PreflightChecker:
         from backend.agent.code_generator import _resolve_hyperparams
         hp = _resolve_hyperparams(task_type, {})
         finetune_dir = hp.get("finetune_dir", "")
-        script = f"{task_type}_train.py"
+        script = "bare_eval.py" if task_type == "prompt" else f"{task_type}_train.py"
         name = f"remote_script_{task_type}"
         if not (finetune_dir and settings.sandbox_host):
             return [{"name": name, "passed": True,
