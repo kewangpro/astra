@@ -125,6 +125,14 @@ export default function MissionHUD({
               ← missions
             </Link>
             <span className="text-[#64748b] text-xs">/ #{missionId}</span>
+            {mission.task_type && (
+              <span
+                className="text-[9px] px-1 py-0.5 rounded-sm text-[#94a3b8] uppercase font-medium"
+                style={{ background: "rgba(255,255,255,0.05)" }}
+              >
+                {mission.task_type}
+              </span>
+            )}
             {mission.host && (
               <span
                 className="text-[9px] px-1 py-0.5 rounded-sm text-[#94a3b8]"
@@ -138,6 +146,14 @@ export default function MissionHUD({
           <p className="text-[#e2e8f0] text-sm leading-relaxed line-clamp-2">
             {mission.goal}
           </p>
+          {mission.last_checkpoint_path && (
+            <div className="mt-2 flex items-center gap-2 text-[10px] text-[#64748b] font-mono">
+              <span>checkpoint:</span>
+              <span className="text-[#94a3b8] bg-[#0f172a]/60 px-2 py-0.5 rounded border border-[rgba(255,255,255,0.05)] truncate max-w-xl select-all">
+                {mission.last_checkpoint_path}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span

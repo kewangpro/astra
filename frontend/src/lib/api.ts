@@ -11,6 +11,8 @@ export interface Mission {
   current_metric_value: string | null;
   target_metric: Record<string, number> | null;
   host: string | null;    // which node this mission's sandbox is/was running on
+  last_checkpoint_path?: string | null;
+  autonomy_mode?: string;
   created_at: string;
   updated_at: string;
   completed_at: string | null;  // stamped when the mission reaches COMPLETED/FAILED/STALLED

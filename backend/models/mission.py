@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
-from sqlalchemy import String, JSON, DateTime, Text, Integer
+from sqlalchemy import String, JSON, DateTime, Text, Integer, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.database import Base
 
@@ -26,6 +26,9 @@ class MissionStatus(str, Enum):
 
 class Mission(Base):
     __tablename__ = "missions"
+    __table_args__ = (
+        Index("ix_missions_status_created_at", "status", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     goal: Mapped[str] = mapped_column(Text, nullable=False)

@@ -1671,3 +1671,20 @@ Two root causes were diagnosed:
 - [x] **Color & Theme Preservation**: Strict adherence to Astra's dark slate palette (`#1e293b`, `rgba(255,255,255,0.05)`, `#64748b`, `#94a3b8`, `#475569`, `#cbd5e1`, `STATUS_COLOR`, `ACTION_COLOR`), typography, and empty/loading states.
 
     Total: **993 tests** (clean build; frontend validated via `npm run build`).
+
+---
+
+## Phase 50 — Mission Checkpoint Visibility & Query Optimization
+
+**Problem:** Two gaps identified during comprehensive architecture review:
+1. `last_checkpoint_path` was stored in the database and serialized by the backend API, but omitted from the frontend `interface Mission` in `lib/api.ts` and never surfaced in the Mission HUD. Users reviewing completed or best iterations for prompt variants (`conductor_variant.md`) or fine-tuning runs (`adapters/...`) had to query the database or inspect logs to find the exact checkpoint artifact.
+2. The `missions` table lacked a composite index on `(status, created_at)`, which is the primary filter and sort pattern for Command Center operations.
+
+- [x] **Composite Query Index** (`backend/models/mission.py`): Added `Index("ix_missions_status_created_at", "status", "created_at")` to `Mission.__table_args__` for sub-millisecond filtering and ordering across high-volume mission histories.
+- [x] **Frontend API Type Alignment** (`frontend/src/lib/api.ts`): Added `last_checkpoint_path?: string | null` and `autonomy_mode?: string` to `interface Mission`.
+- [x] **Mission HUD Checkpoint & Task Type Surface** (`frontend/src/app/missions/[id]/page.tsx`):
+  - Added uppercase `task_type` badge in the HUD header matching the standard theme pill styling.
+  - Added copyable `last_checkpoint_path` display beneath the goal description, surfacing the exact path to the winning prompt variant or model adapter.
+- [x] **Color & Theme Preservation**: 100% adherence to dark slate palette (`#0f172a`, `#1e293b`, `rgba(255,255,255,0.05)`, `#64748b`, `#94a3b8`, `#cbd5e1`).
+
+    Total: **993 tests** (clean build; frontend validated via `npm run build`).
