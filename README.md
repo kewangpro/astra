@@ -169,6 +169,7 @@ make ports  # show port status for all services
 | 46 | Task Type Auto-Inference, Metric Parsing & Cross-Domain Recipe Search — auto-detect task type from goal text, parse pass rate and target percentages, cross-domain warm-start recipe discovery, and UI task selector | ✅ Complete |
 | 47 | Remote Fine-Tune Evaluation Alignment & Chaining Floor — auto-detect model in `bare_eval.py`, pass `--model` to avoid 4B-on-12B dimension crashes, cold-start prompt initialization in `rft_train.py`, and `_raw_goal_val > 0.0` chaining floor | ✅ Complete |
 | 48 | Prompt Optimization Loop Hardening & Guidance — LeadAgent prompt planning system instructions (preventing neural net HP hallucinations), pivot key dropping for prompt tasks, `last_checkpoint_path` persistence for winning prompt variants, canonical skill taxonomy and concrete few-shot guidance in `_PROMPT_TEMPLATE`, and recipe `metric_ceiling` raised to 1.0 | ✅ Complete |
+| 49 | Command Center: Kanban Board Redesign — parallel status columns (Running, Completed, Stalled, Failed) with independent vertical scrolling, enhanced mission cards (monospace ID, task-type badge, remote node indicator, animated pulse dot, structured metric & progress bar, relative timestamps, icon controls), and aligned GlobalStats stat row | ✅ Complete |
 
 ## Hardware Target
 

@@ -1651,5 +1651,23 @@ Two root causes were diagnosed:
 
     Total: **993 tests** (978 unit + 15 integration).
 
+---
 
+## Phase 49 — Command Center: Kanban Board Redesign
 
+**Problem:** The Command Center previously laid out status groups in vertically stacked horizontal sections, requiring vertical scrolling across whole sections to inspect missions across states. Cards also lacked rich operational context such as task types, node hosting indicators, target metric progress, and live pulse indicators.
+
+- [x] **Kanban Column Layout** (`frontend/src/components/command-center/MissionsGrid.tsx`): Cards are organized into 4 side-by-side parallel columns matching the lifecycle workflow: **Running** (`running`, `planning`, `evaluating`, `pending`), **Completed** (`completed`), **Stalled** (`stalled`, `paused`), and **Failed** (`failed`).
+- [x] **Independent Column Scrolling** (`frontend/src/components/command-center/MissionsGrid.tsx`): Each column tray has independent vertical scrolling (`max-h-[calc(100vh-250px)]` with thin custom scrollbars), preventing tall columns from stretching the dashboard.
+- [x] **Enhanced Mission Cards** (`frontend/src/components/command-center/MissionsGrid.tsx`):
+  - Monospace truncated ID (`#<id>`) and uppercase task-type badge (`m.task_type`).
+  - Remote host node indicator (`m.host`) with server icon.
+  - Live animated pulse ring for active/evaluating/planning missions.
+  - Dedicated metric display with `TrendingUp` icon and best-metric value.
+  - Target Progress Bar: dynamically computes percentage towards target (`target_metric`) and renders an animated progress fill; falls back to iteration count with best-iteration indicator.
+  - Humanized relative timestamps with full date tooltip.
+  - Explicit Run and Stop action buttons with `Play` and `Square` icons.
+- [x] **Aligned GlobalStats Row** (`frontend/src/app/page.tsx`): The stat header order now mirrors the Kanban column sequence: Total, Running, Completed, Stalled, Failed.
+- [x] **Color & Theme Preservation**: Strict adherence to Astra's dark slate palette (`#1e293b`, `rgba(255,255,255,0.05)`, `#64748b`, `#94a3b8`, `#475569`, `#cbd5e1`, `STATUS_COLOR`, `ACTION_COLOR`), typography, and empty/loading states.
+
+    Total: **993 tests** (clean build; frontend validated via `npm run build`).

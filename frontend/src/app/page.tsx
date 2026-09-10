@@ -14,12 +14,19 @@ function GlobalStats() {
     return a;
   }, {});
 
+  const runningCount =
+    (counts.running ?? 0) +
+    (counts.planning ?? 0) +
+    (counts.evaluating ?? 0) +
+    (counts.pending ?? 0);
+  const stalledCount = (counts.stalled ?? 0) + (counts.paused ?? 0);
+
   const stats = [
     { label: "Total", value: missions.length },
-    { label: "Running", value: counts.running ?? 0, color: "#14b8a6" },
-    { label: "Failed", value: counts.failed ?? 0, color: "#f87171" },
-    { label: "Stalled", value: counts.stalled ?? 0, color: "#fb923c" },
+    { label: "Running", value: runningCount, color: "#14b8a6" },
     { label: "Completed", value: counts.completed ?? 0, color: "#4ade80" },
+    { label: "Stalled", value: stalledCount, color: "#fb923c" },
+    { label: "Failed", value: counts.failed ?? 0, color: "#f87171" },
   ];
 
   return (
