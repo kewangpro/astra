@@ -58,7 +58,13 @@ For rl tasks, always include "env_id" as a top-level field in the plan (NOT in h
 Available environments:
   - Standard gymnasium: "CartPole-v1", "LunarLander-v3", "Acrobot-v1", "MountainCar-v0"
   - Custom ASTRA env: "Snake-v0" (16×16 grid, discrete 4-action, food reward +10, death -10)
-    Use "Snake-v0" when the goal mentions Snake or a grid-based game.
+    Use "Snake-v0" when the goal mentions Snake or a snake game.
+  - Custom ASTRA env: "Tetris-v0" (10×20 grid, 40-action discrete placement, line clear reward)
+    Use "Tetris-v0" when the goal mentions Tetris.
+  - Custom ASTRA env: "Game2048-v0" (4×4 grid, discrete 4-action UP/DOWN/LEFT/RIGHT, score reward)
+    Use "Game2048-v0" when the goal mentions 2048.
+  - Custom ASTRA env: "MinAtar-Breakout-v0" (10×10 grid, discrete 3-action NOOP/LEFT/RIGHT, brick reward)
+    Use "MinAtar-Breakout-v0" when the goal mentions MinAtar or Breakout.
 Valid SB3 PPO hyperparameter keys: learning_rate, n_steps, batch_size, n_epochs, gamma,
 gae_lambda, clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
 Do NOT include env_id, dataset_path, entropy_coeff, actor_lr, or any non-SB3 key in hyperparameters."""
@@ -108,6 +114,9 @@ Escalation levels — follow the level provided in the user message (RL task typ
     - Increase food_reward (e.g. 20.0) to make food-seeking the dominant signal
     - Adjust survival_bonus (e.g. 0.05) and death_penalty (e.g. -5.0)
     env_kwargs example: {"food_reward": 20.0, "death_penalty": -5.0, "distance_weight": 0.0, "survival_bonus": 0.05}
+    For Game2048-v0:
+    - Adjust merge_multiplier (e.g. 1.5), empty_tile_bonus (e.g. 0.2), corner_bonus (e.g. 1.0)
+    env_kwargs example: {"merge_multiplier": 1.5, "empty_tile_bonus": 0.2, "corner_bonus": 1.0}
 
 PPO hyperparameter ranges:
   learning_rate: 1e-5 to 1e-2 | n_steps: 1024–4096 | batch_size: 64–512
