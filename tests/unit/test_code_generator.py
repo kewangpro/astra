@@ -2214,6 +2214,11 @@ def test_rft_pivot_lever_is_k_samples_and_temp():
     assert _clamp_finetune_pivot_hp("rft", {"iters": 700}) == {}
 
 
+def test_prompt_pivot_lever_is_empty():
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp
+    assert _clamp_finetune_pivot_hp("prompt", {"learning_rate": 0.001, "batch_size": 32}) == {}
+
+
 # ── prompt (prompt-variant optimization) ─────────────────────────────────────
 
 def _prompt_prompt(tmp_path, monkeypatch):
@@ -2242,6 +2247,14 @@ def test_prompt_template_forbids_reproducing_the_base(tmp_path, monkeypatch):
     p = _prompt_prompt(tmp_path, monkeypatch)
     assert "must not try to reproduce it" in p
     assert "EXTRA_RULES" in p
+
+
+def test_prompt_template_guides_concrete_rules_and_forbids_meta(tmp_path, monkeypatch):
+    """Template must steer the LLM toward concrete rules and away from meta-adages."""
+    p = _prompt_prompt(tmp_path, monkeypatch)
+    assert "Market Analysis" in p
+    assert "Business Reporting" in p
+    assert "NEVER write abstract meta-rules" in p
 
 
 def test_prompt_template_freezes_the_clock(tmp_path, monkeypatch):

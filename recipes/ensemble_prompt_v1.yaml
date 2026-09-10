@@ -41,11 +41,10 @@ hyperparameters:
 # repeatable — the variant is scored against the exact prompt it extends, so
 # unlike every fine-tune recipe this is a true like-for-like delta.
 #
-# 0.96 admits up to 52/54, matching the distill and rft recipes. Prompt work has
-# more headroom than any weights method measured so far, but the ceiling is a
-# creation-time guard against fantasy targets, not a prediction.
+# 1.0 admits up to 54/54 (100%), verified achievable on mlx-community/gemma-3-4b-it-4bit
+# without adapter (see ensemble commit 4318dff, 151/151 passed golden eval).
 metric_ceiling:
-  pass_rate: 0.96
+  pass_rate: 1.0
 
 # APPEND-ONLY, deliberately. The generated script reads the base prompt at
 # runtime and appends a rules block; it never rewrites or restructures it.

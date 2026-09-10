@@ -287,10 +287,11 @@ _FINETUNE_PIVOT_KEYS_BY_TASK = {
     "grpo":    frozenset({"temp", "num_generations"}),
     "distill": frozenset({"iters"}),
     # RFT's lever is how many candidates it draws before rejection filtering —
-    # more samples means more chances a borderline case yields one correct
-    # completion to train on, which is the mechanism itself. temp must stay > 0
     # or every sample is identical and there is nothing to reject.
     "rft":     frozenset({"k_samples", "temp"}),
+    # Prompt missions evaluate candidate rule variants greedily at temperature 0;
+    # there are no numerical hyperparameters to tune via pivot.
+    "prompt":  frozenset(),
 }
 _FINETUNE_PIVOT_RANGES = {
     "temp": (0.7, 1.5),
@@ -977,6 +978,23 @@ class LoopStateMachine:
                         "LoopStateMachine: new best — chaining dpo/grpo warm-start adapter to %s for mission=%s",
                         _last_checkpoint_path, mission_id,
                     )
+                elif (
+                    plan.get("task_type") == "prompt"
+                    and _raw_goal_val is not None
+                    and _raw_goal_val > 0.0
+                    and (_prev_best is None or _raw_goal_val >= _prev_best)
+                ):
+                    from backend.agent.code_generator import _resolve_hyperparams
+                    _hp_for_chain = _resolve_hyperparams("prompt", plan.get("hyperparameters", {}))
+                    _last_checkpoint_path = (
+                        f"{_hp_for_chain.get('finetune_dir', '')}/adapters/"
+                        f"astra_{mission_id[:8]}_iter{current_iteration}/conductor_variant.md"
+                    )
+                    await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
+                    logger.info(
+                        "LoopStateMachine: new best — saving prompt variant checkpoint to %s for mission=%s",
+                        _last_checkpoint_path, mission_id,
+                    )
                 current_val = current_metrics.get(metric_name) if metric_name else None
                 await self._save_best_metric(
                     mission_id,
@@ -1169,7 +1187,7 @@ class LoopStateMachine:
                     # and the pivot telemetry don't advertise changes that never
                     # actually happen (real incident: mission 15a1d093 iter 4 pivot
                     # logged Snake reward-shaping env_kwargs on a DPO mission).
-                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft"):
+                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "prompt"):
                         _safelist = _FINETUNE_PIVOT_KEYS_BY_TASK.get(plan.get("task_type"), frozenset())
                         _dropped = {k for k in adjustments if k not in _safelist}
                         if _dropped:

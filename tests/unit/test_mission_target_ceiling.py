@@ -25,6 +25,7 @@ from backend.routers.missions import _CEILING_TARGET_MARGIN, _reject_unreachable
 _DPO_CEILING = 0.93        # admits up to 50/54
 _GRPO_CEILING = 0.91       # admits up to 49/54
 _DISTILL_CEILING = 0.96    # admits up to 52/54
+_PROMPT_CEILING = 1.0      # admits up to 54/54 (100%), verified achievable
 
 
 def test_dpo_recipe_declares_pass_rate_ceiling():
@@ -38,6 +39,10 @@ def test_grpo_recipe_declares_pass_rate_ceiling():
 
 def test_distill_recipe_declares_pass_rate_ceiling():
     assert recipe_metric_ceiling("distill").get("pass_rate") == pytest.approx(_DISTILL_CEILING)
+
+
+def test_prompt_recipe_declares_pass_rate_ceiling():
+    assert recipe_metric_ceiling("prompt").get("pass_rate") == pytest.approx(_PROMPT_CEILING)
 
 
 def test_distill_target_above_ceiling_is_rejected():

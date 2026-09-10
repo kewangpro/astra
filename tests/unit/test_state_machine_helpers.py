@@ -1768,6 +1768,7 @@ def test_finetune_pivot_safelist_is_task_scoped():
     from backend.loop.state_machine import _FINETUNE_PIVOT_KEYS_BY_TASK
     assert _FINETUNE_PIVOT_KEYS_BY_TASK["dpo"] == {"temp", "k_collect"}
     assert _FINETUNE_PIVOT_KEYS_BY_TASK["distill"] == {"iters"}
+    assert _FINETUNE_PIVOT_KEYS_BY_TASK["prompt"] == set()
     # iters is not a dpo knob; temp is not a distill knob
     assert "iters" not in _FINETUNE_PIVOT_KEYS_BY_TASK["dpo"]
     assert "temp" not in _FINETUNE_PIVOT_KEYS_BY_TASK["distill"]

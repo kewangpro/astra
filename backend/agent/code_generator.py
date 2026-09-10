@@ -1049,11 +1049,24 @@ rules; any attempt to restate it will silently drop content and score worse for 
 reason no one will be able to see. The script reads the base file at runtime and
 appends your block to it.
 
-What the appended block should contain: a short, specific set of routing rules,
-in the same imperative style the base prompt uses. Target genuine routing
-ambiguities — a rule that repeats something the base prompt already says is
-wasted, and a rule that contradicts it makes the model worse. Prefer few strong
-rules over many weak ones.
+What the appended block should contain: a short, specific set of concrete routing
+rules or JSON planning examples. Target genuine routing ambiguities between
+canonical skills: "Market Analysis", "Business Reporting", "Data Services",
+"System Admin", "Programming", "Travel Planning", "General Chat", "Calendar",
+and dynamic MCP tools ("mcp:<Server>:<tool>").
+
+CRITICAL GUIDANCE:
+- NEVER write abstract meta-rules (such as "be concise", "avoid repetition", or
+  "prioritize clarity"). Small language models (Gemma 3 4B) ignore abstract adages.
+- The model responds to EXPLICIT NEGATIVE CONSTRAINTS (e.g. "For cloud spend and
+  billing, NEVER route to Email or General Chat to ask for data; telemetry is auto-loaded;
+  ALWAYS route to Business Reporting") and CONCRETE JSON FEW-SHOT EXAMPLES:
+    PLANNING EXAMPLE (<Label>):
+    - Query: "<query>"
+      - Task 1: {{"title": "<title>", "skill": "<Canonical Skill>", "agent_id": "<agent_id>", "arguments": {{...}}, "depends_on": []}}
+- A rule that repeats something the base prompt already says is wasted, and a rule
+  that contradicts it makes the model worse. Prefer few strong, specific rules over
+  many weak ones.
 
 The script must:
 1. Import os and sys only. Do NOT import subprocess or requests. Do NOT make any
@@ -1255,6 +1268,9 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # on, which is the whole mechanism. temp must stay > 0 or every sample is
     # identical and rejection sampling has nothing to reject.
     "rft":     {"k_samples": (4, 16), "temp": (0.7, 1.5)},
+    # prompt missions evaluate candidate rule variants greedily at temperature 0;
+    # there are no numerical hyperparameters to tune via pivot.
+    "prompt":  {},
 }
 
 
