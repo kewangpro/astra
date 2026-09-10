@@ -1629,4 +1629,27 @@ Two root causes were diagnosed:
 - [x] **Add `_raw_goal_val > 0.0` guard to chaining gate** (`backend/loop/state_machine.py`): degenerate zero-score checkpoints are never chained forward.
 - [x] **Route fine-tune task types to domain `"nlp"` in specialist evaluator** (`backend/evaluator/specialist.py`): prevents stray `env_id` defaults from invoking RL Snake/Tetris benchmark suites on fine-tune models.
 
+    Total: **986 tests**.
+
+---
+
+## Phase 48 — Prompt Optimization Loop Hardening & Guidance
+
+**Problem:** In the first real prompt optimization mission (`38c41d9a`), several issues were diagnosed:
+1. **Planning Hallucinations**: Because `_PLANNING_SYSTEM` in `lead_agent.py` omitted `prompt` from the fine-tune instructions, the Lead Agent hallucinated neural net hyperparameters (`batch_size: 32`, `num_epochs: 10`, `learning_rate: 0.001`, `prompt_length: 10`, `curriculum_phases`) for a prompt task.
+2. **Missing Checkpoint Persistence**: When iteration 1 reached 92.6% (50/54) and completed, `state_machine.py` never called `_save_last_checkpoint_path()` because `prompt` was excluded from the chaining check (`plan.get("task_type") in ("dpo", "grpo", "distill", "rft")`), leaving `last_checkpoint_path` as `NULL` in the database.
+3. **Pivot Safelist Leak**: `_FINETUNE_PIVOT_KEYS_BY_TASK` and line 1172 omitted `prompt`, meaning any LLM-proposed pivot adjustments bypassed key-dropping and contaminated `plan["hyperparameters"]`.
+4. **Abstract Meta-Rule Generation**: `_PROMPT_TEMPLATE` gave no canonical skill taxonomy, leading the LLM to generate abstract adages ("be concise", "avoid repetition") rather than concrete routing rules and few-shot examples.
+5. **Outdated Metric Ceiling**: `recipes/ensemble_prompt_v1.yaml` declared a ceiling of `0.96`, which rejected targets of 1.0 (54/54) even though Ensemble's prompt updates proved 100% was achievable.
+
+- [x] **Lead Agent Planning & Pivot System Prompts** (`backend/agent/lead_agent.py`): added `prompt` to `_PLANNING_SYSTEM` and `_PIVOT_SYSTEM`, instructing the agent to leave `hyperparameters` empty (`{}`) and document that prompt missions optimize routing instructions by proposing additional rules evaluated via `bare_eval.py`.
+- [x] **Pivot Safelist & Key Dropping** (`backend/loop/state_machine.py`, `backend/agent/code_generator.py`): added `"prompt": frozenset()` to `_FINETUNE_PIVOT_KEYS_BY_TASK` and `"prompt": {}` to `_FINETUNE_PIVOT_RANGES_BY_TASK`. Added `prompt` to line 1172 so non-safelist pivot adjustments are cleanly stripped.
+- [x] **Prompt Variant Checkpoint Persistence** (`backend/loop/state_machine.py`): added an `elif plan.get("task_type") == "prompt"` branch to save `_last_checkpoint_path` pointing to `adapters/astra_<id>_iter<N>/conductor_variant.md` on new best variants.
+- [x] **Code Generator Prompt Guidance** (`backend/agent/code_generator.py`): enriched `_PROMPT_TEMPLATE` with Ensemble's canonical skills (`Market Analysis`, `Business Reporting`, `Data Services`, `System Admin`, `Programming`, `Travel Planning`, `General Chat`, `Calendar`, `mcp:`) and explicit instructions that rules must be concrete domain rules or schema-valid JSON few-shot examples, forbidding abstract meta-rules.
+- [x] **Recipe Ceiling Raised to 1.0** (`recipes/ensemble_prompt_v1.yaml`): raised `metric_ceiling.pass_rate` from 0.96 to 1.0 based on verified 54/54 model-routed / 151/151 golden eval results.
+- [x] **Unit Tests** (`tests/unit/test_code_generator.py`, `tests/unit/test_state_machine_helpers.py`, `tests/unit/test_mission_target_ceiling.py`): added test coverage for prompt pivot clamp, prompt target ceiling, and prompt template rule guidance.
+
+    Total: **993 tests** (978 unit + 15 integration).
+
+
 
