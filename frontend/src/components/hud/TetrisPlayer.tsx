@@ -60,7 +60,7 @@ function drawFrame(
     }
   }
 
-  // Highlight only the rows being cleared
+  // Highlight rows being cleared
   if (highlightRows.length > 0) {
     ctx.fillStyle = "rgba(250,204,21,0.65)";
     for (const row of highlightRows) {
@@ -87,17 +87,18 @@ interface Props {
 export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  // Per-cell color memory: cells keep the color of the piece that placed them
   const cellColorsRef = useRef<(string | null)[]>(new Array(ROWS * COLS).fill(null));
   const prevBoardRef = useRef<number[] | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [episode, setEpisode] = useState(0);
+  const [step, setStep] = useState(0);
   const [episodeReward, setEpisodeReward] = useState(0);
   const [linesCleared, setLinesCleared] = useState(0);
   const [bestReward, setBestReward] = useState<number | null>(null);
   const [currentPiece, setCurrentPiece] = useState<string | null>(null);
   const [nextPiece, setNextPiece] = useState<string | null>(null);
+  const [speed, setSpeed] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -112,12 +113,11 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
     if (wsRef.current) return;
     setError(null);
     setLoading(true);
-    // Reset per-cell state
     cellColorsRef.current = new Array(ROWS * COLS).fill(null);
     prevBoardRef.current = null;
 
     const ws = new WebSocket(
-      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=8`
+      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
     );
     wsRef.current = ws;
 
@@ -130,15 +130,12 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
         const board = obs.slice(0, 200);
         const highlightRows = frame.highlight_rows ?? [];
 
-        // Determine current piece color for newly placed cells
         const curIdx = obs.slice(200, 207).indexOf(1);
         const curColor = curIdx >= 0 ? PIECE_COLORS[curIdx] : FALLBACK_COLOR;
 
         const prevBoard = prevBoardRef.current;
         const cellColors = cellColorsRef.current;
 
-        // When lines are cleared the board shifts down — approximate by shifting color
-        // memory down by the cleared count so existing pieces keep their color.
         const linesCleared = frame.lines_cleared_last ?? 0;
         if (linesCleared > 0 && prevBoard) {
           for (let r = ROWS - 1; r >= 0; r--) {
@@ -149,7 +146,6 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
           }
         }
 
-        // Paint newly filled cells with the current piece color; clear emptied cells
         for (let i = 0; i < ROWS * COLS; i++) {
           const filled = board[i] > 0.5;
           const wasFilled = prevBoard ? prevBoard[i] > 0.5 : false;
@@ -163,119 +159,174 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
 
         setEpisodeReward(frame.episode_reward ?? 0);
         if (frame.lines_cleared !== undefined) setLinesCleared(frame.lines_cleared);
+        if (frame.step !== undefined) setStep(frame.step);
         if (frame.episode) setEpisode(frame.episode);
 
         const nxtIdx = obs.slice(207, 214).indexOf(1);
         setCurrentPiece(curIdx >= 0 ? PIECE_NAMES[curIdx] : null);
         setNextPiece(nxtIdx >= 0 ? PIECE_NAMES[nxtIdx] : null);
       } else if (frame.type === "episode_end") {
-        // Reset color memory between episodes
         cellColorsRef.current = new Array(ROWS * COLS).fill(null);
         prevBoardRef.current = null;
         setLinesCleared(0);
         const r = frame.total_reward ?? 0;
         setBestReward((prev) => (prev === null || r > prev ? r : prev));
       } else if (frame.type === "error") {
-        setError(frame.message ?? "Unknown error");
+        setError(frame.message ?? "Inference error");
         stop();
       }
     };
 
-    ws.onerror = () => { setError("Connection failed"); stop(); };
+    ws.onerror = () => { setError("WebSocket connection failed"); stop(); };
     ws.onclose = () => { setPlaying(false); setLoading(false); wsRef.current = null; };
-  }, [missionId, envId, stop]);
+  }, [missionId, envId, speed, stop]);
+
+  // Initial draw
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext("2d");
+    if (ctx) drawFrame(ctx, new Array(ROWS * COLS).fill(0), new Array(ROWS * COLS).fill(null), []);
+  }, []);
 
   useEffect(() => () => { wsRef.current?.close(); }, []);
 
   return (
-    <div
-      className="rounded-lg p-4 space-y-3"
-      style={{ background: "#1e293b", border: "1px solid rgba(20,184,166,0.15)" }}
-    >
+    <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-[#64748b] tracking-widest uppercase">
-          agent.play — {envId}
-        </span>
-        <div className="flex items-center gap-3">
-          {bestReward !== null && (
-            <span className="text-[10px] text-[#14b8a6]">best {bestReward.toFixed(1)}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(255,255,255,0.05)] pb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono tracking-widest text-[#64748b] uppercase">
+              AGENT.PLAY
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0f172a] text-[#14b8a6] border border-[rgba(20,184,166,0.2)]">
+              {envId}
+            </span>
+            {playing && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                </span>
+                LIVE
+              </span>
+            )}
+          </div>
+          <h3 className="text-xs font-semibold text-[#e2e8f0] tracking-wide mt-1">
+            Tetris Live Player
+          </h3>
+        </div>
+
+        {/* Metrics Bar */}
+        <div className="flex items-center gap-4 text-xs font-mono">
+          <div className="text-right">
+            <span className="text-[10px] text-[#64748b] block uppercase">Lines</span>
+            <span className="text-teal-400 font-semibold">{linesCleared}</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-[#64748b] block uppercase">Reward</span>
+            <span className="text-amber-400 font-semibold">{episodeReward.toFixed(1)}</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-[#64748b] block uppercase">Best</span>
+            <span className="text-emerald-400 font-semibold">{bestReward !== null ? bestReward.toFixed(1) : "—"}</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-[#64748b] block uppercase">Episode</span>
+            <span className="text-[#94a3b8]">{episode}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Stage: Canvas + Pieces + Control Panel */}
+      <div className="flex flex-col md:flex-row items-center justify-center gap-6 my-1">
+        <div className="flex gap-3 items-start justify-center">
+          <canvas
+            ref={canvasRef}
+            width={W}
+            height={H}
+            className="rounded-lg shadow-inner bg-[#0f172a] border border-[rgba(20,184,166,0.12)] shrink-0"
+            style={{ imageRendering: "pixelated" }}
+          />
+
+          {/* Piece Previews */}
+          <div className="flex flex-col gap-2.5 pt-1 min-w-[56px]">
+            <div className="bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.04)] text-center space-y-1">
+              <p className="text-[9px] text-[#64748b] uppercase tracking-wider font-mono">Current</p>
+              <div
+                className="w-8 h-8 mx-auto rounded flex items-center justify-center text-xs font-bold transition-all"
+                style={{
+                  background: currentPiece ? PIECE_COLORS[PIECE_NAMES.indexOf(currentPiece)] + "26" : "transparent",
+                  border: currentPiece ? `1px solid ${PIECE_COLORS[PIECE_NAMES.indexOf(currentPiece)]}66` : "1px dashed rgba(255,255,255,0.1)",
+                  color: currentPiece ? PIECE_COLORS[PIECE_NAMES.indexOf(currentPiece)] : "#475569",
+                }}
+              >
+                {currentPiece || "—"}
+              </div>
+            </div>
+
+            <div className="bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.04)] text-center space-y-1">
+              <p className="text-[9px] text-[#64748b] uppercase tracking-wider font-mono">Next</p>
+              <div
+                className="w-8 h-8 mx-auto rounded flex items-center justify-center text-xs font-bold transition-all opacity-75"
+                style={{
+                  background: nextPiece ? PIECE_COLORS[PIECE_NAMES.indexOf(nextPiece)] + "22" : "transparent",
+                  border: nextPiece ? `1px solid ${PIECE_COLORS[PIECE_NAMES.indexOf(nextPiece)]}44` : "1px dashed rgba(255,255,255,0.1)",
+                  color: nextPiece ? PIECE_COLORS[PIECE_NAMES.indexOf(nextPiece)] : "#475569",
+                }}
+              >
+                {nextPiece || "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Controls Sidebar */}
+        <div className="flex flex-col gap-3.5 w-full md:w-44 shrink-0">
+          {error && (
+            <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+              {error}
+            </div>
           )}
+
           <button
             onClick={playing ? stop : start}
             disabled={loading}
-            className="text-[11px] px-3 py-1 rounded border transition-colors disabled:opacity-40"
-            style={{
-              color: playing ? "#f87171" : "#14b8a6",
-              borderColor: playing ? "rgba(248,113,113,0.4)" : "rgba(20,184,166,0.4)",
-              background: playing ? "rgba(248,113,113,0.08)" : "rgba(20,184,166,0.08)",
-            }}
+            className={`w-full py-2 px-3 rounded text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              playing
+                ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30"
+                : "bg-teal-500 hover:bg-teal-400 text-[#0f172a] shadow-sm"
+            } disabled:opacity-40`}
           >
-            {loading ? "loading…" : playing ? "■ stop" : "▶ watch"}
+            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Watch Game"}
           </button>
+
+          <div className="pt-2 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">
+            <div className="flex justify-between text-[10px] text-[#64748b]">
+              <span>Playback Speed</span>
+              <span className="font-mono text-[#94a3b8]">{speed} fps</span>
+            </div>
+            <input
+              type="range"
+              min={2}
+              max={20}
+              value={speed}
+              onChange={(e) => setSpeed(Number(e.target.value))}
+              className="w-full h-1 bg-[#0f172a] rounded-lg appearance-none cursor-pointer accent-teal-500"
+            />
+          </div>
+
+          <div className="text-[10px] text-[#64748b] bg-[#0f172a]/50 p-2 rounded border border-[rgba(255,255,255,0.03)] space-y-0.5">
+            <div className="flex justify-between">
+              <span>Grid:</span>
+              <span className="font-mono text-[#94a3b8]">10x20</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Step:</span>
+              <span className="font-mono text-[#94a3b8]">{step}</span>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Canvas + piece info side by side */}
-      <div className="flex gap-4 items-start justify-center">
-        <canvas
-          ref={canvasRef}
-          width={W}
-          height={H}
-          style={{
-            imageRendering: "pixelated",
-            borderRadius: 4,
-            background: "#0f172a",
-            border: "1px solid rgba(20,184,166,0.08)",
-            flexShrink: 0,
-          }}
-        />
-
-        {/* Sidebar: current / next piece */}
-        <div className="space-y-3 pt-1 min-w-[64px]">
-          {currentPiece && (
-            <div className="space-y-1">
-              <p className="text-[9px] text-[#64748b] uppercase tracking-widest">current</p>
-              <div
-                className="w-8 h-8 rounded flex items-center justify-center text-sm font-bold"
-                style={{
-                  background: PIECE_COLORS[PIECE_NAMES.indexOf(currentPiece)] + "33",
-                  border: `1px solid ${PIECE_COLORS[PIECE_NAMES.indexOf(currentPiece)]}66`,
-                  color: PIECE_COLORS[PIECE_NAMES.indexOf(currentPiece)],
-                }}
-              >
-                {currentPiece}
-              </div>
-            </div>
-          )}
-          {nextPiece && (
-            <div className="space-y-1">
-              <p className="text-[9px] text-[#64748b] uppercase tracking-widest">next</p>
-              <div
-                className="w-8 h-8 rounded flex items-center justify-center text-sm font-bold opacity-60"
-                style={{
-                  background: PIECE_COLORS[PIECE_NAMES.indexOf(nextPiece)] + "22",
-                  border: `1px solid ${PIECE_COLORS[PIECE_NAMES.indexOf(nextPiece)]}44`,
-                  color: PIECE_COLORS[PIECE_NAMES.indexOf(nextPiece)],
-                }}
-              >
-                {nextPiece}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Stats */}
-      {playing && (
-        <div className="flex justify-between text-[10px] text-[#64748b]">
-          <span>episode {episode}</span>
-          <span>lines <span className="text-[#14b8a6]">{linesCleared}</span></span>
-          <span>reward {episodeReward.toFixed(1)}</span>
-        </div>
-      )}
-
-      {error && <p className="text-[10px] text-[#f87171]">{error}</p>}
     </div>
   );
 }

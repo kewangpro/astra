@@ -99,117 +99,101 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
   const [step, setStep] = useState(0);
   const [speed, setSpeed] = useState(8);
   const [error, setError] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const framesRef = useRef<Frame[]>([]);
-  const animFrameRef = useRef<number | null>(null);
-  const lastDrawRef = useRef<number>(0);
-
-  const stopPlayback = useCallback(() => {
+  const stop = useCallback(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
     setPlaying(false);
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    setConnected(false);
+    setLoading(false);
   }, []);
 
-  const connect = useCallback(() => {
+  const start = useCallback(() => {
+    if (wsRef.current) return;
     setError(null);
-    framesRef.current = [];
+    setLoading(true);
 
-    const url = `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(
+      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
+    );
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setConnected(true);
       setPlaying(true);
+      setLoading(false);
     };
 
-    ws.onmessage = (evt) => {
-      try {
-        const msg: Frame = JSON.parse(evt.data);
-        if (msg.type === "error") {
-          setError(msg.message ?? "Inference error");
-          stopPlayback();
-          return;
+    ws.onmessage = (e) => {
+      const frame: Frame = JSON.parse(e.data as string);
+      if (frame.type === "frame" && frame.grid) {
+        const ctx = canvasRef.current?.getContext("2d");
+        if (ctx) drawBoard(ctx, frame.grid);
+
+        if (frame.step !== undefined) setStep(frame.step);
+        if (frame.score !== undefined) setScore(frame.score);
+        if (frame.max_tile !== undefined) {
+          setMaxTile(frame.max_tile);
+          setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
         }
-        if (msg.type === "frame" || msg.type === "episode_end") {
-          framesRef.current.push(msg);
+        if (frame.episode) setEpisode(frame.episode);
+      } else if (frame.type === "episode_end") {
+        if (frame.score !== undefined) {
+          setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
         }
-      } catch {}
+      } else if (frame.type === "error") {
+        setError(frame.message ?? "Inference error");
+        stop();
+      }
     };
 
     ws.onerror = () => {
-      setError("WebSocket connection failed.");
-      stopPlayback();
+      setError("WebSocket connection failed");
+      stop();
     };
 
     ws.onclose = () => {
-      setConnected(false);
+      setPlaying(false);
+      setLoading(false);
+      wsRef.current = null;
     };
-  }, [missionId, envId, speed, stopPlayback]);
-
-  // Animation loop
-  useEffect(() => {
-    if (!playing) return;
-
-    const interval = 1000 / speed;
-
-    function loop(now: number) {
-      if (now - lastDrawRef.current >= interval && framesRef.current.length > 0) {
-        const frame = framesRef.current.shift()!;
-        lastDrawRef.current = now;
-
-        if (frame.type === "frame" && frame.grid) {
-          const canvas = canvasRef.current;
-          if (canvas) {
-            const ctx = canvas.getContext("2d");
-            if (ctx) drawBoard(ctx, frame.grid);
-          }
-          if (frame.step !== undefined) setStep(frame.step);
-          if (frame.score !== undefined) setScore(frame.score);
-          if (frame.max_tile !== undefined) {
-            setMaxTile(frame.max_tile);
-            setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
-          }
-        } else if (frame.type === "episode_end") {
-          setEpisode((e) => e + 1);
-        }
-      }
-      animFrameRef.current = requestAnimationFrame(loop);
-    }
-
-    animFrameRef.current = requestAnimationFrame(loop);
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [playing, speed]);
+  }, [missionId, envId, speed, stop]);
 
   // Initial draw
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      if (ctx) drawBoard(ctx, new Array(16).fill(0));
-    }
+    const ctx = canvasRef.current?.getContext("2d");
+    if (ctx) drawBoard(ctx, new Array(16).fill(0));
   }, []);
 
+  useEffect(() => () => { wsRef.current?.close(); }, []);
+
   return (
-    <div className="bg-[#1e293b] border border-[rgba(255,255,255,0.05)] rounded-lg p-5">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5 space-y-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(255,255,255,0.05)] pb-3">
         <div>
-          <h3 className="text-xs font-semibold text-[#e2e8f0] tracking-wide flex items-center gap-2">
-            <span>2048 Live Player</span>
-            <span className="text-[10px] text-[#64748b] font-mono">Game2048-v0</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono tracking-widest text-[#64748b] uppercase">
+              AGENT.PLAY
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0f172a] text-[#14b8a6] border border-[rgba(20,184,166,0.2)]">
+              {envId}
+            </span>
+            {playing && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                </span>
+                LIVE
+              </span>
+            )}
+          </div>
+          <h3 className="text-xs font-semibold text-[#e2e8f0] tracking-wide mt-1">
+            2048 Live Player
           </h3>
-          <p className="text-[11px] text-[#94a3b8] mt-0.5">
-            Model inference running on Apple Silicon / CPU
-          </p>
         </div>
 
+        {/* Metrics Bar */}
         <div className="flex items-center gap-4 text-xs font-mono">
           <div className="text-right">
             <span className="text-[10px] text-[#64748b] block uppercase">Score</span>
@@ -220,49 +204,49 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
             <span className="text-emerald-400 font-semibold">{maxTile || "—"}</span>
           </div>
           <div className="text-right">
-            <span className="text-[10px] text-[#64748b] block uppercase">Step</span>
-            <span className="text-[#94a3b8]">{step}</span>
+            <span className="text-[10px] text-[#64748b] block uppercase">Best</span>
+            <span className="text-teal-400 font-semibold">{bestScore !== null ? bestScore : "—"}</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-[#64748b] block uppercase">Episode</span>
+            <span className="text-[#94a3b8]">{episode}</span>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center gap-6 justify-center my-2">
+      {/* Stage: Canvas + Controls */}
+      <div className="flex flex-col md:flex-row items-center justify-center gap-6 my-1">
         <canvas
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
-          className="rounded-lg shadow-inner bg-[#0f172a]"
+          className="rounded-lg shadow-inner bg-[#0f172a] border border-[rgba(20,184,166,0.12)]"
         />
 
-        <div className="flex flex-col gap-3 min-w-[160px]">
+        {/* Controls Sidebar */}
+        <div className="flex flex-col gap-3.5 w-full md:w-44 shrink-0">
           {error && (
-            <div className="p-2 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+            <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
               {error}
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            {!playing ? (
-              <button
-                onClick={connect}
-                className="px-4 py-2 rounded bg-teal-500 hover:bg-teal-400 text-[#0f172a] font-semibold text-xs transition-colors"
-              >
-                Watch Game
-              </button>
-            ) : (
-              <button
-                onClick={stopPlayback}
-                className="px-4 py-2 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 text-xs font-medium transition-colors"
-              >
-                Stop
-              </button>
-            )}
-          </div>
+          <button
+            onClick={playing ? stop : start}
+            disabled={loading}
+            className={`w-full py-2 px-3 rounded text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+              playing
+                ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30"
+                : "bg-teal-500 hover:bg-teal-400 text-[#0f172a] shadow-sm"
+            } disabled:opacity-40`}
+          >
+            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Watch Game"}
+          </button>
 
-          <div className="pt-3 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">
+          <div className="pt-2 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">
             <div className="flex justify-between text-[10px] text-[#64748b]">
-              <span>Speed</span>
-              <span className="font-mono">{speed} fps</span>
+              <span>Playback Speed</span>
+              <span className="font-mono text-[#94a3b8]">{speed} fps</span>
             </div>
             <input
               type="range"
@@ -272,6 +256,17 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
               onChange={(e) => setSpeed(Number(e.target.value))}
               className="w-full h-1 bg-[#0f172a] rounded-lg appearance-none cursor-pointer accent-teal-500"
             />
+          </div>
+
+          <div className="text-[10px] text-[#64748b] bg-[#0f172a]/50 p-2 rounded border border-[rgba(255,255,255,0.03)] space-y-0.5">
+            <div className="flex justify-between">
+              <span>Grid:</span>
+              <span className="font-mono text-[#94a3b8]">4x4</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Step:</span>
+              <span className="font-mono text-[#94a3b8]">{step}</span>
+            </div>
           </div>
         </div>
       </div>
