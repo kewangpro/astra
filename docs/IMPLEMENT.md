@@ -1720,13 +1720,26 @@ Two root causes were diagnosed:
   - Extended `play_ws` to register and detect `Game2048Env` and `MinAtarBreakoutEnv`.
   - Emits real-time viewer frames with `score`, `max_tile`, and 16-tile arrays for 2048.
   - Emits real-time viewer frames with `score`, `bricks_cleared`, and 100-cell arrays for MinAtar.
-- [x] **Interactive HUD Canvas Players** (`frontend/src/components/hud/Game2048Player.tsx`, `frontend/src/components/hud/MinAtarPlayer.tsx`, `frontend/src/app/missions/[id]/page.tsx`):
+- [x] **Interactive HUD Canvas Players & Architectural Unification** (`frontend/src/components/hud/SnakePlayer.tsx`, `frontend/src/components/hud/TetrisPlayer.tsx`, `frontend/src/components/hud/Game2048Player.tsx`, `frontend/src/components/hud/MinAtarPlayer.tsx`, `frontend/src/app/missions/[id]/page.tsx`):
   - `Game2048Player`: 320x320 canvas rendering authentic tile colors matching classic 2048 (from 2 up to 2048+), live score and max tile badges, step counter, start/stop toggle, and FPS slider.
   - `MinAtarPlayer`: 240x240 retro arcade canvas rendering cyan paddle, amber ball, neon green/orange/yellow brick rows with drop shadows, live score and bricks cleared badges, start/stop toggle, and FPS slider.
+  - `SnakePlayer` & `TetrisPlayer`: Refactored to align with the unified player design language.
+  - **Comprehensive Design Review & Unification**:
+    - Standardized outer card styling, dark slate palette (`#1e293b`, `#0f172a`, `rgba(20,184,166,0.15)`), and rounded borders across all 4 players.
+    - Unified header bar with `AGENT.PLAY` badge, uppercase environment tag, live green pulse indicator, and human-readable title.
+    - Standardized monospace telemetry metrics bar displaying 4 live counters (Primary Metric, Reward/Step, Best, Episode).
+    - Centered stage layout with crisp pixelated canvas (`imageRendering: pixelated`) and pre-rendered initial board states on mount so players never show blank black boxes before connecting.
+    - Standardized right-hand controls sidebar featuring connection status (`Live`, `Connecting...`, `Model Ready`, `Offline`), Play/Stop toggle button with loading state, and interactive FPS slider with game-tailored ranges:
+      - Snake: 4–24 FPS
+      - Tetris: 2–20 FPS
+      - 2048: 2–24 FPS
+      - MinAtar Breakout: 4–30 FPS
+    - Replaced frame-queue `requestAnimationFrame` polling with direct `ws.onmessage` canvas rendering to eliminate frame accumulation and lag when users switch tabs.
   - Conditionally rendered in Mission HUD based on `mission.goal`.
 - [x] **Dedicated Unit Test Suites** (`tests/unit/test_game2048_env.py`, `tests/unit/test_minatar_env.py`):
   - 17 unit tests for `Game2048Env` covering observation and action spaces, row sliding, multi-directional simulation, invalid move penalties, lookahead `get_next_states()`, game over detection, viewer grid, and gym registration.
   - 14 unit tests for `MinAtarBreakoutEnv` covering observation and action spaces, paddle movement and boundary clamping, brick collisions, paddle bounces, death penalties, board resets, viewer grid, and gym registration.
 
     Total: **1024 tests** (1009 unit + 15 integration; clean build; frontend validated via `npm run build`).
+
 

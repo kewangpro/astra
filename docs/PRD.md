@@ -34,7 +34,11 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.3. Dynamic Reward Evolver
 - Tests variations of reward shaping automatically when structural pivots (HP tune, arch change, algo switch) are exhausted.
-- Snake-v0 exposes four configurable reward parameters: `food_reward`, `death_penalty`, `survival_bonus`, `distance_weight`. At escalation level 3 the pivot agent proposes `env_kwargs` overrides (e.g. `distance_weight=0` to disable greedy shaping, `food_reward=20` to amplify food signal). These flow through pivot → plan → code generator → `gym.make()` automatically.
+- Supported game environments expose configurable reward shaping parameters:
+  - **Snake-v0**: `food_reward`, `death_penalty`, `survival_bonus`, `distance_weight`.
+  - **Game2048-v0**: `merge_multiplier`, `empty_tile_bonus`, `corner_bonus`.
+  - **MinAtar-Breakout-v0**: `brick_reward`, `paddle_hit_reward`, `death_penalty`.
+  At escalation level 3 the pivot agent proposes `env_kwargs` overrides (e.g. `distance_weight=0` to disable greedy shaping, `food_reward=20` to amplify food signal, or `merge_multiplier=2.0`). These flow through pivot → plan → code generator → `gym.make()` automatically.
 - **Algorithm-locked escalation**: when a mission goal explicitly names an algorithm (e.g. "Train a Snake-v0 DQN agent"), ASTRA never proposes an algorithm switch. Escalation level 2 remaps to reward shaping instead of an algorithm switch, preserving the user's stated algorithm choice throughout the run. The four-level ladder becomes: 0=HP tune, 1=architecture change, 2=reward shaping, 3=aggressive reward shaping.
 - **Escalation persistence**: the consecutive-failed-pivot counter (`pivot_escalation_count`) is saved to the DB after every pivot and restored on server restart, so long-running missions correctly escalate even across process restarts or crashes.
 - **Convergence stop**: a mission that has maxed out escalation and still not set a new best for many evaluated iterations is recognized as converged below target — it is stopped and marked `stalled` (a terminal state) with its best checkpoint kept, rather than looping forever. Targets that exceed a recipe's declared empirical ceiling are rejected when the mission is created.
@@ -46,6 +50,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 ### 4.5. Smart Visualizer
 - Automatically captures video of "Breakthrough Moments."
 - Generates CNN activation maps and feature plots.
+- **Unified Live Game Players**: Real-time interactive game HUD canvas players with live WebSocket streaming for Snake-v0, Tetris-v0, Game2048-v0, and MinAtar-Breakout-v0, featuring unified dark slate telemetry cards, live connection indicators, pre-rendered initial board states, and game-tailored speed controls.
 
 ### 4.6. Autonomous Iteration Loop
 - Continuous "Plan-Train-Evaluate-Refine" cycle.

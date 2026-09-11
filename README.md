@@ -40,6 +40,11 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 |---|---|
 | ![Snake-v0 agent playing live in the mission HUD — grid canvas with head, body, and food rendered in real time](docs/screenshots/snake_viewer.png) | ![Tetris-v0 agent playing live in the mission HUD — board canvas with piece colors and line-clear highlights](docs/screenshots/tetris_viewer.png) |
 
+| Game2048-v0 Live Viewer | MinAtar-Breakout-v0 Live Viewer |
+|---|---|
+| ![Game2048-v0 agent playing live in the mission HUD — 4x4 tile canvas with score and max tile tracking](docs/screenshots/game2048_viewer.png) | ![MinAtar-Breakout-v0 agent playing live in the mission HUD — 10x10 symbolic arcade canvas with paddle, ball, and bricks](docs/screenshots/minatar_viewer.png) |
+
+
 ## Documentation
 
 | Doc | Purpose |
@@ -170,8 +175,8 @@ make ports  # show port status for all services
 | 47 | Remote Fine-Tune Evaluation Alignment & Chaining Floor — auto-detect model in `bare_eval.py`, pass `--model` to avoid 4B-on-12B dimension crashes, cold-start prompt initialization in `rft_train.py`, and `_raw_goal_val > 0.0` chaining floor | ✅ Complete |
 | 48 | Prompt Optimization Loop Hardening & Guidance — LeadAgent prompt planning system instructions (preventing neural net HP hallucinations), pivot key dropping for prompt tasks, `last_checkpoint_path` persistence for winning prompt variants, canonical skill taxonomy and concrete few-shot guidance in `_PROMPT_TEMPLATE`, and recipe `metric_ceiling` raised to 1.0 | ✅ Complete |
 | 49 | Command Center: Kanban Board Redesign — parallel status columns (Running, Completed, Stalled, Failed) with independent vertical scrolling, enhanced mission cards (monospace ID, task-type badge, remote node indicator, animated pulse dot, structured metric & progress bar, relative timestamps, icon controls), and aligned GlobalStats stat row | ✅ Complete |
-| 50 | Mission Checkpoint Visibility & Query Optimization — added composite index on (status, created_at), surfaced task_type and winning checkpoint/variant path in Mission HUD header, aligned frontend API Mission types | ✅ Complete |
-| 51 | 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players — pure Gymnasium environments (`Game2048-v0`, `MinAtar-Breakout-v0`), canonical DQN recipes, code generation preambles, state machine eval, WebSocket frame streaming, and retro interactive canvas players | ✅ Complete |
+| 51 | 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players — pure Gymnasium environments (`Game2048-v0`, `MinAtar-Breakout-v0`), canonical DQN recipes, code generation preambles, state machine eval, WebSocket frame streaming, retro canvas players, and unified HUD player design across all 4 games | ✅ Complete |
+
 
 ## Hardware Target
 

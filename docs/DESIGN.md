@@ -97,8 +97,8 @@ The execution engine that manages the state machine of training:
 The worker agents that interface with diverse training paradigms. `task_type` (`rl` / `sft` / `ml` / `mlx_lora` / `dpo` / `grpo` / `distill` / `rft` / `prompt`) selects which one a mission uses; LoRA is a *mechanism* (efficient low-rank weight updates), not a task type of its own — it underlies `sft`, `mlx_lora`, and the four fine-tune types below. `prompt` is the outlier: it changes no weights at all.
 
 | Task type | Objective | How it trains |
-|---|---|---|
-| `rl` | Classical reinforcement learning — an agent learns a policy from trial-and-error reward signal in an environment (Snake-v0, Tetris-v0, or standard Gymnasium envs). | SB3 (PPO/DQN/A2C/SAC/TD3) via `RLTrainer`, or a custom Actor-Critic / lookahead-augmented trainer for Tetris-v0 (Phase 17, Phase 29/31). |
+| `rl` | Classical reinforcement learning — an agent learns a policy from trial-and-error reward signal in an environment (Snake-v0, Tetris-v0, Game2048-v0, MinAtar-Breakout-v0, or standard Gymnasium envs). | SB3 (PPO/DQN/A2C/SAC/TD3) via `RLTrainer`, or a custom Actor-Critic / lookahead-augmented trainer for Tetris-v0 and Game2048-v0 (Phase 17, Phase 29/31, Phase 51). |
+
 | `sft` | Supervised fine-tuning — adjust a model's outputs toward labeled examples, the standard first fine-tuning step before any preference-based method. | HuggingFace Transformers + PEFT (LoRA/QLoRA) via `SFTTrainer`. |
 | `ml` | Classical (non-neural or lightly-neural) machine learning on tabular data. | Scikit-learn / PyTorch Lightning via `MLTrainer`. |
 | `mlx_lora` | LoRA fine-tuning on Apple Silicon via MLX, for local/offline workloads. | `mlx_lm.lora` subprocess wrapper (Phase 20). |
@@ -220,7 +220,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
 | `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
 | `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
-| `WS /ws/missions/{id}/play?env_id=&fps=` | Live agent viewer — loads `best_model.zip`, streams 16×16 game frames |
+| `WS /ws/missions/{id}/play?env_id=&fps=` | Live agent viewer — loads `best_model.zip`, streams real-time frames for Snake-v0 (16×16), Tetris-v0 (10×20), Game2048-v0 (4×4), or MinAtar-Breakout-v0 (10×10) |
 | `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
 | `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
 | `GET /recipes` | List all recipes (disk + DB merged) |
