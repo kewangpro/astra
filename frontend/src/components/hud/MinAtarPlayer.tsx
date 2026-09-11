@@ -20,6 +20,8 @@ const BRICK_ROW_COLORS = [
   "#a855f7", // Row 4: purple
 ];
 
+import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+
 interface Frame {
   type: "frame" | "episode_end" | "error";
   grid?: number[];
@@ -31,6 +33,10 @@ interface Frame {
   bricks_cleared?: number;
   done?: boolean;
   message?: string;
+  q_values?: Record<string, number>;
+  action_probs?: Record<string, number>;
+  entropy?: number | null;
+  selected_action?: string;
 }
 
 function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[]) {
@@ -114,6 +120,7 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
   const [speed, setSpeed] = useState(14);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [policyTelemetry, setPolicyTelemetry] = useState<PolicyTelemetry | null>(null);
 
   const stop = useCallback(() => {
     wsRef.current?.close();
@@ -150,6 +157,14 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
         }
         if (frame.bricks_cleared !== undefined) setBricksCleared(frame.bricks_cleared);
         if (frame.episode) setEpisode(frame.episode);
+        if (frame.q_values || frame.action_probs || frame.selected_action) {
+          setPolicyTelemetry({
+            q_values: frame.q_values,
+            action_probs: frame.action_probs,
+            entropy: frame.entropy,
+            selected_action: frame.selected_action,
+          });
+        }
       } else if (frame.type === "episode_end") {
         if (frame.score !== undefined) {
           setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
@@ -284,6 +299,8 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
           </div>
         </div>
       </div>
+
+      <PolicyInspector telemetry={policyTelemetry} />
     </div>
   );
 }

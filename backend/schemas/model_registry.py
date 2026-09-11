@@ -45,3 +45,31 @@ class ModelRecordRead(BaseModel):
     experiment_id: Optional[str]
     created_at: datetime
     updated_at: datetime
+
+
+class TournamentEntry(BaseModel):
+    model_id: str
+    name: str
+    checkpoint_path: str
+    mean_score: float
+    std_score: float
+    min_score: float
+    max_score: float
+    win_rate: float
+    scores: list[float]
+    rank: int
+
+
+class TournamentRequest(BaseModel):
+    env_id: str
+    model_ids: Optional[list[str]] = None
+    n_episodes: int = Field(default=5, ge=1, le=50)
+    update_champion: bool = False
+
+
+class TournamentResponse(BaseModel):
+    env_id: str
+    episodes: int
+    leaderboard: list[TournamentEntry]
+    champion_id: Optional[str] = None
+

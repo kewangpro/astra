@@ -1742,4 +1742,103 @@ Two root causes were diagnosed:
 
     Total: **1024 tests** (1009 unit + 15 integration; clean build; frontend validated via `npm run build`).
 
+---
+
+## Phase 52 — Lookahead-Augmented DQN for 2048 (`Game2048-v0`)
+
+**Problem:** Standard blind DQN models on 2048 plateau early around 512/1024 tiles because random transition exploration cannot anticipate slide outcomes before taking an action.
+- [x] **`Game2048ValueNet` Architecture** (`envs/actor_critic_net.py`):
+  - Created specialized value network accepting 16-dimensional board states ($input\_dim=16$) with 3-layer MLP (`16 -> 64 -> 64 -> 1`).
+  - Generalized `ActorCriticNet` to accept dynamic `input_dim` (default 4 for Tetris, 16 for 2048).
+- [x] **Lookahead-DQN Code Contract for 2048** (`backend/agent/code_generator.py`):
+  - Implemented `_GAME2048_LOOKAHEAD_DQN_CONTRACT` performing 1-step successor state evaluation via `env.unwrapped.get_next_states()`.
+  - Evaluates all legal moves, predicts candidate values with target value network, and selects $\arg\max_a V(s'_a)$.
+  - Maintains replay buffer with valid transition tuples and soft target network updates.
+  - Wired into code generator routing for `Game2048-v0` when DQN or lookahead is requested.
+- [x] **Canonical Recipe** (`recipes/game2048_lookahead_dqn_v1.yaml`):
+  - Target score 4096.0, `trainer_type: lookahead_dqn`, `target_update_interval: 100`.
+- [x] **Benchmark & State Machine Unpickling Support** (`backend/evaluator/benchmark.py`, `backend/loop/state_machine.py`):
+  - Injected `Game2048ValueNet` into `sys.modules["__main__"]` before deserializing `.pth` models via `torch.load(..., weights_only=False)`.
+  - Added lookahead rollout logic for `Game2048-v0` during goal metric evaluation and tournament matches.
+- [x] **5 new unit tests** (`tests/unit/test_game2048_lookahead.py`): value network forward pass, successor evaluation, greedy action selection, and contract synthesis.
+
+---
+
+## Phase 53 — Live Policy Audit & Explainability Inspector in Mission HUD
+
+**Problem:** Operators could watch the agent play in the HUD, but lacked real-time visibility into *why* an action was chosen, how confident the model was, and the distribution of Q-values or probabilities across all possible actions.
+- [x] **Audit Telemetry Stream** (`backend/routers/play.py`):
+  - Updated `_run_episode_actor_critic` and `_run_episode` WebSocket generators to compute and stream explainability metadata on every frame:
+    - `q_values`: Normalized or raw value predictions for every available action.
+    - `action_probs`: Softmax probability distribution over the discrete action space.
+    - `entropy`: Policy entropy ($-\sum p \log p$) measuring policy uncertainty.
+    - `selected_action`: Integer index of the executed action.
+- [x] **Interactive Explainability Inspector Component** (`frontend/src/components/hud/PolicyInspector.tsx`):
+  - Real-time horizontal bar charts visualizing action probabilities and Q-values with color-coded selection markers.
+  - Entropy badge categorizing uncertainty into High Certainty ($<0.3$), Balanced ($0.3-0.8$), or High Exploration ($>0.8$).
+  - Clean collapsible drawer seamlessly docking beneath the game stage.
+- [x] **HUD Player Integrations**:
+  - Wired `PolicyInspector` into `SnakePlayer.tsx`, `TetrisPlayer.tsx`, `Game2048Player.tsx`, and `MinAtarPlayer.tsx`.
+
+---
+
+## Phase 54 — MinAtar Space Invaders & Asteroids Benchmark Suite
+
+**Problem:** MinAtar coverage was limited to Breakout, leaving defense-shooting and momentum-rotation arcade mechanics unbenchmarked.
+- [x] **MinAtar Space Invaders Environment** (`envs/minatar_space_invaders_env.py`):
+  - 10x10 pure Python/NumPy simulation with 4 discrete actions (NOOP, LEFT, RIGHT, FIRE).
+  - Alien fleet horizontal march with step-down on wall contact, defensive shields with 3 hit points, alien bombs, and player laser cannons.
+  - Observation space `Box(0.0, 1.0, shape=(400,))` and `get_viewer_grid()` 100-cell array (`0: empty, 1: cannon, 2: alien, 3: shield, 4: alien bomb, 5: player laser`).
+  - Auto-registered as `MinAtar-SpaceInvaders-v0`.
+- [x] **MinAtar Asteroids Environment** (`envs/minatar_asteroids_env.py`):
+  - 10x10 toroidal wrap space simulation with 5 discrete actions (NOOP, LEFT, RIGHT, THRUST, FIRE).
+  - Ship heading orientation (4 directions), velocity/drift, splitting asteroids (large to small), and laser bullets.
+  - Observation space `Box(0.0, 1.0, shape=(400,))` and `get_viewer_grid()` 100-cell array (`0: empty, 1: ship, 2: large asteroid, 3: small asteroid, 4: bullet`).
+  - Auto-registered as `MinAtar-Asteroids-v0`.
+- [x] **Canonical Recipes** (`recipes/minatar_space_invaders_dqn_v1.yaml`, `recipes/minatar_asteroids_dqn_v1.yaml`):
+  - DQN recipes with 400-dim inputs, replay buffers, and target score thresholds (15.0 and 20.0).
+- [x] **Frontend Multi-Game Viewer** (`frontend/src/components/hud/MinAtarPlayer.tsx`):
+  - Added dedicated color palettes for Space Invaders (emerald aliens, lime cannon, cyan shields, amber bombs) and Asteroids (sky blue ship, crimson/amber rocks, yellow bullets).
+- [x] **16 new unit tests** (`tests/unit/test_minatar_space_invaders_env.py`, `tests/unit/test_minatar_asteroids_env.py`): all env dynamics, collisions, projectile advancement, and gym registration.
+
+---
+
+## Phase 55 — Model Registry & Tournament Leaderboard
+
+**Problem:** While trained checkpoints were stored in `runs/`, there was no way to systematically evaluate models head-to-head across fixed identical seeds to prove superiority, or crown champions.
+- [x] **Tournament Match Runner** (`backend/evaluator/benchmark.py`):
+  - Implemented `run_tournament_match()` evaluating multiple models across identical fixed seeds (`2000 + ep`).
+  - Evaluates both SB3 `.zip` models and custom `.pth` lookahead models.
+  - Computes mean, std, min, max, per-seed score traces, win rates with tie-splitting, and sorted ranking table.
+- [x] **Tournament API Endpoint** (`backend/routers/registry.py`, `backend/schemas/model_registry.py`):
+  - Created `POST /registry/tournament` accepting `env_id`, optional `model_ids`, `n_episodes`, and `update_champion`.
+  - Auto-discovers checkpoints in `runs/` and `ModelRecord`s in DB.
+  - Offloads simulation to threadpool (`asyncio.to_thread`) to keep FastAPI asynchronous and responsive.
+  - Supports automatic champion promotion when requested.
+- [x] **Frontend Arena Page** (`frontend/src/app/models/page.tsx`):
+  - Model Registry table with active Champion crown 👑 badges, metrics, and delete/promote controls.
+  - Interactive Tournament Arena runner: select environment, configure episode count (3–20), trigger simulation, and inspect dynamic podium leaderboard.
+- [x] **8 new unit tests** (`tests/unit/test_model_registry.py`).
+
+---
+
+## Phase 56 — Recipe Library, Lineage DAG Visualizer & One-Click Dispatch
+
+**Problem:** Recipes were stored as static YAML files or DB records without a centralized gallery, visual ancestry exploration for evolved recipes, or direct 1-click mission execution.
+- [x] **One-Click Dispatch Endpoint** (`backend/routers/recipes.py`, `backend/schemas/recipe.py`):
+  - Added `POST /recipes/{recipe_name}/dispatch`.
+  - Resolves recipe from DB or disk YAML, derives goal, task type, and target metrics, creates a `Mission` record, and launches the autonomous loop as an async task.
+- [x] **Recipe Library & Lineage Visualizer Page** (`frontend/src/app/recipes/page.tsx`):
+  - Filter by domain tabs (All, Snake, Tetris, 2048, MinAtar, LLM/Reasoning).
+  - Search bar for keyword and algorithm filtering.
+  - Recipe cards with target metric pills, domain badges, and instant "Dispatch" buttons.
+  - Full YAML/JSON inspector modal.
+  - Lineage Ancestry DAG viewer showing genetic evolution chains (Gen 0 -> Gen 1 -> Gen 2) with parameter mutations and scores.
+- [x] **Global Layout Navigation** (`frontend/src/app/layout.tsx`):
+  - Unified header navbar linking **Missions** (`/`), **Recipes** (`/recipes`), and **Models & Tournaments** (`/models`).
+- [x] **3 new unit tests** (`tests/unit/test_recipe_dispatch.py`).
+
+    Total: **1041 tests** passing (1026 unit + 15 integration; clean build; frontend validated via `npm run build`).
+
+
 

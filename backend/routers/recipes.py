@@ -13,6 +13,7 @@ Phase 5 endpoints:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Optional, List
 
@@ -30,11 +31,13 @@ from backend.schemas.recipe import (
     CrystallizeResponse,
     EvolveResponse,
     RecipeSearchHit,
+    RecipeDispatchResponse,
 )
 from backend.services import crystallizer, recipe_library
 from backend.services.evolution import evolve_recipe
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -203,3 +206,75 @@ async def get_lineage(recipe_id: str, db: AsyncSession = Depends(get_db)):
 
     chain.reverse()
     return chain
+
+
+# ── One-Click Dispatch ─────────────────────────────────────────────────────────
+
+@router.post("/{recipe_name}/dispatch", response_model=RecipeDispatchResponse, status_code=201)
+async def dispatch_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
+    """
+    One-click dispatch of a training recipe (DB record or disk YAML) into an active Mission.
+    """
+    from backend.models.mission import Mission
+    from backend.routers.agent import _build_loop, _running_tasks
+
+    clean_name = recipe_name.removesuffix(".yaml").removesuffix(".yml")
+
+    # 1. Try DB first
+    record = await db.get(RecipeRecord, clean_name)
+    if not record:
+        q = select(RecipeRecord).where(RecipeRecord.name == clean_name)
+        res = await db.execute(q)
+        record = res.scalars().first()
+
+    if record:
+        domain = record.domain
+        task_type = record.task_type or "rl"
+        target_metric = record.target_metric or {}
+        goal = record.description or f"Execute recipe {record.name} on {domain}"
+    else:
+        # 2. Try disk
+        fpath = os.path.join(settings.recipes_path, f"{clean_name}.yaml")
+        if not os.path.exists(fpath):
+            fpath = os.path.join(settings.recipes_path, f"{clean_name}.yml")
+        if not os.path.exists(fpath):
+            raise HTTPException(status_code=404, detail=f"Recipe '{clean_name}' not found in DB or disk")
+        with open(fpath, "r") as f:
+            content = yaml.safe_load(f) or {}
+        domain = content.get("domain", "rl")
+        task_type = content.get("task_type")
+        if not task_type:
+            task_type = "rl" if ("env" in content or "game" in clean_name or "snake" in clean_name or "tetris" in clean_name or "minatar" in clean_name) else "rft"
+        else:
+            task_type = str(task_type).lower()
+        target_metric = content.get("target_metric", {})
+        goal = content.get("description") or f"Execute recipe {clean_name} on {domain}"
+
+    import uuid
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal=goal,
+        task_type=str(task_type).lower(),
+
+        target_metric=target_metric,
+        autonomy_mode="supervised",
+        status="pending",
+    )
+
+    db.add(mission)
+    await db.commit()
+    await db.refresh(mission)
+
+    loop = _build_loop()
+    task = asyncio.create_task(loop.run(mission.id))
+    _running_tasks[mission.id] = task
+    task.add_done_callback(lambda t: _running_tasks.pop(mission.id, None))
+
+    return RecipeDispatchResponse(
+        mission_id=mission.id,
+        status="dispatched",
+        recipe=clean_name,
+        task_type=task_type,
+        goal=goal,
+    )
+

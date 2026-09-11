@@ -93,8 +93,9 @@ def _tetris_viewer_grid(base_env) -> list:
 
 
 def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
-    """Run one episode with a PyTorch Actor-Critic model using get_next_states()."""
+    """Run one episode with a PyTorch Actor-Critic / Lookahead model using get_next_states()."""
     import torch
+    import numpy as np
     obs, _ = env.reset()
     frames = []
     episode_reward = 0.0
@@ -102,9 +103,16 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
     done = False
     truncated = False
     base_env = env.unwrapped
+    is_2048 = hasattr(base_env, "_board") and hasattr(base_env, "_max_tile")
+    action_names_2048 = {0: "UP", 1: "DOWN", 2: "LEFT", 3: "RIGHT"}
+
     while not done and not truncated:
         next_states = base_env.get_next_states()
+        q_vals = {}
+        action_probs = {}
+        entropy = None
         if next_states:
+            vals = {}
             with torch.no_grad():
                 best_action, best_val = None, float("-inf")
                 for act, st in next_states.items():
@@ -112,50 +120,86 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
                     if isinstance(val, tuple):
                         val = val[1]  # critic head
                     v = float(val.squeeze())
+                    vals[act] = v
+                    act_name = action_names_2048.get(act, str(act)) if is_2048 else f"A{act}"
+                    q_vals[act_name] = round(v, 2)
                     if v > best_val:
                         best_val, best_action = v, act
+            if vals:
+                arr = np.array(list(vals.values()), dtype=np.float32)
+                exp_v = np.exp(arr - np.max(arr))
+                probs = exp_v / np.sum(exp_v)
+                entropy = float(-np.sum(probs * np.log(np.clip(probs, 1e-8, 1.0))))
+                for (act, _), p in zip(vals.items(), probs):
+                    act_name = action_names_2048.get(act, str(act)) if is_2048 else f"A{act}"
+                    action_probs[act_name] = round(float(p), 3)
             action = best_action
         else:
             action = 0
-        # Capture the piece being placed so the highlight frame uses the right color
-        piece_before_step = base_env._current_piece
-        obs, reward, done, truncated, _ = env.step(action)
+
+        piece_before_step = getattr(base_env, "_current_piece", None)
+        obs, reward, done, truncated, info = env.step(action)
         episode_reward += float(reward)
         step += 1
-        lines_cleared = int(base_env._lines_cleared_last)
-        # When lines are cleared, emit a highlight frame (pre-clear board + cleared row indices)
-        # so the client can flash exactly those rows before showing the post-clear board.
-        if lines_cleared > 0:
-            cleared_rows = getattr(base_env, "_last_cleared_rows", [])
-            pre_clear = getattr(base_env, "_pre_clear_board", None)
-            if cleared_rows and pre_clear is not None:
-                cur_oh = [0.0] * 7
-                if 0 <= piece_before_step < 7:
-                    cur_oh[piece_before_step] = 1.0
-                nxt_oh = [0.0] * 7
-                nxt = base_env._current_piece  # after step, _current_piece is the next piece
-                if 0 <= nxt < 7:
-                    nxt_oh[nxt] = 1.0
-                heights = [float(h) for h in base_env._column_heights()]
-                frames.append({
-                    "type": "frame",
-                    "grid": pre_clear.flatten().tolist() + cur_oh + nxt_oh + heights,
-                    "step": step,
-                    "episode_reward": round(episode_reward, 2),
-                    "done": False,
-                    "lines_cleared_last": 0,
-                    "lines_cleared": base_env._lines_cleared_episode,
-                    "highlight_rows": cleared_rows,
-                })
-        frames.append({
-            "type": "frame",
-            "grid": _tetris_viewer_grid(base_env),
-            "step": step,
-            "episode_reward": round(episode_reward, 2),
-            "done": bool(done or truncated),
-            "lines_cleared_last": 0,
-            "lines_cleared": base_env._lines_cleared_episode,
-        })
+
+        chosen_name = (action_names_2048.get(action, str(action)) if is_2048 else f"A{action}")
+
+        if is_2048:
+            frames.append({
+                "type": "frame",
+                "grid": base_env.get_viewer_grid(),
+                "step": step,
+                "episode_reward": round(episode_reward, 2),
+                "done": bool(done or truncated),
+                "score": int(base_env._score),
+                "max_tile": int(base_env._max_tile),
+                "q_values": q_vals,
+                "action_probs": action_probs,
+                "entropy": round(entropy, 3) if entropy is not None else None,
+                "selected_action": chosen_name,
+            })
+        else:
+            # Tetris
+            lines_cleared = int(getattr(base_env, "_lines_cleared_last", 0))
+            if lines_cleared > 0:
+                cleared_rows = getattr(base_env, "_last_cleared_rows", [])
+                pre_clear = getattr(base_env, "_pre_clear_board", None)
+                if cleared_rows and pre_clear is not None:
+                    cur_oh = [0.0] * 7
+                    if piece_before_step is not None and 0 <= piece_before_step < 7:
+                        cur_oh[piece_before_step] = 1.0
+                    nxt_oh = [0.0] * 7
+                    nxt = getattr(base_env, "_current_piece", -1)
+                    if 0 <= nxt < 7:
+                        nxt_oh[nxt] = 1.0
+                    heights = [float(h) for h in base_env._column_heights()]
+                    frames.append({
+                        "type": "frame",
+                        "grid": pre_clear.flatten().tolist() + cur_oh + nxt_oh + heights,
+                        "step": step,
+                        "episode_reward": round(episode_reward, 2),
+                        "done": False,
+                        "lines_cleared_last": 0,
+                        "lines_cleared": base_env._lines_cleared_episode,
+                        "highlight_rows": cleared_rows,
+                        "q_values": q_vals,
+                        "action_probs": action_probs,
+                        "entropy": round(entropy, 3) if entropy is not None else None,
+                        "selected_action": chosen_name,
+                    })
+            frames.append({
+                "type": "frame",
+                "grid": _tetris_viewer_grid(base_env),
+                "step": step,
+                "episode_reward": round(episode_reward, 2),
+                "done": bool(done or truncated),
+                "lines_cleared_last": 0,
+                "lines_cleared": base_env._lines_cleared_episode,
+                "q_values": q_vals,
+                "action_probs": action_probs,
+                "entropy": round(entropy, 3) if entropy is not None else None,
+                "selected_action": chosen_name,
+            })
     return frames, round(episode_reward, 2)
 
 
@@ -175,6 +219,8 @@ def _snake_viewer_grid(base_env) -> list:
 
 def _run_episode(model, env) -> tuple[list[dict], float]:
     """Run one episode synchronously; return list of frame dicts and total reward."""
+    import torch
+    import numpy as np
     obs, _ = env.reset()
     frames = []
     episode_reward = 0.0
@@ -185,12 +231,60 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     is_tetris = hasattr(base_env, "_lines_cleared_episode")
     is_snake = hasattr(base_env, "_snake")
     is_2048 = hasattr(base_env, "_max_tile")
-    is_minatar = hasattr(base_env, "_bricks")
+    is_minatar = hasattr(base_env, "_bricks") or hasattr(base_env, "_ramming") or hasattr(base_env, "_alien_dir")
+
+    # Action names for explainability
+    if is_snake:
+        action_names = ["UP", "RIGHT", "DOWN", "LEFT"]
+    elif is_2048:
+        action_names = ["UP", "DOWN", "LEFT", "RIGHT"]
+    elif hasattr(base_env, "_bricks"):  # MinAtar Breakout
+        action_names = ["NOOP", "LEFT", "RIGHT"]
+    elif hasattr(base_env, "_alien_dir"):  # MinAtar Space Invaders
+        action_names = ["NOOP", "LEFT", "RIGHT", "FIRE"]
+    elif hasattr(base_env, "_ramming"):  # MinAtar Asteroids
+        action_names = ["NOOP", "TURN_L", "TURN_R", "THRUST", "FIRE"]
+    else:
+        action_names = [f"A{i}" for i in range(getattr(env.action_space, "n", 4))]
+
     while not done and not truncated:
+        q_vals = {}
+        action_probs = {}
+        entropy = None
+        try:
+            if hasattr(model, "q_net"):
+                with torch.no_grad():
+                    obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(model.device)
+                    q_arr = np.atleast_1d(model.q_net(obs_t).squeeze().cpu().numpy())
+                    exp_q = np.exp(q_arr - np.max(q_arr))
+                    probs = exp_q / np.sum(exp_q)
+                    entropy = float(-np.sum(probs * np.log(np.clip(probs, 1e-8, 1.0))))
+                    for idx, val in enumerate(q_arr):
+                        name = action_names[idx] if idx < len(action_names) else str(idx)
+                        q_vals[name] = round(float(val), 2)
+                        action_probs[name] = round(float(probs[idx]), 3)
+            elif hasattr(model, "policy"):
+                with torch.no_grad():
+                    obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(model.device)
+                    dist = model.policy.get_distribution(obs_t)
+                    if hasattr(dist.distribution, "probs"):
+                        probs = np.atleast_1d(dist.distribution.probs.squeeze().cpu().numpy())
+                        entropy = float(-np.sum(probs * np.log(np.clip(probs, 1e-8, 1.0))))
+                        for idx, val in enumerate(probs):
+                            name = action_names[idx] if idx < len(action_names) else str(idx)
+                            action_probs[name] = round(float(val), 3)
+        except Exception:
+            pass
+
         action, _ = model.predict(obs, deterministic=True)
-        obs, reward, done, truncated, _ = env.step(action)
+        act_arr = np.asarray(action)
+        act_int = int(act_arr.flat[0]) if act_arr.size > 0 else 0
+        chosen_name = action_names[act_int] if act_int < len(action_names) else str(act_int)
+
+        obs, reward, done, truncated, _ = env.step(act_int)
         episode_reward += float(reward)
         step += 1
+
         if is_tetris:
             grid = _tetris_viewer_grid(base_env)
         elif is_snake:
@@ -201,12 +295,17 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             grid = base_env.get_viewer_grid()
         else:
             grid = obs.tolist()
+
         frame: dict = {
             "type": "frame",
             "grid": grid,
             "step": step,
             "episode_reward": round(episode_reward, 2),
             "done": bool(done or truncated),
+            "q_values": q_vals,
+            "action_probs": action_probs,
+            "entropy": round(entropy, 3) if entropy is not None else None,
+            "selected_action": chosen_name,
         }
         if is_snake:
             frame["food_eaten"] = base_env._food_eaten
@@ -217,7 +316,13 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             frame["max_tile"] = int(base_env._max_tile)
         elif is_minatar:
             frame["score"] = round(base_env._score, 2)
-            frame["bricks_cleared"] = int(base_env._bricks_cleared)
+            if hasattr(base_env, "_bricks_cleared"):
+                frame["bricks_cleared"] = int(base_env._bricks_cleared)
+            elif hasattr(base_env, "_aliens_killed"):
+                frame["aliens_killed"] = int(base_env._aliens_killed)
+            elif hasattr(base_env, "_asteroids_hit"):
+                frame["asteroids_hit"] = int(base_env._asteroids_hit)
+
         frames.append(frame)
     return frames, round(episode_reward, 2)
 
@@ -268,6 +373,12 @@ async def play_ws(
             elif resolved_env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar"):
                 from envs.minatar_env import register as _reg
                 _reg()
+            elif resolved_env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
+                from envs.minatar_space_invaders_env import register as _reg
+                _reg()
+            elif resolved_env_id in ("MinAtar-Asteroids-v0",):
+                from envs.minatar_asteroids_env import register as _reg
+                _reg()
 
             env = gym.make(resolved_env_id, **env_kwargs)
 
@@ -283,10 +394,11 @@ async def play_ws(
             if is_actor_critic:
                 import sys
                 import torch
-                from envs.actor_critic_net import ActorCriticNet
+                from envs.actor_critic_net import ActorCriticNet, Game2048ValueNet
                 # Inject into __main__ so torch.load can unpickle models saved
                 # from train.py (where the class was defined as __main__.ActorCriticNet)
                 sys.modules["__main__"].ActorCriticNet = ActorCriticNet
+                sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
                 model = torch.load(ckpt_path, weights_only=False)
                 model.eval()
                 logger.info("play_ws: loaded ActorCritic PyTorch model for mission=%s env=%s", mission_id, resolved_env_id)

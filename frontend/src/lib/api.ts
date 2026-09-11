@@ -61,6 +61,83 @@ export interface TelemetryEvent {
   reason?: string;
 }
 
+export interface ModelRecord {
+  id: string;
+  name: string;
+  domain: string;
+  framework?: string | null;
+  architecture?: string | null;
+  weights_path?: string | null;
+  checkpoint_path?: string | null;
+  best_metric_name?: string | null;
+  best_metric_value?: number | null;
+  is_champion: boolean;
+  extra_metadata: Record<string, unknown>;
+  experiment_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TournamentEntry {
+  model_id: string;
+  name: string;
+  checkpoint_path: string;
+  mean_score: number;
+  std_score: number;
+  min_score: number;
+  max_score: number;
+  win_rate: number;
+  scores: number[];
+  rank: number;
+}
+
+export interface TournamentResponse {
+  env_id: string;
+  episodes: number;
+  leaderboard: TournamentEntry[];
+  champion_id: string | null;
+}
+
+export interface Recipe {
+  name: string;
+  filename: string;
+  domain?: string | null;
+  version?: string | null;
+  description?: string | null;
+  created_at?: string | null;
+  content: Record<string, unknown>;
+}
+
+export interface RecipeRecord {
+  id: string;
+  name: string;
+  version: string;
+  domain: string;
+  task_type: string;
+  description?: string | null;
+  hyperparameters: Record<string, unknown>;
+  curriculum?: Record<string, unknown> | null;
+  reward_shaping?: Record<string, unknown> | null;
+  full_content: Record<string, unknown>;
+  mission_id?: string | null;
+  parent_recipe_id?: string | null;
+  score?: number | null;
+  target_metric?: Record<string, number> | null;
+  generation: number;
+  consecutive_wins: number;
+  is_golden: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecipeDispatchResponse {
+  mission_id: string;
+  status: string;
+  recipe: string;
+  task_type: string;
+  goal: string;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -85,9 +162,6 @@ export const api = {
     req<{ status: string }>(`/agent/missions/${id}/cancel`, { method: "POST" }),
   getPendingApprovals: (missionId: string) =>
     req<ApprovalGate[]>(`/approvals?pending_only=true&mission_id=${missionId}`),
-  // Full gate history (approved + rejected + pending) for a mission — used to
-  // derive whether it's actually been auto-approved by the backend, as
-  // opposed to the client-only "auto-approve mode" toggle.
   getApprovalHistory: (missionId: string) =>
     req<ApprovalGate[]>(`/approvals?pending_only=false&mission_id=${missionId}`),
   resolveApproval: (approvalId: string, decision: "approved" | "rejected") =>
@@ -97,4 +171,52 @@ export const api = {
     ),
   autoApprove: (approvalId: string) =>
     req<AutoApproveResult>(`/approvals/${approvalId}/auto-approve`, { method: "POST" }),
+
+  // Model Registry & Tournament
+  getModels: (domain?: string, championOnly?: boolean) => {
+    const params = new URLSearchParams();
+    if (domain) params.set("domain", domain);
+    if (championOnly) params.set("champion_only", "true");
+    const qs = params.toString();
+    return req<ModelRecord[]>(`/registry/models${qs ? `?${qs}` : ""}`);
+  },
+  getModel: (id: string) => req<ModelRecord>(`/registry/models/${id}`),
+  updateModel: (id: string, payload: Partial<ModelRecord>) =>
+    req<ModelRecord>(`/registry/models/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteModel: (id: string) =>
+    req<void>(`/registry/models/${id}`, { method: "DELETE" }),
+  runTournament: (envId: string, modelIds?: string[], nEpisodes = 5, updateChampion = true) =>
+    req<TournamentResponse>("/registry/tournament", {
+      method: "POST",
+      body: JSON.stringify({
+        env_id: envId,
+        model_ids: modelIds && modelIds.length > 0 ? modelIds : null,
+        n_episodes: nEpisodes,
+        update_champion: updateChampion,
+      }),
+    }),
+
+  // Recipes & Lineage
+  getRecipes: () => req<Recipe[]>("/recipes"),
+  getDbRecipes: (domain?: string, goldenOnly?: boolean) => {
+    const params = new URLSearchParams();
+    if (domain) params.set("domain", domain);
+    if (goldenOnly) params.set("golden_only", "true");
+    const qs = params.toString();
+    return req<RecipeRecord[]>(`/recipes/db${qs ? `?${qs}` : ""}`);
+  },
+  getRecipe: (name: string) => req<Recipe>(`/recipes/${name}`),
+  getRecipeLineage: (id: string) => req<RecipeRecord[]>(`/recipes/${id}/lineage`),
+  evolveRecipe: (id: string) =>
+    req<{ child: RecipeRecord; parent_id: string }>(`/recipes/${id}/evolve`, {
+      method: "POST",
+    }),
+  dispatchRecipe: (recipeName: string) =>
+    req<RecipeDispatchResponse>(`/recipes/${recipeName}/dispatch`, {
+      method: "POST",
+    }),
 };
+

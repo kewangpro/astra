@@ -25,6 +25,8 @@ const PIECE_COLORS = [
 const PIECE_NAMES = ["I", "O", "T", "S", "Z", "J", "L"];
 const FALLBACK_COLOR = "#14b8a6";
 
+import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+
 interface Frame {
   type: "frame" | "episode_end" | "error";
   grid?: number[];
@@ -37,6 +39,10 @@ interface Frame {
   lines_cleared_last?: number;
   lines_cleared?: number;
   highlight_rows?: number[];
+  q_values?: Record<string, number>;
+  action_probs?: Record<string, number>;
+  entropy?: number | null;
+  selected_action?: string;
 }
 
 function drawFrame(
@@ -98,9 +104,10 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
   const [bestReward, setBestReward] = useState<number | null>(null);
   const [currentPiece, setCurrentPiece] = useState<string | null>(null);
   const [nextPiece, setNextPiece] = useState<string | null>(null);
-  const [speed, setSpeed] = useState(8);
+  const [speed, setSpeed] = useState(10);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [policyTelemetry, setPolicyTelemetry] = useState<PolicyTelemetry | null>(null);
 
   const stop = useCallback(() => {
     wsRef.current?.close();
@@ -161,6 +168,14 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
         if (frame.lines_cleared !== undefined) setLinesCleared(frame.lines_cleared);
         if (frame.step !== undefined) setStep(frame.step);
         if (frame.episode) setEpisode(frame.episode);
+        if (frame.q_values || frame.action_probs || frame.selected_action) {
+          setPolicyTelemetry({
+            q_values: frame.q_values,
+            action_probs: frame.action_probs,
+            entropy: frame.entropy,
+            selected_action: frame.selected_action,
+          });
+        }
 
         const nxtIdx = obs.slice(207, 214).indexOf(1);
         setCurrentPiece(curIdx >= 0 ? PIECE_NAMES[curIdx] : null);
@@ -327,6 +342,8 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
           </div>
         </div>
       </div>
+
+      <PolicyInspector telemetry={policyTelemetry} />
     </div>
   );
 }

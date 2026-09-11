@@ -218,3 +218,22 @@ def test_snake_viewer_grid_works_with_grid_obs_type():
     grid = _snake_viewer_grid(env)
     assert len(grid) == 256
     assert 1.0 in grid  # head present
+
+
+def test_run_episode_handles_0d_numpy_action():
+    from backend.routers.play import _run_episode
+    from envs.minatar_env import MinAtarBreakoutEnv
+    import numpy as np
+
+    class Mock0DModel:
+        device = "cpu"
+        def predict(self, obs, deterministic=True):
+            return np.array(0), None
+
+    env = MinAtarBreakoutEnv()
+    model = Mock0DModel()
+    frames, reward = _run_episode(model, env)
+    assert len(frames) > 0
+    assert "selected_action" in frames[0]
+    assert frames[0]["selected_action"] == "NOOP"
+

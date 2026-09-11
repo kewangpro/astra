@@ -13,8 +13,11 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Auto-approve with LLM classification** — code execution is auto-approved via a two-stage classifier; unsafe scripts are flagged with a reason for manual review
 - **Multi-sandbox execution** — runs on Apple Silicon (Metal) or in Docker/CUDA containers, with automatic GPU pool assignment
 - **Live mission HUD** — real-time metric charts, log stream, pivot timeline, and critic trace, with history back-filled on reconnect
-- **Custom RL environments** — Snake-v0, Tetris-v0, Game2048-v0, and MinAtar-Breakout-v0, with rich observations, lookahead state access, and high throughput (>50k steps/sec)
-- **Live agent viewer** — watch the trained agent play Snake-v0, Tetris-v0, Game2048-v0, or MinAtar Breakout in real time, for any supported trainer type
+- **Custom RL environments** — Snake-v0, Tetris-v0, Game2048-v0, and the MinAtar arcade suite (Breakout, Space Invaders, Asteroids) with rich observations, lookahead state access, and high throughput (>50k steps/sec)
+- **Lookahead-Augmented DQN for 2048** — 1-step successor state evaluation via `get_next_states()` unlocking 4096+ tile capabilities
+- **Live agent viewer & Policy Audit Inspector** — watch trained policies play in real time with streaming action probabilities, Q-values, and Shannon entropy
+- **Model Registry & Tournament Arena** — side-by-side multi-model tournaments across fixed deterministic seeds, win rates, and champion crowning
+- **Recipe Library & Lineage DAG Visualizer** — browse canonical blueprints, inspect genetic mutation chains, and launch missions with 1-click dispatch
 - **Curriculum training** — Snake-v0 missions can progress through increasing grid sizes within a single run, transferring learned weights between phases
 - **Algorithm-aware code generation** — PPO, DQN, SAC, A2C, and TD3 each get their own correct set of hyperparameters, rather than being silently filtered down to a generic subset
 - **Persistent escalating pivot strategy** — stuck missions escalate through hyperparameter tuning → architecture change → algorithm switch → reward shaping, with escalation state surviving server restarts
@@ -43,6 +46,11 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 | Game2048-v0 Live Viewer | MinAtar-Breakout-v0 Live Viewer |
 |---|---|
 | ![Game2048-v0 agent playing live in the mission HUD — 4x4 tile canvas with score and max tile tracking](docs/screenshots/game2048_viewer.png) | ![MinAtar-Breakout-v0 agent playing live in the mission HUD — 10x10 symbolic arcade canvas with paddle, ball, and bricks](docs/screenshots/minatar_viewer.png) |
+
+| Model Registry & Tournament Leaderboard | Recipe Library & Lineage Visualizer |
+|---|---|
+| ![Model Registry & Tournament Arena — fixed-seed head-to-head simulations and champion podium](docs/screenshots/model_registry.png) | ![Recipe Library & Lineage — canonical recipe gallery and evolutionary lineage DAG](docs/screenshots/recipe_library.png) |
+
 
 
 ## Documentation

@@ -29,6 +29,8 @@ const TILE_COLORS: Record<number, { bg: string; text: string }> = {
   4096: { bg: "#f59e0b", text: "#ffffff" },
 };
 
+import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+
 interface Frame {
   type: "frame" | "episode_end" | "error";
   grid?: number[];
@@ -40,6 +42,10 @@ interface Frame {
   max_tile?: number;
   done?: boolean;
   message?: string;
+  q_values?: Record<string, number>;
+  action_probs?: Record<string, number>;
+  entropy?: number | null;
+  selected_action?: string;
 }
 
 function drawBoard(ctx: CanvasRenderingContext2D, grid: number[]) {
@@ -100,6 +106,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
   const [speed, setSpeed] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [policyTelemetry, setPolicyTelemetry] = useState<PolicyTelemetry | null>(null);
 
   const stop = useCallback(() => {
     wsRef.current?.close();
@@ -136,6 +143,14 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
           setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
         }
         if (frame.episode) setEpisode(frame.episode);
+        if (frame.q_values || frame.action_probs || frame.selected_action) {
+          setPolicyTelemetry({
+            q_values: frame.q_values,
+            action_probs: frame.action_probs,
+            entropy: frame.entropy,
+            selected_action: frame.selected_action,
+          });
+        }
       } else if (frame.type === "episode_end") {
         if (frame.score !== undefined) {
           setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
@@ -270,6 +285,8 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
           </div>
         </div>
       </div>
+
+      <PolicyInspector telemetry={policyTelemetry} />
     </div>
   );
 }

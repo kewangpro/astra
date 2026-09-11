@@ -56,3 +56,12 @@ class RecipeSearchHit(BaseModel):
     domain: Optional[str] = None
     is_golden: bool = False
     distance: float
+
+
+class RecipeDispatchResponse(BaseModel):
+    mission_id: str
+    status: str
+    recipe: str
+    task_type: str
+    goal: str
+

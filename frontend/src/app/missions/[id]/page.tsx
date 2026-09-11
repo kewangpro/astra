@@ -206,8 +206,21 @@ export default function MissionHUD({
       {(mission.goal.includes("2048") || mission.goal.toLowerCase().includes("game2048")) && (
         <Game2048Player missionId={missionId} envId="Game2048-v0" />
       )}
-      {(mission.goal.toLowerCase().includes("minatar") || mission.goal.toLowerCase().includes("breakout")) && (
-        <MinAtarPlayer missionId={missionId} envId="MinAtar-Breakout-v0" />
+      {(mission.goal.toLowerCase().includes("minatar") ||
+        mission.goal.toLowerCase().includes("breakout") ||
+        mission.goal.toLowerCase().includes("spaceinvaders") ||
+        mission.goal.toLowerCase().includes("space invaders") ||
+        mission.goal.toLowerCase().includes("asteroids")) && (
+        <MinAtarPlayer
+          missionId={missionId}
+          envId={
+            mission.goal.toLowerCase().includes("space")
+              ? "MinAtar-SpaceInvaders-v0"
+              : mission.goal.toLowerCase().includes("asteroid")
+              ? "MinAtar-Asteroids-v0"
+              : "MinAtar-Breakout-v0"
+          }
+        />
       )}
 
       {/* Log + Critic Trace + Pivots */}

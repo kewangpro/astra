@@ -1798,6 +1798,9 @@ class LoopStateMachine:
             "Game2048-v0": {"max_steps", "merge_multiplier", "empty_tile_bonus", "corner_bonus"},
             "MinAtar-Breakout-v0": {"max_steps", "brick_reward", "paddle_hit_reward", "death_penalty"},
             "MinAtar-v0": {"max_steps", "brick_reward", "paddle_hit_reward", "death_penalty"},
+            "MinAtar-SpaceInvaders-v0": {"max_steps", "alien_kill_reward", "wave_clear_bonus", "death_penalty"},
+            "MinAtar-Space-Invaders-v0": {"max_steps", "alien_kill_reward", "wave_clear_bonus", "death_penalty"},
+            "MinAtar-Asteroids-v0": {"max_steps", "asteroid_hit_reward", "wave_clear_bonus", "death_penalty"},
         }
         _RANGES = {
             "food_reward":    (5.0, 50.0),
@@ -2134,6 +2137,12 @@ class LoopStateMachine:
             elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
                 from envs.minatar_env import register
                 register()
+            elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
+                from envs.minatar_space_invaders_env import register
+                register()
+            elif env_id in ("MinAtar-Asteroids-v0",):
+                from envs.minatar_asteroids_env import register
+                register()
 
             import gymnasium as gym
             import json as _json
@@ -2147,8 +2156,9 @@ class LoopStateMachine:
             # Actor-critic path: use get_next_states() greedy eval
             if checkpoint_path.endswith(".pth"):
                 import torch
-                from envs.actor_critic_net import ActorCriticNet
+                from envs.actor_critic_net import ActorCriticNet, Game2048ValueNet
                 sys.modules["__main__"].ActorCriticNet = ActorCriticNet
+                sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
                 model = torch.load(checkpoint_path, weights_only=False)
                 model.eval()
                 env = gym.make(env_id, **_env_kwargs)

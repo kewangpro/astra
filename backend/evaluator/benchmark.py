@@ -78,9 +78,13 @@ def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 1
         if env_id == "Tetris-v0":
             from envs.tetris_env import register as _reg
             _reg()
+        elif env_id in ("Game2048-v0", "2048"):
+            from envs.game2048_env import register as _reg
+            _reg()
 
-        from envs.actor_critic_net import ActorCriticNet
+        from envs.actor_critic_net import ActorCriticNet, Game2048ValueNet
         sys.modules["__main__"].ActorCriticNet = ActorCriticNet
+        sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
         model = torch.load(checkpoint_path, weights_only=False)
         model.eval()
 
@@ -179,6 +183,12 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
             _reg()
         elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
             from envs.minatar_env import register as _reg
+            _reg()
+        elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
+            from envs.minatar_space_invaders_env import register as _reg
+            _reg()
+        elif env_id in ("MinAtar-Asteroids-v0",):
+            from envs.minatar_asteroids_env import register as _reg
             _reg()
 
         env = gym.make(env_id, **(env_kwargs or {}))
@@ -392,3 +402,161 @@ class BenchmarkSuite:
             logger.info("BenchmarkSuite: %s → %s (%s)", challenge.name, status, metrics)
 
         return {"passed": passed, "failed": failed, "results": results}
+
+
+def run_tournament_match(
+    checkpoint_entries: List[dict],
+    env_id: str = "Snake-v0",
+    n_episodes: int = 10,
+    env_kwargs: Optional[dict] = None,
+) -> dict:
+    """
+    Run side-by-side tournament across multiple model checkpoints on fixed seeds.
+    checkpoint_entries: list of {"id": str, "name": str, "path": str}
+    """
+    import numpy as np
+    import gymnasium as gym
+
+    # Register custom environments
+    if env_id == "Tetris-v0":
+        from envs.tetris_env import register as _reg; _reg()
+    elif env_id == "Snake-v0":
+        from envs.snake_env import register as _reg; _reg()
+    elif env_id in ("Game2048-v0", "2048"):
+        from envs.game2048_env import register as _reg; _reg()
+    elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
+        from envs.minatar_env import register as _reg; _reg()
+    elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
+        from envs.minatar_space_invaders_env import register as _reg; _reg()
+    elif env_id in ("MinAtar-Asteroids-v0",):
+        from envs.minatar_asteroids_env import register as _reg; _reg()
+
+    loaded_models = []
+    for entry in checkpoint_entries:
+        path = entry["path"]
+        is_ac = _is_actor_critic(path)
+        if is_ac and not path.endswith(".pth"):
+            pth_cand = path.replace(".zip", ".pth")
+            if os.path.exists(pth_cand):
+                path = pth_cand
+
+        m_obj = None
+        if path.endswith(".pth"):
+            import torch
+            from envs.actor_critic_net import ActorCriticNet, Game2048ValueNet
+            sys.modules["__main__"].ActorCriticNet = ActorCriticNet
+            sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
+            try:
+                m_obj = torch.load(path, weights_only=False)
+                m_obj.eval()
+            except Exception as e:
+                logger.warning("Tournament failed to load pth %s: %s", path, e)
+        else:
+            from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
+            for cls in (PPO, DQN, SAC, A2C, TD3):
+                try:
+                    m_obj = cls.load(path)
+                    break
+                except Exception:
+                    continue
+
+        loaded_models.append({
+            "id": entry["id"],
+            "name": entry.get("name", entry["id"]),
+            "path": path,
+            "is_ac": path.endswith(".pth"),
+            "model": m_obj,
+            "scores": [],
+        })
+
+    env = gym.make(env_id, **(env_kwargs or {}))
+    base_env = env.unwrapped
+    for ep in range(n_episodes):
+        seed = 2000 + ep
+        for m in loaded_models:
+            if m["model"] is None:
+                m["scores"].append(0.0)
+                continue
+            obs, _ = env.reset(seed=seed)
+            done, truncated = False, False
+            ep_score = 0.0
+            ep_reward = 0.0
+            while not done and not truncated:
+                if m["is_ac"]:
+                    import torch
+                    next_states = base_env.get_next_states()
+                    if next_states:
+                        with torch.no_grad():
+                            best_act, best_v = None, float("-inf")
+                            for act, st in next_states.items():
+                                val = m["model"](torch.tensor(st, dtype=torch.float32).unsqueeze(0))
+                                if isinstance(val, tuple):
+                                    val = val[1]
+                                v = float(val.squeeze())
+                                if v > best_v:
+                                    best_v, best_act = v, act
+                        action = best_act
+                    else:
+                        action = 0
+                else:
+                    action, _ = m["model"].predict(obs, deterministic=True)
+
+                obs, r, done, truncated, info = env.step(action)
+                ep_reward += float(r)
+                if done or truncated:
+                    if hasattr(base_env, "_lines_cleared_episode"):
+                        ep_score = float(base_env._lines_cleared_episode)
+                    elif hasattr(base_env, "_food_eaten"):
+                        ep_score = float(base_env._food_eaten)
+                    elif hasattr(base_env, "_score"):
+                        ep_score = float(base_env._score)
+                    elif "score" in info:
+                        ep_score = float(info["score"])
+                    else:
+                        ep_score = float(ep_reward)
+
+            m["scores"].append(ep_score)
+    env.close()
+
+    # Calculate win rates & rankings
+    wins = {m["id"]: 0.0 for m in loaded_models}
+    for ep in range(n_episodes):
+        ep_scores = [m["scores"][ep] for m in loaded_models]
+        max_s = max(ep_scores) if ep_scores else 0.0
+        winners = [m["id"] for m in loaded_models if m["scores"][ep] == max_s]
+        if winners:
+            share = 1.0 / len(winners)
+            for w in winners:
+                wins[w] += share
+
+    leaderboard = []
+    for m in loaded_models:
+        scores = m["scores"]
+        mean_s = float(np.mean(scores)) if scores else 0.0
+        std_s = float(np.std(scores)) if scores else 0.0
+        min_s = float(np.min(scores)) if scores else 0.0
+        max_s = float(np.max(scores)) if scores else 0.0
+        win_rate = round(float(wins[m["id"]] / max(1, n_episodes)), 3)
+        leaderboard.append({
+            "model_id": m["id"],
+            "name": m["name"],
+            "checkpoint_path": m["path"],
+            "mean_score": round(mean_s, 2),
+            "std_score": round(std_s, 2),
+            "min_score": round(min_s, 2),
+            "max_score": round(max_s, 2),
+            "win_rate": win_rate,
+            "scores": scores,
+        })
+
+    leaderboard.sort(key=lambda x: (x["mean_score"], x["win_rate"]), reverse=True)
+    for idx, entry in enumerate(leaderboard):
+        entry["rank"] = idx + 1
+
+    return {
+        "env_id": env_id,
+        "episodes": n_episodes,
+        "leaderboard": leaderboard,
+        "champion_id": leaderboard[0]["model_id"] if leaderboard else None,
+    }
+

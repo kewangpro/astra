@@ -67,7 +67,11 @@ import sys as _sys
 _sys.path.insert(0, "{project_root}")
 import gymnasium as gym
 from envs.minatar_env import register as _register_minatar
+from envs.minatar_space_invaders_env import register as _register_space_invaders
+from envs.minatar_asteroids_env import register as _register_asteroids
 _register_minatar()
+_register_space_invaders()
+_register_asteroids()
 """
 
 _RL_TEMPLATE = """\
@@ -703,6 +707,129 @@ while total_steps < {total_timesteps}:
 
 Return ONLY the raw Python script. No markdown fences, no explanation."""
 
+_GAME2048_LOOKAHEAD_DQN_CONTRACT = """\
+Generate a complete custom lookahead-DQN training script for Game2048-v0 using PyTorch.
+Do NOT use Stable-Baselines3. Implement everything with PyTorch and plain Python.
+
+This trainer uses Game2048Env.get_next_states() lookahead action-selection: evaluate
+every legal slide action's resulting board through the Game2048ValueNet network, and
+select the action yielding the highest predicted successor state value. It retains
+DQN's core stabilization mechanisms: an off-policy replay buffer plus periodic target
+network updates for stable TD targets.
+
+{env_setup}
+Mission ID: {mission_id}
+Environment: {env_id}
+Checkpoint directory: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+Target: score >= {target_score}
+Hyperparameters: {hyperparameters}
+
+== Mandatory imports and setup (copy exactly) ==
+from envs.actor_critic_net import Game2048ValueNet   # MANDATORY — do NOT redefine inline
+model = Game2048ValueNet(input_dim=16)
+target_model = Game2048ValueNet(input_dim=16)
+target_model.load_state_dict(model.state_dict())
+target_model.eval()
+optimizer = torch.optim.Adam(model.parameters(), lr={lr})
+
+== Training skeleton (follow exactly — do NOT deviate from these API calls) ==
+env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+BUFFER = collections.deque(maxlen={replay_buffer_size})
+ep_scores, ep_max_tiles = [], []
+_eps_path = "{checkpoint_dir}/epsilon.txt"
+epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
+best_score = float("-inf")
+total_steps = 0
+episode = 0
+
+while total_steps < {total_timesteps}:
+    obs, _ = env.reset()
+    ep_score = 0.0
+    ep_max_tile = 2
+    done = False
+
+    while not done:
+        next_states = env.unwrapped.get_next_states()  # dict{{action: np.array(16,)}}
+        if not next_states:
+            action = 0
+        elif random.random() < epsilon:
+            action = random.choice(list(next_states.keys()))
+        else:
+            with torch.no_grad():
+                action = max(
+                    next_states,
+                    key=lambda a: model(
+                        torch.tensor(next_states[a], dtype=torch.float32).unsqueeze(0)
+                    ).item()
+                )
+
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        BUFFER.append((obs, action, reward, next_obs, float(done)))
+        obs = next_obs
+        total_steps += 1
+        if done:
+            ep_score = float(info.get("score", getattr(env.unwrapped, "_score", 0)))
+            ep_max_tile = int(info.get("max_tile", getattr(env.unwrapped, "_max_tile", 2)))
+
+        if len(BUFFER) >= {batch_size}:
+            batch = random.sample(BUFFER, {batch_size})
+            s, _, r, ns, d = zip(*batch)
+            s  = torch.tensor(np.array(s),  dtype=torch.float32)
+            ns = torch.tensor(np.array(ns), dtype=torch.float32)
+            r  = torch.tensor(r,  dtype=torch.float32).unsqueeze(1)
+            d  = torch.tensor(d,  dtype=torch.float32).unsqueeze(1)
+            with torch.no_grad():
+                td_target = r + {gamma} * target_model(ns) * (1 - d)
+            loss = nn.MSELoss()(model(s), td_target)
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+        if total_steps % {target_update_interval} == 0:
+            target_model.load_state_dict(model.state_dict())
+
+    epsilon = max({epsilon_min}, epsilon * {epsilon_decay})
+    open(_eps_path, "w").write(str(epsilon))
+    ep_scores.append(ep_score)
+    ep_max_tiles.append(ep_max_tile)
+    episode += 1
+
+    if len(ep_scores) >= {ac_telemetry_interval} and episode % {ac_telemetry_interval} == 0:
+        mean_score_50 = float(np.mean(ep_scores[-{ac_telemetry_interval}:]))
+        mean_tile_50  = float(np.mean(ep_max_tiles[-{ac_telemetry_interval}:]))
+        try:
+            requests.post(
+                "{api_url}/telemetry/missions/{mission_id}/metrics",
+                json={{"step": total_steps, "metric": "score", "val": mean_score_50, "max_tile": mean_tile_50, "episode": episode}},
+                timeout=2.0,
+            )
+        except Exception:
+            pass
+        if mean_score_50 > best_score:
+            best_score = mean_score_50
+            torch.save(model, "{checkpoint_dir}/best_model.pth")
+            open("{checkpoint_dir}/best_score.txt", "w").write(str(best_score))
+            open("{checkpoint_dir}/best_model_algo.txt", "w").write("LookaheadDQN")
+
+== ASTRA integration contract (ALL items MANDATORY) ==
+1. Write this file once at startup:
+     open("{checkpoint_dir}/trainer_type.txt", "w").write("lookahead_dqn")
+2. Warm-start: if "{checkpoint_dir}/best_model.pth" exists, load with weights_only=False
+   into BOTH model and target_model:
+     if os.path.exists("{checkpoint_dir}/best_model.pth"):
+         checkpoint = torch.load("{checkpoint_dir}/best_model.pth", weights_only=False)
+         state = checkpoint.state_dict() if not isinstance(checkpoint, dict) else checkpoint
+         model.load_state_dict(state)
+         target_model.load_state_dict(state)
+3. Step telemetry: every episode, post metric "score" with the step count and current episode score.
+4. Checkpoint saving on every new best:
+     torch.save(model, "{checkpoint_dir}/best_model.pth")
+     open("{checkpoint_dir}/best_score.txt", "w").write(str(best_score))
+     open("{checkpoint_dir}/best_model_algo.txt", "w").write("LookaheadDQN")
+5. After the timestep budget ({total_timesteps} steps): torch.save(model, "{checkpoint_dir}/last_model.pth")
+
+Return ONLY the raw Python script. No markdown fences, no explanation."""
+
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT.
 
@@ -1209,8 +1336,12 @@ _ENV_RECIPE: dict = {
     "Snake-v0/DQN": "snake_dqn_v1.yaml",   # algorithm-specific override
     "Tetris-v0": "tetris_actor_critic_v1.yaml",
     "Game2048-v0": "game2048_dqn_v1.yaml",
+    "Game2048-v0/LOOKAHEAD_DQN": "game2048_lookahead_dqn_v1.yaml",
     "MinAtar-Breakout-v0": "minatar_breakout_dqn_v1.yaml",
     "MinAtar-v0": "minatar_breakout_dqn_v1.yaml",
+    "MinAtar-SpaceInvaders-v0": "minatar_space_invaders_dqn_v1.yaml",
+    "MinAtar-Space-Invaders-v0": "minatar_space_invaders_dqn_v1.yaml",
+    "MinAtar-Asteroids-v0": "minatar_asteroids_dqn_v1.yaml",
     "sft": "sft_llama_lora_v1.yaml",       # keyed by task_type for non-RL tasks
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
@@ -1545,6 +1676,10 @@ class CodeGenerator:
                 env_setup = _SNAKE_SETUP.format(project_root=_project_root)
             elif env_id == "Tetris-v0":
                 env_setup = _TETRIS_SETUP.format(project_root=_project_root)
+            elif env_id in ("Game2048-v0", "2048"):
+                env_setup = _GAME2048_SETUP.format(project_root=_project_root)
+            elif "minatar" in env_id.lower():
+                env_setup = _MINATAR_SETUP.format(project_root=_project_root)
             else:
                 env_setup = ""
             hp = dict(hp)  # copy so we don't mutate the plan's hyperparameters dict
@@ -1578,7 +1713,28 @@ class CodeGenerator:
                     **base,
                 }
                 return _ACTOR_CRITIC_CONTRACT.format(**ctx)
-            if trainer_type in ("lookahead_dqn", "lookahead_ppo", "lookahead_a2c"):
+            if trainer_type in ("lookahead_dqn", "lookahead_ppo", "lookahead_a2c") or algorithm.upper() in ("LOOKAHEAD_DQN", "LOOKAHEAD-DQN"):
+                if env_id in ("Game2048-v0", "2048"):
+                    tm_score = next(iter(tm.values()), 2048) if tm else 2048
+                    lr = hp.get("learning_rate", 0.0003)
+                    lookahead_2048_ctx = {
+                        "env_id": env_id,
+                        "env_setup": env_setup,
+                        "target_score": tm_score,
+                        "hyperparameters": json.dumps(hp, indent=2),
+                        "lr": lr,
+                        "total_timesteps": hp.get("total_timesteps", 500000),
+                        "gamma": hp.get("gamma", 0.99),
+                        "replay_buffer_size": hp.get("replay_buffer_size", 50000),
+                        "batch_size": hp.get("batch_size", 64),
+                        "target_update_interval": hp.get("target_update_interval", 1000),
+                        "epsilon_min": hp.get("epsilon_min", 0.02),
+                        "epsilon_decay": hp.get("epsilon_decay", 0.9997),
+                        "ac_telemetry_interval": hp.get("ac_telemetry_interval", 25),
+                        "current_iteration": current_iteration,
+                        **base,
+                    }
+                    return _GAME2048_LOOKAHEAD_DQN_CONTRACT.format(**lookahead_2048_ctx)
                 tm_lines = next(iter(tm.values()), 20) if tm else 20
                 lr = hp.get("learning_rate", 0.0001)
                 lookahead_ctx = {

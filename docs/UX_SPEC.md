@@ -21,19 +21,26 @@
 - **MetricChart**: Training curve capped to the last 3 iteration runs (current + 2 prior). Run-reset boundaries detected from step counter drops. Earlier runs are excluded to prevent chart compression on long-running missions (50+ iterations).
 - **Resource Monitor**: A real-time gauge showing **Unified Memory** allocation between the Lead Agent, Specialist Trainer, and System. Total capacity is read dynamically from system info (e.g., 24GB on M4, 64GB+ on higher-tier hardware) and displayed alongside the gauge.
 - **Event Stream**: Real-time telemetry events from the sandbox. Pivot events include a `| changes:` suffix showing exactly what changed with real old→new values (e.g. `learning_rate: 0.001→0.0005 | net_arch: [256, 256] | env_kwargs: {food_reward=20.0, distance_weight=0.0}`). No-op pivots (proposed values identical to current) are filtered and shown as a "Pivot skipped" warning instead. For algorithm-locked missions (goal names a specific algorithm), algo-switch proposals are silently dropped and the pivot escalates to reward shaping instead.
-- **Live Game Viewers**: For RL missions targeting supported environments (`Snake-v0`, `Tetris-v0`, `Game2048-v0`, `MinAtar-Breakout-v0`), the Mission HUD embeds an interactive live canvas player (`SnakePlayer`, `TetrisPlayer`, `Game2048Player`, `MinAtarPlayer`). Each connects to `WS /ws/missions/{id}/play?env_id=&fps=`, streaming live environment frames from `best_model.zip` in real time. Features a unified design language with dark slate styling, `AGENT.PLAY` header, connection status indicator, live 4-counter monospace telemetry metrics, centered pixel-crisp canvas with pre-rendered initial state on mount, Play/Stop toggle, and game-tailored FPS speed sliders.
+- **Live Game Viewers**: For RL missions targeting supported environments (`Snake-v0`, `Tetris-v0`, `Game2048-v0`, `MinAtar-Breakout-v0`, `MinAtar-SpaceInvaders-v0`, `MinAtar-Asteroids-v0`), the Mission HUD embeds an interactive live canvas player (`SnakePlayer`, `TetrisPlayer`, `Game2048Player`, `MinAtarPlayer`). Each connects to `WS /ws/missions/{id}/play?env_id=&fps=`, streaming live environment frames in real time with dedicated palettes and game-tailored FPS sliders (up to 30 FPS).
+- **Policy Audit & Explainability Inspector**: Directly embedded in each game player, the `PolicyInspector` provides a live audit drawer showing:
+  - Horizontal confidence bars rendering the softmax probability distribution over legal actions.
+  - Estimated Q-values for each candidate move.
+  - Shannon Policy Entropy ($H$) with dynamic certainty badge: **High Certainty** ($H < 0.3$), **Balanced** ($0.3 \le H \le 0.8$), or **High Exploration** ($H > 0.8$).
+  - Real-time indicator highlighting the exact action chosen by the policy.
 
+### 2.3. The Recipe Library (`/recipes`)
+- **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, domain badges, and quick YAML inspection modals.
+- **Lineage DAG Visualizer**: Interactive drawer tracing the evolutionary chain (Gen 0 → Gen 1 → Gen 2) for crystallized and mutated recipes, displaying score progressions and hyperparameter deltas.
+- **One-Click Dispatch**: Single-click "Dispatch" button on any recipe card or inspection modal to instantly spin up an autonomous mission loop without manual configuration.
 
-### 2.3. The Recipe Library
-- **Gallery View**: Cards for each Golden Recipe (Snake, Tetris, Llama-SFT).
-- **Lineage Map**: A graph showing how recipes evolved from each other.
-- **Recipe Editor**: JSON/YAML editor with "Dry Run" validation.
+### 2.4. Model Registry & Tournament Arena (`/models`)
+- **Model Registry Table**: Production checkpoint catalog showing model name, domain, architecture, framework, best metric, and active **Champion 👑** status with promotion and deletion controls.
+- **Tournament Arena**:
+  - Environment and seed selector configuring fixed deterministic evaluation runs across 3 to 20 episodes.
+  - Side-by-side simulation evaluating SB3 and Lookahead PyTorch models on identical seeds.
+  - Dynamic Leaderboard displaying Gold 🥇, Silver 🥈, and Bronze 🥉 ranks, Mean Score $\pm$ Std, Min/Max range, Win Rate %, and per-episode score breakdowns.
+  - "Crown as Champion" action promoting top performers into production status.
 
-### 2.4. Model Registry & Analysis
-- **Leaderboard**: Ranking all models ever trained.
-- **Deep-Dive**:
-  - **Spatial View**: For CNNs, an interactive board showing saliency maps.
-  - **Audit Logs**: Full history of the LLM's reasoning for every pivot in that model's lifecycle.
 
 ## 3. Technology Stack Recommendation
 

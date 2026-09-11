@@ -1,0 +1,29 @@
+name: minatar_space_invaders_dqn_v1
+domain: minatar_space_invaders
+task_type: rl
+trainer_type: sb3
+algorithm: DQN
+version: 1.0.0
+description: "DQN for MinAtar Space Invaders arcade benchmark (10x10 pure Python Gymnasium environment)."
+
+env_id: MinAtar-SpaceInvaders-v0
+target_metric:
+  metric: score
+  target: 15.0
+
+hyperparameters:
+  learning_rate: 0.00025
+  buffer_size: 100000
+  learning_starts: 1000
+  batch_size: 32
+  tau: 1.0
+  gamma: 0.99
+  train_freq: 4
+  gradient_steps: 1
+  target_update_interval: 1000
+  exploration_fraction: 0.15
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.02
+  total_timesteps: 300000
+
+metric_ceiling: 100.0

@@ -1,0 +1,25 @@
+name: game2048_lookahead_dqn_v1
+domain: game2048
+task_type: rl
+trainer_type: lookahead_dqn
+algorithm: LOOKAHEAD_DQN
+version: 1.0.0
+description: "Lookahead-augmented Deep Q-Network for Game2048-v0 utilizing 1-step successor state evaluation via get_next_states() for 4096+ tile achievement."
+
+env_id: Game2048-v0
+target_metric:
+  metric: score
+  target: 4096.0
+
+hyperparameters:
+  learning_rate: 0.0003
+  gamma: 0.99
+  total_timesteps: 500000
+  replay_buffer_size: 50000
+  batch_size: 64
+  target_update_interval: 1000
+  epsilon_min: 0.02
+  epsilon_decay: 0.9997
+  ac_telemetry_interval: 25
+
+metric_ceiling: 32768.0

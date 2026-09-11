@@ -11,6 +11,8 @@ const WS_BASE =
     ? `ws://${window.location.hostname}:8200`
     : "ws://localhost:8200";
 
+import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+
 interface Frame {
   type: "frame" | "episode_end" | "error";
   grid?: number[];
@@ -21,6 +23,10 @@ interface Frame {
   food_eaten?: number;
   done?: boolean;
   message?: string;
+  q_values?: Record<string, number>;
+  action_probs?: Record<string, number>;
+  entropy?: number | null;
+  selected_action?: string;
 }
 
 function drawFrame(ctx: CanvasRenderingContext2D, grid: number[]) {
@@ -79,6 +85,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
   const [speed, setSpeed] = useState(12);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [policyTelemetry, setPolicyTelemetry] = useState<PolicyTelemetry | null>(null);
 
   const stop = useCallback(() => {
     wsRef.current?.close();
@@ -111,6 +118,14 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
         if (frame.food_eaten !== undefined) setFoodEaten(frame.food_eaten);
         if (frame.step !== undefined) setStep(frame.step);
         if (frame.episode) setEpisode(frame.episode);
+        if (frame.q_values || frame.action_probs || frame.selected_action) {
+          setPolicyTelemetry({
+            q_values: frame.q_values,
+            action_probs: frame.action_probs,
+            entropy: frame.entropy,
+            selected_action: frame.selected_action,
+          });
+        }
       } else if (frame.type === "episode_end") {
         setFoodEaten(0);
         const r = frame.total_reward ?? 0;
@@ -247,6 +262,8 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
           </div>
         </div>
       </div>
+
+      <PolicyInspector telemetry={policyTelemetry} />
     </div>
   );
 }
