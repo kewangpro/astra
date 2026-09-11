@@ -6,28 +6,14 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Feature Highlights
 
-- **Fully autonomous loop** — Plan → Implement → Sandbox → Train → Evaluate → Refine, with no human intervention required
-- **GAN-style self-critique** — every plan is scored on safety, complexity, and overfitting risk before code is written, and revised on a low score
-- **Recipe crystallization & evolution** — completed RL/SFT/ML missions are distilled into versioned recipes that can be mutated, selected, and promoted to "Golden" status after consecutive wins (DPO/GRPO/distill missions dispatch from a fixed canonical recipe, so they are deliberately not crystallized)
-- **Autonomous error learning** — each fix is stored as a lesson so future missions avoid repeating the same mistake
-- **Auto-approve with LLM classification** — code execution is auto-approved via a two-stage classifier; unsafe scripts are flagged with a reason for manual review
-- **Multi-sandbox execution** — runs on Apple Silicon (Metal) or in Docker/CUDA containers, with automatic GPU pool assignment
-- **Live mission HUD** — real-time metric charts, log stream, pivot timeline, and critic trace, with history back-filled on reconnect
-- **Custom RL environments** — Snake-v0, Tetris-v0, Game2048-v0, and the MinAtar arcade suite (Breakout, Space Invaders, Asteroids) with rich observations, lookahead state access, and high throughput (>50k steps/sec)
-- **Lookahead-Augmented DQN for 2048** — 1-step successor state evaluation via `get_next_states()` unlocking 4096+ tile capabilities
-- **Live agent viewer & Policy Audit Inspector** — watch trained policies play in real time with streaming action probabilities, Q-values, and Shannon entropy
-- **Model Registry & Tournament Arena** — side-by-side multi-model tournaments across fixed deterministic seeds, win rates, and champion crowning
-- **Recipe Library & Lineage DAG Visualizer** — browse canonical blueprints, inspect genetic mutation chains, and launch missions with 1-click dispatch
-- **Curriculum training** — Snake-v0 missions can progress through increasing grid sizes within a single run, transferring learned weights between phases
-- **Algorithm-aware code generation** — PPO, DQN, SAC, A2C, and TD3 each get their own correct set of hyperparameters, rather than being silently filtered down to a generic subset
-- **Persistent escalating pivot strategy** — stuck missions escalate through hyperparameter tuning → architecture change → algorithm switch → reward shaping, with escalation state surviving server restarts
-- **Best-architecture memory** — the system remembers which network architecture produced the best result for a mission and prefers reusing it over randomly cycling through others
-- **Resilient warm-start across architecture pivots** — training resumes from whatever learned weights are still compatible with a new architecture, rather than a single change discarding all prior learning
-- **Task-appropriate pivot search** — RL missions escalate through hyperparameters, architecture, and reward shaping; fine-tuning missions (DPO/GRPO/distill) instead get a small, bounded per-task-type safelist (sampling-diversity knobs for DPO/GRPO, training-step count for distill), so a plateaued mission always has a real, actionable search lever rather than proposals that silently get discarded
-- **Knows when to stop** — a mission whose target is out of reach (escalation maxed, no new best for many iterations, or a target above the recipe's declared ceiling) is stopped and marked `stalled` with its best checkpoint kept, instead of burning compute indefinitely; impossible targets are rejected at creation
-- **Dual metric tracking** — the training signal (e.g. reward) and the actual goal metric (e.g. food eaten, lines cleared) are tracked separately, so the two can be compared and diverging trends are visible
-- **Robust state recovery** — an interrupted mission's still-alive training run is reattached and resumed on restart, rather than killed; only a genuinely gone run gets reset and relaunched from the last checkpoint
-- **Cluster visibility** — a Nodes panel shows reachability and free memory for every compute node (local and remote/SSH) a mission could run on, and each mission card shows which node it's actually running on
+- **End-to-End Autonomous Loop** — Plan → Critique → Implement → Sandbox → Train → Evaluate → Refine. Integrates GAN-style plan critique, automatic error recovery, and convergence guards that prevent runaway compute.
+- **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts.
+- **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), tracking score distributions and tie-split win rates to automatically crown champion policies.
+- **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and one-click mission dispatch.
+- **Live Mission HUD & Explainability** — Real-time telemetry, memory gauges, and interactive canvas players streaming frame-by-frame Q-values, action probabilities, and Shannon policy entropy across all environments.
+- **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), and the MinAtar arcade suite (Breakout, Space Invaders, Asteroids).
+- **Multi-Paradigm & Hybrid Compute** — Supports RL, SFT, DPO, GRPO, Distillation, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
+
 
 ### Screenshots
 
@@ -107,10 +93,11 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1009 unit tests across all core modules
+│   ├── unit/           # 1027 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
-├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar-Breakout-v0)
+├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite)
+
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
@@ -130,60 +117,21 @@ make stop   # stop both
 make ports  # show port status for all services
 ```
 
-## Status
+## Development Milestones
 
-| Phase | Description | Status |
+| Milestone | Scope & Key Capabilities | Status |
 |---|---|---|
-| 1 | Foundation — backend, DB schema, vector memory, base API | ✅ Complete |
-| 2 | Execution — SandboxManager, Trainers, Telemetry | ✅ Complete |
-| 3 | Brain — Lead Agent (MLX), Autonomous Loop, Evaluator | ✅ Complete |
-| 4 | Mission Control — Next.js dashboard, Live HUD | ✅ Complete |
-| 5 | Wisdom — Recipe crystallization, evolution, golden promotion | ✅ Complete |
-| 6 | Validation — Test suite, multi-GPU | ✅ Complete |
-| 7 | Resilience & Rigor — GAN critique, manifests, preflight, state | ✅ Complete |
-| 8 | Autonomous Learning & HUD Polish — error learning, metric display | ✅ Complete |
-| 9 | Autonomous Approval & Code Robustness — auto-approve, SB3 patching, Snake-v0 viewer | ✅ Complete |
-| 10 | Pivot Intelligence & Live Viewer — 4-level escalation, MetricChart windowing, play endpoint | ✅ Complete |
-| 11 | Resilience & Dual Metrics — Tetris-v0, dual metric tracking, algorithm-locked missions | ✅ Complete |
-| 12 | Mission Lifecycle & Telemetry — clean deletion, sandbox error detection, resume hardening | ✅ Complete |
-| 13 | Training Continuity & Loop Recovery — env_kwargs clamp, arch oscillation detection, auto-restart loop | ✅ Complete |
-| 14 | HUD Polish & Telemetry Performance — WS batch backfill, capped event stream, adaptive charts | ✅ Complete |
-| 15 | Sandbox Lifecycle Hardening — orphaned subprocess fix, stale sandbox eviction | ✅ Complete |
-| 16 | Post-Pivot Regression Detection & Best-Architecture Memory — checkpoint recovery, de-escalation | ✅ Complete |
-| 17 | Tetris Obs Refactor + Actor-Critic Trainer — compact obs, `.pth` model support end-to-end | ✅ Complete |
-| 18 | Hardcode Removal — all training knobs driven from recipe `hyperparameters:` | ✅ Complete |
-| 19 | Snake Feature Obs + Recipe-Driven Defaults — 25D compact observation, canonical recipe loading | ✅ Complete |
-| 20 | MLX LoRA Fine-Tuning — `mlx_lora` task type, `mlx_lm.lora` subprocess wrapper | ✅ Complete |
-| 21 | Telemetry Integrity & AC Loop Hardening — goal-metric isolation, Actor-Critic completion fixes | ✅ Complete |
-| 22 | Inline Auto-Approve — gates auto-approve at creation, no more overnight stalls | ✅ Complete |
-| 23 | Curriculum Training & Algorithm-Aware Code Generation — multi-phase grid curriculum, per-algorithm pivots | ✅ Complete |
-| 24 | Sandbox Shutdown Fix + Opt-In PPO Learning Rate Schedule — graceful SSH terminate, `lr_schedule: linear` | ✅ Complete |
-| 25 | DPO/GRPO Fine-Tune Task Types + Remote Telemetry Tailing — wraps `ensemble/finetune` scripts, SSH-tailed telemetry | ✅ Complete |
-| 26 | DPO/GRPO Hardening & Recipe Lockout — recipe correctness fixes, `bare_eval` goal check, orphan-proof `os.execv` dispatch, recovery parity, `loss` training signal, collection-progress status, auto-approve for known-safe dispatch, pivots can no longer override recipe hyperparameters | ✅ Complete |
-| 27 | Sandbox Reattach, Guided Autonomy Mode, and Pivot-Failure Resilience — resume a still-alive sandbox in place instead of killing it, guided mode actually implemented, a malformed LLM pivot response no longer crashes the mission, pivot hyperparameter/architecture clamp hardening | ✅ Complete |
-| 28 | Backend Crash Resilience: Metal/GPU Failures — four separate uncatchable Metal aborts root-caused and fixed (real-memory-aware GC, a process-wide Metal lock), one confirmed unfixable upstream in `mlx` itself | ✅ Complete |
-| 29 | Recipe, Crystallizer & Tetris-v0 Algorithm Correctness — every crystallized recipe had the wrong domain field, Tetris-v0 missions silently ignored the requested algorithm, missing piece-identity observation feature | ✅ Complete |
-| 30 | os.execv Dpo/Grpo Static Auto-Approve Rule Actually Implemented — a documented-but-never-written check finally added, after it stalled a live mission for 26+ minutes | ✅ Complete |
-| 31 | Lookahead-Augmented DQN/PPO/A2C for Tetris-v0 — custom trainers giving each algorithm the same `get_next_states()` search capability as the Actor-Critic trainer, without losing its own algorithmic identity | ✅ Complete |
-| 32 | Snake-v0 Flood-Fill Reachable-Space Feature — real BFS reachable-space scoring after each candidate move, closing the same class of observation gap that limited Tetris | ✅ Complete |
-| 33 | Pivot Engine: Competitive-Dip Suppression Guard Expiry & DPO/GRPO Sampling-Diversity Pivots — a metric orbiting just under its peak could suppress every pivot check indefinitely; separately, every dpo/grpo pivot was a complete no-op (full hyperparameter lockout), now given a safe, bounded search lever | ✅ Complete |
-| 34 | Nodes Panel — cluster visibility for missions running across local + remote (SSH) sandboxes at once: node reachability/memory in the HUD, per-mission host badges, no more manually SSHing in to check what's actually running where | ✅ Complete |
-| 35 | DPO/GRPO Checkpoint Chaining — a mission's own best result now carries forward into the next iteration instead of every iteration always restarting from the static recipe warm-start; a live regression in the fix itself (shared, non-iteration-scoped save directory letting iterations silently overwrite each other's checkpoints) found and closed by making every iteration's output directory permanently distinct | ✅ Complete |
-| 36 | Unreachable-Target Missions Run Forever — a converged DPO mission ground for 20 days / 600+ iterations against a target above its ceiling; now the loop has a `STALLED` terminal state (escalation maxed + no new best for 30 iterations → stop and keep the best checkpoint), DPO iterations that regress below their own warm-start baseline are floored instead of recorded as progress, and recipes declare a `metric_ceiling` that rejects impossible targets at mission creation | ✅ Complete |
-| 37 | Stop Auto-Crystallizing DPO/GRPO Missions — training dispatch for these task types is hardcoded to the canonical recipe, so every crystallization produced an orphan recipe file + DB row + vector-index entry that nothing could load; `_crystallize()` now skips `dpo`/`grpo`, and the accumulated orphans were purged from disk, the DB, and ChromaDB | ✅ Complete |
-| 38 | Command Center: Group Mission Cards by Status — the mission grid was one flat list; cards are now grouped into Running / Failed / Stalled / Completed sections (each with a count), matching the global stat row | ✅ Complete |
-| 39 | DPO Baseline-Floor Phantom Best + RL-Shaped Pivots on Fine-Tune Missions — the Phase 36 floor fabricated an unreproducible all-time best (and chained a regressed checkpoint) when a mission's first iteration regressed; separately, DPO/GRPO pivots silently accepted RL-only `env_kwargs`/`policy_kwargs`/`algorithm` fields into the plan. Floored iterations now never set a best or chain a checkpoint, and fine-tune pivots are restricted+clamped to the sampling knobs. **Follow-up:** the persistent DPO plateau below a 0.84 target was traced to 7 eval cases expecting runtime `mcp:Server:tool` skills the training prompt never shows — fixed in the `ensemble` repo (excluded from the fine-tune pass-rate; +12 teacher-verified cases for starved classes, static routing set 66 → 71). On the corrected set the warm-start already scores 0.859 and DPO has never beaten it, so the `dpo` `metric_ceiling` was set to 0.87 (just above the warm-start); astra code is unchanged | ✅ Complete |
-| 40 | Terminal-Success Sandbox Teardown — `LoopStateMachine` terminated the sandbox on cancel/failure but not on `COMPLETED`/`STALLED`, so a finished mission's entry lingered in `SandboxManager._sandboxes` and showed as a phantom mission in the Nodes panel until the next backend restart; all four loop-exit paths now go through one `_terminate_sandbox()` helper | ✅ Complete |
-| 41 | Mission `completed_at` Populated + Shown on Cards — the column existed in the model/schema/API but nothing ever wrote it (all 19 terminal missions had `null`); `_transition()` now stamps it on `COMPLETED`/`FAILED`/`STALLED`, old rows were backfilled from `updated_at`, and Command Center cards show a `created … · ended …` line | ✅ Complete |
-| 42 | Distillation Task Type — `dpo`/`grpo` are exhausted for the routing model (ceiling ~86%), so added `distill`: a strong teacher generates correct routing completions and the student is SFT'd to imitate them. Fully wired as a fine-tune-remote task type (SSH dispatch, recipe-authoritative, `iters`-only pivot, `metric_ceiling` 0.95) mirroring `dpo`/`grpo`. **Follow-up:** `ensemble/finetune/distill_train.py` was written and run for real; also fixed `_run_bare_eval`'s stdout parsing (silently failing to read `bare_eval.py`'s split-report format on every fine-tune-remote mission), and — after a mission doom-looped for ~9h — made `distill`'s goal metric read the held-out pass rate from the training log rather than a full-set `bare_eval` (which mismatched the floor's held-out baseline) | ✅ Complete |
-| 43 | Fixing the Measurement Instrument — aligned eval populations across methods, deterministic frozen clocks, environmental failure detection | ✅ Complete |
-| 44 | `rft` Task Type (Rejection-Sampling Fine-Tuning) — STaR-style self-improvement over candidate samples, sampling diversity pivots, bypasses teacher limits | ✅ Complete |
-| 45 | `prompt` Task Type (Prompt-Variant Optimization) — search prompt rules and extra context without modifying model weights, proposal-only checkpoints | ✅ Complete |
-| 46 | Task Type Auto-Inference, Metric Parsing & Cross-Domain Recipe Search — auto-detect task type from goal text, parse pass rate and target percentages, cross-domain warm-start recipe discovery, and UI task selector | ✅ Complete |
-| 47 | Remote Fine-Tune Evaluation Alignment & Chaining Floor — auto-detect model in `bare_eval.py`, pass `--model` to avoid 4B-on-12B dimension crashes, cold-start prompt initialization in `rft_train.py`, and `_raw_goal_val > 0.0` chaining floor | ✅ Complete |
-| 48 | Prompt Optimization Loop Hardening & Guidance — LeadAgent prompt planning system instructions (preventing neural net HP hallucinations), pivot key dropping for prompt tasks, `last_checkpoint_path` persistence for winning prompt variants, canonical skill taxonomy and concrete few-shot guidance in `_PROMPT_TEMPLATE`, and recipe `metric_ceiling` raised to 1.0 | ✅ Complete |
-| 49 | Command Center: Kanban Board Redesign — parallel status columns (Running, Completed, Stalled, Failed) with independent vertical scrolling, enhanced mission cards (monospace ID, task-type badge, remote node indicator, animated pulse dot, structured metric & progress bar, relative timestamps, icon controls), and aligned GlobalStats stat row | ✅ Complete |
-| 51 | 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players — pure Gymnasium environments (`Game2048-v0`, `MinAtar-Breakout-v0`), canonical DQN recipes, code generation preambles, state machine eval, WebSocket frame streaming, retro canvas players, and unified HUD player design across all 4 games | ✅ Complete |
+| **Core Architecture (Phases 1–7)** | Autonomous loop, MLX Lead Agent, SandboxManager, GAN critique, manifest state machine, vector memory | ✅ Complete |
+| **Autonomous Learning (Phases 8–16)** | Self-healing code generation, auto-approvals, 4-stage escalating pivots, regression rollback, best-arch memory | ✅ Complete |
+| **RL Environments & Lookahead (Phases 17–24, 31–32)** | Pure Gym envs (Snake, Tetris), 1-step successor lookahead trainers, flood-fill reachable space features, curriculum learning | ✅ Complete |
+| **Fine-Tuning & Distillation (Phases 25–28, 35–48)** | Remote SSH sandboxes, DPO, GRPO, Distillation, RFT, and Prompt optimization with checkpoint chaining & convergence guards | ✅ Complete |
+| **Mission Control & Kanban (Phases 34, 38, 49)** | Cluster visibility (Nodes panel), status-grouped Kanban board, live dual-metric history, and approval gates | ✅ Complete |
+| **Arcade Suite & Explainability (Phases 51–54)** | 2048 & MinAtar arcade suite (Breakout, Space Invaders, Asteroids), lookahead DQN, live Policy Audit Inspector (Q-values/entropy) | ✅ Complete |
+| **Registry, Tournaments & Recipes (Phases 55–56)** | Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with Lineage DAG, and 1-click dispatch | ✅ Complete |
+
+> Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
+
+
 
 
 ## Hardware Target
