@@ -1,0 +1,35 @@
+task_type: SFT
+domain: data/datasets/train
+algorithm: SFT
+description: Auto-crystallized recipe from mission e739f6da. Achieved score 0.8169.
+hyperparameters:
+  eval_metric: eval_loss
+  eval_metric_target: 1.2
+  learning_rate: 0.001
+  batch_size: 32
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.1
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+created_at: '2026-09-12'
+provenance:
+  mission_id: e739f6da-09bc-455b-897d-acefe50cc9a6
+  iterations: 0
+  best_score: 0.8169
+dataset: data/datasets/train.jsonl
+curriculum:
+  phases:
+  - phase_name: warm_start
+    phase_duration: 2
+    phase_lr: 0.0005
+  - phase_name: fine_tune
+    phase_duration: 8
+    phase_lr: 0.001
+target_metric:
+  eval_loss: 1.2
+name: data_datasets_train_sft_v1
+version: 1.0.0
