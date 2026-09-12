@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 56 complete  
+**Status:** Phase 57 complete  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -109,6 +109,13 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Searchable gallery of canonical training blueprints across RL, Fine-tuning, and ML paradigms.
 - Lineage tree DAG visualizer tracking genetic evolution, hyperparameter mutations, and generational wins.
 - 1-Click mission dispatch triggering autonomous training runs directly from recipes.
+
+### 4.18. SFT Post-Training with Strict Held-Out Splitting & Reasoning Preservation
+- End-to-end Supervised Fine-Tuning orchestrator via `SFTTrainer` supporting HuggingFace Transformers, PEFT (LoRA/QLoRA), and TRL.
+- **Strict Held-Out Validation**: Enforces deterministic held-out dataset splitting (`val_split`, fixed seed 42) to eliminate in-sample evaluation overfitting and data leakage.
+- **Chain-of-Thought (CoT) Preservation**: Automatically extracts, preserves, and formats `<think>...</think>` internal reasoning traces in multi-turn dialogues and completion records.
+- **Comprehensive Telemetry & Checkpointing**: Emits live `train_loss`, `eval_loss`, and `perplexity` (`exp(eval_loss)`) metrics to the dashboard, with peak checkpoint tracking in `checkpoints/best`.
+- **AST-Guarded Code Generation & Self-Healing**: Resilient code generation and error analyzer self-healing that validate script syntax via Python's `ast` parser and fall back to canonical execution scripts against autoregressive coder degeneration.
 
 ## 5. User Experience & Autonomy Model
 

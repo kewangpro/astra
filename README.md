@@ -12,7 +12,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and one-click mission dispatch.
 - **Live Mission HUD & Explainability** — Real-time telemetry, memory gauges, and interactive canvas players streaming frame-by-frame Q-values, action probabilities, and Shannon policy entropy across all environments.
 - **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), and the MinAtar arcade suite (Breakout, Space Invaders, Asteroids).
-- **Multi-Paradigm & Hybrid Compute** — Supports RL, SFT, DPO, GRPO, Distillation, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
+- **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
 
 
 ### Screenshots
@@ -93,7 +93,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1027 unit tests across all core modules
+│   ├── unit/           # 1059 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite)
@@ -128,6 +128,7 @@ make ports  # show port status for all services
 | **Mission Control & Kanban (Phases 34, 38, 49)** | Cluster visibility (Nodes panel), status-grouped Kanban board, live dual-metric history, and approval gates | ✅ Complete |
 | **Arcade Suite & Explainability (Phases 51–54)** | 2048 & MinAtar arcade suite (Breakout, Space Invaders, Asteroids), lookahead DQN, live Policy Audit Inspector (Q-values/entropy) | ✅ Complete |
 | **Registry, Tournaments & Recipes (Phases 55–56)** | Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with Lineage DAG, and 1-click dispatch | ✅ Complete |
+| **SFT & Reasoning Post-Training (Phase 57)** | Full SFTTrainer, strict held-out train/val splitting (val_split), reasoning CoT (<think>...</think>) preservation, AST-guarded codegen & self-healing | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

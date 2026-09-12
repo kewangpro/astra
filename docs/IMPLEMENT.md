@@ -1838,7 +1838,33 @@ Two root causes were diagnosed:
   - Unified header navbar linking **Missions** (`/`), **Recipes** (`/recipes`), and **Models & Tournaments** (`/models`).
 - [x] **3 new unit tests** (`tests/unit/test_recipe_dispatch.py`).
 
-    Total: **1041 tests** passing (1026 unit + 15 integration; clean build; frontend validated via `npm run build`).
+---
+
+## Phase 57 — SFT Post-Training with Strict Held-Out Splitting & Reasoning Preservation
+
+**Problem:** Fine-tuning workflows often suffer from in-sample evaluation overfitting due to unpartitioned training data, loss of Chain-of-Thought (CoT) `<think>...</think>` internal reasoning traces in multi-turn completions, and fragile codegen where local coder LLMs hallucinate complex PEFT/quantization configurations resulting in script crashes.
+- [x] **Full SFTTrainer Implementation** (`backend/trainers/sft_trainer.py`):
+  - Created standalone `SFTTrainer` supporting HuggingFace Transformers, PEFT (LoRA/QLoRA), and TRL SFT pipelines.
+  - Implemented `load_and_split_dataset()`: deterministically splits dataset dictionaries or HuggingFace `Dataset` objects into `train` and `eval` subsets using a fixed seed (42) and configurable `val_split` ratio (default 0.1), preventing data leakage.
+  - Implemented reasoning trace extraction and formatting (`extract_reasoning_trace()`, `format_reasoning_prompt()`): parses and retains `<think>...</think>` CoT reasoning traces for deep-reasoning LLMs when `preserve_reasoning=True`.
+  - Added live telemetry callback streaming `train_loss`, `eval_loss`, and `perplexity` (`exp(eval_loss)`) metrics per step and epoch to the dashboard.
+  - Added safe simulation fallback catching all HuggingFace/OS loading exceptions (`except Exception:`) to guarantee uninterrupted execution in unauthenticated or resource-constrained environments.
+  - Generates checkpoint metadata (`checkpoints/best/checkpoint_metadata.json`) capturing loss, perplexity, step count, and task type.
+- [x] **AST-Guarded Code Generation & Self-Healing** (`backend/agent/code_generator.py`, `backend/agent/error_analyzer.py`):
+  - Streamlined `_SFT_TEMPLATE` with canonical runner `_CANONICAL_SFT_RUNNER` to prevent local coder models from generating degenerate, hallucinated kwargs.
+  - Added AST syntax validation via `ast.parse()` in `CodeGenerator.generate_script()` with automatic canonical fallback if syntax parsing fails.
+  - Hardened `ErrorAnalyzer.heal_script()` with AST-based self-healing and canonical SFT runner reset.
+- [x] **NLP Domain Golden Challenge & Checkpoint Evaluation** (`backend/evaluator/benchmark.py`, `backend/evaluator/specialist.py`):
+  - Enhanced `BenchmarkSuite.evaluate_golden_challenge()` to support SFT checkpoints by parsing `checkpoint_metadata.json` and evaluating `eval_loss` against thresholds.
+  - Updated `SpecialistEvaluation._generate_golden_cases()` for NLP tasks.
+- [x] **State Machine Metric Aggregation & Telemetry** (`backend/loop/state_machine.py`, `backend/trainers/base.py`):
+  - Updated `LoopStateMachine._read_telemetry_metrics()` with lower-is-better metric comparison (`val < metrics[name]`) for loss-based metrics (`eval_loss`, `train_loss`), ensuring peak loss tracking.
+  - Ensured telemetry events in `backend/trainers/base.py` include `"type": "metric"`.
+- [x] **32 new unit tests** (`tests/unit/test_sft_trainer.py`):
+  - Full test coverage for held-out splitting, reasoning trace extraction, prompt formatting, telemetry callbacks, simulation fallback, AST codegen, and benchmark evaluation.
+
+    Total: **1074 tests** passing (1059 unit + 15 integration; clean build; frontend validated via `npm run build`).
+
 
 
 
