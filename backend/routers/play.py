@@ -135,6 +135,11 @@ def _run_episode_actor_critic(model, env) -> tuple[list[dict], float]:
                     action_probs[act_name] = round(float(p), 3)
             action = best_action
         else:
+            if is_2048:
+                if frames:
+                    frames[-1]["done"] = True
+                done = True
+                break
             action = 0
 
         piece_before_step = getattr(base_env, "_current_piece", None)
@@ -251,6 +256,8 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         q_vals = {}
         action_probs = {}
         entropy = None
+        probs = None
+        q_arr = None
         try:
             if hasattr(model, "q_net"):
                 with torch.no_grad():
@@ -279,6 +286,23 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         action, _ = model.predict(obs, deterministic=True)
         act_arr = np.asarray(action)
         act_int = int(act_arr.flat[0]) if act_arr.size > 0 else 0
+
+        # Action masking for 2048: ensure chosen action actually slides tiles
+        if is_2048:
+            valid_actions = list(base_env.get_next_states().keys())
+            if not valid_actions:
+                if frames:
+                    frames[-1]["done"] = True
+                done = True
+                break
+            if act_int not in valid_actions:
+                if q_arr is not None and len(q_arr) > 0:
+                    act_int = int(max(valid_actions, key=lambda a: q_arr[a] if a < len(q_arr) else float("-inf")))
+                elif probs is not None and len(probs) > 0:
+                    act_int = int(max(valid_actions, key=lambda a: probs[a] if a < len(probs) else float("-inf")))
+                else:
+                    act_int = valid_actions[0]
+
         chosen_name = action_names[act_int] if act_int < len(action_names) else str(act_int)
 
         obs, reward, done, truncated, _ = env.step(act_int)
@@ -449,12 +473,19 @@ async def play_ws(
                     return
                 await asyncio.sleep(frame_delay)
 
+            base_env = env.unwrapped
+            end_payload = {
+                "type": "episode_end",
+                "episode": episode,
+                "total_reward": total_reward,
+            }
+            if hasattr(base_env, "_score"):
+                end_payload["score"] = int(base_env._score)
+            if hasattr(base_env, "_max_tile"):
+                end_payload["max_tile"] = int(base_env._max_tile)
+
             try:
-                await ws.send_json({
-                    "type": "episode_end",
-                    "episode": episode,
-                    "total_reward": total_reward,
-                })
+                await ws.send_json(end_payload)
             except WebSocketDisconnect:
                 return
 

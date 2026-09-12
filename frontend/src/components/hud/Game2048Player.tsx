@@ -48,7 +48,7 @@ interface Frame {
   selected_action?: string;
 }
 
-function drawBoard(ctx: CanvasRenderingContext2D, grid: number[]) {
+function drawBoard(ctx: CanvasRenderingContext2D, grid: number[], isGameOver: boolean = false) {
   ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
@@ -86,6 +86,23 @@ function drawBoard(ctx: CanvasRenderingContext2D, grid: number[]) {
       }
     }
   }
+
+  if (isGameOver) {
+    ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+    ctx.beginPath();
+    ctx.roundRect(PADDING, PADDING, CANVAS_SIZE - PADDING * 2, CANVAS_SIZE - PADDING * 2, 6);
+    ctx.fill();
+
+    ctx.fillStyle = "#f43f5e";
+    ctx.font = "bold 22px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("GAME OVER", CANVAS_SIZE / 2, CANVAS_SIZE / 2 - 8);
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.fillText("NO VALID MOVES", CANVAS_SIZE / 2, CANVAS_SIZE / 2 + 16);
+  }
 }
 
 interface Props {
@@ -108,17 +125,21 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
   const [loading, setLoading] = useState(false);
   const [policyTelemetry, setPolicyTelemetry] = useState<PolicyTelemetry | null>(null);
 
+  const [isGameOver, setIsGameOver] = useState(false);
+
   const stop = useCallback(() => {
     wsRef.current?.close();
     wsRef.current = null;
     setPlaying(false);
     setLoading(false);
+    setIsGameOver(false);
   }, []);
 
   const start = useCallback(() => {
     if (wsRef.current) return;
     setError(null);
     setLoading(true);
+    setIsGameOver(false);
 
     const ws = new WebSocket(
       `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
@@ -133,14 +154,19 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
     ws.onmessage = (e) => {
       const frame: Frame = JSON.parse(e.data as string);
       if (frame.type === "frame" && frame.grid) {
+        const gameOver = Boolean(frame.done);
+        setIsGameOver(gameOver);
+
         const ctx = canvasRef.current?.getContext("2d");
-        if (ctx) drawBoard(ctx, frame.grid);
+        if (ctx) drawBoard(ctx, frame.grid, gameOver);
 
         if (frame.step !== undefined) setStep(frame.step);
-        if (frame.score !== undefined) setScore(frame.score);
+        if (frame.score !== undefined) {
+          setScore(frame.score);
+          setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
+        }
         if (frame.max_tile !== undefined) {
           setMaxTile(frame.max_tile);
-          setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
         }
         if (frame.episode) setEpisode(frame.episode);
         if (frame.q_values || frame.action_probs || frame.selected_action) {
@@ -152,6 +178,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
           });
         }
       } else if (frame.type === "episode_end") {
+        setIsGameOver(true);
         if (frame.score !== undefined) {
           setBestScore((prev) => (prev === null ? frame.score! : Math.max(prev, frame.score!)));
         }
@@ -169,6 +196,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
     ws.onclose = () => {
       setPlaying(false);
       setLoading(false);
+      setIsGameOver(false);
       wsRef.current = null;
     };
   }, [missionId, envId, speed, stop]);
@@ -193,13 +221,18 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0f172a] text-[#14b8a6] border border-[rgba(20,184,166,0.2)]">
               {envId}
             </span>
-            {playing && (
+            {playing && !isGameOver && (
               <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                 </span>
                 LIVE
+              </span>
+            )}
+            {playing && isGameOver && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
+                GAME OVER
               </span>
             )}
           </div>

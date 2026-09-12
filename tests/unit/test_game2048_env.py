@@ -234,3 +234,26 @@ def test_reward_shaping_bonuses():
     # Corner bonus: 2.0 (since 8 is at (0, 0))
     assert reward > 8.0 + 2.0
     e.close()
+
+
+def test_consecutive_invalid_moves_terminate():
+    e = Game2048Env(max_invalid_moves=5)
+    e.reset(seed=0)
+    e._board = np.array([
+        [2, 0, 0, 0],
+        [4, 0, 0, 0],
+        [8, 0, 0, 0],
+        [16, 0, 0, 0],
+    ], dtype=np.int32)
+    # Action 2 (LEFT) is invalid on this board
+    for _ in range(4):
+        obs, r, terminated, truncated, info = e.step(2)
+        assert not terminated
+        assert not info["moved"]
+
+    # 5th invalid move hits limit
+    obs, r, terminated, truncated, info = e.step(2)
+    assert terminated
+    assert not info["moved"]
+    e.close()
+

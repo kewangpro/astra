@@ -37,6 +37,7 @@ class Game2048Env(gym.Env):
         merge_multiplier: float = 1.0,
         empty_tile_bonus: float = 0.0,
         corner_bonus: float = 0.0,
+        max_invalid_moves: int = 10,
         **kwargs,
     ):
         super().__init__()
@@ -45,6 +46,7 @@ class Game2048Env(gym.Env):
         self.merge_multiplier = merge_multiplier
         self.empty_tile_bonus = empty_tile_bonus
         self.corner_bonus = corner_bonus
+        self.max_invalid_moves = max_invalid_moves
 
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(
@@ -58,6 +60,7 @@ class Game2048Env(gym.Env):
         self._score = 0
         self._steps = 0
         self._max_tile = 0
+        self._consecutive_invalid = 0
 
     def reset(self, *, seed: Optional[int] = None, options=None):
         super().reset(seed=seed)
@@ -65,6 +68,7 @@ class Game2048Env(gym.Env):
         self._score = 0
         self._steps = 0
         self._max_tile = 0
+        self._consecutive_invalid = 0
 
         # Spawn initial 2 tiles
         self._spawn_tile()
@@ -191,6 +195,7 @@ class Game2048Env(gym.Env):
             self._score += move_score
             self._spawn_tile()
             self._update_max_tile()
+            self._consecutive_invalid = 0
 
             # Base reward from merges
             reward = float(move_score) * self.merge_multiplier
@@ -207,8 +212,9 @@ class Game2048Env(gym.Env):
         else:
             # Invalid move (no tiles slid)
             reward = -1.0
+            self._consecutive_invalid += 1
 
-        terminated = not self._has_moves_left()
+        terminated = (not self._has_moves_left()) or (self._consecutive_invalid >= self.max_invalid_moves)
         truncated = self._steps >= self.max_steps
         done = terminated or truncated
 
@@ -217,6 +223,7 @@ class Game2048Env(gym.Env):
             "max_tile": self._max_tile,
             "steps": self._steps,
             "empty_cells": int(np.sum(self._board == 0)),
+            "moved": moved,
         }
 
         return self._get_obs(), reward, terminated, truncated, info

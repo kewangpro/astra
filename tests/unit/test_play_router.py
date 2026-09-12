@@ -237,3 +237,36 @@ def test_run_episode_handles_0d_numpy_action():
     assert "selected_action" in frames[0]
     assert frames[0]["selected_action"] == "NOOP"
 
+
+def test_run_episode_2048_action_masking():
+    from backend.routers.play import _run_episode
+    from envs.game2048_env import Game2048Env
+    import numpy as np
+
+    class MockFixedActionModel:
+        device = "cpu"
+        def predict(self, obs, deterministic=True):
+            # Predict UP (0) always
+            return 0, None
+
+    env = Game2048Env(max_steps=20)
+    env.reset(seed=0)
+    # Put tiles all in top row so UP cannot move
+    env._board = np.array([
+        [2, 4, 8, 16],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+    ], dtype=np.int32)
+
+    model = MockFixedActionModel()
+    frames, reward = _run_episode(model, env)
+    assert len(frames) > 0
+    # The first action should NOT be UP because UP is invalid
+    assert frames[0]["selected_action"] != "UP"
+    assert frames[0]["selected_action"] in ("DOWN", "LEFT", "RIGHT")
+    # All frames should have moved the board (never static)
+    for i in range(1, len(frames)):
+        assert frames[i]["grid"] != frames[i - 1]["grid"]
+
+

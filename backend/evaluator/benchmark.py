@@ -192,13 +192,34 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
             _reg()
 
         env = gym.make(env_id, **(env_kwargs or {}))
+        base_env = env.unwrapped
+        is_2048 = hasattr(base_env, "_max_tile")
         rewards, info_accum = [], {}
         for _ in range(n_episodes):
             obs, _ = env.reset()
             ep_reward, done = 0.0, False
             ep_info = {}
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
+                if is_2048:
+                    valid_actions = list(base_env.get_next_states().keys())
+                    if not valid_actions:
+                        break
+                    try:
+                        if hasattr(model, "q_net"):
+                            import torch
+                            with torch.no_grad():
+                                obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(model.device)
+                                q_arr = np.atleast_1d(model.q_net(obs_t).squeeze().cpu().numpy())
+                            action = int(max(valid_actions, key=lambda a: q_arr[a]))
+                        else:
+                            pred_action, _ = model.predict(obs, deterministic=True)
+                            act_int = int(np.asarray(pred_action).flat[0])
+                            action = act_int if act_int in valid_actions else valid_actions[0]
+                    except Exception:
+                        action, _ = model.predict(obs, deterministic=True)
+                else:
+                    action, _ = model.predict(obs, deterministic=True)
+
                 obs, r, terminated, truncated, info = env.step(action)
                 ep_reward += float(r)
                 done = terminated or truncated
