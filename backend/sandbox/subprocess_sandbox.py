@@ -55,6 +55,9 @@ class SubprocessSandbox(BaseSandbox):
         _venv_python = _project_root / ".venv" / "bin" / "python"
         python = str(_venv_python) if _venv_python.exists() else sys.executable
 
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{_project_root}:{existing_pp}" if existing_pp else str(_project_root)
+
         self._process = subprocess.Popen(
             [python, self.config.script_path],
             env=env,

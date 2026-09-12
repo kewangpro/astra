@@ -142,10 +142,14 @@ class ErrorAnalyzer:
         needs_canonical = is_sft and (
             not is_valid
             or "backend.trainers.sft_trainer" not in fixed_code
+            or "AutoModelForCausalLM" in fixed_code
+            or "from transformers import Trainer" in fixed_code
             or "gated" in err_lower
             or "401 client error" in err_lower
             or "unauthorized" in err_lower
             or "huggingface" in err_lower
+            or "modulenotfounderror" in err_lower
+            or "no module named" in err_lower
         )
         if needs_canonical:
             logger.warning("ErrorAnalyzer: SFT script error detected; resetting to canonical SFT runner")

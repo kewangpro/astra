@@ -881,8 +881,9 @@ if __name__ == "__main__":
 """
 
 _SFT_TEMPLATE = """\
-Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT + TRL.
-Use the Astra SFTTrainer to orchestrate training with strict held-out train_dataset and eval_dataset splitting (fixed seed 42), <think>...</think> reasoning trace preservation, and comprehensive telemetry (train_loss, eval_loss, perplexity).
+Generate a complete SFT (QLoRA) fine-tuning script using Astra's SFTTrainer.
+Use Astra's SFTTrainer (from backend.trainers.sft_trainer import SFTTrainer) to orchestrate training with strict held-out train_dataset and eval_dataset splitting (fixed seed 42), <think>...</think> reasoning trace preservation, and comprehensive telemetry (train_loss, eval_loss, perplexity).
+DO NOT instantiate raw AutoModelForCausalLM or raw transformers.Trainer directly.
 
 Mission ID: {mission_id}
 Base model: {base_model}
@@ -897,10 +898,10 @@ Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script must:
-1. Load and split dataset from {dataset_path} into train_dataset and eval_dataset with fixed seed 42 and validation split {val_split} to prevent overfitting.
-2. If reasoning traces (<think>...</think>) are present, preserve them when preserve_reasoning is True.
-3. Train using SFTTrainer with train_dataset and eval_dataset, max_seq_length={max_seq_length}, save_steps={save_steps}, eval_steps={eval_steps}.
-4. Report train_loss, eval_loss, and perplexity to {api_url}/telemetry/missions/{mission_id}/metrics.
+1. Ensure project root is in sys.path before importing backend modules.
+2. Configure TrainerConfig with hyperparameters and target_metric.
+3. Instantiate and run Astra's SFTTrainer: trainer = SFTTrainer(config); trainer.run().
+4. Report train_loss, eval_loss, and perplexity to {api_url}/telemetry/missions/{mission_id}/metrics via SFTTrainer.
 5. Save the best checkpoint adapter to {checkpoint_dir}.
 6. Exit cleanly with code 0 on success, code 1 on error with full traceback.
 
@@ -1681,7 +1682,13 @@ class CodeGenerator:
             is_valid = False
             try:
                 ast.parse(code)
-                if "backend.trainers.sft_trainer" in code and ("trainer.run()" in code or "trainer.train()" in code):
+                if (
+                    "backend.trainers.sft_trainer" in code
+                    and "SFTTrainer(" in code
+                    and "AutoModelForCausalLM" not in code
+                    and "from transformers import Trainer" not in code
+                    and ("trainer.run()" in code or "trainer.train()" in code)
+                ):
                     is_valid = True
             except Exception:
                 is_valid = False
@@ -1693,6 +1700,14 @@ class CodeGenerator:
                     mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
                 )
                 code = _CANONICAL_SFT_RUNNER.format(**sft_ctx)
+            elif "_PROJECT_ROOT" not in code:
+                preamble = (
+                    "import os as _os, sys as _sys\n"
+                    "_PROJECT_ROOT = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), \"../../..\"))\n"
+                    "if _PROJECT_ROOT not in _sys.path:\n"
+                    "    _sys.path.insert(0, _PROJECT_ROOT)\n\n"
+                )
+                code = preamble + code
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
