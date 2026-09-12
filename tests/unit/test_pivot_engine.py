@@ -525,3 +525,38 @@ def test_convergence_clears_after_new_best():
     assert e.is_converged()
     e.record(STALL_ITERS_WITHOUT_BEST + 1, {"mean_reward": 95.0})  # breakthrough
     assert not e.is_converged()
+
+
+def test_loss_metric_goal_met():
+    engine = PivotEngine({"eval_loss": 1.2})
+    assert not engine.is_goal_met({"eval_loss": 1.5})
+    assert engine.is_goal_met({"eval_loss": 1.2})
+    assert engine.is_goal_met({"eval_loss": 0.8})
+
+
+def test_loss_metric_best_value_minimizes():
+    engine = PivotEngine({"eval_loss": 1.2})
+    engine.record(0, {"eval_loss": 2.1})
+    assert engine.best_metric_value() == 2.1
+    engine.record(1, {"eval_loss": 1.5})
+    assert engine.best_metric_value() == 1.5
+    assert engine.best_metric_iteration() == 1
+    engine.record(2, {"eval_loss": 1.8})
+    assert engine.best_metric_value() == 1.5  # still 1.5
+
+
+def test_loss_metric_needs_pivot_when_increasing_or_flat():
+    engine = PivotEngine({"eval_loss": 1.2})
+    engine.record(0, {"eval_loss": 1.5})
+    engine.record(1, {"eval_loss": 1.5})
+    engine.record(2, {"eval_loss": 1.5})
+    assert engine.needs_pivot()
+
+
+def test_loss_metric_no_pivot_when_decreasing():
+    engine = PivotEngine({"eval_loss": 1.2})
+    engine.record(0, {"eval_loss": 2.0})
+    engine.record(1, {"eval_loss": 1.8})
+    engine.record(2, {"eval_loss": 1.6})
+    assert not engine.needs_pivot()
+

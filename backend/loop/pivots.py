@@ -67,6 +67,10 @@ class PivotEngine:
         self.target_metric = target_metric
         self._metric_name = next(iter(target_metric), "")
         self._target_value = target_metric.get(self._metric_name, 0)
+        self._is_loss = bool(
+            self._metric_name
+            and ("loss" in self._metric_name.lower() or self._metric_name.lower() == "perplexity")
+        )
         self._history: list[dict] = []   # [{iteration, metric_name, value}]
         self._pivot_count: int = 0       # consecutive pivots without breakthrough
         self._best_at_last_pivot: Optional[float] = None
@@ -81,7 +85,8 @@ class PivotEngine:
         self._history.append({"iteration": iteration, **metrics})
         v = self._resolve_metric(self._metric_name, metrics)
         current_best = self.best_metric_value()
-        if v is not None and (current_best is None or v >= current_best):
+        is_better = (v <= current_best) if self._is_loss else (v >= current_best)
+        if v is not None and (current_best is None or is_better):
             if policy_kwargs is not None:
                 # Explicit arch at new best — always record it.
                 self._best_policy_kwargs = policy_kwargs
@@ -92,10 +97,14 @@ class PivotEngine:
                 self._best_policy_kwargs = {}
             # else: keep existing explicit arch — don't overwrite it with {} just because
             # a higher-scoring iter happened to have no policy_kwargs.
-        if self._pivot_applied:
+        if self._pivot_applied and v is not None:
             self._iters_since_pivot += 1
-            if v is not None and (self._post_pivot_best is None or v > self._post_pivot_best):
+            if self._post_pivot_best is None:
                 self._post_pivot_best = v
+            else:
+                is_post_better = (v < self._post_pivot_best) if self._is_loss else (v > self._post_pivot_best)
+                if is_post_better:
+                    self._post_pivot_best = v
 
     def record_pivot(self) -> None:
         """Call each time a pivot is applied to track escalation."""
@@ -104,8 +113,11 @@ class PivotEngine:
             self._best_at_last_pivot is not None
             and current_best is not None
             and self._best_at_last_pivot > 0
-            and (current_best - self._best_at_last_pivot) / self._best_at_last_pivot
-               < ESCALATION_RESET_THRESHOLD
+            and (
+                ((self._best_at_last_pivot - current_best) / self._best_at_last_pivot < ESCALATION_RESET_THRESHOLD)
+                if self._is_loss else
+                ((current_best - self._best_at_last_pivot) / self._best_at_last_pivot < ESCALATION_RESET_THRESHOLD)
+            )
         ):
             self._pivot_count += 1
         else:
@@ -242,7 +254,7 @@ class PivotEngine:
         value = self._resolve_metric(self._metric_name, metrics)
         if value is None:
             return False
-        return value >= self._target_value
+        return value <= self._target_value if self._is_loss else value >= self._target_value
 
     def _resolve_metric(self, name: str, metrics: dict) -> Optional[float]:
         """Look up metric by name with fallback to suffix-match (e.g. 'accuracy' matches 'validation_accuracy')."""
@@ -262,15 +274,21 @@ class PivotEngine:
         ]
         if len(values) < PLATEAU_WINDOW:
             return False
-        stalled = values[-1] <= values[0]
-        if not stalled:
+
+        if any(self.is_goal_met({self._metric_name: v}) for v in values):
             return False
+
+        # Improvement means lower for loss, higher for non-loss
+        improved = values[-1] < values[0] if self._is_loss else values[-1] > values[0]
+        if improved:
+            return False
+
         # Guard: if the window's best is a competitive dip BELOW the all-time peak,
         # this is likely temporary variance, not a real plateau. Don't pivot yet.
         # Only applies when window_best < all_time_best (i.e., we're in a dip).
         # Stuck-at-peak (window_best == all_time_best) still triggers a pivot.
         all_time_best = self.best_metric_value()
-        if all_time_best is not None and all_time_best > 0:
+        if not self._is_loss and all_time_best is not None and all_time_best > 0:
             window_best = max(values)
             if 0 < window_best < all_time_best and window_best >= all_time_best * PIVOT_COMPETITIVE_THRESHOLD:
                 best_iter = self.best_metric_iteration()
@@ -293,10 +311,23 @@ class PivotEngine:
                     "forcing pivot despite window_best=%.4f being competitive",
                     iters_since_best, MAX_DIP_SUPPRESSION_ITERS, all_time_best, window_best,
                 )
+        elif self._is_loss and all_time_best is not None and all_time_best > 0:
+            window_best = min(values)
+            if window_best > all_time_best and window_best <= all_time_best / PIVOT_COMPETITIVE_THRESHOLD:
+                best_iter = self.best_metric_iteration()
+                current_iter = self._history[-1].get("iteration") if self._history else None
+                iters_since_best = (
+                    current_iter - best_iter
+                    if best_iter is not None and current_iter is not None
+                    else 0
+                )
+                if iters_since_best <= MAX_DIP_SUPPRESSION_ITERS:
+                    return False
+
         logger.info(
             "PivotEngine: plateau detected over %d iterations "
-            "(latest=%.4f <= earliest=%.4f, no improvement)",
-            PLATEAU_WINDOW, values[-1], values[0],
+            "(latest=%.4f %s earliest=%.4f, no improvement)",
+            PLATEAU_WINDOW, values[-1], ">=" if self._is_loss else "<=", values[0],
         )
         return True
 
@@ -321,14 +352,16 @@ class PivotEngine:
         self._best_policy_kwargs = kwargs
 
     def _best_entry(self) -> Optional[tuple]:
-        """Return (iteration, value) for the history entry with the highest metric."""
+        """Return (iteration, value) for the history entry with the highest metric (lowest for loss)."""
         best_val: Optional[float] = None
         best_iter: Optional[int] = None
         for h in self._history:
             v = self._resolve_metric(self._metric_name, h)
-            if v is not None and (best_val is None or v > best_val):
-                best_val = v
-                best_iter = h.get("iteration")
+            if v is not None:
+                is_better = (best_val is None) or ((v < best_val) if self._is_loss else (v > best_val))
+                if is_better:
+                    best_val = v
+                    best_iter = h.get("iteration")
         return (best_iter, best_val) if best_val is not None else None
 
     def history_snapshot(self) -> list[dict]:

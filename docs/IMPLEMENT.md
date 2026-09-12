@@ -1863,7 +1863,15 @@ Two root causes were diagnosed:
 - [x] **32 new unit tests** (`tests/unit/test_sft_trainer.py`):
   - Full test coverage for held-out splitting, reasoning trace extraction, prompt formatting, telemetry callbacks, simulation fallback, AST codegen, and benchmark evaluation.
 
-    Total: **1074 tests** passing (1059 unit + 15 integration; clean build; frontend validated via `npm run build`).
+- [x] **Mission Resume & Loss Metric Convergence Tracking** (`backend/loop/pivots.py`, `backend/loop/state_machine.py`, `backend/routers/agent.py`, `frontend/`):
+  - Added `POST /agent/missions/{mission_id}/resume` endpoint and extended `/run` to allow resuming `failed` and `stalled` missions directly without manual DB intervention.
+  - Enhanced `PivotEngine` (`backend/loop/pivots.py`) to support lower-is-better metrics (`eval_loss`, `train_loss`, `loss`, `perplexity`), correctly computing goal satisfaction (`is_goal_met`), peak minimization (`best_metric_value`), and plateau detection.
+  - Updated `LoopStateMachine._load_persisted_best` to parse checkpoint metadata (`checkpoint_metadata.json`) and minimize loss candidates on startup and mission resumption.
+  - Added interactive Run/Resume and Stop control buttons to both the Mission Card (`MissionsGrid.tsx`) and the Mission Detail header (`/missions/[id]/page.tsx`).
+  - Added 4 unit tests in `tests/unit/test_pivot_engine.py` verifying loss metric goal satisfaction, peak minimization, and plateau triggers.
+
+    Total: **1078 tests** passing (1063 unit + 15 integration; clean build; frontend validated via `npm run build`).
+
 
 
 

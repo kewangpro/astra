@@ -158,6 +158,8 @@ export const api = {
     }),
   runMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/run`, { method: "POST" }),
+  resumeMission: (id: string) =>
+    req<{ status: string }>(`/agent/missions/${id}/resume`, { method: "POST" }),
   cancelMission: (id: string) =>
     req<{ status: string }>(`/agent/missions/${id}/cancel`, { method: "POST" }),
   getPendingApprovals: (missionId: string) =>

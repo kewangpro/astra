@@ -2,7 +2,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { useMission, useApprovalHistory } from "@/lib/hooks/useMissions";
+import { useMission, useApprovalHistory, useRunMission, useCancelMission } from "@/lib/hooks/useMissions";
 import { useTelemetry } from "@/lib/hooks/useTelemetry";
 import { MetricGap } from "@/components/hud/MetricGap";
 import { MetricChart } from "@/components/hud/MetricChart";
@@ -97,6 +97,8 @@ export default function MissionHUD({
     (g) => g.status === "approved" && g.reviewer_note?.startsWith("[auto-approved]")
   );
   const lightningActive = autoApproveMode || hasBeenAutoApproved;
+  const run = useRunMission();
+  const cancel = useCancelMission();
 
   if (isLoading)
     return (
@@ -116,6 +118,8 @@ export default function MissionHUD({
     );
 
   const statusColor = STATUS_COLOR[mission.status] ?? "#94a3b8";
+  const canRun = mission.status === "pending" || mission.status === "paused" || mission.status === "failed" || mission.status === "stalled";
+  const isRunning = mission.status === "running" || mission.status === "planning" || mission.status === "evaluating";
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
@@ -164,6 +168,28 @@ export default function MissionHUD({
           >
             {mission.status}
           </span>
+          {canRun && (
+            <button
+              onClick={() => run.mutate(missionId)}
+              disabled={run.isPending}
+              className="text-[11px] px-2.5 py-1 rounded border border-[#22c55e]/40 text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20 transition-colors flex items-center gap-1.5 disabled:opacity-40"
+              title={mission.status === "pending" ? "Run mission" : "Resume mission"}
+            >
+              <span>▶</span>
+              <span>{mission.status === "pending" ? "Run" : "Resume"}</span>
+            </button>
+          )}
+          {isRunning && (
+            <button
+              onClick={() => cancel.mutate(missionId)}
+              disabled={cancel.isPending}
+              className="text-[11px] px-2.5 py-1 rounded border border-[#ef4444]/40 text-[#ef4444] bg-[#ef4444]/10 hover:bg-[#ef4444]/20 transition-colors flex items-center gap-1.5 disabled:opacity-40"
+              title="Stop mission"
+            >
+              <span>⏹</span>
+              <span>Stop</span>
+            </button>
+          )}
           <button
             onClick={() => setAutoApproveMode(!autoApproveMode)}
             title={

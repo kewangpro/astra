@@ -396,9 +396,11 @@ class LoopStateMachine:
                 "LoopStateMachine: seeded pivot engine with persisted best=%.2f at iter=%d",
                 persisted_best, seed_iter,
             )
-            # Sync DB if best_score.txt is higher than DB value
+            # Sync DB if persisted_best is better than DB value
             db_best = float(mission.best_metric_value) if mission.best_metric_value else None
-            if db_best is None or persisted_best > db_best:
+            _is_loss = bool(metric_name_for_history and ("loss" in metric_name_for_history.lower() or metric_name_for_history.lower() == "perplexity"))
+            is_better = db_best is None or (persisted_best < db_best if _is_loss else persisted_best > db_best)
+            if is_better:
                 await self._save_best_metric(mission_id, persisted_best)
         # Restore escalation count so restarts don't reset aggressive pivoting
         if mission.pivot_escalation_count:
@@ -1547,9 +1549,10 @@ class LoopStateMachine:
                 )
 
     def _load_persisted_best(self, mission_id: str, mission) -> Optional[float]:
-        """Return the highest known best metric from all available sources."""
+        """Return the best known metric from all available sources (min for loss, max for score)."""
         candidates = []
         metric_name = next(iter(mission.target_metric), None) if mission.target_metric else None
+        is_loss = bool(metric_name and ("loss" in metric_name.lower() or metric_name.lower() == "perplexity"))
         # best_score.txt is written by the training callback and always stores mean_reward.
         # Only use it when the target metric IS mean_reward; otherwise it would corrupt
         # custom targets like lines_cleared with a negative reward value.
@@ -1561,6 +1564,18 @@ class LoopStateMachine:
                 candidates.append(float(open(score_file).read().strip()))
             except Exception:
                 pass
+        # Checkpoint metadata json (written by SFTTrainer or NLP post-training)
+        meta_file = os.path.join(
+            settings.data_path, "missions", mission_id, "checkpoints", "best", "checkpoint_metadata.json"
+        )
+        if os.path.isfile(meta_file) and metric_name:
+            try:
+                with open(meta_file) as f:
+                    meta = json.load(f)
+                    if metric_name in meta:
+                        candidates.append(float(meta[metric_name]))
+            except Exception:
+                pass
         # From DB — for custom (non-mean_reward) targets only trust DB when an actual
         # goal metric eval has run (best_metric_iteration is set); without it the DB
         # value may have been seeded from training-time telemetry posts.
@@ -1569,7 +1584,7 @@ class LoopStateMachine:
                 db_val = float(mission.best_metric_value)
                 if metric_name == "mean_reward":
                     candidates.append(db_val)
-                elif db_val >= 0 and mission.best_metric_iteration is not None:
+                elif is_loss or (db_val >= 0 and mission.best_metric_iteration is not None):
                     candidates.append(db_val)
         except Exception:
             pass
@@ -1581,7 +1596,7 @@ class LoopStateMachine:
             all_telem = self._read_telemetry_metrics(mission_id, offset=0)
             if metric_name in all_telem:
                 candidates.append(all_telem[metric_name])
-        return max(candidates) if candidates else None
+        return (min(candidates) if is_loss else max(candidates)) if candidates else None
 
     def _load_goal_metric_history(self, mission_id: str, metric_name: str) -> list[dict]:
         """Read per-iteration goal metric values from telemetry.jsonl for history replay."""

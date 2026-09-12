@@ -96,7 +96,7 @@ function MissionCard({ m }: { m: Mission }) {
   const router = useRouter();
   const color = STATUS_COLOR[m.status] ?? STATUS_COLOR.pending;
   const isRunning = m.status === "running" || m.status === "planning" || m.status === "evaluating";
-  const isPending = m.status === "pending";
+  const canRun = m.status === "pending" || m.status === "paused" || m.status === "failed" || m.status === "stalled";
   const targetProgress = getTargetProgress(m);
 
   const bestValFormatted = useMemo(() => {
@@ -254,7 +254,7 @@ function MissionCard({ m }: { m: Mission }) {
           </span>
 
           <div className="flex items-center gap-2">
-            {isPending && (
+            {canRun && (
               <button
                 onClick={handleRun}
                 disabled={run.isPending}
@@ -271,7 +271,7 @@ function MissionCard({ m }: { m: Mission }) {
                 }}
               >
                 <Play className="w-2.5 h-2.5 fill-current" />
-                run
+                {m.status === "pending" ? "run" : "resume"}
               </button>
             )}
 

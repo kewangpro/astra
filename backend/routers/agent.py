@@ -87,15 +87,22 @@ def get_code_provider() -> InferenceProvider:
 
 
 @router.post("/missions/{mission_id}/run", status_code=202)
+@router.post("/missions/{mission_id}/resume", status_code=202)
 async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
-    """Launch the autonomous loop for a mission as a cancellable asyncio task."""
+    """Launch or resume the autonomous loop for a mission as a cancellable asyncio task."""
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
-    if mission.status not in ("pending", "paused"):
+    if mission.status not in ("pending", "paused", "failed", "stalled"):
         raise HTTPException(status_code=409, detail=f"Mission is already in state '{mission.status}'")
     if mission_id in _running_tasks and not _running_tasks[mission_id].done():
         raise HTTPException(status_code=409, detail="Mission loop already running")
+
+    if mission.status in ("failed", "stalled"):
+        mission.status = "pending"
+        mission.error_log = None
+        mission.completed_at = None
+        await db.commit()
 
     loop = _build_loop()
     task = asyncio.create_task(loop.run(mission_id))
