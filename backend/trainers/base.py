@@ -15,7 +15,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 
 import httpx
 
@@ -45,6 +45,7 @@ class BaseTrainer(ABC):
         self._iteration = 0
         self.telemetry_path = os.path.join(config.data_dir, "telemetry.jsonl")
         self.checkpoint_dir = os.path.join(config.data_dir, "checkpoints")
+        self._latest_metrics: dict[str, float] = {}
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     # ── Public interface ───────────────────────────────────────────────────────
@@ -64,8 +65,26 @@ class BaseTrainer(ABC):
         """Alias for run()."""
         self.run()
 
+    @property
+    def train_loss(self) -> Optional[float]:
+        return self._latest_metrics.get("train_loss")
+
+    @property
+    def eval_loss(self) -> Optional[float]:
+        return self._latest_metrics.get("eval_loss")
+
+    @property
+    def perplexity(self) -> Optional[float]:
+        return self._latest_metrics.get("perplexity")
+
+    def __getattr__(self, name: str) -> Any:
+        if "_latest_metrics" in self.__dict__ and name in self._latest_metrics:
+            return self._latest_metrics[name]
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
     def log_metric(self, name: str, value: float, step: Optional[int] = None) -> None:
         """Write a metric to the JSONL log and push to FastAPI telemetry endpoint."""
+        self._latest_metrics[name] = value
         event = {
             "mission_id": self.config.mission_id,
             "type": "metric",

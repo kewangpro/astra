@@ -67,4 +67,6 @@ class Mission(Base):
         if self.remote_pid:
             from backend.config import settings
             return settings.sandbox_host or None
+        if self.status in ("running", "planning", "evaluating", "pending"):
+            return "local"
         return None
