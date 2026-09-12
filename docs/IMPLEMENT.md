@@ -1872,6 +1872,40 @@ Two root causes were diagnosed:
 
     Total: **1078 tests** passing (1063 unit + 15 integration; clean build; frontend validated via `npm run build`).
 
+---
+
+## Phase 58 — Remote SFT Training via MLX on Apple Silicon Cluster (Mac Mini Offloading)
+
+**Problem:** Running 12B-parameter SFT models locally on a development laptop starves local MLX agent memory (Lead Agent + Critic Agent + coder require ~8.5 GB), causing VRAM contention and Metal out-of-memory errors. The remote Mac Mini (`mac-mini.local`) has 24 GB of dedicated unified memory, but SFT lacked remote sandbox offloading and did not follow the established non-git DPO/GRPO execution pattern.
+- [x] **DPO-Pattern Standalone SFT Script & Zero-Git Deployment** (`ensemble/finetune/sft_train.py`, `/Users/kewang/finetune/sft_train.py`):
+  - Created standalone MLX SFT training runner `sft_train.py` inside the `ensemble` repository at `finetune/sft_train.py` (committed & pushed), deployed directly to `/Users/kewang/finetune/sft_train.py` on `mac-mini.local` with no git checkout required on the remote compute node.
+  - Removed temporary runner scripts from Astra root (`scripts/sft_train.py` cleaned up).
+  - Integrated deterministic held-out dataset splitting (`val_split`, seed=42) supporting conversational `messages`, raw `text`, and `prompt`/`response`/`<think>` formats.
+  - Implemented dynamic batch size clamping in `prepare_dataset_dir`: automatically guarantees validation splits have sufficient examples (`effective_batch_size <= min(train_size, val_size)`), completely preventing `mlx_lm` `ValueError: Dataset must have at least batch_size=4 examples`.
+  - Supports `--model`, `--data`, `--save-dir`, `--num-layers`, `--lora-rank`, `--lora-dropout`, `--lora-scale`, `--batch-size`, `--learning-rate`, `--iters`, `--val-split`, `--val-batches`, `--steps-per-eval`, `--steps-per-report`, `--save-every`, and `--max-seq-length`.
+  - Copies final best adapter to `save_dir/best/` for requirement manifest verification.
+- [x] **Unified Recipe** (`recipes/ensemble_sft_v1.yaml`):
+  - Configured `ensemble_sft_v1.yaml` targeting `mlx-community/gemma-3-12b-it-4bit`, `/Users/kewang/finetune`, and `/Users/kewang/finetune-env/bin/python`.
+  - Set default `batch_size: 2` and `max_seq_length: 2048` for optimal stability and memory footprint on 24 GB Apple Silicon.
+- [x] **Remote Sandbox Dispatch & Zero-Orphan Process Execution** (`backend/sandbox/manager.py`, `backend/agent/code_generator.py`, `backend/agent/error_analyzer.py`):
+  - Added `"sft"` to `_FINETUNE_REMOTE_TASK_TYPES` in `SandboxManager`.
+  - Implemented `_SFT_REMOTE_WRAPPER` in `CodeGenerator` using `os.chdir("/Users/kewang/finetune")` followed by `os.execv` into `/Users/kewang/finetune-env/bin/python`, ensuring zero orphan processes during training and clean PID tracking.
+  - Updated `ErrorAnalyzer.heal_script()` to preserve the remote wrapper when `settings.sandbox_host` is configured.
+- [x] **SSH Sandbox Dataset & Checkpoint Synchronization** (`backend/sandbox/ssh_sandbox.py`):
+  - Added automatic dataset directory rsync from `data/datasets/` to remote `/tmp/astra/data/datasets/` prior to remote execution.
+  - Syncs adapters and logs back to local mission checkpoint directories upon process completion or stop.
+- [x] **Real-Time Remote Metrics Tailing & State Machine Integration** (`backend/loop/state_machine.py`):
+  - Added regex patterns `_MLX_TRAIN_LOSS_RE` (`Iter \d+: Train loss ([\d\.]+)`) and `_MLX_VAL_LOSS_RE` (`Iter \d+: Val loss ([\d\.]+)`).
+  - Updated `_tail_remote_metrics()` to parse MLX logs and emit `train_loss` and `eval_loss` telemetry events in real time.
+  - Updated `EVALUATING` phase in `LoopStateMachine` to skip `_run_bare_eval` for `sft` and directly extract the latest `eval_loss` from `current_metrics`.
+- [x] **Cluster Node Visibility & Attribution** (`backend/models/mission.py`, `backend/routers/nodes.py`, `backend/services/preflight.py`):
+  - Updated `Mission.host` property to accurately attribute active remote SFT missions to `settings.sandbox_host` (`mac-mini.local`).
+  - Displayed live remote PID and mission badge in `GET /nodes` and the frontend Nodes panel.
+  - Updated `Preflight` service to verify remote script existence at `/Users/kewang/finetune/sft_train.py` without requiring local PyTorch/HF package imports for remote finetuning tasks.
+- [x] **Unit Testing & Verification**:
+  - Full test suite passing across remote sandbox selection, wrapper generation, SSH synchronization, and node telemetry.
+
+
 
 
 

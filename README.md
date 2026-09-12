@@ -129,6 +129,7 @@ make ports  # show port status for all services
 | **Arcade Suite & Explainability (Phases 51–54)** | 2048 & MinAtar arcade suite (Breakout, Space Invaders, Asteroids), lookahead DQN, live Policy Audit Inspector (Q-values/entropy) | ✅ Complete |
 | **Registry, Tournaments & Recipes (Phases 55–56)** | Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with Lineage DAG, and 1-click dispatch | ✅ Complete |
 | **SFT & Reasoning Post-Training (Phase 57)** | Full SFTTrainer, strict held-out train/val splitting (val_split), reasoning CoT (<think>...</think>) preservation, AST-guarded codegen & self-healing | ✅ Complete |
+| **Remote SFT via MLX (Phase 58)** | Apple Silicon Mac Mini offload following DPO pattern, zero-orphan `os.execv` wrapper, dynamic validation batch-clamping, live SSH loss tailing | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 
@@ -139,11 +140,11 @@ make ports  # show port status for all services
 
 Optimized for **Apple Silicon M4, 24 GB unified memory**.
 
-Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH, set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
+Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `distill`, `rft`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
 
 | Machine | Role | Models / Load |
 |---|---|---|
 | MacBook M4 24 GB | MLX inference (Lead + Critic agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) ≈ 8.5 GB |
-| mac-mini M4 24 GB (optional) | Remote training execution via SSH | Full 24 GB available for training subprocess |
+| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `distill`, `rft`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.
