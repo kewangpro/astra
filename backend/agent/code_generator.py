@@ -831,24 +831,29 @@ while total_steps < {total_timesteps}:
 Return ONLY the raw Python script. No markdown fences, no explanation."""
 
 _SFT_TEMPLATE = """\
-Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT.
+Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT + TRL.
 
 Mission ID: {mission_id}
 Base model: {base_model}
 Dataset path: {dataset_path}
+Validation split: {val_split} (held-out split ratio, seed=42)
+Max sequence length: {max_seq_length}
+Preserve reasoning traces: {preserve_reasoning} (keep <think>...</think> tokens)
 LoRA config: r={lora_r}, alpha={lora_alpha}, dropout={lora_dropout}
 Training args: batch={batch_size}, lr={learning_rate}, epochs={num_epochs}
-save_strategy: steps, save_steps: {save_steps}
+save_strategy: steps, save_steps: {save_steps}, eval_steps: {eval_steps}
 Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script must:
-1. Load the base model in 4-bit (BitsAndBytes).
-2. Apply LoRA via peft.get_peft_model.
-3. Load the dataset from {dataset_path}.
-4. Train using trl.SFTTrainer.
-5. POST eval_loss to the telemetry endpoint after each save step.
-6. Exit cleanly when eval_loss ≤ target."""
+1. Load the base model in 4-bit (BitsAndBytesConfig) or float16 with gradient checkpointing.
+2. Apply LoRA via peft.LoraConfig and get_peft_model.
+3. Load the dataset from {dataset_path} and split into train_dataset and eval_dataset using validation split {val_split} with fixed seed 42 to prevent data leakage and in-sample overfitting.
+4. If reasoning traces (<think>...</think>) are present in assistant completions or messages, ensure they are preserved during tokenization/formatting when preserve_reasoning is True.
+5. Train using trl.SFTTrainer with both train_dataset and eval_dataset, evaluation_strategy="steps", eval_steps={eval_steps}, save_strategy="steps", save_steps={save_steps}, max_seq_length={max_seq_length}.
+6. Use a TrainerCallback to POST "train_loss", "eval_loss", and "perplexity" (math.exp(eval_loss)) to the telemetry endpoint after each evaluation and save step.
+7. Save the best checkpoint adapter to {checkpoint_dir}.
+8. Exit cleanly with code 0 on success, code 1 on error with full traceback."""
 
 _MLX_LORA_TEMPLATE = """\
 Generate a complete MLX LoRA fine-tuning script using mlx_lm.
@@ -1793,6 +1798,19 @@ class CodeGenerator:
             return _RL_TEMPLATE.format(**ctx)
         if task_type == "sft":
             ctx = {
+                "base_model": hp.get("base_model", "meta-llama/Llama-3.1-8B"),
+                "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
+                "val_split": hp.get("val_split", 0.1),
+                "max_seq_length": hp.get("max_seq_length", 4096),
+                "preserve_reasoning": hp.get("preserve_reasoning", True),
+                "lora_r": hp.get("lora_r", 16),
+                "lora_alpha": hp.get("lora_alpha", 32),
+                "lora_dropout": hp.get("lora_dropout", 0.05),
+                "batch_size": hp.get("batch_size", hp.get("per_device_train_batch_size", 4)),
+                "learning_rate": hp.get("learning_rate", 0.0002),
+                "num_epochs": hp.get("num_epochs", hp.get("epochs", 3)),
+                "save_steps": hp.get("save_steps", 200),
+                "eval_steps": hp.get("eval_steps", 50),
                 **hp,   # recipe + plan hyperparameters (base_model, lora_r, batch_size, etc.)
                 **base,
             }

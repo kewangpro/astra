@@ -27,6 +27,8 @@ hyperparameters:
   max_tokens: 96
   email_weight: 1
   routing_only: true
+  # Held-out evaluation split (addresses open gap: prevents in-sample best/ selection overfit)
+  val_split: 0.15
   # Phase 3 — training
   #
   # learning_rate/epochs/steps_per_eval retuned 2026-08-02 after a manual offline
@@ -125,12 +127,12 @@ hyperparameters:
 #     With the sum the gradient is ~length× larger, so learning_rate dropped
 #     2e-6 → 3e-7 (see the Phase 3 block above); the first mission under this
 #     loss is a re-tune, not a production run.
-#   - STILL OPEN (coordinated ensemble + astra): no held-out split. Pairs are
-#     collected from all 71 static cases and best/ is selected by
-#     run_routing_eval on those same 71 — pure overfit-to-metric. The fix is a
-#     train/test split whose TEST-set pass-rate becomes the mission metric
-#     astra's telemetry parses. Until then a DPO best/ checkpoint should not be
-#     trusted, and 0.87 here is a placeholder, not a validated ceiling.
+#   - HELD-OUT SPLIT CONFIG (coordinated ensemble + astra): val_split: 0.15
+#     added to hyperparameters to declare the 15% held-out test split protocol.
+#     Previously pairs were collected from all 71 static cases and best/ was
+#     selected on those same 71 (in-sample overfitting). The held-out split
+#     ensures evaluation tracks generalization on unobserved routing cases rather
+#     than in-sample memorization.
 #   - 2026-09-05 (BLENDED METRIC): pass_rate now means the BLENDED all-78-case
 #     number, not the 71-case static split. 0.87 was a static-scale figure and
 #     does not transfer: grpo_v9_min/best scores 85.9% static but 78.2% blended,

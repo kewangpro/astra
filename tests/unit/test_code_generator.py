@@ -2274,3 +2274,71 @@ def test_prompt_template_execs_bare_eval_with_the_variant(tmp_path, monkeypatch)
     assert "subprocess.run(" not in p
     assert '"--prompt-template"' in p
     assert "--no-adapter" in p          # scores the prompt, not an adapter
+
+
+# ── SFT Code Generation Tests ────────────────────────────────────────────────
+
+def test_build_user_prompt_sft_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "sft",
+        "target_metric": {"eval_loss": 1.2},
+        "hyperparameters": {},
+    }
+    prompt = gen._build_user_prompt("sft", "mission-sft-default", plan, str(tmp_path / "ckpt"))
+
+    assert "meta-llama/Llama-3.1-8B" in prompt
+    assert "Validation split: 0.1" in prompt
+    assert "Preserve reasoning traces: True" in prompt
+    assert "eval_steps: 50" in prompt
+    assert "save_steps: 200" in prompt
+    assert "Max sequence length: 4096" in prompt
+    assert "train_dataset and eval_dataset" in prompt
+    assert "fixed seed 42" in prompt
+    assert "<think>...</think>" in prompt
+    assert "perplexity" in prompt
+
+
+def test_build_user_prompt_sft_overrides(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "sft",
+        "target_metric": {"eval_loss": 0.8},
+        "hyperparameters": {
+            "base_model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-8B",
+            "dataset_path": "data/reasoning_dataset.jsonl",
+            "val_split": 0.15,
+            "max_seq_length": 8192,
+            "preserve_reasoning": False,
+            "learning_rate": 5e-5,
+            "lora_r": 32,
+            "lora_alpha": 64,
+            "batch_size": 8,
+            "num_epochs": 5,
+            "save_steps": 100,
+            "eval_steps": 25,
+        },
+    }
+    prompt = gen._build_user_prompt("sft", "mission-sft-custom", plan, str(tmp_path / "ckpt"))
+
+    assert "deepseek-ai/DeepSeek-R1-Distill-Qwen-8B" in prompt
+    assert "data/reasoning_dataset.jsonl" in prompt
+    assert "Validation split: 0.15" in prompt
+    assert "Max sequence length: 8192" in prompt
+    assert "Preserve reasoning traces: False" in prompt
+    assert "lr=5e-05" in prompt
+    assert "r=32" in prompt
+    assert "alpha=64" in prompt
+    assert "batch=8" in prompt
+    assert "epochs=5" in prompt
+    assert "save_steps: 100" in prompt
+    assert "eval_steps: 25" in prompt
+

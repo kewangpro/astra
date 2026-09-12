@@ -67,6 +67,22 @@ async def test_dispatch_recipe_from_disk(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_sft_recipe_from_disk(tmp_path):
+    db = _make_db(record=None)
+    mock_loop = MagicMock()
+    mock_loop.run = AsyncMock()
+
+    with patch("backend.routers.agent._build_loop", return_value=mock_loop), \
+         patch("backend.routers.agent._running_tasks", {}):
+        resp = await dispatch_recipe("sft_llama_lora_v1", db=db)
+        assert resp.status == "dispatched"
+        assert resp.recipe == "sft_llama_lora_v1"
+        assert resp.task_type.lower() == "sft"
+        db.add.assert_called_once()
+        db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_dispatch_non_existent_recipe():
     db = _make_db(record=None)
     with pytest.raises(HTTPException) as exc:
