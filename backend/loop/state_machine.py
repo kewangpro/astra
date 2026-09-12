@@ -387,6 +387,7 @@ class LoopStateMachine:
         _last_checkpoint_path = mission.last_checkpoint_path
 
         pivot_engine = PivotEngine(mission.target_metric)
+        metric_name_for_history = next(iter(mission.target_metric), None) if mission.target_metric else None
         # Seed pivot engine with the persisted best so restarts don't lose history
         persisted_best = self._load_persisted_best(mission_id, mission)
         if persisted_best is not None:
