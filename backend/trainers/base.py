@@ -64,6 +64,7 @@ class BaseTrainer(ABC):
         """Write a metric to the JSONL log and push to FastAPI telemetry endpoint."""
         event = {
             "mission_id": self.config.mission_id,
+            "type": "metric",
             "name": name,
             "value": value,
             "step": step,

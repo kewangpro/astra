@@ -830,8 +830,59 @@ while total_steps < {total_timesteps}:
 
 Return ONLY the raw Python script. No markdown fences, no explanation."""
 
+_CANONICAL_SFT_RUNNER = """\
+import os
+import sys
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+# Ensure project root is in sys.path
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from backend.trainers.base import TrainerConfig
+from backend.trainers.sft_trainer import SFTTrainer
+
+def main() -> None:
+    config = TrainerConfig(
+        mission_id="{mission_id}",
+        model_record_id="{mission_id}",
+        data_dir=os.path.dirname(os.path.abspath(__file__)),
+        api_base_url="{api_url}",
+        hyperparameters={{
+            "base_model": "{base_model}",
+            "dataset_path": "{dataset_path}",
+            "val_split": {val_split},
+            "seed": 42,
+            "max_seq_length": {max_seq_length},
+            "preserve_reasoning": {preserve_reasoning},
+            "lora_r": {lora_r},
+            "lora_alpha": {lora_alpha},
+            "lora_dropout": {lora_dropout},
+            "batch_size": {batch_size},
+            "learning_rate": {learning_rate},
+            "num_train_epochs": {num_epochs},
+            "save_steps": {save_steps},
+            "eval_steps": {eval_steps},
+            "load_in_4bit": True,
+        }},
+        target_metric={target_metric},
+    )
+    logger.info("Starting SFT training for mission %s...", config.mission_id)
+    trainer = SFTTrainer(config)
+    trainer.run()
+    logger.info("SFT training completed. Best checkpoint at %s", trainer.best_checkpoint_path)
+
+if __name__ == "__main__":
+    main()
+"""
+
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using HuggingFace + PEFT + TRL.
+Use the Astra SFTTrainer to orchestrate training with strict held-out train_dataset and eval_dataset splitting (fixed seed 42), <think>...</think> reasoning trace preservation, and comprehensive telemetry (train_loss, eval_loss, perplexity).
 
 Mission ID: {mission_id}
 Base model: {base_model}
@@ -846,14 +897,16 @@ Checkpoint directory: {checkpoint_dir}
 Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script must:
-1. Load the base model in 4-bit (BitsAndBytesConfig) or float16 with gradient checkpointing.
-2. Apply LoRA via peft.LoraConfig and get_peft_model.
-3. Load the dataset from {dataset_path} and split into train_dataset and eval_dataset using validation split {val_split} with fixed seed 42 to prevent data leakage and in-sample overfitting.
-4. If reasoning traces (<think>...</think>) are present in assistant completions or messages, ensure they are preserved during tokenization/formatting when preserve_reasoning is True.
-5. Train using trl.SFTTrainer with both train_dataset and eval_dataset, evaluation_strategy="steps", eval_steps={eval_steps}, save_strategy="steps", save_steps={save_steps}, max_seq_length={max_seq_length}.
-6. Use a TrainerCallback to POST "train_loss", "eval_loss", and "perplexity" (math.exp(eval_loss)) to the telemetry endpoint after each evaluation and save step.
-7. Save the best checkpoint adapter to {checkpoint_dir}.
-8. Exit cleanly with code 0 on success, code 1 on error with full traceback."""
+1. Load and split dataset from {dataset_path} into train_dataset and eval_dataset with fixed seed 42 and validation split {val_split} to prevent overfitting.
+2. If reasoning traces (<think>...</think>) are present, preserve them when preserve_reasoning is True.
+3. Train using SFTTrainer with train_dataset and eval_dataset, max_seq_length={max_seq_length}, save_steps={save_steps}, eval_steps={eval_steps}.
+4. Report train_loss, eval_loss, and perplexity to {api_url}/telemetry/missions/{mission_id}/metrics.
+5. Save the best checkpoint adapter to {checkpoint_dir}.
+6. Exit cleanly with code 0 on success, code 1 on error with full traceback.
+
+Emit this complete runnable Python script:
+
+""" + _CANONICAL_SFT_RUNNER
 
 _MLX_LORA_TEMPLATE = """\
 Generate a complete MLX LoRA fine-tuning script using mlx_lm.
@@ -1623,6 +1676,24 @@ class CodeGenerator:
         # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
         code = self._fix_execv_unpacking(code)
 
+        if task_type == "sft":
+            import ast
+            is_valid = False
+            try:
+                ast.parse(code)
+                if "SFTTrainer" in code:
+                    is_valid = True
+            except Exception:
+                is_valid = False
+            if not is_valid:
+                logger.warning(
+                    "CodeGenerator: LLM produced invalid/incomplete SFT script; using canonical SFT runner"
+                )
+                sft_ctx = self._build_sft_context(
+                    mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
+                )
+                code = _CANONICAL_SFT_RUNNER.format(**sft_ctx)
+
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
         with open(script_path, "w") as f:
@@ -1647,6 +1718,43 @@ class CodeGenerator:
 
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
+
+    def _build_sft_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        hp = _resolve_hyperparams(
+            "sft", plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        api_url = f"http://127.0.0.1:{settings.api_port}"
+        base = {
+            "mission_id": mission_id,
+            "checkpoint_dir": checkpoint_dir,
+            "api_url": api_url,
+            "target_metric": json.dumps(plan.get("target_metric", {})),
+        }
+        return {
+            "base_model": hp.get("base_model", "meta-llama/Llama-3.1-8B"),
+            "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
+            "val_split": hp.get("val_split", 0.1),
+            "max_seq_length": hp.get("max_seq_length", 4096),
+            "preserve_reasoning": hp.get("preserve_reasoning", True),
+            "lora_r": hp.get("lora_r", 16),
+            "lora_alpha": hp.get("lora_alpha", 32),
+            "lora_dropout": hp.get("lora_dropout", 0.05),
+            "batch_size": hp.get("batch_size", hp.get("per_device_train_batch_size", 4)),
+            "learning_rate": hp.get("learning_rate", 0.0002),
+            "num_epochs": hp.get("num_epochs", hp.get("epochs", 3)),
+            "save_steps": hp.get("save_steps", 200),
+            "eval_steps": hp.get("eval_steps", 50),
+            **hp,
+            **base,
+        }
 
     def _build_user_prompt(
         self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0,
@@ -1797,23 +1905,9 @@ class CodeGenerator:
             }
             return _RL_TEMPLATE.format(**ctx)
         if task_type == "sft":
-            ctx = {
-                "base_model": hp.get("base_model", "meta-llama/Llama-3.1-8B"),
-                "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
-                "val_split": hp.get("val_split", 0.1),
-                "max_seq_length": hp.get("max_seq_length", 4096),
-                "preserve_reasoning": hp.get("preserve_reasoning", True),
-                "lora_r": hp.get("lora_r", 16),
-                "lora_alpha": hp.get("lora_alpha", 32),
-                "lora_dropout": hp.get("lora_dropout", 0.05),
-                "batch_size": hp.get("batch_size", hp.get("per_device_train_batch_size", 4)),
-                "learning_rate": hp.get("learning_rate", 0.0002),
-                "num_epochs": hp.get("num_epochs", hp.get("epochs", 3)),
-                "save_steps": hp.get("save_steps", 200),
-                "eval_steps": hp.get("eval_steps", 50),
-                **hp,   # recipe + plan hyperparameters (base_model, lora_r, batch_size, etc.)
-                **base,
-            }
+            ctx = self._build_sft_context(
+                mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
+            )
             return _SFT_TEMPLATE.format(**ctx)
         if task_type == "mlx_lora":
             dataset = plan.get("dataset", {})

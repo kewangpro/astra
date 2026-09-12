@@ -310,7 +310,7 @@ class SFTTrainer(BaseTrainer):
 
         try:
             self._run_hf_training(train_data, val_data)
-        except (ImportError, RuntimeError, FileNotFoundError) as e:
+        except Exception as e:
             logger.warning(
                 "Standard HF SFT execution unavailable (%s). Falling back to simulation mode.",
                 e

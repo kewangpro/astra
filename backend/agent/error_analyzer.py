@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
+from backend.config import settings
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -128,6 +129,35 @@ class ErrorAnalyzer:
         )
         fixed_code = self._strip_fences(fixed_code)
         fixed_code = self._patch_missing_imports(fixed_code)
+
+        import ast
+        is_valid = True
+        try:
+            ast.parse(fixed_code)
+        except Exception:
+            is_valid = False
+
+        if not is_valid and ("sft" in script_path.lower() or "sft" in str(domain).lower() or "SFTTrainer" in original_code or "SFT" in original_code):
+            logger.warning("ErrorAnalyzer: LLM produced invalid syntax for SFT script; resetting to canonical SFT runner")
+            from backend.agent.code_generator import _CANONICAL_SFT_RUNNER
+            fixed_code = _CANONICAL_SFT_RUNNER.format(
+                mission_id=mission_id or "sft_mission",
+                api_url=f"http://127.0.0.1:{settings.api_port}",
+                base_model="meta-llama/Llama-3.1-8B",
+                dataset_path="data/datasets/train.jsonl",
+                val_split=0.1,
+                max_seq_length=4096,
+                preserve_reasoning=True,
+                lora_r=16,
+                lora_alpha=32,
+                lora_dropout=0.05,
+                batch_size=4,
+                learning_rate=0.0002,
+                num_epochs=3,
+                save_steps=200,
+                eval_steps=50,
+                target_metric="{}",
+            )
 
         fixed_path = f"{script_path}.fixed_{iteration}.py"
         with open(fixed_path, "w") as f:

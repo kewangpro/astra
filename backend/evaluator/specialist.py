@@ -29,7 +29,7 @@ class SpecialistEvaluator:
         Returns a dict with metrics, benchmark results, and stress test results.
         """
         task_type = plan.get("task_type", "rl")
-        if task_type in ("dpo", "grpo", "distill", "rft", "prompt"):
+        if task_type in ("dpo", "grpo", "distill", "rft", "prompt", "sft"):
             domain = "nlp"
         else:
             env_id = plan.get("env_id") or ""

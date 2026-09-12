@@ -317,6 +317,29 @@ def _nlp_loss_eval(checkpoint_path: str) -> dict:
     if not os.path.exists(checkpoint_path):
         return {"eval_loss": 999.0, "perplexity": 999.0}
     logger.info("BenchmarkSuite: running NLP loss eval on %s", checkpoint_path)
+    meta_candidates = []
+    if os.path.isdir(checkpoint_path):
+        meta_candidates.append(os.path.join(checkpoint_path, "checkpoint_metadata.json"))
+        meta_candidates.append(os.path.join(checkpoint_path, "best", "checkpoint_metadata.json"))
+    parent_dir = os.path.dirname(checkpoint_path)
+    meta_candidates.extend([
+        os.path.join(parent_dir, "checkpoint_metadata.json"),
+        os.path.join(parent_dir, "best", "checkpoint_metadata.json"),
+        os.path.join(parent_dir, "..", "checkpoints", "best", "checkpoint_metadata.json"),
+    ])
+
+    for meta_path in meta_candidates:
+        if os.path.isfile(meta_path):
+            try:
+                import json as _json, math as _math
+                with open(meta_path, "r") as f:
+                    meta = _json.load(f)
+                el = float(meta.get("eval_loss", 999.0))
+                perp = float(meta.get("perplexity", _math.exp(el) if el < 100 else 999.0))
+                return {"eval_loss": el, "perplexity": perp}
+            except Exception:
+                pass
+
     return {"eval_loss": 999.0, "perplexity": 999.0}
 
 
@@ -325,7 +348,7 @@ def _nlp_perplexity_eval(checkpoint_path: str) -> dict:
     if not os.path.exists(checkpoint_path):
         return {"eval_loss": 999.0, "perplexity": 999.0}
     logger.info("BenchmarkSuite: running NLP perplexity eval on %s", checkpoint_path)
-    return {"eval_loss": 999.0, "perplexity": 999.0}
+    return _nlp_loss_eval(checkpoint_path)
 
 
 GOLDEN_SETS: dict[str, list[GoldenChallenge]] = {

@@ -748,6 +748,10 @@ class LoopStateMachine:
                 mean_reward_from_sandbox = sandbox_metrics.get("mean_reward")
                 if mean_reward_from_sandbox is not None:
                     current_metrics.setdefault("mean_reward", mean_reward_from_sandbox)
+                if plan.get("task_type") == "sft":
+                    for sft_key in ("eval_loss", "perplexity", "train_loss"):
+                        if sft_key in sandbox_metrics:
+                            current_metrics.setdefault(sft_key, sandbox_metrics[sft_key])
 
                 # For non-mean_reward goal metrics: run dedicated eval episodes if the
                 # benchmark didn't supply the value, then always write to telemetry so the
@@ -2704,10 +2708,14 @@ class LoopStateMachine:
                     continue
                 try:
                     event = _json.loads(line)
-                    if event.get("type") == "metric" and "name" in event and "value" in event:
+                    if (event.get("type") == "metric" or "name" in event) and "name" in event and "value" in event:
                         name, val = event["name"], event["value"]
-                        if name not in metrics or val > metrics[name]:
-                            metrics[name] = val
+                        if name in ("eval_loss", "train_loss", "loss"):
+                            if name not in metrics or val < metrics[name]:
+                                metrics[name] = val
+                        else:
+                            if name not in metrics or val > metrics[name]:
+                                metrics[name] = val
                 except Exception:
                     pass
         return metrics
