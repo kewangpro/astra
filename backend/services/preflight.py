@@ -135,6 +135,9 @@ class PreflightChecker:
 
     @staticmethod
     def _check_packages(task_type: str) -> list:
+        from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
+        if task_type in _FINETUNE_REMOTE_TASK_TYPES:
+            return []
         results = []
         for pkg in _REQUIRED_PACKAGES.get(task_type, []):
             try:

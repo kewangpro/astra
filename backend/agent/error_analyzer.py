@@ -138,40 +138,51 @@ class ErrorAnalyzer:
             is_valid = False
 
         is_sft = "sft" in script_path.lower() or "sft" in str(domain).lower() or "SFTTrainer" in original_code or "SFT" in original_code
-        err_lower = error_output.lower()
-        needs_canonical = is_sft and (
-            not is_valid
-            or "backend.trainers.sft_trainer" not in fixed_code
-            or "AutoModelForCausalLM" in fixed_code
-            or "from transformers import Trainer" in fixed_code
-            or "gated" in err_lower
-            or "401 client error" in err_lower
-            or "unauthorized" in err_lower
-            or "huggingface" in err_lower
-            or "modulenotfounderror" in err_lower
-            or "no module named" in err_lower
-        )
-        if needs_canonical:
+        if is_sft:
             logger.warning("ErrorAnalyzer: SFT script error detected; resetting to canonical SFT runner")
-            from backend.agent.code_generator import _CANONICAL_SFT_RUNNER
-            fixed_code = _CANONICAL_SFT_RUNNER.format(
-                mission_id=mission_id or "sft_mission",
-                api_url=f"http://127.0.0.1:{settings.api_port}",
-                base_model="meta-llama/Llama-3.1-8B",
-                dataset_path="data/datasets/train.jsonl",
-                val_split=0.1,
-                max_seq_length=4096,
-                preserve_reasoning=True,
-                lora_r=16,
-                lora_alpha=32,
-                lora_dropout=0.05,
-                batch_size=4,
-                learning_rate=0.0002,
-                num_epochs=3,
-                save_steps=200,
-                eval_steps=50,
-                target_metric="{}",
-            )
+            if settings.sandbox_host:
+                from backend.agent.code_generator import _SFT_REMOTE_WRAPPER
+                fixed_code = _SFT_REMOTE_WRAPPER.format(
+                    mission_id=mission_id or "sft_mission",
+                    finetune_dir="/Users/kewang/finetune",
+                    python_bin="/Users/kewang/finetune-env/bin/python",
+                    checkpoint_dir=f"/Users/kewang/finetune/adapters/astra_{mission_id[:8]}_iter{iteration}" if mission_id else "/Users/kewang/finetune/adapters/astra_sft_iter0",
+                    base_model="mlx-community/Llama-3.2-1B-Instruct-4bit",
+                    dataset_path="data/datasets/train.jsonl",
+                    val_split=0.1,
+                    val_batches=25,
+                    max_seq_length=2048,
+                    num_layers=16,
+                    lora_rank=16,
+                    lora_dropout=0.05,
+                    lora_scale=32.0,
+                    batch_size=4,
+                    learning_rate=0.0002,
+                    iters=300,
+                    steps_per_eval=25,
+                    steps_per_report=5,
+                    save_every=50,
+                )
+            else:
+                from backend.agent.code_generator import _CANONICAL_SFT_RUNNER
+                fixed_code = _CANONICAL_SFT_RUNNER.format(
+                    mission_id=mission_id or "sft_mission",
+                    api_url=f"http://127.0.0.1:{settings.api_port}",
+                    base_model="meta-llama/Llama-3.1-8B",
+                    dataset_path="data/datasets/train.jsonl",
+                    val_split=0.1,
+                    max_seq_length=4096,
+                    preserve_reasoning=True,
+                    lora_r=16,
+                    lora_alpha=32,
+                    lora_dropout=0.05,
+                    batch_size=4,
+                    learning_rate=0.0002,
+                    num_epochs=3,
+                    save_steps=200,
+                    eval_steps=50,
+                    target_metric="{}",
+                )
 
         fixed_path = f"{script_path}.fixed_{iteration}.py"
         with open(fixed_path, "w") as f:

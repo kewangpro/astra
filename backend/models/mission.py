@@ -68,5 +68,9 @@ class Mission(Base):
             from backend.config import settings
             return settings.sandbox_host or None
         if self.status in ("running", "planning", "evaluating", "pending"):
+            from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
+            from backend.config import settings
+            if self.task_type in _FINETUNE_REMOTE_TASK_TYPES and settings.sandbox_host:
+                return settings.sandbox_host
             return "local"
         return None

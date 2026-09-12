@@ -44,6 +44,19 @@ class SSHSandbox(BaseSandbox):
             check=True, capture_output=True,
         )
 
+        # Sync datasets to remote host if present
+        local_datasets = os.path.join(settings.data_path, "datasets")
+        remote_datasets = os.path.join(self._remote_root, "data", "datasets")
+        if os.path.isdir(local_datasets):
+            subprocess.run(
+                ["ssh", self._host, f"mkdir -p {remote_datasets}"],
+                capture_output=True,
+            )
+            subprocess.run(
+                ["rsync", "-az", f"{local_datasets}/", f"{self._host}:{remote_datasets}/"],
+                capture_output=True,
+            )
+
         # Build env string
         env_vars = {
             **self.config.env_vars,

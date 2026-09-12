@@ -7,6 +7,8 @@ description: "Standard QLoRA fine-tuning recipe for Llama-3 class models with he
 
 hyperparameters:
   base_model: meta-llama/Llama-3.1-8B
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
   dataset_path: data/datasets/train.jsonl
   lora_r: 16
   lora_alpha: 32

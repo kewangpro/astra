@@ -880,6 +880,41 @@ if __name__ == "__main__":
     main()
 """
 
+_SFT_REMOTE_WRAPPER = """\
+import sys
+import os
+
+# Change working directory to where sft_train.py is located
+os.chdir("{finetune_dir}")
+
+# Ensure checkpoint directory exists
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+# Construct argv list for os.execv (zero-orphan process replacement)
+argv = [
+    "{python_bin}", "{finetune_dir}/sft_train.py",
+    "--model", "{base_model}",
+    "--data", "{dataset_path}",
+    "--save-dir", "{checkpoint_dir}",
+    "--num-layers", "{num_layers}",
+    "--lora-rank", "{lora_rank}",
+    "--lora-dropout", "{lora_dropout}",
+    "--lora-scale", "{lora_scale}",
+    "--batch-size", "{batch_size}",
+    "--learning-rate", "{learning_rate}",
+    "--iters", "{iters}",
+    "--val-split", "{val_split}",
+    "--val-batches", "{val_batches}",
+    "--steps-per-eval", "{steps_per_eval}",
+    "--steps-per-report", "{steps_per_report}",
+    "--save-every", "{save_every}",
+    "--max-seq-length", "{max_seq_length}",
+]
+
+# Execute sft_train.py
+os.execv("{python_bin}", argv)
+"""
+
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using Astra's SFTTrainer.
 Use Astra's SFTTrainer (from backend.trainers.sft_trainer import SFTTrainer) to orchestrate training with strict held-out train_dataset and eval_dataset splitting (fixed seed 42), <think>...</think> reasoning trace preservation, and comprehensive telemetry (train_loss, eval_loss, perplexity).
@@ -1401,7 +1436,7 @@ _ENV_RECIPE: dict = {
     "MinAtar-SpaceInvaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Space-Invaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Asteroids-v0": "minatar_asteroids_dqn_v1.yaml",
-    "sft": "sft_llama_lora_v1.yaml",       # keyed by task_type for non-RL tasks
+    "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
@@ -1678,36 +1713,16 @@ class CodeGenerator:
         code = self._fix_execv_unpacking(code)
 
         if task_type == "sft":
-            import ast
-            is_valid = False
-            try:
-                ast.parse(code)
-                if (
-                    "backend.trainers.sft_trainer" in code
-                    and "SFTTrainer(" in code
-                    and "AutoModelForCausalLM" not in code
-                    and "from transformers import Trainer" not in code
-                    and ("trainer.run()" in code or "trainer.train()" in code)
-                ):
-                    is_valid = True
-            except Exception:
-                is_valid = False
-            if not is_valid:
-                logger.warning(
-                    "CodeGenerator: LLM produced invalid/incomplete SFT script; using canonical SFT runner"
-                )
-                sft_ctx = self._build_sft_context(
-                    mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
-                )
+            # For SFT on remote Mac Mini (settings.sandbox_host), generate the thin
+            # os.execv wrapper invoking ~/finetune/sft_train.py (same pattern as DPO).
+            # Fall back to canonical SFT runner only if running locally without sandbox_host.
+            sft_ctx = self._build_sft_context(
+                mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
+            )
+            if settings.sandbox_host:
+                code = _SFT_REMOTE_WRAPPER.format(**sft_ctx)
+            else:
                 code = _CANONICAL_SFT_RUNNER.format(**sft_ctx)
-            elif "_PROJECT_ROOT" not in code:
-                preamble = (
-                    "import os as _os, sys as _sys\n"
-                    "_PROJECT_ROOT = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), \"../../..\"))\n"
-                    "if _PROJECT_ROOT not in _sys.path:\n"
-                    "    _sys.path.insert(0, _PROJECT_ROOT)\n\n"
-                )
-                code = preamble + code
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -1754,19 +1769,29 @@ class CodeGenerator:
             "target_metric": json.dumps(plan.get("target_metric", {})),
         }
         return {
-            "base_model": hp.get("base_model", "meta-llama/Llama-3.1-8B"),
+            "base_model": hp.get("base_model", "mlx-community/Llama-3.2-1B-Instruct-4bit"),
             "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "val_split": hp.get("val_split", 0.1),
-            "max_seq_length": hp.get("max_seq_length", 4096),
+            "val_batches": hp.get("val_batches", 25),
+            "max_seq_length": hp.get("max_seq_length", 2048),
             "preserve_reasoning": hp.get("preserve_reasoning", True),
-            "lora_r": hp.get("lora_r", 16),
-            "lora_alpha": hp.get("lora_alpha", 32),
+            "lora_rank": hp.get("lora_rank", hp.get("lora_r", 16)),
+            "lora_scale": hp.get("lora_scale", hp.get("lora_alpha", 32.0)),
             "lora_dropout": hp.get("lora_dropout", 0.05),
+            "num_layers": hp.get("num_layers", 16),
             "batch_size": hp.get("batch_size", hp.get("per_device_train_batch_size", 4)),
             "learning_rate": hp.get("learning_rate", 0.0002),
+            "iters": hp.get("iters", 300),
             "num_epochs": hp.get("num_epochs", hp.get("epochs", 3)),
-            "save_steps": hp.get("save_steps", 200),
-            "eval_steps": hp.get("eval_steps", 50),
+            "save_every": hp.get("save_every", hp.get("save_steps", 50)),
+            "steps_per_eval": hp.get("steps_per_eval", hp.get("eval_steps", 25)),
+            "steps_per_report": hp.get("steps_per_report", 5),
+            "save_steps": hp.get("save_steps", hp.get("save_every", 50)),
+            "eval_steps": hp.get("eval_steps", hp.get("steps_per_eval", 25)),
+            "lora_r": hp.get("lora_rank", hp.get("lora_r", 16)),
+            "lora_alpha": hp.get("lora_scale", hp.get("lora_alpha", 32.0)),
             **hp,
             **base,
         }

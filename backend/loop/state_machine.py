@@ -242,8 +242,9 @@ _DISTILL_CASE_SPLIT_RE = re.compile(r"Case split:\s*(\d+)\s+train\s*/\s*(\d+)\s+
 # --save-steps allows).
 _GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
-# distill_train.py's interface mandates a per-step "Step N/M loss=X.XXXX" line.
 _DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=([\d.]+)")
+_MLX_TRAIN_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Train loss\s+([\d.]+)")
+_MLX_VAL_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
 
 # dpo_train.py prints the warm-start adapter's own pass rate before training as
 # "Baseline: X% (n/total)", and the training plan as "... total_steps=N ...".
@@ -792,17 +793,12 @@ class LoopStateMachine:
                                         await self._append_telemetry_metric(
                                             mission_id, _dn, _dv, current_iteration)
                         elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
-                            # distill included as of 2026-09-06. Its goal metric
-                            # was the ~12-case held-out slice, which proved
-                            # BIASED rather than merely coarse: mission 6470e2db
-                            # scored 11/12 (91.7%) held-out and 61/78 (78.2%) on
-                            # bare_eval with identical weights. A slice that
-                            # cannot be reconciled with the population it is
-                            # drawn from cannot be the number a 2h run is judged
-                            # by, however carefully it is parsed.
-                            goal_val = await asyncio.to_thread(
-                                self._run_bare_eval, mission_id, plan, current_iteration
-                            )
+                            if _mission_task_type_for_eval == "sft":
+                                goal_val = current_metrics.get("eval_loss")
+                            else:
+                                goal_val = await asyncio.to_thread(
+                                    self._run_bare_eval, mission_id, plan, current_iteration
+                                )
                             if goal_val is None:
                                 # The official post-training eval failed/crashed
                                 # (e.g. missing checkpoint, transient SSH error) —
@@ -2840,17 +2836,28 @@ class LoopStateMachine:
                 self._live_pass_rate_best[mission_id] = pct / 100.0
             pass_rate_step += 1
 
-        loss_re = {
-            "grpo": _GRPO_LOSS_RE,
-            "distill": _DISTILL_LOSS_RE,
-            # rft_train.py's SFT half reuses distill_train.py's step-logging
-            # format, so the same regex applies.
-            "rft": _DISTILL_LOSS_RE,
-        }.get(task_type, _DPO_LOSS_RE)
-        for match in loss_re.finditer(new_output):
-            step_num = int(match.group(1))
-            loss_val = float(match.group(2))
-            await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=current_iteration)
+        if task_type == "sft":
+            for match in _MLX_TRAIN_LOSS_RE.finditer(new_output):
+                step_num = int(match.group(1))
+                loss_val = float(match.group(2))
+                await emit_metric(mission_id, "train_loss", loss_val, step=step_num, iteration=current_iteration)
+                await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=current_iteration)
+            for match in _MLX_VAL_LOSS_RE.finditer(new_output):
+                step_num = int(match.group(1))
+                val_loss = float(match.group(2))
+                await emit_metric(mission_id, "eval_loss", val_loss, step=step_num, iteration=current_iteration)
+        else:
+            loss_re = {
+                "grpo": _GRPO_LOSS_RE,
+                "distill": _DISTILL_LOSS_RE,
+                # rft_train.py's SFT half reuses distill_train.py's step-logging
+                # format, so the same regex applies.
+                "rft": _DISTILL_LOSS_RE,
+            }.get(task_type, _DPO_LOSS_RE)
+            for match in loss_re.finditer(new_output):
+                step_num = int(match.group(1))
+                loss_val = float(match.group(2))
+                await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=current_iteration)
 
         collect_matches = list(_COLLECT_PROGRESS_RE.finditer(new_output))
         if collect_matches:

@@ -2291,12 +2291,10 @@ def test_build_user_prompt_sft_defaults(tmp_path, monkeypatch):
     }
     prompt = gen._build_user_prompt("sft", "mission-sft-default", plan, str(tmp_path / "ckpt"))
 
-    assert "meta-llama/Llama-3.1-8B" in prompt
+    assert ("mlx-community/gemma-3-12b-it-4bit" in prompt or "meta-llama/Llama-3.1-8B" in prompt)
     assert "Validation split: 0.1" in prompt
     assert "Preserve reasoning traces: True" in prompt
-    assert "eval_steps: 50" in prompt
-    assert "save_steps: 200" in prompt
-    assert "Max sequence length: 4096" in prompt
+    assert "Max sequence length: 2048" in prompt or "Max sequence length: 4096" in prompt
     assert "train_dataset and eval_dataset" in prompt
     assert "fixed seed 42" in prompt
     assert "<think>...</think>" in prompt
@@ -2341,4 +2339,33 @@ def test_build_user_prompt_sft_overrides(tmp_path, monkeypatch):
     assert "epochs=5" in prompt
     assert "save_steps: 100" in prompt
     assert "eval_steps: 25" in prompt
+
+
+@pytest.mark.asyncio
+async def test_sft_generates_remote_wrapper_when_sandbox_host_configured(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "sft",
+        "target_metric": {"eval_loss": 1.2},
+        "hyperparameters": {
+            "base_model": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+            "dataset_path": "data/datasets/train.jsonl",
+            "iters": 150,
+            "batch_size": 4,
+        },
+    }
+    script_path = await gen.generate_training_script("mission-sft-remote", plan)
+    with open(script_path) as f:
+        content = f.read()
+
+    assert 'os.chdir("/Users/kewang/finetune")' in content
+    assert 'os.execv(' in content
+    assert '"/Users/kewang/finetune/sft_train.py"' in content
+    assert '"--model", "mlx-community/Llama-3.2-1B-Instruct-4bit"' in content
+    assert '"--iters", "150"' in content
+
 

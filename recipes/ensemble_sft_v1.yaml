@@ -1,0 +1,31 @@
+name: ensemble_sft_v1
+version: "1.0.0"
+created_at: "2026-09-12"
+task_type: sft
+domain: NLP
+description: >
+  Supervised Fine-Tuning (SFT) for the Ensemble model via MLX.
+  Wraps ensemble/finetune/sft_train.py on the Mac Mini, training on Apple Silicon Metal GPU.
+
+hyperparameters:
+  # ── Remote host block ──────────────────────────────────────────────────────
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  dataset_path: data/datasets/train.jsonl
+  num_layers: 16
+  lora_rank: 16
+  lora_scale: 32.0
+  lora_dropout: 0.05
+  batch_size: 4
+  learning_rate: 0.0002
+  iters: 300
+  save_every: 50
+  steps_per_eval: 25
+  steps_per_report: 5
+  val_split: 0.1
+  max_seq_length: 2048
+  preserve_reasoning: true
+
+target_metric:
+  eval_loss: 1.2

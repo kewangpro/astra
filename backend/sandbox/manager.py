@@ -43,7 +43,7 @@ def _detect_backend() -> str:
 # "prompt" trains nothing, but it still runs remotely: scoring a prompt variant
 # means running the model over the eval set, which belongs on the Mini for the
 # same memory reasons every other remote type does.
-_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo", "distill", "rft", "prompt"}
+_FINETUNE_REMOTE_TASK_TYPES = {"dpo", "grpo", "distill", "rft", "prompt", "sft"}
 
 
 class GPUPool:
