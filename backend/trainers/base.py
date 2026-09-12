@@ -60,6 +60,10 @@ class BaseTrainer(ABC):
             self.save_checkpoint()   # final checkpoint on exit
             logger.info("Trainer finished: mission=%s", self.config.mission_id)
 
+    def train(self) -> None:
+        """Alias for run()."""
+        self.run()
+
     def log_metric(self, name: str, value: float, step: Optional[int] = None) -> None:
         """Write a metric to the JSONL log and push to FastAPI telemetry endpoint."""
         event = {

@@ -137,8 +137,18 @@ class ErrorAnalyzer:
         except Exception:
             is_valid = False
 
-        if not is_valid and ("sft" in script_path.lower() or "sft" in str(domain).lower() or "SFTTrainer" in original_code or "SFT" in original_code):
-            logger.warning("ErrorAnalyzer: LLM produced invalid syntax for SFT script; resetting to canonical SFT runner")
+        is_sft = "sft" in script_path.lower() or "sft" in str(domain).lower() or "SFTTrainer" in original_code or "SFT" in original_code
+        err_lower = error_output.lower()
+        needs_canonical = is_sft and (
+            not is_valid
+            or "backend.trainers.sft_trainer" not in fixed_code
+            or "gated" in err_lower
+            or "401 client error" in err_lower
+            or "unauthorized" in err_lower
+            or "huggingface" in err_lower
+        )
+        if needs_canonical:
+            logger.warning("ErrorAnalyzer: SFT script error detected; resetting to canonical SFT runner")
             from backend.agent.code_generator import _CANONICAL_SFT_RUNNER
             fixed_code = _CANONICAL_SFT_RUNNER.format(
                 mission_id=mission_id or "sft_mission",

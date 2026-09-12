@@ -1681,7 +1681,7 @@ class CodeGenerator:
             is_valid = False
             try:
                 ast.parse(code)
-                if "SFTTrainer" in code:
+                if "backend.trainers.sft_trainer" in code and ("trainer.run()" in code or "trainer.train()" in code):
                     is_valid = True
             except Exception:
                 is_valid = False
