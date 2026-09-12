@@ -17,7 +17,7 @@ hyperparameters:
   lora_rank: 16
   lora_scale: 32.0
   lora_dropout: 0.05
-  batch_size: 4
+  batch_size: 2
   learning_rate: 0.0002
   iters: 300
   save_every: 50
