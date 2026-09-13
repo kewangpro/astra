@@ -32,7 +32,7 @@ from backend.evaluator.manifest_evaluator import ManifestEvaluator
 from backend.loop.pivots import PivotEngine
 from backend.models.manifest import RequirementManifest
 from backend.agent.critic_agent import CriticAgent, MAX_REVISIONS as CRITIC_MAX_REVISIONS
-from backend.services.manifest_generator import generate_manifest
+from backend.services.manifest_generator import generate_manifest, _LOWER_IS_BETTER
 from backend.services.preflight import PreflightChecker
 from backend.services import mission_state, session_summary
 from backend.config import settings
@@ -1091,10 +1091,28 @@ class LoopStateMachine:
                     value=f"{summary['passed']}/{summary['total']} passed",
                 )
 
-                # All requirements met → done
-                if manifest.is_complete():
+                # All requirements met AND all declared target metrics achieved → done
+                target_met = True
+                if mission.target_metric:
+                    for tm_name, tm_thresh in mission.target_metric.items():
+                        cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
+                        best_val = pivot_engine.best_metric_value()
+                        effective_val = cur_val if cur_val is not None else best_val
+                        if effective_val is None:
+                            target_met = False
+                            break
+                        if tm_name in _LOWER_IS_BETTER:
+                            if float(effective_val) > float(tm_thresh):
+                                target_met = False
+                                break
+                        else:
+                            if float(effective_val) < float(tm_thresh):
+                                target_met = False
+                                break
+
+                if manifest.is_complete() and target_met:
                     best = pivot_engine.best_metric_value()
-                    logger.info("LoopStateMachine: manifest complete! mission=%s metrics=%s", mission_id, current_metrics)
+                    logger.info("LoopStateMachine: manifest complete and target met! mission=%s metrics=%s", mission_id, current_metrics)
                     await emit_status(mission_id, "Goal achieved!", event_type="success",
                                       value=str(best))
                     await self._transition(mission_id, MissionStatus.COMPLETED)

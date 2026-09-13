@@ -118,7 +118,7 @@ export default function MissionHUD({
     );
 
   const statusColor = STATUS_COLOR[mission.status] ?? "#94a3b8";
-  const canRun = mission.status === "pending" || mission.status === "paused" || mission.status === "failed" || mission.status === "stalled" || mission.status === "completed";
+  const canRun = mission.status === "pending" || mission.status === "paused" || mission.status === "failed" || mission.status === "stalled";
   const isRunning = mission.status === "running" || mission.status === "planning" || mission.status === "evaluating";
 
   return (
