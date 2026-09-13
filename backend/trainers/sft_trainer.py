@@ -168,8 +168,12 @@ def load_and_split_dataset(
                 rec["response"] = f"{REASONING_START_TAG}\n{str(reasoning).strip()}\n{REASONING_END_TAG}\n{str(response).strip()}"
             else:
                 rec["response"] = str(response).strip()
+        elif "response" in rec and not preserve_reasoning:
+            rec["response"] = strip_reasoning_trace(str(rec["response"]))
         elif "output" in rec and not preserve_reasoning:
             rec["output"] = strip_reasoning_trace(str(rec["output"]))
+        elif "text" in rec and not preserve_reasoning:
+            rec["text"] = strip_reasoning_trace(str(rec["text"]))
         return rec
 
     if val_dataset_path and os.path.exists(val_dataset_path):

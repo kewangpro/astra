@@ -334,13 +334,15 @@ def _nlp_loss_eval(checkpoint_path: str) -> dict:
                 import json as _json, math as _math
                 with open(meta_path, "r") as f:
                     meta = _json.load(f)
-                el = float(meta.get("eval_loss", 999.0))
-                perp = float(meta.get("perplexity", _math.exp(el) if el < 100 else 999.0))
-                return {"eval_loss": el, "perplexity": perp}
+                raw_el = meta.get("eval_loss") or meta.get("loss") or meta.get("dpo_loss")
+                if raw_el is not None:
+                    el = float(raw_el)
+                    perp = float(meta.get("perplexity", _math.exp(el) if el < 100 else 999.0))
+                    return {"eval_loss": el, "perplexity": perp}
             except Exception:
                 pass
 
-    # Fallback to reading eval_loss from telemetry.jsonl in mission dir
+    # Fallback to reading eval_loss/loss from telemetry.jsonl in mission dir
     tel_candidates = [
         os.path.join(parent_dir, "telemetry.jsonl"),
         os.path.join(parent_dir, "..", "telemetry.jsonl"),
@@ -357,7 +359,7 @@ def _nlp_loss_eval(checkpoint_path: str) -> dict:
                         if not line:
                             continue
                         evt = _json.loads(line)
-                        if (evt.get("type") == "metric" or "name" in evt) and evt.get("name") == "eval_loss":
+                        if (evt.get("type") == "metric" or "name" in evt) and evt.get("name") in ("eval_loss", "loss", "dpo_loss"):
                             val = float(evt.get("value", 999.0))
                             if val < 900.0:
                                 if best_el is None or val < best_el:
@@ -489,106 +491,122 @@ def run_tournament_match(
     import numpy as np
     import gymnasium as gym
 
-    # Register custom environments
-    if env_id == "Tetris-v0":
-        from envs.tetris_env import register as _reg; _reg()
-    elif env_id == "Snake-v0":
-        from envs.snake_env import register as _reg; _reg()
-    elif env_id in ("Game2048-v0", "2048"):
-        from envs.game2048_env import register as _reg; _reg()
-    elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
-        from envs.minatar_env import register as _reg; _reg()
-    elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
-        from envs.minatar_space_invaders_env import register as _reg; _reg()
-    elif env_id in ("MinAtar-Asteroids-v0",):
-        from envs.minatar_asteroids_env import register as _reg; _reg()
+    if env_id.lower() in ("nlp", "language", "text", "llm"):
+        loaded_models = []
+        for entry in checkpoint_entries:
+            path = entry["path"]
+            eval_res = _nlp_loss_eval(path)
+            el = eval_res.get("eval_loss", 999.0)
+            score = round(max(0.0, 100.0 / (1.0 + el)), 2)
+            loaded_models.append({
+                "id": entry["id"],
+                "name": entry.get("name", entry["id"]),
+                "path": path,
+                "is_ac": False,
+                "model": None,
+                "scores": [score] * n_episodes,
+            })
+    else:
+        # Register custom environments
+        if env_id == "Tetris-v0":
+            from envs.tetris_env import register as _reg; _reg()
+        elif env_id == "Snake-v0":
+            from envs.snake_env import register as _reg; _reg()
+        elif env_id in ("Game2048-v0", "2048"):
+            from envs.game2048_env import register as _reg; _reg()
+        elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
+            from envs.minatar_env import register as _reg; _reg()
+        elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
+            from envs.minatar_space_invaders_env import register as _reg; _reg()
+        elif env_id in ("MinAtar-Asteroids-v0",):
+            from envs.minatar_asteroids_env import register as _reg; _reg()
 
-    loaded_models = []
-    for entry in checkpoint_entries:
-        path = entry["path"]
-        is_ac = _is_actor_critic(path)
-        if is_ac and not path.endswith(".pth"):
-            pth_cand = path.replace(".zip", ".pth")
-            if os.path.exists(pth_cand):
-                path = pth_cand
+        loaded_models = []
+        for entry in checkpoint_entries:
+            path = entry["path"]
+            is_ac = _is_actor_critic(path)
+            if is_ac and not path.endswith(".pth"):
+                pth_cand = path.replace(".zip", ".pth")
+                if os.path.exists(pth_cand):
+                    path = pth_cand
 
-        m_obj = None
-        if path.endswith(".pth"):
-            import torch
-            from envs.actor_critic_net import ActorCriticNet, Game2048ValueNet
-            sys.modules["__main__"].ActorCriticNet = ActorCriticNet
-            sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
-            try:
-                m_obj = torch.load(path, weights_only=False)
-                m_obj.eval()
-            except Exception as e:
-                logger.warning("Tournament failed to load pth %s: %s", path, e)
-        else:
-            from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
-            for cls in (PPO, DQN, SAC, A2C, TD3):
+            m_obj = None
+            if path.endswith(".pth"):
+                import torch
+                from envs.actor_critic_net import ActorCriticNet, Game2048ValueNet
+                sys.modules["__main__"].ActorCriticNet = ActorCriticNet
+                sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
                 try:
-                    m_obj = cls.load(path)
-                    break
-                except Exception:
+                    m_obj = torch.load(path, weights_only=False)
+                    m_obj.eval()
+                except Exception as e:
+                    logger.warning("Tournament failed to load pth %s: %s", path, e)
+            else:
+                from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
+                for cls in (PPO, DQN, SAC, A2C, TD3):
+                    try:
+                        m_obj = cls.load(path)
+                        break
+                    except Exception:
+                        continue
+
+            loaded_models.append({
+                "id": entry["id"],
+                "name": entry.get("name", entry["id"]),
+                "path": path,
+                "is_ac": path.endswith(".pth"),
+                "model": m_obj,
+                "scores": [],
+            })
+
+        env = gym.make(env_id, **(env_kwargs or {}))
+        base_env = env.unwrapped
+        for ep in range(n_episodes):
+            seed = 2000 + ep
+            for m in loaded_models:
+                if m["model"] is None:
+                    m["scores"].append(0.0)
                     continue
-
-        loaded_models.append({
-            "id": entry["id"],
-            "name": entry.get("name", entry["id"]),
-            "path": path,
-            "is_ac": path.endswith(".pth"),
-            "model": m_obj,
-            "scores": [],
-        })
-
-    env = gym.make(env_id, **(env_kwargs or {}))
-    base_env = env.unwrapped
-    for ep in range(n_episodes):
-        seed = 2000 + ep
-        for m in loaded_models:
-            if m["model"] is None:
-                m["scores"].append(0.0)
-                continue
-            obs, _ = env.reset(seed=seed)
-            done, truncated = False, False
-            ep_score = 0.0
-            ep_reward = 0.0
-            while not done and not truncated:
-                if m["is_ac"]:
-                    import torch
-                    next_states = base_env.get_next_states()
-                    if next_states:
-                        with torch.no_grad():
-                            best_act, best_v = None, float("-inf")
-                            for act, st in next_states.items():
-                                val = m["model"](torch.tensor(st, dtype=torch.float32).unsqueeze(0))
-                                if isinstance(val, tuple):
-                                    val = val[1]
-                                v = float(val.squeeze())
-                                if v > best_v:
-                                    best_v, best_act = v, act
-                        action = best_act
+                obs, _ = env.reset(seed=seed)
+                done, truncated = False, False
+                ep_score = 0.0
+                ep_reward = 0.0
+                while not done and not truncated:
+                    if m["is_ac"]:
+                        import torch
+                        next_states = base_env.get_next_states()
+                        if next_states:
+                            with torch.no_grad():
+                                best_act, best_v = None, float("-inf")
+                                for act, st in next_states.items():
+                                    val = m["model"](torch.tensor(st, dtype=torch.float32).unsqueeze(0))
+                                    if isinstance(val, tuple):
+                                        val = val[1]
+                                    v = float(val.squeeze())
+                                    if v > best_v:
+                                        best_v, best_act = v, act
+                            action = best_act
+                        else:
+                            action = 0
                     else:
-                        action = 0
-                else:
-                    action, _ = m["model"].predict(obs, deterministic=True)
+                        action, _ = m["model"].predict(obs, deterministic=True)
 
-                obs, r, done, truncated, info = env.step(action)
-                ep_reward += float(r)
-                if done or truncated:
-                    if hasattr(base_env, "_lines_cleared_episode"):
-                        ep_score = float(base_env._lines_cleared_episode)
-                    elif hasattr(base_env, "_food_eaten"):
-                        ep_score = float(base_env._food_eaten)
-                    elif hasattr(base_env, "_score"):
-                        ep_score = float(base_env._score)
-                    elif "score" in info:
-                        ep_score = float(info["score"])
-                    else:
-                        ep_score = float(ep_reward)
+                    obs, r, done, truncated, info = env.step(action)
+                    ep_reward += float(r)
+                    if done or truncated:
+                        if hasattr(base_env, "_lines_cleared_episode"):
+                            ep_score = float(base_env._lines_cleared_episode)
+                        elif hasattr(base_env, "_food_eaten"):
+                            ep_score = float(base_env._food_eaten)
+                        elif hasattr(base_env, "_score"):
+                            ep_score = float(base_env._score)
+                        elif "score" in info:
+                            ep_score = float(info["score"])
+                        else:
+                            ep_score = float(ep_reward)
 
-            m["scores"].append(ep_score)
-    env.close()
+                m["scores"].append(ep_score)
+        env.close()
 
     # Calculate win rates & rankings
     wins = {m["id"]: 0.0 for m in loaded_models}

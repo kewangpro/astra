@@ -1928,8 +1928,15 @@ Two root causes were diagnosed:
   - Created chained post-training recipe `recipes/ensemble_sft_dpo_v1.yaml` warm-starting from `adapters/astra_da8b82bb_iter0/best` and utilizing curated preference pairs (`logs/astra_9e7cc2df_pairs.jsonl`), avoiding 18+ minutes of redundant pair generation and enabling immediate optimization.
 - [x] **Telemetry & Evaluator Hardening** (`backend/loop/state_machine.py`, `backend/evaluator/benchmark.py`):
   - Updated `state_machine.py` so real-time sandbox training telemetry (`eval_loss`, `train_loss`, `pass_rate`) directly overrides un-evaluated fallback metrics in `current_metrics`.
-  - Added fallback in `_nlp_loss_eval()` to parse `eval_loss` from `telemetry.jsonl` when `checkpoint_metadata.json` is absent, preventing spurious 999.0 benchmark results.
+  - Added fallback in `_nlp_loss_eval()` to parse `eval_loss`, `loss`, or `dpo_loss` from both `checkpoint_metadata.json` and `telemetry.jsonl`, preventing spurious 999.0 benchmark results across SFT and DPO pipelines.
   - Re-loaded `RequirementManifest` during evaluation so dynamic requirement threshold updates take effect immediately.
+- [x] **Multi-Turn Reasoning & CoT `<think>...</think>` Stress Suite** (`backend/trainers/sft_trainer.py`, `tests/integration/test_reasoning_stress.py`):
+  - Normalized dataset extraction in `sft_trainer.py` to strip or preserve thinking tags across `"messages"`, `"reasoning"`, `"response"`, `"output"`, and `"text"` fields.
+  - Built comprehensive stress test suite (`test_reasoning_stress.py`) verifying multi-turn mathematical dialogue, LaTeX formulas, structured JSON within `<think>`, field-split pairs, and empty tag handling.
+- [x] **NLP Model Registry Tournament Arena** (`backend/evaluator/benchmark.py`, `backend/routers/registry.py`, `tests/unit/test_model_registry.py`):
+  - Extended `run_tournament_match` to natively support `env_id="nlp"` without gym dependencies, computing benchmark scores via inverse loss scaling (`100 / (1 + eval_loss)`), determining pairwise win rates, and generating tournament leaderboards.
+  - Registered SFT adapter (`astra-gemma-3-12b-sft-iter0`) and chained DPO adapter (`astra-gemma-3-12b-dpo-iter0`) in the Model Registry.
+  - Executed live tournament match (`POST /registry/tournament`), crowning `astra-gemma-3-12b-dpo-iter0` as domain champion (`win_rate=1.0`, `mean_score=65.59`, `is_champion=true`).
 
 
 

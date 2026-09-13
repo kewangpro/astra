@@ -231,3 +231,31 @@ def test_run_tournament_match_ranking_logic():
 
     assert wins["m1"] == 3.0
     assert wins["m2"] == 0.0
+
+
+def test_run_tournament_match_nlp(tmp_path):
+    """Verify tournament match execution for NLP domain using eval_loss."""
+    import json
+    c1 = tmp_path / "c1"
+    c2 = tmp_path / "c2"
+    c1.mkdir()
+    c2.mkdir()
+    with open(c1 / "checkpoint_metadata.json", "w") as f:
+        json.dump({"eval_loss": 0.5}, f)
+    with open(c2 / "checkpoint_metadata.json", "w") as f:
+        json.dump({"eval_loss": 3.0}, f)
+
+    entries = [
+        {"id": "m1", "name": "Model 1", "path": str(c1)},
+        {"id": "m2", "name": "Model 2", "path": str(c2)},
+    ]
+    res = run_tournament_match(entries, env_id="nlp", n_episodes=3)
+    assert res["champion_id"] == "m1"
+    assert len(res["leaderboard"]) == 2
+    assert res["leaderboard"][0]["rank"] == 1
+    assert res["leaderboard"][0]["model_id"] == "m1"
+    assert res["leaderboard"][0]["win_rate"] == 1.0
+    assert res["leaderboard"][1]["rank"] == 2
+    assert res["leaderboard"][1]["model_id"] == "m2"
+    assert res["leaderboard"][1]["win_rate"] == 0.0
+
