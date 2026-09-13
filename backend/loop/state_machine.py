@@ -516,30 +516,36 @@ class LoopStateMachine:
                     )
 
                 # If the LLM plan inferred a different task_type than what's stored
-                # (mission is always created with "rl" as default), persist the
-                # correction and regenerate the manifest with the right artifact pattern.
+                # (e.g. mission was created with default "rl" without a task_type parameter),
+                # persist the correction only when the mission was created with default "rl"
+                # and is not an explicitly configured remote task type.
                 if current_iteration == 0:
                     plan_task_type = plan.get("task_type", "").lower()
                     if plan_task_type and plan_task_type != mission.task_type:
-                        async with AsyncSessionLocal() as _s:
-                            async with _s.begin():
-                                await _s.execute(
-                                    update(Mission)
-                                    .where(Mission.id == mission_id)
-                                    .values(task_type=plan_task_type)
-                                )
-                        mission.task_type = plan_task_type
-                        manifest = generate_manifest(
-                            mission_id=mission_id,
-                            goal=mission.goal,
-                            task_type=plan_task_type,
-                            target_metric=mission.target_metric or {},
-                        )
-                        self._save_manifest(mission_id, manifest)
-                        logger.info(
-                            "LoopStateMachine: task_type corrected %s→%s for mission=%s",
-                            mission.task_type, plan_task_type, mission_id,
-                        )
+                        if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                            plan["task_type"] = mission.task_type
+                        elif mission.task_type == "rl":
+                            async with AsyncSessionLocal() as _s:
+                                async with _s.begin():
+                                    await _s.execute(
+                                        update(Mission)
+                                        .where(Mission.id == mission_id)
+                                        .values(task_type=plan_task_type)
+                                    )
+                            mission.task_type = plan_task_type
+                            manifest = generate_manifest(
+                                mission_id=mission_id,
+                                goal=mission.goal,
+                                task_type=plan_task_type,
+                                target_metric=mission.target_metric or {},
+                            )
+                            self._save_manifest(mission_id, manifest)
+                            logger.info(
+                                "LoopStateMachine: task_type corrected %s→%s for mission=%s",
+                                "rl", plan_task_type, mission_id,
+                            )
+                        else:
+                            plan["task_type"] = mission.task_type
 
                 # ── CRITIC REVIEW (Step 7.1) ──────────────────────────────
                 # Only run on genuine replans (iter 0, or after algo switch that
