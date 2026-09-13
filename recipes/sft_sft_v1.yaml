@@ -1,0 +1,34 @@
+task_type: SFT
+domain: SFT
+algorithm: MLX Fine-Tuning
+description: Auto-crystallized recipe from mission da8b82bb. Achieved score 4.5620.
+hyperparameters:
+  base_model: Ensemble model
+  lora_rank: 128
+  lora_scale: 8
+  lora_dropout: 0.1
+  num_layers: 5
+  batch_size: 32
+  learning_rate: 0.001
+  iters: 10000
+  mask_prompt: mask_prompt
+created_at: '2026-09-13'
+provenance:
+  mission_id: da8b82bb-6015-4359-8362-0786d1e703ee
+  iterations: 1
+  best_score: 4.562
+curriculum:
+  phases:
+  - phase: 1
+    batch_size: 32
+    learning_rate: 0.001
+  - phase: 2
+    batch_size: 64
+    learning_rate: 0.0005
+  - phase: 3
+    batch_size: 128
+    learning_rate: 0.0001
+target_metric:
+  eval_loss: 1.2
+name: sft_sft_v1
+version: 1.0.0

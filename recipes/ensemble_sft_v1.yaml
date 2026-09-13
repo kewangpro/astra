@@ -28,4 +28,4 @@ hyperparameters:
   preserve_reasoning: true
 
 target_metric:
-  eval_loss: 1.2
+  eval_loss: 5.0

@@ -130,6 +130,7 @@ make ports  # show port status for all services
 | **Registry, Tournaments & Recipes (Phases 55–56)** | Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with Lineage DAG, and 1-click dispatch | ✅ Complete |
 | **SFT & Reasoning Post-Training (Phase 57)** | Full SFTTrainer, strict held-out train/val splitting (val_split), reasoning CoT (<think>...</think>) preservation, AST-guarded codegen & self-healing | ✅ Complete |
 | **Remote SFT via MLX (Phase 58)** | Apple Silicon Mac Mini offload following DPO pattern, zero-orphan `os.execv` wrapper, dynamic validation batch-clamping, live SSH loss tailing | ✅ Complete |
+| **Pipeline Chaining & LoRA Auto-Detection (Phase 59)** | End-to-end SFT → DPO pipeline chaining, LoRA config auto-detection from warm-start adapters, `--load-pairs` acceleration, strict non-RL recipe hyperparameter locking | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

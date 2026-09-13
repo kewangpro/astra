@@ -259,6 +259,7 @@ async def dispatch_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
         target_metric=target_metric,
         autonomy_mode="supervised",
         status="pending",
+        current_plan={"recipe": clean_name, "task_type": str(task_type).lower()},
     )
 
     db.add(mission)

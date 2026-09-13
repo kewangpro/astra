@@ -1905,6 +1905,33 @@ Two root causes were diagnosed:
 - [x] **Unit Testing & Verification**:
   - Full test suite passing across remote sandbox selection, wrapper generation, SSH synchronization, and node telemetry.
 
+---
+
+## Phase 59 — SFT-to-DPO Pipeline Chaining, LoRA Auto-Detection & Manifest Verification
+
+**Problem:** In multi-stage post-training (e.g. SFT base instruction tuning followed by DPO preference alignment), passing SFT adapters into subsequent tuning phases suffered from configuration fragility:
+1. When recipes declare custom names or non-RL task types (`sft`, `dpo`, `grpo`, `distill`, `rft`), the agent's code generator could allow LLM-hallucinated placeholder base model paths into `train.py` rather than strictly locking recipe hyperparameters.
+2. DPO training wrappers failed with LoRA dimension mismatches when warm-starting from adapters with non-default layer counts (e.g. 16 layers / rank 16 vs. historical 8 layers / rank 8).
+3. The DPO pair collection phase with low sampling counts ($K=2$) at default temperature generated identical completions on deterministic models, producing 0 contrastive preference pairs.
+4. Real-time telemetry was sometimes masked by un-evaluated fallback metrics, and the benchmark evaluator returned 999.0 when `checkpoint_metadata.json` was omitted by external training scripts.
+
+- [x] **Strict Non-RL Recipe Hyperparameter Locking** (`backend/agent/code_generator.py`):
+  - Updated `_resolve_hyperparams` to inspect `task_type = recipe.get("task_type", env_id)`, ensuring all non-RL task types (`sft`, `dpo`, `grpo`, `distill`, `rft`, `prompt`) strictly lock recipe hyperparameters (`base_model`, `adapter`, `num_layers`, `lora_rank`, `lora_scale`, `lora_dropout`) regardless of LLM plan proposals.
+  - Enhanced recipe resolution (`_load_recipe_for_env`) to directly resolve custom recipe filenames (e.g. `ensemble_sft_dpo_v1.yaml`) passed via `plan["recipe"]`.
+  - Propagated `recipe` across dispatch and replanning (`backend/routers/recipes.py`, `backend/loop/state_machine.py`).
+- [x] **LoRA Configuration Auto-Detection & Checkpoint Metadata Export** (`ensemble/finetune/dpo_train.py`, `ensemble/finetune/sft_train.py`):
+  - Added dynamic LoRA parameter extraction in `dpo_train.py` from `adapter_config.json` inside the `--adapter` warm-start path, automatically matching `num_layers`, `lora_rank`, `lora_scale`, and `lora_dropout` to the reference policy.
+  - Added automated `checkpoint_metadata.json` generation upon training completion in both `save_dir` and `save_dir/best/` for both SFT and DPO trainers, recording `base_model`, `num_layers`, `lora_rank`, `lora_scale`, `lora_dropout`, `pass_rate` / `eval_loss`, and ISO-8601 timestamps.
+  - Ensured `save_dir/best` adapter export is guaranteed upon completion even when intermediate evaluation intervals are skipped.
+- [x] **DPO Pair Loading & Accelerated Preference Optimization** (`backend/agent/code_generator.py`, `recipes/ensemble_sft_dpo_v1.yaml`):
+  - Added support for `--load-pairs` in `_DPO_TEMPLATE` and `CodeGenerator` context formatting.
+  - Created chained post-training recipe `recipes/ensemble_sft_dpo_v1.yaml` warm-starting from `adapters/astra_da8b82bb_iter0/best` and utilizing curated preference pairs (`logs/astra_9e7cc2df_pairs.jsonl`), avoiding 18+ minutes of redundant pair generation and enabling immediate optimization.
+- [x] **Telemetry & Evaluator Hardening** (`backend/loop/state_machine.py`, `backend/evaluator/benchmark.py`):
+  - Updated `state_machine.py` so real-time sandbox training telemetry (`eval_loss`, `train_loss`, `pass_rate`) directly overrides un-evaluated fallback metrics in `current_metrics`.
+  - Added fallback in `_nlp_loss_eval()` to parse `eval_loss` from `telemetry.jsonl` when `checkpoint_metadata.json` is absent, preventing spurious 999.0 benchmark results.
+  - Re-loaded `RequirementManifest` during evaluation so dynamic requirement threshold updates take effect immediately.
+
+
 
 
 

@@ -1891,7 +1891,7 @@ def _preflight():
 def test_remote_script_check_skipped_for_local_task_types():
     """Only finetune-remote types dispatch a {finetune_dir}/{type}_train.py
     wrapper. An rl/sft/ml mission has no remote script to check."""
-    for tt in ("rl", "sft", "ml", "mlx_lora"):
+    for tt in ("rl", "ml", "mlx_lora"):
         assert _preflight()._check_remote_script(tt) == [], tt
 
 

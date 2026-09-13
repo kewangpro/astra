@@ -1042,6 +1042,7 @@ The script must:
                "--max-tokens", "{max_tokens}",
                "--email-weight", "{email_weight}",
                {routing_only_flag}
+               {load_pairs_flag}
                "--epochs", "{epochs}",
                "--beta", "{beta}",
                "--learning-rate", "{learning_rate}",
@@ -1054,7 +1055,8 @@ The script must:
        )
    ({routing_only_flag} is either the string "--routing-only", (with a trailing
    comma, as its own list element) or omitted entirely if empty — do not insert
-   an empty string element in the list.)
+   an empty string element in the list. {load_pairs_flag} is either "--load-pairs", "{load_pairs}",
+   or omitted entirely if empty.)
    Always pass --save-pairs (do not make it conditional) — it persists the
    collected (chosen, rejected) pairs to JSONL after the collection phase, so a
    future run can pass --load-pairs to skip re-collection (the slowest phase,
@@ -1439,6 +1441,10 @@ _ENV_RECIPE: dict = {
     "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
+    "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
+    "dpo/sft_dpo": "ensemble_sft_dpo_v1.yaml",
+    "dpo/ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
+    "ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
     # 2026-09-06: pointed at the conductor_gemma.md 4B cold-start experiment.
     # The pre-RL arm (ensemble_distill_prerl_v1.yaml) is also a measured
@@ -1462,9 +1468,24 @@ _ENV_RECIPE: dict = {
 def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
     """Return the parsed recipe dict for env_id (+ optional algorithm), or {}."""
     # Algorithm-specific override takes priority (e.g. Snake-v0/DQN)
-    filename = _ENV_RECIPE.get(f"{env_id}/{algorithm}") or _ENV_RECIPE.get(env_id)
+    filename = (
+        _ENV_RECIPE.get(f"{env_id}/{algorithm}")
+        or _ENV_RECIPE.get(algorithm)
+        or _ENV_RECIPE.get(env_id)
+    )
     if not filename:
-        return {}
+        if env_id and (
+            os.path.isfile(os.path.join(settings.recipes_path, f"{env_id}.yaml"))
+            or os.path.isfile(os.path.join(settings.recipes_path, env_id))
+        ):
+            filename = f"{env_id}.yaml" if not env_id.endswith(".yaml") else env_id
+        elif algorithm and (
+            os.path.isfile(os.path.join(settings.recipes_path, f"{algorithm}.yaml"))
+            or os.path.isfile(os.path.join(settings.recipes_path, algorithm))
+        ):
+            filename = f"{algorithm}.yaml" if not algorithm.endswith(".yaml") else algorithm
+        else:
+            return {}
     try:
         import yaml as _yaml
         path = os.path.join(settings.recipes_path, filename)
@@ -1538,15 +1559,17 @@ def _resolve_hyperparams(
     env_id: str, plan_hp: dict, algorithm: str = "", warm_start_adapter: Optional[str] = None,
 ) -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
-    recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
-    if env_id in ("dpo", "grpo", "distill", "rft", "prompt", "sft"):
+    recipe = _load_recipe_for_env(env_id, algorithm)
+    recipe_hp = recipe.get("hyperparameters", {})
+    task_type = recipe.get("task_type", env_id)
+    if env_id in ("dpo", "grpo", "distill", "rft", "prompt") or task_type in ("dpo", "grpo", "distill", "rft", "prompt"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
         # PIVOT_SYSTEM's hyperparameter guidance is RL-oriented (PPO/DQN ranges) and
         # doesn't know these are recipe-locked.
         hp = dict(recipe_hp)
-        hp.update(_clamp_finetune_pivot_hp(env_id, plan_hp))
+        hp.update(_clamp_finetune_pivot_hp(task_type, plan_hp))
         # warm_start_adapter comes from Mission.last_checkpoint_path (state_machine,
         # system-controlled), never from plan_hp/the LLM pivot — deliberately outside
         # the plan_hp merge above so it can't be spoofed through the same channel the
@@ -1592,7 +1615,8 @@ def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iterati
     permanently distinct — nothing can ever overwrite a prior iteration's
     checkpoint again, so chaining from a specific past iteration's directory is
     now structurally safe rather than relying on nothing else having run since."""
-    hp = _resolve_hyperparams(task_type, plan.get("hyperparameters", {}))
+    recipe_key = plan.get("recipe") or task_type
+    hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
     finetune_dir = hp.get("finetune_dir", "")
     return os.path.join(finetune_dir, "adapters", f"astra_{mission_id[:8]}_iter{iteration}")
 
@@ -1798,8 +1822,8 @@ class CodeGenerator:
         self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0,
         warm_start_adapter: Optional[str] = None,
     ) -> str:
-        recipe_key = plan.get("env_id", "") if task_type == "rl" else task_type
-        _plan_algo = plan.get("algorithm", "PPO") if task_type == "rl" else ""
+        recipe_key = plan.get("recipe") or (plan.get("env_id", "") if task_type == "rl" else task_type)
+        _plan_algo = plan.get("algorithm", "PPO" if task_type == "rl" else "")
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}), algorithm=_plan_algo,
             warm_start_adapter=warm_start_adapter,
@@ -1959,8 +1983,11 @@ class CodeGenerator:
             }
             return _MLX_LORA_TEMPLATE.format(**ctx)
         if task_type == "dpo":
+            load_pairs = hp.get("load_pairs", "")
             ctx = {
                 **hp,
+                "load_pairs": load_pairs,
+                "load_pairs_flag": f'"--load-pairs", "{load_pairs}",' if load_pairs else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
                 "save_pairs_path": os.path.join(
                     hp.get("finetune_dir", ""), "logs", f"astra_{mission_id[:8]}_pairs.jsonl"

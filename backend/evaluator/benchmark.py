@@ -340,6 +340,34 @@ def _nlp_loss_eval(checkpoint_path: str) -> dict:
             except Exception:
                 pass
 
+    # Fallback to reading eval_loss from telemetry.jsonl in mission dir
+    tel_candidates = [
+        os.path.join(parent_dir, "telemetry.jsonl"),
+        os.path.join(parent_dir, "..", "telemetry.jsonl"),
+        os.path.join(os.path.dirname(os.path.abspath(checkpoint_path)), "..", "telemetry.jsonl"),
+    ]
+    for tel_path in tel_candidates:
+        if os.path.isfile(tel_path):
+            try:
+                import json as _json, math as _math
+                best_el = None
+                with open(tel_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        evt = _json.loads(line)
+                        if (evt.get("type") == "metric" or "name" in evt) and evt.get("name") == "eval_loss":
+                            val = float(evt.get("value", 999.0))
+                            if val < 900.0:
+                                if best_el is None or val < best_el:
+                                    best_el = val
+                if best_el is not None:
+                    perp = float(_math.exp(best_el) if best_el < 100 else 999.0)
+                    return {"eval_loss": best_el, "perplexity": perp}
+            except Exception:
+                pass
+
     return {"eval_loss": 999.0, "perplexity": 999.0}
 
 

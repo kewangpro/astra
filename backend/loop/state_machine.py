@@ -507,6 +507,8 @@ class LoopStateMachine:
                     plan = await self._agent.plan(
                         mission.goal, mission.task_type, mission.target_metric
                     )
+                    if mission.current_plan and "recipe" in mission.current_plan:
+                        plan["recipe"] = mission.current_plan["recipe"]
                     await self._save_plan(mission_id, plan)
                     did_replan = True
                     await emit_status(
@@ -761,7 +763,7 @@ class LoopStateMachine:
                 if plan.get("task_type") == "sft":
                     for sft_key in ("eval_loss", "perplexity", "train_loss"):
                         if sft_key in sandbox_metrics:
-                            current_metrics.setdefault(sft_key, sandbox_metrics[sft_key])
+                            current_metrics[sft_key] = sandbox_metrics[sft_key]
 
                 # For non-mean_reward goal metrics: run dedicated eval episodes if the
                 # benchmark didn't supply the value, then always write to telemetry so the
@@ -872,7 +874,7 @@ class LoopStateMachine:
                         )
                         from backend.agent.code_generator import _resolve_hyperparams
                         _eval_hp = _resolve_hyperparams(
-                            plan.get("task_type"), plan.get("hyperparameters", {})
+                            plan.get("recipe") or plan.get("task_type"), plan.get("hyperparameters", {})
                         )
                         try:
                             _spe = int(_eval_hp.get("steps_per_eval", 0))
@@ -976,7 +978,7 @@ class LoopStateMachine:
                     and (_prev_best is None or _raw_goal_val >= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
-                    _hp_for_chain = _resolve_hyperparams(plan.get("task_type"), plan.get("hyperparameters", {}))
+                    _hp_for_chain = _resolve_hyperparams(plan.get("recipe") or plan.get("task_type"), plan.get("hyperparameters", {}))
                     _bare_rel_for_chain = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
                     _last_checkpoint_path = await asyncio.to_thread(
                         self._resolve_adapter_or_bare,
@@ -1077,6 +1079,7 @@ class LoopStateMachine:
                     await self._save_pivot_pre_best(mission_id, None)
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
+                manifest = self._load_or_create_manifest(mission_id, mission)
                 manifest = self._manifest_evaluator.evaluate(
                     manifest, current_metrics, mission_dir, sandbox_ok=True,
                 )
@@ -2548,7 +2551,7 @@ class LoopStateMachine:
             return self._warm_start_score[mission_id]
 
         from backend.agent.code_generator import _resolve_hyperparams
-        hp = _resolve_hyperparams(plan.get("task_type", ""), plan.get("hyperparameters", {}))
+        hp = _resolve_hyperparams(plan.get("recipe") or plan.get("task_type", ""), plan.get("hyperparameters", {}))
         adapter = hp.get("adapter", "")
         if hp.get("no_adapter", False):
             # Cold start BY DESIGN: LoRA weights are freshly initialised, so
@@ -2629,7 +2632,7 @@ class LoopStateMachine:
         from backend.agent.code_generator import _resolve_hyperparams
 
         task_type = plan.get("task_type", "")
-        hp = _resolve_hyperparams(task_type, plan.get("hyperparameters", {}))
+        hp = _resolve_hyperparams(plan.get("recipe") or task_type, plan.get("hyperparameters", {}))
         finetune_dir = hp.get("finetune_dir", "")
         prompt_template = hp.get("prompt_template", "")
         python_bin = hp.get("python_bin", "")
