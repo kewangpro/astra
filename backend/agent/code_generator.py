@@ -1515,6 +1515,7 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
+    "sft":     {"learning_rate": (1e-5, 5e-4), "iters": (50, 300)},
 }
 
 
@@ -1538,15 +1539,12 @@ def _resolve_hyperparams(
 ) -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe_hp = _load_recipe_for_env(env_id, algorithm).get("hyperparameters", {})
-    if env_id in ("dpo", "grpo", "distill", "rft", "prompt"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "prompt", "sft"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
         # PIVOT_SYSTEM's hyperparameter guidance is RL-oriented (PPO/DQN ranges) and
-        # doesn't know these are recipe-locked. Confirmed via a real incident: a pivot's
-        # generic learning_rate=0.001 silently overrode the recipe's 5e-7 through the
-        # old setdefault-only merge below, collapsing a DPO run's pass_rate from a 62%
-        # baseline to 0% within 50 steps.
+        # doesn't know these are recipe-locked.
         hp = dict(recipe_hp)
         hp.update(_clamp_finetune_pivot_hp(env_id, plan_hp))
         # warm_start_adapter comes from Mission.last_checkpoint_path (state_machine,
