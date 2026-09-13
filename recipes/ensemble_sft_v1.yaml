@@ -19,7 +19,7 @@ hyperparameters:
   lora_dropout: 0.05
   batch_size: 2
   learning_rate: 0.0002
-  iters: 300
+  iters: 100
   save_every: 50
   steps_per_eval: 25
   steps_per_report: 5
