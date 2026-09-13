@@ -2099,7 +2099,23 @@ class LoopStateMachine:
         path = self._manifest_path(mission_id)
         if os.path.isfile(path):
             try:
-                return RequirementManifest.load(path)
+                manifest = RequirementManifest.load(path)
+                changed = False
+                for req in manifest.requirements:
+                    if req.check_type == "metric_threshold" and req.metric_name in (mission.target_metric or {}):
+                        tm_val = float(mission.target_metric[req.metric_name])
+                        if req.threshold != tm_val:
+                            req.threshold = tm_val
+                            op_word = "at most" if req.operator == "<=" else "at least"
+                            req.description = f"{req.metric_name} {op_word} {tm_val} on validation set"
+                            if req.passed:
+                                req.passed = False
+                                req.passed_at = None
+                                req.evidence = None
+                            changed = True
+                if changed:
+                    manifest.save(path)
+                return manifest
             except Exception as exc:
                 logger.warning("LoopStateMachine: could not load manifest for %s: %s — regenerating", mission_id, exc)
         manifest = generate_manifest(

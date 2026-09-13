@@ -96,7 +96,7 @@ function MissionCard({ m }: { m: Mission }) {
   const router = useRouter();
   const color = STATUS_COLOR[m.status] ?? STATUS_COLOR.pending;
   const isRunning = m.status === "running" || m.status === "planning" || m.status === "evaluating";
-  const canRun = m.status === "pending" || m.status === "paused" || m.status === "failed" || m.status === "stalled";
+  const canRun = m.status === "pending" || m.status === "paused" || m.status === "failed" || m.status === "stalled" || m.status === "completed";
   const targetProgress = getTargetProgress(m);
 
   const bestValFormatted = useMemo(() => {
