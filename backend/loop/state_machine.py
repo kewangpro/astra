@@ -565,6 +565,10 @@ class LoopStateMachine:
                             value=f"score={critique.overall_score:.1f} revision {rev}/{CRITIC_MAX_REVISIONS}",
                         )
                         plan = await self._agent.revise_plan(plan, critique.feedback)
+                        if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                            plan["task_type"] = mission.task_type
+                        if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
+                            plan["recipe"] = mission.current_plan["recipe"]
                         await self._save_plan(mission_id, plan)
                         critique = await self._critic.review(plan, mission.goal, revision=rev)
                         await emit_critique(mission_id, critique.to_dict())
@@ -581,6 +585,12 @@ class LoopStateMachine:
                 # Inject it from the mission before code generation so the callback template
                 # gets the correct target_metric_name (e.g. "lines_cleared", not "mean_reward").
                 plan["target_metric"] = mission.target_metric or {}
+                if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                    plan["task_type"] = mission.task_type
+                if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
+                    plan["recipe"] = mission.current_plan["recipe"]
+                if mission.task_type == "sft" and not plan.get("recipe"):
+                    plan["recipe"] = "ensemble_sft_v1"
                 # Inject trainer_type for envs that use a custom training loop.
                 if self._should_force_actor_critic(
                     plan.get("env_id", ""), plan.get("algorithm", ""),
