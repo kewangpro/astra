@@ -52,6 +52,11 @@ function formatRelativeTime(iso: string): string {
   }
 }
 
+function isLowerBetterMetric(key: string): boolean {
+  const k = key.toLowerCase();
+  return k.includes("loss") || k.includes("perplexity") || k.includes("error") || k === "cost";
+}
+
 function getTargetProgress(m: Mission): { targetKey: string; targetVal: number; progressPct: number } | null {
   if (!m.target_metric) return null;
   const entries = Object.entries(m.target_metric);
@@ -62,7 +67,18 @@ function getTargetProgress(m: Mission): { targetKey: string; targetVal: number; 
   const currentNum = m.best_metric_value ? parseFloat(m.best_metric_value) : null;
   if (currentNum === null || Number.isNaN(currentNum)) return null;
 
-  const pct = Math.min(100, Math.max(0, (currentNum / targetVal) * 100));
+  let pct: number;
+  if (isLowerBetterMetric(key)) {
+    if (currentNum <= targetVal) {
+      pct = 100;
+    } else if (currentNum <= 0) {
+      pct = 100;
+    } else {
+      pct = Math.min(100, Math.max(0, (targetVal / currentNum) * 100));
+    }
+  } else {
+    pct = Math.min(100, Math.max(0, (currentNum / targetVal) * 100));
+  }
   return { targetKey: key, targetVal, progressPct: Math.round(pct) };
 }
 

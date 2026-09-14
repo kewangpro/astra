@@ -71,6 +71,22 @@ function ArcGauge({ pct, achieved }: { pct: number; achieved: boolean }) {
   );
 }
 
+function isLowerBetterMetric(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes("loss") || n.includes("perplexity") || n.includes("error") || n === "cost";
+}
+
+function isPercentageMetric(name: string, targetVal: number): boolean {
+  const n = name.toLowerCase();
+  if (n.endsWith("_rate") || n.endsWith("_pct") || n.includes("accuracy") || n === "precision" || n === "recall" || n === "f1") {
+    return true;
+  }
+  if (isLowerBetterMetric(name) || n.includes("reward") || n.includes("score") || n.includes("cleared") || n.includes("eaten")) {
+    return false;
+  }
+  return targetVal <= 1.0;
+}
+
 export function MetricGap({ mission, events = [] }: Props) {
   const tm = mission.target_metric;
   const [metricName, targetValue] = tm && Object.keys(tm).length > 0
@@ -81,7 +97,9 @@ export function MetricGap({ mission, events = [] }: Props) {
         return ["metric", val];
       })();
 
-  const isRaw = targetValue > 1;
+  const isLowerBetter = isLowerBetterMetric(metricName);
+  const isPercent = isPercentageMetric(metricName, targetValue);
+  const isRaw = !isPercent;
 
   const best = parseFloat(mission.best_metric_value ?? "0");
   const bestIter = mission.best_metric_iteration ?? null;
@@ -92,20 +110,45 @@ export function MetricGap({ mission, events = [] }: Props) {
 
   // For raw positive targets (e.g. lines_cleared=20), clamp best to [0, ∞) so a
   // contaminated mean_reward seed doesn't show -600% of target.
-  const displayBest = isRaw ? Math.max(0, best) : best;
-  const pct = targetValue > 0 ? Math.min(100, (displayBest / targetValue) * 100) : 0;
-  const gap = Math.max(0, targetValue - displayBest);
-  const achieved = gap <= 0;
+  const displayBest = isLowerBetter ? best : (isRaw ? Math.max(0, best) : best);
+
+  let achieved = false;
+  let gap = 0;
+  let pct = 0;
+
+  if (mission.best_metric_value == null) {
+    achieved = false;
+    gap = targetValue;
+    pct = 0;
+  } else if (isLowerBetter) {
+    achieved = displayBest <= targetValue;
+    gap = Math.max(0, displayBest - targetValue);
+    if (achieved) {
+      pct = 100;
+    } else if (displayBest <= 0) {
+      pct = 100;
+    } else {
+      pct = Math.min(100, Math.max(0, (targetValue / displayBest) * 100));
+    }
+  } else {
+    achieved = displayBest >= targetValue;
+    gap = Math.max(0, targetValue - displayBest);
+    pct = targetValue > 0 ? Math.min(100, Math.max(0, (displayBest / targetValue) * 100)) : 0;
+  }
 
   const fmt = (v: number) =>
-    isRaw ? v.toFixed(1) : `${(v * 100).toFixed(1)}%`;
-  const formatTarget = isRaw ? targetValue.toFixed(0) : `${(targetValue * 100).toFixed(0)}%`;
+    isRaw
+      ? (Number.isInteger(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2))
+      : `${(v * 100).toFixed(1)}%`;
+  const formatTarget = isRaw
+    ? (Number.isInteger(targetValue) ? targetValue.toFixed(0) : targetValue.toFixed(1))
+    : `${(targetValue * 100).toFixed(0)}%`;
   const formatGap = isRaw
-    ? `−${gap.toFixed(1)} to close`
+    ? (isLowerBetter ? `+${gap.toFixed(gap >= 10 ? 1 : 2)} to close` : `−${gap.toFixed(gap >= 10 ? 1 : 2)} to close`)
     : `−${(gap * 100).toFixed(2)}% to close`;
 
 
-  // Build sparkline: one point per iteration (max value within that iteration).
+  // Build sparkline: one point per iteration (best value within that iteration).
   // Raw mean_reward telemetry posts every 2048 steps (~1000 pts/iter), which
   // makes the line look like a filled area. Strict per-iteration aggregation
   // keeps the sparkline clean regardless of metric type.
@@ -116,9 +159,11 @@ export function MetricGap({ mission, events = [] }: Props) {
       const iterCutoff = mission.status === "running" ? currentIter : currentIter + 1;
       if (e.iteration == null || e.value == null || e.iteration >= iterCutoff) continue;
       const iter = e.iteration;
+      const val = e.value as number;
       const existing = byIter.get(iter);
-      if (!existing || (e.value as number) > existing.value)
-        byIter.set(iter, { step: e.step ?? iter, value: e.value as number, iteration: iter });
+      const isBetter = !existing || (isLowerBetter ? val < existing.value : val > existing.value);
+      if (isBetter)
+        byIter.set(iter, { step: e.step ?? iter, value: val, iteration: iter });
     }
     return Array.from(byIter.values()).sort((a, b) => a.iteration - b.iteration);
   })();
