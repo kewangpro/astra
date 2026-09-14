@@ -521,12 +521,12 @@ class LoopStateMachine:
                 # (e.g. mission was created with default "rl" without a task_type parameter),
                 # persist the correction only when the mission was created with default "rl"
                 # and is not an explicitly configured remote task type.
-                if current_iteration == 0:
+                if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                    plan["task_type"] = mission.task_type
+                elif current_iteration == 0:
                     plan_task_type = plan.get("task_type", "").lower()
                     if plan_task_type and plan_task_type != mission.task_type:
-                        if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
-                            plan["task_type"] = mission.task_type
-                        elif mission.task_type == "rl":
+                        if mission.task_type == "rl":
                             async with AsyncSessionLocal() as _s:
                                 async with _s.begin():
                                     await _s.execute(
@@ -641,7 +641,11 @@ class LoopStateMachine:
 
                 # ── SANDBOXING ────────────────────────────────────────────
                 log_path = self._sandbox.get_log_path(mission_id)
-                _mission_task_type = plan.get("task_type")
+                _mission_task_type = (
+                    mission.task_type
+                    if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES
+                    else (plan.get("task_type") or mission.task_type)
+                )
                 log_offset = (
                     0 if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
                     else (os.path.getsize(log_path) if os.path.isfile(log_path) else 0)
@@ -685,7 +689,7 @@ class LoopStateMachine:
                 # ── EXECUTING ────────────────────────────────────────────
                 await self._transition(mission_id, MissionStatus.RUNNING)
                 error_output = await self._wait_for_sandbox(
-                    mission_id, log_offset, task_type=plan.get("task_type"),
+                    mission_id, log_offset, task_type=_mission_task_type,
                     current_iteration=current_iteration,
                 )
 
@@ -780,7 +784,11 @@ class LoopStateMachine:
                         await emit_status(
                             mission_id, f"Evaluating {metric_name}…", event_type="info"
                         )
-                        _mission_task_type_for_eval = plan.get("task_type")
+                        _mission_task_type_for_eval = (
+                            mission.task_type
+                            if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES
+                            else plan.get("task_type")
+                        )
                         if _mission_task_type_for_eval == "prompt":
                             # A prompt run IS the eval — the generated script
                             # writes a variant and execs bare_eval on it — so the

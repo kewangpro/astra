@@ -1592,6 +1592,11 @@ def _resolve_hyperparams(
     hp = dict(plan_hp)
     for k, v in recipe_hp.items():
         hp.setdefault(k, v)
+    # If plan provided a placeholder for base_model (e.g. "Ensemble" or "Ensemble model")
+    # that is neither an HF repo ID with a slash nor an existing local path, fall back to recipe's base_model
+    base_m = str(hp.get("base_model", ""))
+    if base_m and "/" not in base_m and not os.path.exists(base_m) and "base_model" in recipe_hp:
+        hp["base_model"] = recipe_hp["base_model"]
     return hp
 
 
@@ -1790,8 +1795,10 @@ class CodeGenerator:
             "api_url": api_url,
             "target_metric": json.dumps(plan.get("target_metric", {})),
         }
+        raw_model = str(hp.get("base_model", ""))
+        base_model = raw_model if "/" in raw_model else "mlx-community/gemma-3-12b-it-4bit"
         return {
-            "base_model": hp.get("base_model", "mlx-community/Llama-3.2-1B-Instruct-4bit"),
+            "base_model": base_model,
             "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
