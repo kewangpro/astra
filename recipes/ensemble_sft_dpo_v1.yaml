@@ -5,18 +5,18 @@ task_type: dpo
 domain: NLP
 description: >
   DPO (Direct Preference Optimization) preference tuning chained from the SFT adapter
-  (adapters/astra_da8b82bb_iter0/best). Trains on Mac Mini via MLX on Apple Silicon GPU.
+  (adapters/astra_da8b82bb_iter7/best). Trains on Mac Mini via MLX on Apple Silicon GPU.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
-  adapter: adapters/astra_da8b82bb_iter0/best
+  adapter: adapters/astra_da8b82bb_iter7/best
   prompt_template: backend/prompts/conductor_min.md
-  num_layers: 16
-  lora_rank: 16
-  lora_scale: 32.0
-  lora_dropout: 0.05
+  num_layers: 4
+  lora_rank: 8
+  lora_scale: 5.0
+  lora_dropout: 0.1
   load_pairs: logs/astra_9e7cc2df_pairs.jsonl
   k_collect: 2
   temp: 1.0
