@@ -1938,6 +1938,36 @@ Two root causes were diagnosed:
   - Registered SFT adapter (`astra-gemma-3-12b-sft-iter0`) and chained DPO adapter (`astra-gemma-3-12b-dpo-iter0`) in the Model Registry.
   - Executed live tournament match (`POST /registry/tournament`), crowning `astra-gemma-3-12b-dpo-iter0` as domain champion (`win_rate=1.0`, `mean_score=65.59`, `is_champion=true`).
 
+---
+
+## Phase 60 — Ensemble Routing SFT-to-DPO Pipeline & Recipe Hyperparameter Enforcement
+
+**Problem:** In the end-to-end Ensemble routing post-training pipeline, DPO missions chained from prior adapters exhibited a persistent `pass_rate: 0.0%` plateau across multiple iterations. Simultaneously, autonomous SFT runs risked Metal out-of-memory crashes on Apple Silicon when the planner proposed unconstrained batch sizes, and lower-is-better metrics (`eval_loss`) were inverted in frontend progress visualizations.
+
+- [x] **Root-Cause Diagnosis & Resolution of 0.0% Pass Rate Plateau**:
+  - Identified that upstream adapter `#da8b82bb` had trained on general trivia (`data/datasets/train.jsonl`), lacking knowledge of the `conductor_min.md` prompt header and schema.
+  - When evaluated, completions produced non-standard keys (`task_decomposition`, `{ "1": ... }`) lacking a top-level `tasks` list; in `grpo_train.py:229-235`, `score_completion()` immediately penalized missing `tasks` with `-0.5`, causing 100% test failures (`pass_rate: 0.0%`).
+  - Proved that preference tuning (58 steps, $\text{LR} = 3 \times 10^{-7}$) cannot teach structural JSON syntax from scratch without a valid routing SFT foundation.
+- [x] **Pure Routing Dataset Architecture** (`/Users/kewang/finetune/data_routing/`):
+  - Created pure routing dataset (278 train, 16 validation demonstrations) using `prepare_finetune_data.py`.
+  - Enforced compact `conductor_min.md` prompt headers (~175 tokens, ~780 chars per example) and exact routing output plans (`{"thought": "...", "tasks": [{"skill": ..., "agent_id": ...}]}`).
+  - Completely isolated pure routing data from evaluator suites (`data_ft`), eliminating prompt bloat (5,374-token prompts in `augmented_e`) that overflowed 2048 sequence limits and caused Metal GPU memory exhaustion.
+- [x] **Strict Recipe Hyperparameter Enforcement & Metal OOM Protection** (`backend/agent/code_generator.py`):
+  - Added `ensemble_sft_v1` to the authoritative recipe whitelist in `_resolve_hyperparams()`.
+  - Updated `_build_sft_context()` to resolve `plan.get("recipe") or "sft"`.
+  - Locked `batch_size: 2`, `dataset_path: data_routing`, `base_model: mlx-community/gemma-3-12b-it-4bit`, and LoRA architecture (4 layers, rank 8, scale 5.0, dropout 0.1) to recipe definitions, preventing unconstrained planner hallucinations (e.g. `batch_size: 32` requiring 65k tokens and triggering `kIOGPUCommandBufferCallbackErrorOutOfMemory`).
+  - Added unit test `test_sft_generates_remote_wrapper_with_ensemble_sft_v1_recipe_locks_batch_size` in `tests/unit/test_code_generator.py`.
+- [x] **Guaranteed SFT Checkpoint Recording & Pipeline Chaining** (`backend/loop/state_machine.py`, `recipes/ensemble_sft_v1.yaml`, `recipes/ensemble_sft_dpo_v1.yaml`):
+  - Updated `LoopStateMachine` to record `last_checkpoint_path = f"adapters/astra_{mission_id[:8]}_iter{iteration}/best"` on every new best metric for SFT missions.
+  - Enabled seamless downstream chaining into `recipes/ensemble_sft_dpo_v1.yaml`, ensuring DPO preference tuning warm-starts directly from the converged SFT routing adapter.
+  - Pointed `ensemble_sft_v1.yaml` to `dataset_path: data_routing` with `eval_loss: 0.8` target metric.
+- [x] **Frontend & State Machine Lower-is-Better Metric Support** (`frontend/src/components/dashboard/MetricGap.tsx`, `frontend/src/components/dashboard/MissionsGrid.tsx`, `backend/loop/state_machine.py`):
+  - Updated `MetricGap` and `MissionsGrid` to detect loss metrics (`eval_loss`, `train_loss`, `loss`, `perplexity`) and compute accurate progress toward minimization targets (`−X to close`, positive percentage).
+  - Hardened state transitions to prevent resuming already-completed missions and strictly enforce target metric satisfaction.
+- [x] **Test Suite Expansion & Verification**:
+  - Added unit tests for recipe locking, resulting in **1087 tests** passing (1072 unit + 15 integration; clean build; all SFT/DPO codegen validated).
+
+
 
 
 

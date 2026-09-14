@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 57 complete  
+**Status:** Phase 60 complete  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -116,6 +116,23 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Chain-of-Thought (CoT) Preservation**: Automatically extracts, preserves, and formats `<think>...</think>` internal reasoning traces in multi-turn dialogues and completion records.
 - **Comprehensive Telemetry & Checkpointing**: Emits live `train_loss`, `eval_loss`, and `perplexity` (`exp(eval_loss)`) metrics to the dashboard, with peak checkpoint tracking in `checkpoints/best`.
 - **AST-Guarded Code Generation & Self-Healing**: Resilient code generation and error analyzer self-healing that validate script syntax via Python's `ast` parser and fall back to canonical execution scripts against autoregressive coder degeneration.
+
+### 4.19. Remote SFT Training via MLX on Apple Silicon Cluster
+- Apple Silicon Mac Mini compute offload utilizing standalone MLX training runner (`sft_train.py`) without requiring git checkout on remote worker nodes.
+- **Zero-Orphan Process Execution**: `CodeGenerator` wraps remote training commands in an `os.execv` wrapper replacing the wrapper process image in place, guaranteeing clean PID tracking and signal termination.
+- **Dynamic Validation Batch-Clamping**: Automatically adjusts validation batch sizes so `effective_batch_size <= min(train_size, val_size)`, preventing MLX batch underflow exceptions on small datasets.
+- **Live SSH Telemetry Tailing**: Real-time parsing of remote training logs over SSH, streaming loss curves directly to the dashboard HUD.
+
+### 4.20. SFT-to-DPO Multi-Stage Pipeline Chaining & LoRA Auto-Detection
+- Multi-stage post-training pipeline connecting SFT syntax learning directly to DPO preference alignment across discrete mission stages.
+- **LoRA Auto-Detection**: Standalone trainers dynamically detect LoRA rank, scale, dropout, and layer count from `adapter_config.json` inside warm-start adapter checkpoints.
+- **Accelerated Preference Optimization**: Support for `--load-pairs` to bypass redundant on-policy pair generation and directly optimize against verified contrastive datasets.
+- **NLP Model Registry Tournament Arena**: Head-to-head language model evaluation with tournament leaderboards and automatic champion crowning.
+
+### 4.21. Pure Routing Post-Training & Recipe Hyperparameter Enforcement
+- **Pure Routing Demonstrations**: Specialized dataset architecture (`data_routing`) standardizing on compact `conductor_min.md` prompt headers (~175 tokens) and verified routing schema plans, preventing prompt overflow and token truncation.
+- **Strict Recipe Locking**: Hardened code generation and hyperparameter resolution that strictly lock hardware-critical settings (batch size, layer count, dataset path) to recipe specifications, preventing planner hallucinations from triggering Apple Silicon Metal OOM crashes.
+- **Lower-is-Better Metric Visualizations**: Comprehensive telemetry and dashboard support for loss minimization goals, displaying accurate remaining metric gaps and progress percentages toward convergence.
 
 ## 5. User Experience & Autonomy Model
 

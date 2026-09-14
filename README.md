@@ -93,7 +93,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1063 unit tests across all core modules
+│   ├── unit/           # 1072 unit tests across all core modules
 │   └── integration/    # 15 integration tests for the loop state machine
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite)
@@ -131,6 +131,7 @@ make ports  # show port status for all services
 | **SFT & Reasoning Post-Training (Phase 57)** | Full SFTTrainer, strict held-out train/val splitting (val_split), reasoning CoT (<think>...</think>) preservation, AST-guarded codegen & self-healing | ✅ Complete |
 | **Remote SFT via MLX (Phase 58)** | Apple Silicon Mac Mini offload following DPO pattern, zero-orphan `os.execv` wrapper, dynamic validation batch-clamping, live SSH loss tailing | ✅ Complete |
 | **Pipeline Chaining & LoRA Auto-Detection (Phase 59)** | End-to-end SFT → DPO pipeline chaining, LoRA config auto-detection from warm-start adapters, `--load-pairs` acceleration, strict non-RL recipe hyperparameter locking | ✅ Complete |
+| **Ensemble Routing SFT-to-DPO Pipeline & Recipe Locking (Phase 60)** | Pure routing demonstration dataset (`data_routing`), strict recipe hyperparameter locking against Metal OOM, guaranteed SFT adapter checkpoint propagation, lower-is-better metric HUD | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

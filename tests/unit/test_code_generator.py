@@ -2369,3 +2369,30 @@ async def test_sft_generates_remote_wrapper_when_sandbox_host_configured(tmp_pat
     assert '"--iters", "150"' in content
 
 
+@pytest.mark.asyncio
+async def test_sft_generates_remote_wrapper_with_ensemble_sft_v1_recipe_locks_batch_size(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "sft",
+        "recipe": "ensemble_sft_v1",
+        "target_metric": {"eval_loss": 0.8},
+        "hyperparameters": {
+            "batch_size": 32,  # Planner hallucination attempt
+            "iters": 120,
+        },
+    }
+    script_path = await gen.generate_training_script("mission-sft-locked", plan)
+    with open(script_path) as f:
+        content = f.read()
+
+    assert 'os.chdir("/Users/kewang/finetune")' in content
+    assert '"--data", "data_routing"' in content
+    assert '"--batch-size", "2"' in content  # Locked to recipe's 2, ignoring 32
+    assert '"--iters", "120"' in content    # Clamped within safe finetune pivot range
+
+
+

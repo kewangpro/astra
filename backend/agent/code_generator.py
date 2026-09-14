@@ -1439,6 +1439,7 @@ _ENV_RECIPE: dict = {
     "MinAtar-Space-Invaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Asteroids-v0": "minatar_asteroids_dqn_v1.yaml",
     "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
+    "ensemble_sft_v1": "ensemble_sft_v1.yaml",
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
@@ -1562,7 +1563,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "prompt") or task_type in ("dpo", "grpo", "distill", "rft", "prompt"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "prompt", "ensemble_sft_v1") or task_type in ("dpo", "grpo", "distill", "rft", "prompt"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -1784,8 +1785,9 @@ class CodeGenerator:
         current_iteration: int = 0,
         warm_start_adapter: Optional[str] = None,
     ) -> dict:
+        recipe_key = plan.get("recipe") or "sft"
         hp = _resolve_hyperparams(
-            "sft", plan.get("hyperparameters", {}),
+            recipe_key, plan.get("hyperparameters", {}),
             warm_start_adapter=warm_start_adapter,
         )
         api_url = f"http://127.0.0.1:{settings.api_port}"
