@@ -12,14 +12,14 @@ hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
-  dataset_path: data/datasets/train.jsonl
-  num_layers: 16
-  lora_rank: 16
-  lora_scale: 32.0
-  lora_dropout: 0.05
+  dataset_path: data_routing
+  num_layers: 4
+  lora_rank: 8
+  lora_scale: 5.0
+  lora_dropout: 0.1
   batch_size: 2
   learning_rate: 0.0002
-  iters: 100
+  iters: 150
   save_every: 50
   steps_per_eval: 25
   steps_per_report: 5
@@ -28,4 +28,4 @@ hyperparameters:
   preserve_reasoning: true
 
 target_metric:
-  eval_loss: 5.0
+  eval_loss: 0.8
