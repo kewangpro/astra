@@ -1014,6 +1014,20 @@ class LoopStateMachine:
                         "LoopStateMachine: new best — saving prompt variant checkpoint to %s for mission=%s",
                         _last_checkpoint_path, mission_id,
                     )
+                elif (
+                    plan.get("task_type") == "sft"
+                    and current_metrics.get("eval_loss") is not None
+                    and (_prev_best is None or current_metrics["eval_loss"] <= _prev_best)
+                ):
+                    from backend.agent.code_generator import _resolve_hyperparams
+                    _hp_for_chain = _resolve_hyperparams("sft", plan.get("hyperparameters", {}))
+                    _finetune_dir = _hp_for_chain.get("finetune_dir", "/Users/kewang/finetune")
+                    _last_checkpoint_path = f"{_finetune_dir}/adapters/astra_{mission_id[:8]}_iter{current_iteration}/best"
+                    await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
+                    logger.info(
+                        "LoopStateMachine: new best — saving sft adapter checkpoint to %s for mission=%s",
+                        _last_checkpoint_path, mission_id,
+                    )
                 current_val = current_metrics.get(metric_name) if metric_name else None
                 await self._save_best_metric(
                     mission_id,
