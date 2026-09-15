@@ -502,6 +502,37 @@ class LoopStateMachine:
                             event_type="info",
                             value=f"{plan.get('algorithm', '?')} · {plan.get('task_type', '?')}",
                         )
+                elif mission.current_plan and mission.current_plan.get("stages"):
+                    plan = dict(mission.current_plan)
+                    stage_idx = plan.get("stage_index", 0)
+                    active_t = plan.get("active_task_type") or plan["stages"][stage_idx].get("task", "sft")
+                    await emit_status(
+                        mission_id, "Using multi-stage post-training plan",
+                        event_type="info",
+                        value=f"stage {stage_idx + 1}/{len(plan['stages'])} · {active_t}",
+                    )
+                    await self._save_plan(mission_id, plan)
+                    did_replan = False
+                elif mission.task_type == "post-training":
+                    from backend.agent.code_generator import _load_recipe_for_env
+                    rcp = _load_recipe_for_env("post-training")
+                    stages = rcp.get("stages", [])
+                    plan = {
+                        "recipe": "ensemble_post_training_v1",
+                        "task_type": "post-training",
+                        "stages": stages,
+                        "stage_index": 0,
+                        "stage_checkpoints": {},
+                        "active_task_type": stages[0].get("task", "sft") if stages else "sft",
+                        "hyperparameters": stages[0].get("hyperparameters", {}) if stages else {},
+                    }
+                    await emit_status(
+                        mission_id, "Loaded post-training pipeline stages",
+                        event_type="info",
+                        value=f"{len(stages)} stages · {plan['active_task_type']}",
+                    )
+                    await self._save_plan(mission_id, plan)
+                    did_replan = False
                 else:
                     await emit_status(mission_id, "Generating training plan…", event_type="info")
                     plan = await self._agent.plan(
@@ -509,6 +540,11 @@ class LoopStateMachine:
                     )
                     if mission.current_plan and "recipe" in mission.current_plan:
                         plan["recipe"] = mission.current_plan["recipe"]
+                    if mission.current_plan and "stages" in mission.current_plan:
+                        plan["stages"] = mission.current_plan["stages"]
+                        plan["stage_index"] = mission.current_plan.get("stage_index", 0)
+                        plan["stage_checkpoints"] = mission.current_plan.get("stage_checkpoints", {})
+                        plan["active_task_type"] = mission.current_plan.get("active_task_type", "sft")
                     await self._save_plan(mission_id, plan)
                     did_replan = True
                     await emit_status(
@@ -669,10 +705,11 @@ class LoopStateMachine:
                 if _skip_launch:
                     # Sandbox is already running (reattached by SandboxManager.recover()
                     # during boot-time state recovery) — don't launch a new one.
+                    _s_id = getattr(self._sandbox, "get_sandbox_id", lambda m: None)(mission_id)
                     await emit_status(
                         mission_id, "Reattached to running sandbox after service restart",
                         event_type="info",
-                        value=f"sandbox_id={self._sandbox.get_sandbox_id(mission_id)}",
+                        value=f"sandbox_id={_s_id}",
                     )
                     _skip_launch = False
                 else:
@@ -692,7 +729,7 @@ class LoopStateMachine:
                     )
                     _remote_pid_for_save = None
                     if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
-                        _sandbox_id_str = self._sandbox.get_sandbox_id(mission_id)
+                        _sandbox_id_str = getattr(self._sandbox, "get_sandbox_id", lambda m: None)(mission_id)
                         _remote_pid_for_save = int(_sandbox_id_str) if _sandbox_id_str else None
                         _sandbox_msg = f"host={settings.sandbox_host} remote_pid={_sandbox_id_str}"
                     else:
@@ -704,7 +741,7 @@ class LoopStateMachine:
                 await self._transition(mission_id, MissionStatus.RUNNING)
                 error_output = await self._wait_for_sandbox(
                     mission_id, log_offset, task_type=_mission_task_type,
-                    current_iteration=current_iteration,
+                    current_iteration=current_iteration, plan=plan,
                 )
 
                 if error_output:
@@ -778,8 +815,8 @@ class LoopStateMachine:
                 mean_reward_from_sandbox = sandbox_metrics.get("mean_reward")
                 if mean_reward_from_sandbox is not None:
                     current_metrics.setdefault("mean_reward", mean_reward_from_sandbox)
-                if plan.get("task_type") == "sft":
-                    for sft_key in ("eval_loss", "perplexity", "train_loss"):
+                if plan.get("task_type") in ("sft", "post-training"):
+                    for sft_key in ("eval_loss", "perplexity", "train_loss", "pass_rate"):
                         if sft_key in sandbox_metrics:
                             current_metrics[sft_key] = sandbox_metrics[sft_key]
 
@@ -825,6 +862,14 @@ class LoopStateMachine:
                         elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
                             if _mission_task_type_for_eval == "sft":
                                 goal_val = current_metrics.get("eval_loss")
+                            elif _mission_task_type_for_eval == "post-training":
+                                active_t = plan.get("active_task_type", "sft")
+                                if active_t == "sft":
+                                    goal_val = current_metrics.get("eval_loss")
+                                else:
+                                    goal_val = await asyncio.to_thread(
+                                        self._run_bare_eval, mission_id, plan, current_iteration
+                                    )
                             else:
                                 goal_val = await asyncio.to_thread(
                                     self._run_bare_eval, mission_id, plan, current_iteration
@@ -888,7 +933,8 @@ class LoopStateMachine:
                         if goal_val is not None:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
-                    if goal_val is not None and plan.get("task_type") in ("dpo", "grpo", "distill", "rft"):
+                    _active_t_for_floor = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
+                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "distill", "rft"):
                         # Record the true observed value to telemetry so the
                         # Metric History chart stays honest…
                         await self._append_telemetry_metric(
@@ -992,27 +1038,32 @@ class LoopStateMachine:
                 # best rather than best_metric_iteration() so a genuine tie (fresher
                 # weights, same score) still chains and a floored phantom in the
                 # history can't block it.
+                active_t = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
                 if (
-                    plan.get("task_type") in ("dpo", "grpo", "distill", "rft")
+                    active_t in ("dpo", "grpo", "distill", "rft")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
                     and (_prev_best is None or _raw_goal_val >= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
-                    _hp_for_chain = _resolve_hyperparams(plan.get("recipe") or plan.get("task_type"), plan.get("hyperparameters", {}))
-                    _bare_rel_for_chain = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+                    _hp_for_chain = _resolve_hyperparams(plan.get("recipe") or active_t, plan.get("hyperparameters", {}))
+                    if plan.get("task_type") == "post-training":
+                        stage_idx = plan.get("stage_index", 0)
+                        _bare_rel_for_chain = f"adapters/astra_{mission_id[:8]}_stage{stage_idx+1}_{active_t}_iter{current_iteration}"
+                    else:
+                        _bare_rel_for_chain = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
                     _last_checkpoint_path = await asyncio.to_thread(
                         self._resolve_adapter_or_bare,
                         _hp_for_chain.get("finetune_dir", ""), _bare_rel_for_chain,
                     )
                     await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
                     logger.info(
-                        "LoopStateMachine: new best — chaining dpo/grpo warm-start adapter to %s for mission=%s",
-                        _last_checkpoint_path, mission_id,
+                        "LoopStateMachine: new best — chaining %s warm-start adapter to %s for mission=%s",
+                        active_t, _last_checkpoint_path, mission_id,
                     )
                 elif (
-                    plan.get("task_type") == "prompt"
+                    active_t == "prompt"
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
                     and (_prev_best is None or _raw_goal_val >= _prev_best)
@@ -1029,14 +1080,22 @@ class LoopStateMachine:
                         _last_checkpoint_path, mission_id,
                     )
                 elif (
-                    plan.get("task_type") == "sft"
+                    active_t == "sft"
                     and current_metrics.get("eval_loss") is not None
                     and (_prev_best is None or current_metrics["eval_loss"] <= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
                     _hp_for_chain = _resolve_hyperparams("sft", plan.get("hyperparameters", {}))
                     _finetune_dir = _hp_for_chain.get("finetune_dir", "/Users/kewang/finetune")
-                    _last_checkpoint_path = f"{_finetune_dir}/adapters/astra_{mission_id[:8]}_iter{current_iteration}/best"
+                    if plan.get("task_type") == "post-training":
+                        stage_idx = plan.get("stage_index", 0)
+                        _bare_rel = f"adapters/astra_{mission_id[:8]}_stage{stage_idx+1}_{active_t}_iter{current_iteration}"
+                    else:
+                        _bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+                    _last_checkpoint_path = await asyncio.to_thread(
+                        self._resolve_adapter_or_bare,
+                        _finetune_dir, _bare_rel,
+                    )
                     await self._save_last_checkpoint_path(mission_id, _last_checkpoint_path)
                     logger.info(
                         "LoopStateMachine: new best — saving sft adapter checkpoint to %s for mission=%s",
@@ -1128,33 +1187,145 @@ class LoopStateMachine:
                 )
 
                 # All requirements met AND all declared target metrics achieved → done
-                target_met = True
-                if mission.target_metric:
-                    for tm_name, tm_thresh in mission.target_metric.items():
-                        cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
-                        best_val = pivot_engine.best_metric_value()
-                        effective_val = cur_val if cur_val is not None else best_val
-                        if effective_val is None:
-                            target_met = False
-                            break
-                        if tm_name in _LOWER_IS_BETTER:
-                            if float(effective_val) > float(tm_thresh):
-                                target_met = False
-                                break
-                        else:
-                            if float(effective_val) < float(tm_thresh):
-                                target_met = False
-                                break
+                if mission.task_type == "post-training" and plan.get("stages"):
+                    stages = plan.get("stages", [])
+                    stage_index = plan.get("stage_index", 0)
+                    current_stage = stages[stage_index] if stage_index < len(stages) else {}
+                    stage_target_metric = current_stage.get("target_metric", {})
 
-                if manifest.is_complete() and target_met:
-                    best = pivot_engine.best_metric_value()
-                    logger.info("LoopStateMachine: manifest complete and target met! mission=%s metrics=%s", mission_id, current_metrics)
-                    await emit_status(mission_id, "Goal achieved!", event_type="success",
-                                      value=str(best))
-                    await self._transition(mission_id, MissionStatus.COMPLETED)
-                    await self._crystallize(mission_id, plan, best)
-                    self._terminate_sandbox(mission_id, "completion")
-                    return
+                    stage_target_met = True
+                    if stage_target_metric:
+                        for tm_name, tm_thresh in stage_target_metric.items():
+                            cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
+                            best_val = pivot_engine.best_metric_value()
+                            effective_val = cur_val if cur_val is not None else best_val
+                            if effective_val is None:
+                                stage_target_met = False
+                                break
+                            if tm_name in _LOWER_IS_BETTER:
+                                if float(effective_val) > float(tm_thresh):
+                                    stage_target_met = False
+                                    break
+                            else:
+                                if float(effective_val) < float(tm_thresh):
+                                    stage_target_met = False
+                                    break
+
+                    if stage_target_met and manifest.is_complete():
+                        if stage_index < len(stages) - 1:
+                            # ── INTERMEDIATE STAGE ADVANCEMENT ──
+                            next_stage_index = stage_index + 1
+                            next_stage = stages[next_stage_index]
+
+                            # Record stage checkpoint
+                            stage_checkpoints = plan.setdefault("stage_checkpoints", {})
+                            stage_checkpoints[f"stage_{stage_index+1}"] = _last_checkpoint_path
+
+                            # Advance plan state
+                            plan["stage_index"] = next_stage_index
+                            plan["active_task_type"] = next_stage.get("task")
+                            plan["recipe"] = next_stage.get("recipe")
+                            plan["hyperparameters"] = next_stage.get("hyperparameters", {})
+                            await self._save_plan(mission_id, plan)
+
+                            await emit_status(
+                                mission_id,
+                                f"Stage {stage_index+1}/{len(stages)} ({current_stage.get('task')}) passed! "
+                                f"Advancing to Stage {next_stage_index+1}/{len(stages)} ({next_stage.get('task')})",
+                                event_type="success",
+                                value=f"checkpoint={_last_checkpoint_path}",
+                            )
+                            logger.info(
+                                "LoopStateMachine: stage %d passed (checkpoint=%s), advancing to stage %d (%s) for mission=%s",
+                                stage_index + 1, _last_checkpoint_path, next_stage_index + 1, next_stage.get("task"), mission_id,
+                            )
+
+                            # Terminate completed sandbox for this stage
+                            self._terminate_sandbox(mission_id, f"stage_{stage_index+1}_complete")
+
+                            # Reset pivot engine for fresh search in the next stage
+                            next_tm = next_stage.get("target_metric") or mission.target_metric
+                            pivot_engine = PivotEngine(next_tm)
+
+                            # Regenerate requirement manifest for the next stage
+                            manifest = generate_manifest(
+                                mission_id=mission_id,
+                                goal=mission.goal,
+                                task_type=next_stage.get("task", "grpo"),
+                                target_metric=next_stage.get("target_metric") or {},
+                            )
+                            self._save_manifest(mission_id, manifest)
+
+                            # Set flags to continue loop directly with updated in-memory plan
+                            skip_replan_in_memory = True
+                            current_iteration += 1
+                            continue
+                        else:
+                            # ── FINAL STAGE: CHECK OVERALL MISSION TARGET ──
+                            terminal_target_met = True
+                            if mission.target_metric:
+                                for tm_name, tm_thresh in mission.target_metric.items():
+                                    cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
+                                    best_val = pivot_engine.best_metric_value()
+                                    effective_val = cur_val if cur_val is not None else best_val
+                                    if effective_val is None:
+                                        terminal_target_met = False
+                                        break
+                                    if tm_name in _LOWER_IS_BETTER:
+                                        if float(effective_val) > float(tm_thresh):
+                                            terminal_target_met = False
+                                            break
+                                    else:
+                                        if float(effective_val) < float(tm_thresh):
+                                            terminal_target_met = False
+                                            break
+                            if terminal_target_met:
+                                stage_checkpoints = plan.setdefault("stage_checkpoints", {})
+                                stage_checkpoints[f"stage_{stage_index+1}"] = _last_checkpoint_path
+                                await self._save_plan(mission_id, plan)
+                                best = pivot_engine.best_metric_value()
+                                logger.info(
+                                    "LoopStateMachine: All %d post-training stages complete! Goal achieved! mission=%s metrics=%s",
+                                    len(stages), mission_id, current_metrics,
+                                )
+                                await emit_status(
+                                    mission_id,
+                                    f"Goal achieved! All {len(stages)} post-training stages completed successfully.",
+                                    event_type="success",
+                                    value=str(best),
+                                )
+                                await self._transition(mission_id, MissionStatus.COMPLETED)
+                                await self._crystallize(mission_id, plan, best)
+                                self._terminate_sandbox(mission_id, "completion")
+                                return
+                else:
+                    target_met = True
+                    if mission.target_metric:
+                        for tm_name, tm_thresh in mission.target_metric.items():
+                            cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
+                            best_val = pivot_engine.best_metric_value()
+                            effective_val = cur_val if cur_val is not None else best_val
+                            if effective_val is None:
+                                target_met = False
+                                break
+                            if tm_name in _LOWER_IS_BETTER:
+                                if float(effective_val) > float(tm_thresh):
+                                    target_met = False
+                                    break
+                            else:
+                                if float(effective_val) < float(tm_thresh):
+                                    target_met = False
+                                    break
+
+                    if manifest.is_complete() and target_met:
+                        best = pivot_engine.best_metric_value()
+                        logger.info("LoopStateMachine: manifest complete and target met! mission=%s metrics=%s", mission_id, current_metrics)
+                        await emit_status(mission_id, "Goal achieved!", event_type="success",
+                                          value=str(best))
+                        await self._transition(mission_id, MissionStatus.COMPLETED)
+                        await self._crystallize(mission_id, plan, best)
+                        self._terminate_sandbox(mission_id, "completion")
+                        return
 
                 # ── CONVERGENCE CHECK ─────────────────────────────────────
                 # Target not reached, but the search has exhausted every lever it
@@ -2172,11 +2343,20 @@ class LoopStateMachine:
                 return manifest
             except Exception as exc:
                 logger.warning("LoopStateMachine: could not load manifest for %s: %s — regenerating", mission_id, exc)
+        task_type_for_manifest = mission.task_type
+        target_metric_for_manifest = mission.target_metric or {}
+        if mission.task_type == "post-training" and mission.current_plan and mission.current_plan.get("stages"):
+            stage_idx = mission.current_plan.get("stage_index", 0)
+            stages = mission.current_plan.get("stages", [])
+            if stage_idx < len(stages):
+                curr_stage = stages[stage_idx]
+                task_type_for_manifest = curr_stage.get("task", "sft")
+                target_metric_for_manifest = curr_stage.get("target_metric") or target_metric_for_manifest
         manifest = generate_manifest(
             mission_id=mission_id,
             goal=mission.goal,
-            task_type=mission.task_type,
-            target_metric=mission.target_metric or {},
+            task_type=task_type_for_manifest,
+            target_metric=target_metric_for_manifest,
         )
         manifest.save(path)
         return manifest
@@ -2716,7 +2896,12 @@ class LoopStateMachine:
         if adapter_override:
             adapter_rel = adapter_override
         else:
-            bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+            if task_type == "post-training":
+                stage_idx = plan.get("stage_index", 0)
+                active_t = plan.get("active_task_type", "sft")
+                bare_rel = f"adapters/astra_{mission_id[:8]}_stage{stage_idx+1}_{active_t}_iter{current_iteration}"
+            else:
+                bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
             adapter_rel = self._resolve_adapter_or_bare(finetune_dir, bare_rel)
         model_name = hp.get("base_model") or hp.get("model") or plan.get("model") or ""
         model_flag = f"--model {model_name} " if model_name else ""
@@ -2813,7 +2998,7 @@ class LoopStateMachine:
 
     async def _wait_for_sandbox(
         self, mission_id: str, log_offset: int = 0, task_type: Optional[str] = None,
-        current_iteration: int = 0,
+        current_iteration: int = 0, plan: Optional[dict] = None,
     ) -> Optional[str]:
         """Poll until the sandbox exits. Returns error output if it failed, else None."""
         log_path = self._sandbox.get_log_path(mission_id)
@@ -2828,7 +3013,7 @@ class LoopStateMachine:
             await asyncio.sleep(EVAL_POLL_INTERVAL)
             if task_type in _FINETUNE_REMOTE_TASK_TYPES:
                 pass_rate_step = await self._tail_remote_metrics(
-                    mission_id, task_type, pass_rate_step, current_iteration
+                    mission_id, task_type, pass_rate_step, current_iteration, plan=plan
                 )
 
         # Only read content written by THIS run (skip prior runs' output)
@@ -2859,7 +3044,8 @@ class LoopStateMachine:
         return None
 
     async def _tail_remote_metrics(
-        self, mission_id: str, task_type: str, pass_rate_step: int, current_iteration: int = 0
+        self, mission_id: str, task_type: str, pass_rate_step: int, current_iteration: int = 0,
+        plan: Optional[dict] = None,
     ) -> int:
         """Fetch new remote log output (SSHSandbox.tail_new_output) and record
         two kinds of metrics:
@@ -2915,7 +3101,8 @@ class LoopStateMachine:
                 self._live_pass_rate_best[mission_id] = pct / 100.0
             pass_rate_step += 1
 
-        if task_type == "sft":
+        active_t = (plan.get("active_task_type") if task_type == "post-training" and plan else task_type) or task_type
+        if active_t == "sft":
             for match in _MLX_TRAIN_LOSS_RE.finditer(new_output):
                 step_num = int(match.group(1))
                 loss_val = float(match.group(2))
@@ -2932,7 +3119,7 @@ class LoopStateMachine:
                 # rft_train.py's SFT half reuses distill_train.py's step-logging
                 # format, so the same regex applies.
                 "rft": _DISTILL_LOSS_RE,
-            }.get(task_type, _DPO_LOSS_RE)
+            }.get(active_t, _DPO_LOSS_RE)
             for match in loss_re.finditer(new_output):
                 step_num = int(match.group(1))
                 loss_val = float(match.group(2))
@@ -2964,7 +3151,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "prompt"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "prompt", "sft", "post-training"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

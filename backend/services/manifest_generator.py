@@ -30,6 +30,7 @@ _CHECKPOINT_PATTERNS: dict = {
     # astra never edits ensemble's committed conductor prompt, so a winning
     # variant is a proposal a human promotes, not a change astra makes.
     "prompt": "checkpoints/conductor_variant.md",
+    "post-training": "checkpoints/*/",
 }
 
 # For metrics where lower is better, flip the operator

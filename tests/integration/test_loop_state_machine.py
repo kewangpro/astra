@@ -838,3 +838,87 @@ async def test_plan_reused_across_iterations_without_pivot(seeded_mission, db_se
 
     # LLM plan() must be called exactly once (first iteration only)
     assert len(plan_calls) == 1, f"Expected 1 LLM plan call, got {len(plan_calls)}"
+
+
+@pytest.mark.asyncio
+async def test_post_training_mission_executes_all_3_stages_sequentially(db_session, patch_db, monkeypatch):
+    """Verify ONE mission with task_type: 'post-training' autonomously executes
+    all 3 stages (SFT -> DPO -> GRPO) sequentially, auto-advancing on stage milestones
+    and completing when the terminal goal is achieved."""
+    monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
+
+    stages = [
+        {
+            "stage": 1,
+            "task": "sft",
+            "recipe": "ensemble_sft_v1",
+            "target_metric": {"eval_loss": 0.80},
+            "hyperparameters": {"finetune_dir": "/tmp/finetune"},
+        },
+        {
+            "stage": 2,
+            "task": "dpo",
+            "recipe": "ensemble_sft_dpo_v1",
+            "target_metric": {"pass_rate": 0.70},
+            "hyperparameters": {"finetune_dir": "/tmp/finetune"},
+        },
+        {
+            "stage": 3,
+            "task": "grpo",
+            "recipe": "ensemble_sft_dpo_grpo_v1",
+            "target_metric": {"pass_rate": 0.80},
+            "hyperparameters": {"finetune_dir": "/tmp/finetune"},
+        },
+    ]
+
+    mission = Mission(
+        id=str(uuid.uuid4()),
+        goal="Post-training conductor routing model",
+        task_type="post-training",
+        target_metric={"pass_rate": 0.80},
+        autonomy_mode="full_autonomy",
+        status=MissionStatus.PENDING.value,
+        current_iteration=0,
+        current_plan={
+            "recipe": "ensemble_post_training_v1",
+            "task_type": "post-training",
+            "stages": stages,
+            "stage_index": 0,
+            "stage_checkpoints": {},
+            "active_task_type": "sft",
+            "hyperparameters": stages[0]["hyperparameters"],
+        },
+    )
+    db_session.add(mission)
+    await db_session.commit()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        evaluator = _SequenceEvaluator([
+            {"eval_loss": 0.45},
+            {"pass_rate": 0.75},
+            {"pass_rate": 0.85},
+        ])
+        sandbox = _MockSandbox(tmp)
+        sm = _build_sm(
+            _MockLeadAgent(),
+            _MockCodeGen(tmp),
+            _MockHealer(tmp),
+            sandbox,
+            evaluator,
+        )
+        monkeypatch.setattr(sm, "_resolve_adapter_or_bare", lambda f, b: f"{b}/best")
+
+        with patch.object(LoopStateMachine, "_crystallize", _noop_crystallize):
+            await sm.run(mission.id)
+
+    await db_session.refresh(mission)
+    assert mission.status == MissionStatus.COMPLETED.value
+    final_plan = mission.current_plan
+    assert final_plan["stage_index"] == 2
+    assert "stage_1" in final_plan["stage_checkpoints"]
+    assert "stage_2" in final_plan["stage_checkpoints"]
+    assert "stage_3" in final_plan["stage_checkpoints"]
+    assert "stage1_sft" in final_plan["stage_checkpoints"]["stage_1"]
+    assert "stage2_dpo" in final_plan["stage_checkpoints"]["stage_2"]
+    assert "stage3_grpo" in final_plan["stage_checkpoints"]["stage_3"]
+

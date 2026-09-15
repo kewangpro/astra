@@ -53,6 +53,8 @@ def _reject_unreachable_target(task_type: str, target_metric: dict) -> None:
 def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
     """Infer task_type from semantic keywords in the goal text."""
     g = goal.lower()
+    if "post-training" in g or "post training" in g or "post_training" in g:
+        return "post-training"
     if "rejection-sampling" in g or "rejection sampling" in g or re.search(r"\brft\b", g):
         return "rft"
     if "distill" in g or "distillation" in g:

@@ -111,27 +111,39 @@ class PreflightChecker:
         from backend.agent.code_generator import _resolve_hyperparams
         hp = _resolve_hyperparams(task_type, {})
         finetune_dir = hp.get("finetune_dir", "")
-        script = "bare_eval.py" if task_type == "prompt" else f"{task_type}_train.py"
-        name = f"remote_script_{task_type}"
-        if not (finetune_dir and settings.sandbox_host):
-            return [{"name": name, "passed": True,
-                     "detail": "no finetune_dir/sandbox_host configured — skipped"}]
-        remote_path = f"{finetune_dir}/{script}"
-        try:
-            r = subprocess.run(
-                ["ssh", settings.sandbox_host,
-                 f"test -f {remote_path} && echo yes || echo no"],
-                capture_output=True, text=True, timeout=30,
-            )
-        except Exception as exc:
-            return [{"name": name, "passed": True,
-                     "detail": f"host unreachable, not blocking: {exc}"}]
-        if r.stdout.strip() == "yes":
-            return [{"name": name, "passed": True, "detail": remote_path}]
-        return [{"name": name, "passed": False,
-                 "detail": f"{remote_path} not found on {settings.sandbox_host} — "
-                           f"check finetune_dir points at the DEPLOYED directory, "
-                           f"not a repo checkout (their layouts differ by one level)"}]
+        if task_type == "post-training":
+            scripts = ["sft_train.py", "dpo_train.py", "grpo_train.py"]
+        elif task_type == "prompt":
+            scripts = ["bare_eval.py"]
+        else:
+            scripts = [f"{task_type}_train.py"]
+
+        results = []
+        for script in scripts:
+            name = f"remote_script_{script.removesuffix('.py')}"
+            if not (finetune_dir and settings.sandbox_host):
+                results.append({"name": name, "passed": True,
+                                "detail": "no finetune_dir/sandbox_host configured — skipped"})
+                continue
+            remote_path = f"{finetune_dir}/{script}"
+            try:
+                r = subprocess.run(
+                    ["ssh", settings.sandbox_host,
+                     f"test -f {remote_path} && echo yes || echo no"],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except Exception as exc:
+                results.append({"name": name, "passed": True,
+                                "detail": f"host unreachable, not blocking: {exc}"})
+                continue
+            if r.stdout.strip() == "yes":
+                results.append({"name": name, "passed": True, "detail": remote_path})
+            else:
+                results.append({"name": name, "passed": False,
+                                "detail": f"{remote_path} not found on {settings.sandbox_host} — "
+                                          f"check finetune_dir points at the DEPLOYED directory, "
+                                          f"not a repo checkout (their layouts differ by one level)"})
+        return results
 
     @staticmethod
     def _check_packages(task_type: str) -> list:

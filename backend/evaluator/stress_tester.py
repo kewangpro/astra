@@ -48,6 +48,7 @@ _NOISE_STRATEGIES: dict[str, Callable] = {
     "rl": _rl_noise,
     "sft": _sft_noise,
     "ml": _ml_noise,
+    "post-training": _sft_noise,
 }
 
 # Primary metric key per task type (used for summary stats)
@@ -55,6 +56,7 @@ _PRIMARY_METRIC: dict[str, str] = {
     "rl": "noisy_mean_reward",
     "sft": "adversarial_loss",
     "ml": "noisy_accuracy",
+    "post-training": "adversarial_loss",
 }
 
 

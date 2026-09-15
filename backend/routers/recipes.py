@@ -232,6 +232,7 @@ async def dispatch_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
         task_type = record.task_type or "rl"
         target_metric = record.target_metric or {}
         goal = record.description or f"Execute recipe {record.name} on {domain}"
+        content = record.full_content or {}
     else:
         # 2. Try disk
         fpath = os.path.join(settings.recipes_path, f"{clean_name}.yaml")
@@ -250,16 +251,28 @@ async def dispatch_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
         target_metric = content.get("target_metric", {})
         goal = content.get("description") or f"Execute recipe {clean_name} on {domain}"
 
+    current_plan = {"recipe": clean_name, "task_type": str(task_type).lower()}
+    stages = content.get("stages")
+    if stages:
+        current_plan["stages"] = stages
+        current_plan["stage_index"] = 0
+        current_plan["stage_checkpoints"] = {}
+        first_stage = stages[0]
+        current_plan["active_task_type"] = first_stage.get("task", "sft")
+        if first_stage.get("recipe"):
+            current_plan["recipe"] = first_stage["recipe"]
+        if first_stage.get("hyperparameters"):
+            current_plan["hyperparameters"] = first_stage["hyperparameters"]
+
     import uuid
     mission = Mission(
         id=str(uuid.uuid4()),
         goal=goal,
         task_type=str(task_type).lower(),
-
         target_metric=target_metric,
         autonomy_mode="supervised",
         status="pending",
-        current_plan={"recipe": clean_name, "task_type": str(task_type).lower()},
+        current_plan=current_plan,
     )
 
     db.add(mission)

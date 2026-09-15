@@ -1466,6 +1466,8 @@ _ENV_RECIPE: dict = {
     "distill": "ensemble_distill_gemma4b_v1.yaml",
     "rft": "ensemble_rft_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
+    "post-training": "ensemble_post_training_v1.yaml",
+    "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
 }
 
 
@@ -1541,6 +1543,7 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
     "sft":     {"learning_rate": (1e-5, 5e-4), "iters": (50, 300)},
+    "post-training": {},
 }
 
 
@@ -1627,10 +1630,14 @@ def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iterati
     recipe_key = plan.get("recipe") or task_type
     hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
     finetune_dir = hp.get("finetune_dir", "")
+    if task_type == "post-training":
+        stage_idx = plan.get("stage_index", 0)
+        active_task = plan.get("active_task_type", "sft")
+        return os.path.join(finetune_dir, "adapters", f"astra_{mission_id[:8]}_stage{stage_idx+1}_{active_task}_iter{iteration}")
     return os.path.join(finetune_dir, "adapters", f"astra_{mission_id[:8]}_iter{iteration}")
 
 
-def finetune_checkpoint_dir_relative(mission_id: str, iteration: int) -> str:
+def finetune_checkpoint_dir_relative(mission_id: str, iteration: int, stage_index: Optional[int] = None, active_task_type: Optional[str] = None) -> str:
     """The --adapter-compatible /best CANDIDATE path (dpo_train.py resolves it
     relative to the process's cwd, which the generated wrapper script chdir's
     to finetune_dir before exec'ing) for chaining a dpo/grpo mission's own
@@ -1659,6 +1666,8 @@ def finetune_checkpoint_dir_relative(mission_id: str, iteration: int) -> str:
     matching exactly); loading the bare directory's adapters.safetensors
     instead reproduced 0.2424, a completely different, much worse model state
     that happened to share a directory with the real one."""
+    if stage_index is not None and active_task_type is not None:
+        return os.path.join("adapters", f"astra_{mission_id[:8]}_stage{stage_index+1}_{active_task_type}_iter{iteration}", "best")
     return os.path.join("adapters", f"astra_{mission_id[:8]}_iter{iteration}", "best")
 
 
@@ -1706,44 +1715,8 @@ class CodeGenerator:
             warm_start_adapter=warm_start_adapter,
         )
 
-        messages = [
-            Message(role="system", content=system_prompt),
-            Message(role="user", content=user_prompt),
-        ]
-        code = await self._provider.generate(messages, GenerationConfig(max_tokens=4096, temperature=0.1))
-        code = self._strip_fences(code)
-        if task_type == "rl":
-            code = self._patch_rl_imports(code)
-            code = self._patch_undefined_logger(code)
-            env_id = plan.get("env_id", "")
-            _proj_root = os.path.abspath(os.path.join(settings.data_path, ".."))
-            if env_id == "Snake-v0" and "register" not in code:
-                code = _SNAKE_SETUP.format(project_root=_proj_root) + "\n" + code
-                logger.info("CodeGenerator: injected Snake-v0 registration preamble")
-            elif env_id == "Tetris-v0" and "register" not in code:
-                code = _TETRIS_SETUP.format(project_root=_proj_root) + "\n" + code
-                logger.info("CodeGenerator: injected Tetris-v0 registration preamble")
-            elif env_id in ("Game2048-v0", "2048") and "register" not in code:
-                code = _GAME2048_SETUP.format(project_root=_proj_root) + "\n" + code
-                logger.info("CodeGenerator: injected Game2048-v0 registration preamble")
-            elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar", "minatar-breakout") and "register" not in code:
-                code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
-                logger.info("CodeGenerator: injected MinAtar registration preamble")
-            # Inject curriculum loop if recipe defines phases
-            _algo = plan.get("algorithm", "PPO")
-            _recipe = _load_recipe_for_env(env_id, _algo)
-            _curriculum_phases = (_recipe.get("curriculum") or {}).get("phases")
-            if _curriculum_phases:
-                _env_kw = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
-                _metric_name = next(iter(plan.get("target_metric") or {}), "food_eaten")
-                code = self._inject_curriculum(code, _curriculum_phases, env_id, _env_kw, _metric_name)
-                logger.info("CodeGenerator: injected curriculum (%d phases) for %s/%s", len(_curriculum_phases), env_id, _algo)
-        # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
-        code = self._fix_checkpoint_paths(code, checkpoint_dir)
-        # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
-        code = self._fix_execv_unpacking(code)
-
-        if task_type == "sft":
+        active_task = plan.get("active_task_type", "sft") if task_type == "post-training" else task_type
+        if active_task == "sft":
             # For SFT on remote Mac Mini (settings.sandbox_host), generate the thin
             # os.execv wrapper invoking ~/finetune/sft_train.py (same pattern as DPO).
             # Fall back to canonical SFT runner only if running locally without sandbox_host.
@@ -1754,6 +1727,43 @@ class CodeGenerator:
                 code = _SFT_REMOTE_WRAPPER.format(**sft_ctx)
             else:
                 code = _CANONICAL_SFT_RUNNER.format(**sft_ctx)
+        else:
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_prompt),
+            ]
+            code = await self._provider.generate(messages, GenerationConfig(max_tokens=4096, temperature=0.1))
+            code = self._strip_fences(code)
+            if task_type == "rl":
+                code = self._patch_rl_imports(code)
+                code = self._patch_undefined_logger(code)
+                env_id = plan.get("env_id", "")
+                _proj_root = os.path.abspath(os.path.join(settings.data_path, ".."))
+                if env_id == "Snake-v0" and "register" not in code:
+                    code = _SNAKE_SETUP.format(project_root=_proj_root) + "\n" + code
+                    logger.info("CodeGenerator: injected Snake-v0 registration preamble")
+                elif env_id == "Tetris-v0" and "register" not in code:
+                    code = _TETRIS_SETUP.format(project_root=_proj_root) + "\n" + code
+                    logger.info("CodeGenerator: injected Tetris-v0 registration preamble")
+                elif env_id in ("Game2048-v0", "2048") and "register" not in code:
+                    code = _GAME2048_SETUP.format(project_root=_proj_root) + "\n" + code
+                    logger.info("CodeGenerator: injected Game2048-v0 registration preamble")
+                elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar", "minatar-breakout") and "register" not in code:
+                    code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
+                    logger.info("CodeGenerator: injected MinAtar registration preamble")
+                # Inject curriculum loop if recipe defines phases
+                _algo = plan.get("algorithm", "PPO")
+                _recipe = _load_recipe_for_env(env_id, _algo)
+                _curriculum_phases = (_recipe.get("curriculum") or {}).get("phases")
+                if _curriculum_phases:
+                    _env_kw = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
+                    _metric_name = next(iter(plan.get("target_metric") or {}), "food_eaten")
+                    code = self._inject_curriculum(code, _curriculum_phases, env_id, _env_kw, _metric_name)
+                    logger.info("CodeGenerator: injected curriculum (%d phases) for %s/%s", len(_curriculum_phases), env_id, _algo)
+            # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
+            code = self._fix_checkpoint_paths(code, checkpoint_dir)
+            # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
+            code = self._fix_execv_unpacking(code)
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -1834,8 +1844,9 @@ class CodeGenerator:
         self, task_type: str, mission_id: str, plan: dict, checkpoint_dir: str, current_iteration: int = 0,
         warm_start_adapter: Optional[str] = None,
     ) -> str:
-        recipe_key = plan.get("recipe") or (plan.get("env_id", "") if task_type == "rl" else task_type)
-        _plan_algo = plan.get("algorithm", "PPO" if task_type == "rl" else "")
+        effective_task_type = plan.get("active_task_type", "sft") if task_type == "post-training" else task_type
+        recipe_key = plan.get("recipe") or (plan.get("env_id", "") if effective_task_type == "rl" else effective_task_type)
+        _plan_algo = plan.get("algorithm", "PPO" if effective_task_type == "rl" else "")
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}), algorithm=_plan_algo,
             warm_start_adapter=warm_start_adapter,
@@ -1847,7 +1858,7 @@ class CodeGenerator:
             "api_url": api_url,
             "target_metric": json.dumps(plan.get("target_metric", {})),
         }
-        if task_type == "rl":
+        if effective_task_type == "rl":
             tm = plan.get("target_metric", {})
             tm_name = next(iter(tm), None) if tm else None
             tm_value = next(iter(tm.values()), 200) if tm else 200
@@ -1978,12 +1989,12 @@ class CodeGenerator:
                 **base,
             }
             return _RL_TEMPLATE.format(**ctx)
-        if task_type == "sft":
+        if effective_task_type == "sft":
             ctx = self._build_sft_context(
                 mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
             )
             return _SFT_TEMPLATE.format(**ctx)
-        if task_type == "mlx_lora":
+        if effective_task_type == "mlx_lora":
             dataset = plan.get("dataset", {})
             ctx = {
                 **hp,
@@ -1994,7 +2005,7 @@ class CodeGenerator:
                 **base,
             }
             return _MLX_LORA_TEMPLATE.format(**ctx)
-        if task_type == "dpo":
+        if effective_task_type == "dpo":
             load_pairs = hp.get("load_pairs", "")
             ctx = {
                 **hp,
@@ -2007,14 +2018,14 @@ class CodeGenerator:
                 **base,
             }
             return _DPO_TEMPLATE.format(**ctx)
-        if task_type == "grpo":
+        if effective_task_type == "grpo":
             ctx = {
                 **hp,
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
                 **base,
             }
             return _GRPO_TEMPLATE.format(**ctx)
-        if task_type == "distill":
+        if effective_task_type == "distill":
             # Cold start: no warm-start adapter exists for this base model, so
             # LoRA weights are freshly initialised and the run ESTABLISHES a
             # baseline rather than testing against one. distill_train.py
@@ -2034,7 +2045,7 @@ class CodeGenerator:
                 **base,
             }
             return _DISTILL_TEMPLATE.format(**ctx)
-        if task_type == "rft":
+        if effective_task_type == "rft":
             # Same cold-start fork as distill: rft_train.py takes exactly one of
             # --adapter / --no-adapter.
             _cold = bool(hp.get("no_adapter", False))
@@ -2050,7 +2061,7 @@ class CodeGenerator:
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)
-        if task_type == "prompt":
+        if effective_task_type == "prompt":
             ctx = {
                 **hp,
                 "variant_path": f"{checkpoint_dir}/conductor_variant.md",
