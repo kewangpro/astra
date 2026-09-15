@@ -1995,6 +1995,15 @@ Two root causes were diagnosed:
   - Auto-approved `execute_code` gate via `CodeSafetyClassifier` fast path.
   - Launched SSHSandbox on Mac Mini (`remote_pid=11654`).
   - Baseline evaluation established: **71.8% (51/71)** static pass rate, **72.7% (8/11)** held-out, automatically focusing the 20 failing baseline cases with 10× sampling weight.
+  - Completed all 100 iterations (139.4 min wall-clock on Mac Mini Apple Silicon GPU).
+  - Reached **81.7% (58/71)** training evaluation pass rate at step 75; exported best adapter to `adapters/astra_bab0c98a_iter0/best` with `checkpoint_metadata.json`.
+- [x] **Independent `bare_eval.py` Verification & Champion Crowning**:
+  - Executed independent greedy evaluation across all 78 routing test cases (`logs/bare_eval_bab0c98a.json`):
+    - **Model-routed accuracy**: **88.9% (48/54)** (up from 79.6% DPO, 0.0% baseline).
+    - **Static-skill routing**: **80.3% (57/71)** (up from 71.8% DPO, breaking past the 80% mark).
+    - **Pre-LLM shortcut**: **52.9% (9/17)**.
+    - **Blended (all cases)**: **73.1% (57/78)** (up from 66.7% DPO).
+  - Promoted `astra-gemma-3-12b-routing-grpo-iter0` (`d16e305a-2c5f-4738-8f33-313289cbe8a1`) to active **Domain Champion** in the Model Registry (`is_champion: true`).
 
 
 

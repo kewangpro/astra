@@ -132,7 +132,7 @@ make ports  # show port status for all services
 | **Remote SFT via MLX (Phase 58)** | Apple Silicon Mac Mini offload following DPO pattern, zero-orphan `os.execv` wrapper, dynamic validation batch-clamping, live SSH loss tailing | ✅ Complete |
 | **Pipeline Chaining & LoRA Auto-Detection (Phase 59)** | End-to-end SFT → DPO pipeline chaining, LoRA config auto-detection from warm-start adapters, `--load-pairs` acceleration, strict non-RL recipe hyperparameter locking | ✅ Complete |
 | **Ensemble Routing SFT-to-DPO Pipeline & Recipe Locking (Phase 60)** | Pure routing demonstration dataset (`data_routing`), strict recipe hyperparameter locking against Metal OOM, guaranteed SFT adapter checkpoint propagation, lower-is-better metric HUD | ✅ Complete |
-| **Stage 3 Online GRPO RL Chaining (Phase 61)** | Online GRPO exploration ($K=2$) warm-started from DPO Champion (`astra_4604539c`), 10× failure focus pool, LoRA auto-detection, and automated `checkpoint_metadata.json` | 🚀 Active |
+| **Stage 3 Online GRPO RL Chaining (Phase 61)** | Online GRPO exploration ($K=2$) warm-started from DPO Champion (`astra_4604539c`), 10× failure focus pool, reaching 88.9% model-routed / 80.3% static accuracy, and crowning new Domain Champion | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 
