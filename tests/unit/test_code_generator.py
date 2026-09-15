@@ -1647,6 +1647,16 @@ def test_resolve_hyperparams_grpo_email_weight_excludes_email_cases():
     assert result["email_weight"] == 0
 
 
+def test_resolve_hyperparams_grpo_chained_uses_dpo_champion():
+    """Chained GRPO recipe must warm-start from Stage 2 DPO champion with 4-layer LoRA."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams("ensemble_sft_dpo_grpo_v1", {})
+    assert result["adapter"] == "adapters/astra_4604539c_iter0/best"
+    assert result["num_layers"] == 4
+    assert result["lora_rank"] == 8
+    assert result["prompt_template"] == "backend/prompts/conductor_min.md"
+
+
 def test_build_user_prompt_dpo_includes_save_pairs(tmp_path, monkeypatch):
     """--save-pairs must always be passed so a future pivot can reuse collected
     pairs via --load-pairs instead of re-running the slowest phase (~30-60 min)."""

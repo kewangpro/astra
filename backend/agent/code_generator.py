@@ -1447,6 +1447,9 @@ _ENV_RECIPE: dict = {
     "dpo/ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
     "ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
+    "grpo/chained": "ensemble_sft_dpo_grpo_v1.yaml",
+    "grpo/ensemble_sft_dpo_grpo_v1": "ensemble_sft_dpo_grpo_v1.yaml",
+    "ensemble_sft_dpo_grpo_v1": "ensemble_sft_dpo_grpo_v1.yaml",
     # 2026-09-06: pointed at the conductor_gemma.md 4B cold-start experiment.
     # The pre-RL arm (ensemble_distill_prerl_v1.yaml) is also a measured
     # negative now: mission 6470e2db scored 11/12 held-out but 61/78 on

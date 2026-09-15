@@ -1967,6 +1967,35 @@ Two root causes were diagnosed:
 - [x] **Test Suite Expansion & Verification**:
   - Added unit tests for recipe locking, resulting in **1087 tests** passing (1072 unit + 15 integration; clean build; all SFT/DPO codegen validated).
 
+---
+
+## Phase 61 — Stage 3 Online GRPO Reinforcement Learning Chained from DPO Champion
+
+**Problem:** While Stage 2 DPO preference tuning successfully eliminated the schema collapse and brought routing pass rates from 0.0% to 71.8% static / 79.6% model-routed, offline pairs cannot explore alternate high-reward trajectories for the remaining 20 failure cases (e.g. multi-step schedule, natural language travel dates, and shell pipeline delegations). Online reinforcement learning with group relative advantage estimation is needed to break past the 80% threshold.
+
+- [x] **DPO Champion Crowning & Model Registry Integration** (`backend/routers/registry.py`):
+  - Completed Stage 2 DPO Mission `#4604539c` (58/58 steps, `avg_loss: 0.6666`, static pass rate 71.8%, held-out 72.7%, model-routed 79.6%).
+  - Registered both Stage 1 SFT (`astra-gemma-3-12b-routing-sft-iter0`) and Stage 2 DPO (`astra-gemma-3-12b-routing-dpo-iter0`) into the Model Registry.
+  - Promoted `astra-gemma-3-12b-routing-dpo-iter0` to active Domain Champion (`is_champion: true`).
+- [x] **Chained GRPO Recipe Architecture** (`recipes/ensemble_sft_dpo_grpo_v1.yaml`):
+  - Created `recipes/ensemble_sft_dpo_grpo_v1.yaml` chaining directly from `adapters/astra_4604539c_iter0/best`.
+  - Configured LoRA parameters to match upstream adapter (4 layers, rank 8, scale 5.0, dropout 0.1) on `mlx-community/gemma-3-12b-it-4bit`.
+  - Configured GRPO exploration: $K=2$ rollouts per prompt, temperature $1.2$, max tokens $96$, learning rate $1 \times 10^{-6}$, 100 iterations.
+  - Targeted pass rate metric: `{"pass_rate": 0.75}` (metric ceiling: 0.91).
+- [x] **Remote Trainer Hardening & Auto-Detection** (`grpo_train.py` on Mac Mini):
+  - Added dynamic LoRA parameter auto-detection from `adapter_config.json` in `--adapter`.
+  - Guaranteed `save_dir/best` adapter export on final evaluation completion.
+  - Added automated `checkpoint_metadata.json` generation in both `save_dir` and `save_dir/best`.
+- [x] **Astra Loop Fallback & Codegen Mapping** (`backend/agent/code_generator.py`, `backend/loop/state_machine.py`):
+  - Added `ensemble_sft_dpo_grpo_v1` and aliases to `_ENV_RECIPE` in `code_generator.py`.
+  - Added default recipe fallback for GRPO missions in `state_machine.py`.
+  - Added unit test `test_resolve_hyperparams_grpo_chained_uses_dpo_champion` in `tests/unit/test_code_generator.py`.
+- [x] **Live Mission Dispatch & Active Execution** (`#bab0c98a`):
+  - Dispatched via `POST /recipes/ensemble_sft_dpo_grpo_v1/dispatch`.
+  - Auto-approved `execute_code` gate via `CodeSafetyClassifier` fast path.
+  - Launched SSHSandbox on Mac Mini (`remote_pid=11654`).
+  - Baseline evaluation established: **71.8% (51/71)** static pass rate, **72.7% (8/11)** held-out, automatically focusing the 20 failing baseline cases with 10× sampling weight.
+
 
 
 

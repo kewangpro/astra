@@ -591,6 +591,10 @@ class LoopStateMachine:
                     plan["recipe"] = mission.current_plan["recipe"]
                 if mission.task_type == "sft" and not plan.get("recipe"):
                     plan["recipe"] = "ensemble_sft_v1"
+                if mission.task_type == "grpo" and not plan.get("recipe"):
+                    plan["recipe"] = "ensemble_grpo_v1"
+                if mission.task_type == "dpo" and not plan.get("recipe"):
+                    plan["recipe"] = "ensemble_sft_dpo_v1"
                 # Inject trainer_type for envs that use a custom training loop.
                 if self._should_force_actor_critic(
                     plan.get("env_id", ""), plan.get("algorithm", ""),
