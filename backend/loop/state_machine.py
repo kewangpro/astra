@@ -1174,7 +1174,7 @@ class LoopStateMachine:
                     await self._save_pivot_pre_best(mission_id, None)
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
-                manifest = self._load_or_create_manifest(mission_id, mission)
+                manifest = self._load_or_create_manifest(mission_id, mission, plan=plan)
                 manifest = self._manifest_evaluator.evaluate(
                     manifest, current_metrics, mission_dir, sandbox_ok=True,
                 )
@@ -1226,6 +1226,7 @@ class LoopStateMachine:
                             plan["active_task_type"] = next_stage.get("task")
                             plan["recipe"] = next_stage.get("recipe")
                             plan["hyperparameters"] = next_stage.get("hyperparameters", {})
+                            mission.current_plan = plan
                             await self._save_plan(mission_id, plan)
 
                             await emit_status(
@@ -2320,13 +2321,16 @@ class LoopStateMachine:
     def _manifest_path(self, mission_id: str) -> str:
         return os.path.join(settings.data_path, "missions", mission_id, "requirements.json")
 
-    def _load_or_create_manifest(self, mission_id: str, mission: Mission) -> RequirementManifest:
+    def _load_or_create_manifest(
+        self, mission_id: str, mission: Mission, plan: Optional[dict] = None
+    ) -> RequirementManifest:
         path = self._manifest_path(mission_id)
+        current_plan = plan or mission.current_plan or {}
         task_type_for_manifest = mission.task_type
         target_metric_for_manifest = mission.target_metric or {}
-        if mission.task_type == "post-training" and mission.current_plan and mission.current_plan.get("stages"):
-            stage_idx = mission.current_plan.get("stage_index", 0)
-            stages = mission.current_plan.get("stages", [])
+        if mission.task_type == "post-training" and current_plan and current_plan.get("stages"):
+            stage_idx = current_plan.get("stage_index", 0)
+            stages = current_plan.get("stages", [])
             if stage_idx < len(stages):
                 curr_stage = stages[stage_idx]
                 task_type_for_manifest = curr_stage.get("task", "sft")
