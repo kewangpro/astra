@@ -2322,13 +2322,23 @@ class LoopStateMachine:
 
     def _load_or_create_manifest(self, mission_id: str, mission: Mission) -> RequirementManifest:
         path = self._manifest_path(mission_id)
+        task_type_for_manifest = mission.task_type
+        target_metric_for_manifest = mission.target_metric or {}
+        if mission.task_type == "post-training" and mission.current_plan and mission.current_plan.get("stages"):
+            stage_idx = mission.current_plan.get("stage_index", 0)
+            stages = mission.current_plan.get("stages", [])
+            if stage_idx < len(stages):
+                curr_stage = stages[stage_idx]
+                task_type_for_manifest = curr_stage.get("task", "sft")
+                target_metric_for_manifest = curr_stage.get("target_metric") or target_metric_for_manifest
+
         if os.path.isfile(path):
             try:
                 manifest = RequirementManifest.load(path)
                 changed = False
                 for req in manifest.requirements:
-                    if req.check_type == "metric_threshold" and req.metric_name in (mission.target_metric or {}):
-                        tm_val = float(mission.target_metric[req.metric_name])
+                    if req.check_type == "metric_threshold" and req.metric_name in target_metric_for_manifest:
+                        tm_val = float(target_metric_for_manifest[req.metric_name])
                         if req.threshold != tm_val:
                             req.threshold = tm_val
                             op_word = "at most" if req.operator == "<=" else "at least"
@@ -2343,15 +2353,6 @@ class LoopStateMachine:
                 return manifest
             except Exception as exc:
                 logger.warning("LoopStateMachine: could not load manifest for %s: %s — regenerating", mission_id, exc)
-        task_type_for_manifest = mission.task_type
-        target_metric_for_manifest = mission.target_metric or {}
-        if mission.task_type == "post-training" and mission.current_plan and mission.current_plan.get("stages"):
-            stage_idx = mission.current_plan.get("stage_index", 0)
-            stages = mission.current_plan.get("stages", [])
-            if stage_idx < len(stages):
-                curr_stage = stages[stage_idx]
-                task_type_for_manifest = curr_stage.get("task", "sft")
-                target_metric_for_manifest = curr_stage.get("target_metric") or target_metric_for_manifest
         manifest = generate_manifest(
             mission_id=mission_id,
             goal=mission.goal,
