@@ -2425,6 +2425,9 @@ class LoopStateMachine:
             elif env_id in ("MinAtar-Asteroids-v0",):
                 from envs.minatar_asteroids_env import register
                 register()
+            elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
+                from envs.agent_gym import register
+                register()
 
             import gymnasium as gym
             import json as _json
@@ -2467,6 +2470,8 @@ class LoopStateMachine:
                             ep_val = float(info.get(metric_name, 0))
                     values.append(ep_val)
                 env.close()
+                if metric_name in ("task_success", "pass_rate", "success_rate"):
+                    return float(np.mean(values)) if values else None
                 return float(max(values)) if values else None
 
             # SB3 path
@@ -2489,6 +2494,8 @@ class LoopStateMachine:
                 values.append(ep_val)
 
             env.close()
+            if metric_name in ("task_success", "pass_rate", "success_rate"):
+                return float(np.mean(values)) if values else None
             return float(max(values)) if values else None
         except Exception as exc:
             logger.warning("LoopStateMachine: goal metric eval error: %s", exc)

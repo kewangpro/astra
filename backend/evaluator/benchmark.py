@@ -120,9 +120,11 @@ def _rollout_actor_critic(checkpoint_path: str, env_id: str, n_episodes: int = 1
                     info_accum.setdefault(k, []).append(float(v))
                 except (TypeError, ValueError):
                     pass
-        env.close()
-        max_info = {k: float(np.max(vs)) for k, vs in info_accum.items()}
-        return float(np.mean(rewards)), max_info
+        info_summary = {
+            k: float(np.mean(vs)) if k in ("task_success", "pass_rate", "success_rate") else float(np.max(vs))
+            for k, vs in info_accum.items()
+        }
+        return float(np.mean(rewards)), info_summary
     except Exception as exc:
         logger.warning("BenchmarkSuite actor_critic rollout failed env=%s: %s", env_id, exc)
         return 0.0, {}
@@ -235,10 +237,12 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
                 except (TypeError, ValueError):
                     pass
         env.close()
-        # Use max for goal metrics (e.g. food_eaten, lines_cleared) — reflects peak
-        # capability rather than average, consistent with "achieve X" goal semantics.
-        max_info = {k: float(np.max(vs)) for k, vs in info_accum.items()}
-        return float(np.mean(rewards)), max_info
+        # Use mean for rate metrics (task_success, pass_rate, etc.), max for peak metrics (food_eaten, lines_cleared).
+        info_summary = {
+            k: float(np.mean(vs)) if k in ("task_success", "pass_rate", "success_rate") else float(np.max(vs))
+            for k, vs in info_accum.items()
+        }
+        return float(np.mean(rewards)), info_summary
     except Exception as exc:
         logger.warning("BenchmarkSuite rollout failed env=%s: %s", env_id, exc)
         return 0.0, {}
