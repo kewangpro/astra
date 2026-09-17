@@ -2043,6 +2043,17 @@ Enable **one single mission** with `task_type: "post-training"` to autonomously 
   - `tests/unit/test_post_training_pipeline.py`: Added 8 unit tests covering task registration, recipe schema, stage scoping, safety auto-approval, preflight checks, codegen wrapper, and manifest generation.
   - `tests/integration/test_loop_state_machine.py`: Added `test_post_training_mission_executes_all_3_stages_sequentially` verifying full sequential auto-progression across all 3 stages and completion.
   - Verified full test suite passes (1,097/1,097 tests passing).
+- [x] **End-to-End Live Mission Execution & Autonomous Completion** (`#525b0c29`):
+  - Dispatched canonical recipe `ensemble_post_training_v1` via `POST /recipes/ensemble_post_training_v1/dispatch`.
+  - **Stage 1 (Routing SFT)**: Completed 150 iterations on `data_routing` (`eval_loss = 0.436` vs target $\le 0.80$). Checkpoint saved to `adapters/astra_525b0c29_stage1_sft_iter0/best`. Auto-advanced to Stage 2.
+  - **Stage 2 (Chained DPO)**: Warm-started from Stage 1 SFT adapter. Validation pass rate reached **79.6%** (target $\ge 70.0\%$). Checkpoint saved to `adapters/astra_525b0c29_stage2_dpo_iter1/best`. Auto-advanced to Stage 3.
+  - **Stage 3 (Chained GRPO RL)**: Warm-started from Stage 2 DPO adapter. Optimized through online exploration rollouts with 10× failure focus pool.
+  - **Terminal Goal Reached**: Reached **83.1% pass rate (59/71 cases passing)**, surpassing the terminal mission goal ($\ge 80.0\%$).
+  - **Single Mission Completion**: Reached `status: completed` with all 3 stage checkpoints preserved in `stage_checkpoints`:
+    - `stage_1`: `adapters/astra_525b0c29_stage1_sft_iter0/best`
+    - `stage_2`: `adapters/astra_525b0c29_stage2_dpo_iter1/best`
+    - `stage_3`: `adapters/astra_525b0c29_stage3_grpo_iter10/best`
+  - **Model Registry**: Registered unified post-training champion model `astra-gemma-3-12b-routing-post-training-unified` (`915515cd-ec9d-41de-b15d-469423a839f9`).
 
 
 
