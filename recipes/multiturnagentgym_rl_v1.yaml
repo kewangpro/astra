@@ -1,0 +1,33 @@
+task_type: RL
+domain: MultiTurnAgentGym
+algorithm: PPO
+description: Auto-crystallized recipe from mission a3ec506b. Achieved score 1.0000.
+hyperparameters:
+  learning_rate: 0.001
+  n_steps: 1024
+  batch_size: 64
+  n_epochs: 20
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.1
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+created_at: '2026-09-17'
+provenance:
+  mission_id: a3ec506b-22c2-4528-b040-06db74c863c7
+  iterations: 0
+  best_score: 1.0
+env_id: MultiTurnAgentGym-v0
+curriculum:
+  phases:
+  - phase: 0
+    num_iterations: 10000
+    reward_shaping: dense
+  - phase: 1
+    num_iterations: 20000
+    reward_shaping: sparse
+target_metric:
+  task_success: 0.85
+name: multiturnagentgym_rl_v1
+version: 1.0.0
