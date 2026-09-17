@@ -7,6 +7,7 @@ import { api, ModelRecord, TournamentResponse, TournamentEntry } from "@/lib/api
 const ENV_OPTIONS = [
   { id: "Snake-v0", label: "Snake-v0" },
   { id: "Tetris-v0", label: "Tetris-v0" },
+  { id: "MultiTurnAgentGym-v0", label: "Agent Gym (Multi-Turn)" },
   { id: "Game2048-v0", label: "2048 (Lookahead)" },
   { id: "MinAtar-Breakout-v0", label: "MinAtar Breakout" },
   { id: "MinAtar-SpaceInvaders-v0", label: "MinAtar Space Invaders" },
@@ -194,7 +195,7 @@ export default function ModelsPage() {
               Candidate Selection
             </label>
             <p className="text-xs text-[#64748b] pt-1">
-              Auto-discovers checkpoints in <code className="text-[#14b8a6] font-mono">runs/</code> and registry.
+              Auto-discovers checkpoints in <code className="text-[#14b8a6] font-mono">data/missions/</code> and registry.
             </p>
           </div>
         </div>

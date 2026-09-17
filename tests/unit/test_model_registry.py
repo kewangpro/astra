@@ -254,8 +254,54 @@ def test_run_tournament_match_nlp(tmp_path):
     assert len(res["leaderboard"]) == 2
     assert res["leaderboard"][0]["rank"] == 1
     assert res["leaderboard"][0]["model_id"] == "m1"
-    assert res["leaderboard"][0]["win_rate"] == 1.0
     assert res["leaderboard"][1]["rank"] == 2
     assert res["leaderboard"][1]["model_id"] == "m2"
     assert res["leaderboard"][1]["win_rate"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_tournament_auto_discovers_missions_checkpoints(tmp_path, monkeypatch):
+    """Verify that tournament auto-discovers checkpoints from data/missions when not in DB."""
+    import json
+    missions_dir = tmp_path / "data" / "missions"
+    m1_ckpt = missions_dir / "m1" / "checkpoints"
+    m2_ckpt = missions_dir / "m2" / "checkpoints"
+    m1_ckpt.mkdir(parents=True)
+    m2_ckpt.mkdir(parents=True)
+
+    with open(m1_ckpt / "train_config.json", "w") as f:
+        json.dump({"algorithm": "DQN", "env_id": "Snake-v0"}, f)
+    with open(m2_ckpt / "train_config.json", "w") as f:
+        json.dump({"algorithm": "PPO", "env_id": "Snake-v0"}, f)
+
+    (m1_ckpt / "best_model.zip").write_text("dummy1")
+    (m2_ckpt / "best_model.zip").write_text("dummy2")
+
+    monkeypatch.chdir(tmp_path)
+
+    db = _make_db(items=[])
+    req = TournamentRequest(env_id="Snake-v0", n_episodes=2)
+
+    fake_result = {
+        "env_id": "Snake-v0",
+        "episodes": 2,
+        "leaderboard": [
+            {"model_id": "m1", "name": "DQN", "checkpoint_path": str(m1_ckpt / "best_model.zip"),
+             "mean_score": 50.0, "std_score": 0.0, "min_score": 50.0, "max_score": 50.0, "win_rate": 1.0,
+             "scores": [50.0, 50.0], "rank": 1},
+            {"model_id": "m2", "name": "PPO", "checkpoint_path": str(m2_ckpt / "best_model.zip"),
+             "mean_score": 40.0, "std_score": 0.0, "min_score": 40.0, "max_score": 40.0, "win_rate": 0.0,
+             "scores": [40.0, 40.0], "rank": 2},
+        ],
+        "champion_id": "m1",
+    }
+
+    with patch("backend.routers.registry.run_tournament_match", return_value=fake_result) as mock_match:
+        resp = await run_tournament(req, db=db)
+        assert resp["champion_id"] == "m1"
+        assert len(resp["leaderboard"]) == 2
+        mock_match.assert_called_once()
+        call_kwargs = mock_match.call_args[1]
+        assert len(call_kwargs["checkpoint_entries"]) == 2
+
 

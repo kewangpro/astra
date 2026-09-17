@@ -530,6 +530,15 @@ def run_tournament_match(
         elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
             from envs.agent_gym import register as _reg; _reg()
 
+        if env_kwargs is None:
+            for entry in checkpoint_entries:
+                kw = _load_env_kwargs(entry["path"])
+                if kw:
+                    env_kwargs = kw
+                    break
+        if not env_kwargs and env_id == "Snake-v0":
+            env_kwargs = {"obs_type": "features", "max_steps": 2000}
+
         loaded_models = []
         for entry in checkpoint_entries:
             path = entry["path"]
