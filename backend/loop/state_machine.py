@@ -3156,7 +3156,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "prompt", "sft", "post-training"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "prompt", "sft", "post-training", "star"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

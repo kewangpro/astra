@@ -1266,6 +1266,73 @@ The script must:
    element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
    omitted entirely if empty. Do not insert an empty string element in the list.)"""
 
+_STAR_REMOTE_WRAPPER = """\
+import sys
+import os
+
+# Change working directory to where star_train.py is located
+os.chdir("{finetune_dir}")
+
+# Ensure checkpoint directory exists
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+# Construct argv list for os.execv (zero-orphan process replacement)
+argv = [
+    "{python_bin}", "{finetune_dir}/star_train.py",
+    "--model", "{base_model}",
+    {adapter_arg}
+    "--save-dir", "{checkpoint_dir}",
+    "--prompt-template", "{prompt_template}",
+    "--k-samples", "{k_samples}",
+    "--temp", "{temp}",
+    "--rationalize-temp", "{rationalize_temp}",
+    "--max-tokens", "{max_tokens}",
+    "--eval-max-tokens", "{eval_max_tokens}",
+    "--num-layers", "{num_layers}",
+    "--lora-rank", "{lora_rank}",
+    "--lora-scale", "{lora_scale}",
+    "--lora-dropout", "{lora_dropout}",
+    "--iters", "{iters}",
+    "--batch-size", "{batch_size}",
+    "--learning-rate", "{learning_rate}",
+    "--steps-per-eval", "{steps_per_eval}",
+    "--save-every", "{save_every}",
+    "--max-seq-len", "{max_seq_len}",
+    "--val-split", "{val_split}",
+    "--reward-schema", "{reward_schema}",
+]
+if {routing_only}:
+    argv.append("--routing-only")
+
+# Execute star_train.py
+os.execv("{python_bin}", argv)
+"""
+
+_STAR_TEMPLATE = """\
+Generate a script that runs Self-Taught Reasoner (STaR) fine-tuning by invoking the
+EXISTING star_train.py script — do NOT reimplement the sampling, rationalization,
+filtering, LoRA training, or routing eval yourself. This script is a thin
+orchestration wrapper only — it does NOT report telemetry itself. Astra tails
+this process's log remotely and parses "Pass rate" lines on its own.
+
+Mission ID: {mission_id}
+Finetune dir (remote host, star_train.py lives here): {finetune_dir}
+Python interpreter: {python_bin}
+Base model: {base_model}
+Warm-start: {warm_start_desc}
+Prompt template: {prompt_template}
+Sampling: k_samples={k_samples}, temp={temp}, rationalize_temp={rationalize_temp}, max_tokens={max_tokens}
+LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
+Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
+save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
+Adapter output: {checkpoint_dir}
+
+The script must:
+1. Import sys, os only. Use os.execv, NOT subprocess.
+2. First os.chdir("{finetune_dir}").
+3. Then os.execv with the python interpreter and argv invoking star_train.py.
+"""
+
 _PROMPT_TEMPLATE = """\
 Generate a script that evaluates a CANDIDATE PROMPT VARIANT by invoking the
 EXISTING bare_eval.py — do NOT reimplement the eval, the scoring, or the routing
@@ -1468,6 +1535,8 @@ _ENV_RECIPE: dict = {
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
     "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
+    "star": "ensemble_star_v1.yaml",
+    "ensemble_star_v1": "ensemble_star_v1.yaml",
 }
 
 
@@ -1544,6 +1613,7 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     "prompt":  {},
     "sft":     {"learning_rate": (1e-5, 5e-4), "iters": (50, 300)},
     "post-training": {},
+    "star":    {"k_samples": (4, 16), "temp": (0.7, 1.5), "rationalize_temp": (0.5, 1.2), "learning_rate": (1e-5, 5e-4)},
 }
 
 
@@ -1569,7 +1639,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "prompt", "ensemble_sft_v1") or task_type in ("dpo", "grpo", "distill", "rft", "prompt"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "prompt", "ensemble_sft_v1", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "prompt", "star"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -1727,6 +1797,19 @@ class CodeGenerator:
                 code = _SFT_REMOTE_WRAPPER.format(**sft_ctx)
             else:
                 code = _CANONICAL_SFT_RUNNER.format(**sft_ctx)
+        elif active_task == "star":
+            star_ctx = self._build_star_context(
+                mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
+            )
+            if settings.sandbox_host:
+                code = _STAR_REMOTE_WRAPPER.format(**star_ctx)
+            else:
+                messages = [
+                    Message(role="system", content=system_prompt),
+                    Message(role="user", content=user_prompt),
+                ]
+                code = await self._provider.generate(messages, GenerationConfig(max_tokens=4096, temperature=0.1))
+                code = self._strip_fences(code)
         else:
             messages = [
                 Message(role="system", content=system_prompt),
@@ -1836,6 +1919,63 @@ class CodeGenerator:
             "eval_steps": hp.get("eval_steps", hp.get("steps_per_eval", 25)),
             "lora_r": hp.get("lora_rank", hp.get("lora_r", 16)),
             "lora_alpha": hp.get("lora_scale", hp.get("lora_alpha", 32.0)),
+            **hp,
+            **base,
+        }
+
+    def _build_star_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        recipe_key = plan.get("recipe") or "star"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        api_url = f"http://127.0.0.1:{settings.api_port}"
+        base = {
+            "mission_id": mission_id,
+            "checkpoint_dir": checkpoint_dir,
+            "api_url": api_url,
+            "target_metric": json.dumps(plan.get("target_metric", {})),
+        }
+        raw_model = str(hp.get("base_model", ""))
+        base_model = raw_model if "/" in raw_model else "mlx-community/gemma-3-12b-it-4bit"
+        _cold = bool(hp.get("no_adapter", False))
+        adapter_val = hp.get("adapter", "") or warm_start_adapter or ""
+        if _cold or not adapter_val:
+            adapter_arg = '"--no-adapter",'
+        else:
+            adapter_arg = f'"--adapter", "{adapter_val}",'
+
+        return {
+            "base_model": base_model,
+            "adapter_arg": adapter_arg,
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "prompt_template": hp.get("prompt_template", "backend/prompts/conductor_min.md"),
+            "k_samples": hp.get("k_samples", 8),
+            "temp": hp.get("temp", 1.0),
+            "rationalize_temp": hp.get("rationalize_temp", 0.8),
+            "max_tokens": hp.get("max_tokens", 256),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+            "num_layers": hp.get("num_layers", 4),
+            "lora_rank": hp.get("lora_rank", 8),
+            "lora_scale": hp.get("lora_scale", 5.0),
+            "lora_dropout": hp.get("lora_dropout", 0.1),
+            "iters": hp.get("iters", 100),
+            "batch_size": hp.get("batch_size", 2),
+            "learning_rate": hp.get("learning_rate", 0.0001),
+            "steps_per_eval": hp.get("steps_per_eval", 25),
+            "save_every": hp.get("save_every", 25),
+            "max_seq_len": hp.get("max_seq_len", 2048),
+            "val_split": hp.get("val_split", 0.15),
+            "reward_schema": hp.get("reward_schema", "v1"),
+            "routing_only": "True" if hp.get("routing_only", True) else "False",
             **hp,
             **base,
         }
@@ -2061,6 +2201,18 @@ class CodeGenerator:
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)
+        if effective_task_type == "star":
+            _cold = bool(hp.get("no_adapter", False))
+            ctx = {
+                **hp,
+                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
+                "warm_start_desc": (
+                    "NONE — cold start (--no-adapter); this run establishes a baseline"
+                    if _cold else hp.get("adapter", "")
+                ),
+                **base,
+            }
+            return _STAR_TEMPLATE.format(**ctx)
         if effective_task_type == "prompt":
             ctx = {
                 **hp,

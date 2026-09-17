@@ -1,0 +1,48 @@
+name: ensemble_star_v1
+version: "1.0.0"
+created_at: "2026-09-17"
+task_type: star
+domain: routing
+description: >
+  Self-Taught Reasoner (STaR) fine-tuning flywheel for the Ensemble conductor routing model.
+  Samples K direct completions with CoT reasoning per case at temperature T. When a case fails
+  all direct rollouts, invokes hint-guided rationalization (providing ground truth destination)
+  to induce a verified backward reasoning chain (<think>...</think>). Trains LoRA adapters on the
+  synthesized dataset using unhinted prompts, iteratively elevating the model's reasoning ceiling.
+
+target_metric:
+  pass_rate: 0.85
+
+metric_ceiling:
+  pass_rate: 0.95
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  prompt_template: backend/prompts/conductor_min.md
+  routing_only: true
+  include_dynamic_mcp: false
+
+  # STaR Sampling & Rationalization
+  k_samples: 8
+  temp: 1.0
+  rationalize_temp: 0.8
+  max_tokens: 256
+  eval_max_tokens: 256
+  reward_schema: v1
+
+  # LoRA Configuration (aligned with SFT/DPO/GRPO stack)
+  num_layers: 4
+  lora_rank: 8
+  lora_scale: 5.0
+  lora_dropout: 0.1
+
+  # Training Hyperparameters
+  iters: 100
+  batch_size: 2
+  learning_rate: 0.0001
+  steps_per_eval: 25
+  save_every: 25
+  max_seq_len: 2048
+  val_split: 0.15

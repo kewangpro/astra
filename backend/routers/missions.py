@@ -55,6 +55,8 @@ def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
     g = goal.lower()
     if "post-training" in g or "post training" in g or "post_training" in g:
         return "post-training"
+    if re.search(r"\bstar\b", g) or "self-taught reasoner" in g or "self taught reasoner" in g or "rationaliz" in g:
+        return "star"
     if "rejection-sampling" in g or "rejection sampling" in g or re.search(r"\brft\b", g):
         return "rft"
     if "distill" in g or "distillation" in g:

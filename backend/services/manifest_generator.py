@@ -31,6 +31,7 @@ _CHECKPOINT_PATTERNS: dict = {
     # variant is a proposal a human promotes, not a change astra makes.
     "prompt": "checkpoints/conductor_variant.md",
     "post-training": "checkpoints/*/",
+    "star": "checkpoints/best/",
 }
 
 # For metrics where lower is better, flip the operator
