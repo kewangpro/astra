@@ -319,6 +319,9 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
             break
     if not env_kwargs and payload.env_id == "Snake-v0":
         env_kwargs = {"obs_type": "features", "max_steps": 2000}
+    if payload.env_id == "Tetris-v0":
+        env_kwargs = dict(env_kwargs or {})
+        env_kwargs["max_steps"] = min(env_kwargs.get("max_steps", 500), 500)
 
     result = await asyncio.to_thread(
         run_tournament_match,

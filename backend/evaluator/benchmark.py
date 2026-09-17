@@ -592,18 +592,17 @@ def run_tournament_match(
                 while not done and not truncated:
                     if m["is_ac"]:
                         import torch
-                        next_states = base_env.get_next_states()
+                        next_states = base_env.get_next_states() if hasattr(base_env, "get_next_states") else None
                         if next_states:
+                            acts = list(next_states.keys())
+                            states = list(next_states.values())
                             with torch.no_grad():
-                                best_act, best_v = None, float("-inf")
-                                for act, st in next_states.items():
-                                    val = m["model"](torch.tensor(st, dtype=torch.float32).unsqueeze(0))
-                                    if isinstance(val, tuple):
-                                        val = val[1]
-                                    v = float(val.squeeze())
-                                    if v > best_v:
-                                        best_v, best_act = v, act
-                            action = best_act
+                                st_t = torch.as_tensor(np.array(states), dtype=torch.float32)
+                                val = m["model"](st_t)
+                                if isinstance(val, tuple):
+                                    val = val[1]
+                                v = np.atleast_1d(val.squeeze().cpu().numpy())
+                                action = acts[int(np.argmax(v))] if len(acts) > 0 else 0
                         else:
                             action = 0
                     else:

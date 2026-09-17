@@ -1,4 +1,7 @@
-const BASE = "/api";
+const BASE =
+  typeof window !== "undefined"
+    ? `http://${window.location.hostname}:8200`
+    : "http://localhost:8200";
 
 export interface Mission {
   id: string;
