@@ -2081,6 +2081,27 @@ Enable **closed-loop reasoning bootstrapping** via the `star` task type (`task_t
   - `tests/unit/test_star_pipeline.py`: 8 comprehensive unit tests passing (task type registration, keyword inference, recipe validation, pivot clamping, codegen wrapper, safety classification, preflight check, and recipe dispatch).
   - Verified full test suite passes (1,105/1,105 tests passing).
 
+---
+
+## Phase 64: Multi-Turn Agent Gym Environment & Trajectory RL
+
+Bridge Astra's Gymnasium reinforcement learning engine with multi-turn agent tool-use architectures (`MultiTurnAgentGym-v0` / `AgentGym-v0`):
+
+- [x] **Gymnasium Environment Implementation** (`envs/agent_gym.py`):
+  - Created `AgentToolGym(gym.Env)` implementing formal Gymnasium specifications:
+    - **Observation Space**: `Box(32,)` float32 encoding turn index, active scenario one-hot, last action one-hot, tool execution success, goal progress fraction, executed tool bitmask, repetition penalty flag, and scenario context flags.
+    - **Action Space**: `Discrete(8)` spanning `finish_task`, `query_database`, `send_email`, `search_kb`, `calculate`, `escalate_human`, `retry_tool`, `clarify_query`. Also accepts structured JSON dicts or text action names for LLM agents.
+    - **Multi-Turn Scenarios**: Implemented 8 diverse agent scenarios (order delay notifications, refund calculations, system troubleshooting alerts, billing tax calculations, security breach escalations, clarification handling, and end-to-end support triage).
+    - **Dense & Sparse Reward Shaping**: Step reward ($+0.5$) for correct milestone actions, goal progress reward ($+0.5$), turn penalty ($-0.05$), invalid/out-of-order penalty ($-0.2$), repetition penalty, premature finish penalty ($-1.0$), and terminal task completion bonus ($+2.0$).
+- [x] **Astra Platform Integration**:
+  - `backend/agent/code_generator.py`: Registered `_AGENT_GYM_SETUP` preamble, mapped `MultiTurnAgentGym-v0` and `AgentGym-v0` to `agent_gym_ppo_v1.yaml` in `_ENV_RECIPE`, and injected registration preambles in code generation.
+  - `backend/loop/state_machine.py`: Registered `MultiTurnAgentGym-v0` in `_KNOWN` allowed `env_kwargs`.
+  - `backend/routers/play.py`: Registered environment in `_load` and added action names (`FINISH`, `QUERY_DB`, `SEND_EMAIL`, `SEARCH_KB`, `CALC`, `ESCALATE`, `RETRY`, `CLARIFY`) for real-time WebSocket play HUD.
+  - `backend/evaluator/benchmark.py`: Registered environment in `_rollout` and tournament evaluations.
+- [x] **Canonical Recipe & Test Suite**:
+  - `recipes/agent_gym_ppo_v1.yaml`: Canonical PPO recipe targeting `task_success: 0.85` with 32D observations and 256x256 MLP architecture.
+  - `tests/unit/test_agent_gym.py`: 8 comprehensive unit tests passing (Gymnasium registration, observation shape, reset metadata, successful multi-turn tool progression, premature finish penalty, out-of-order/repetition penalties, string/JSON action parsing, truncation on max steps, and codegen setup injection).
+
 
 
 

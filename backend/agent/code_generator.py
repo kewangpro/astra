@@ -74,6 +74,14 @@ _register_space_invaders()
 _register_asteroids()
 """
 
+_AGENT_GYM_SETUP = """\
+import sys as _sys
+_sys.path.insert(0, "{project_root}")
+import gymnasium as gym
+from envs.agent_gym import register as _register_agent_gym
+_register_agent_gym()
+"""
+
 _RL_TEMPLATE = """\
 Generate a complete RL training script using Stable-Baselines3.
 {env_setup}
@@ -1505,6 +1513,9 @@ _ENV_RECIPE: dict = {
     "MinAtar-SpaceInvaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Space-Invaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Asteroids-v0": "minatar_asteroids_dqn_v1.yaml",
+    "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
+    "AgentGym-v0": "agent_gym_ppo_v1.yaml",
+    "agent-gym": "agent_gym_ppo_v1.yaml",
     "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
     "ensemble_sft_v1": "ensemble_sft_v1.yaml",
     "mlx_lora": "mlx_lora_v1.yaml",
@@ -1834,6 +1845,9 @@ class CodeGenerator:
                 elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar", "minatar-breakout") and "register" not in code:
                     code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected MinAtar registration preamble")
+                elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym") and "register" not in code:
+                    code = _AGENT_GYM_SETUP.format(project_root=_proj_root) + "\n" + code
+                    logger.info("CodeGenerator: injected MultiTurnAgentGym-v0 registration preamble")
                 # Inject curriculum loop if recipe defines phases
                 _algo = plan.get("algorithm", "PPO")
                 _recipe = _load_recipe_for_env(env_id, _algo)
@@ -2018,6 +2032,8 @@ class CodeGenerator:
                 env_setup = _GAME2048_SETUP.format(project_root=_project_root)
             elif "minatar" in env_id.lower():
                 env_setup = _MINATAR_SETUP.format(project_root=_project_root)
+            elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
+                env_setup = _AGENT_GYM_SETUP.format(project_root=_project_root)
             else:
                 env_setup = ""
             hp = dict(hp)  # copy so we don't mutate the plan's hyperparameters dict

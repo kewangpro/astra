@@ -249,6 +249,8 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         action_names = ["NOOP", "LEFT", "RIGHT", "FIRE"]
     elif hasattr(base_env, "_ramming"):  # MinAtar Asteroids
         action_names = ["NOOP", "TURN_L", "TURN_R", "THRUST", "FIRE"]
+    elif hasattr(base_env, "_required_sequence"):  # MultiTurnAgentGym
+        action_names = ["FINISH", "QUERY_DB", "SEND_EMAIL", "SEARCH_KB", "CALC", "ESCALATE", "RETRY", "CLARIFY"]
     else:
         action_names = [f"A{i}" for i in range(getattr(env.action_space, "n", 4))]
 
@@ -402,6 +404,9 @@ async def play_ws(
                 _reg()
             elif resolved_env_id in ("MinAtar-Asteroids-v0",):
                 from envs.minatar_asteroids_env import register as _reg
+                _reg()
+            elif resolved_env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
+                from envs.agent_gym import register as _reg
                 _reg()
 
             env = gym.make(resolved_env_id, **env_kwargs)

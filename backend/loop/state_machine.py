@@ -2052,6 +2052,8 @@ class LoopStateMachine:
             "MinAtar-SpaceInvaders-v0": {"max_steps", "alien_kill_reward", "wave_clear_bonus", "death_penalty"},
             "MinAtar-Space-Invaders-v0": {"max_steps", "alien_kill_reward", "wave_clear_bonus", "death_penalty"},
             "MinAtar-Asteroids-v0": {"max_steps", "asteroid_hit_reward", "wave_clear_bonus", "death_penalty"},
+            "MultiTurnAgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
+            "AgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
         }
         _RANGES = {
             "food_reward":    (5.0, 50.0),
