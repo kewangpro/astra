@@ -4,7 +4,7 @@ task_type: rl
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0
-description: "DQN for MinAtar Freeway arcade benchmark (10x10 pure Python Gymnasium environment with multi-lane traffic dodging) to achieve score of 15.0."
+description: "DQN for MinAtar Freeway arcade benchmark (10x10 pure Python Gymnasium environment with multi-lane traffic dodging)."
 
 env_id: MinAtar-Freeway-v0
 target_metric:

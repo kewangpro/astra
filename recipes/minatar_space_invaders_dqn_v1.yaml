@@ -4,7 +4,7 @@ task_type: rl
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0
-description: "DQN for MinAtar Space Invaders arcade benchmark (10x10 pure Python Gymnasium environment) to achieve score of 15.0."
+description: "DQN for MinAtar Space Invaders arcade benchmark (10x10 pure Python Gymnasium environment)."
 
 env_id: MinAtar-SpaceInvaders-v0
 target_metric:
