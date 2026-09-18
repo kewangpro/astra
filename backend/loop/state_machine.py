@@ -885,7 +885,7 @@ class LoopStateMachine:
                                 # a different population AND a different scale
                                 # from the blended 78-case goal.
                                 _live = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
-                                goal_val = None if _mission_task_type_for_eval in ("distill", "rft") else _live
+                                goal_val = None if _mission_task_type_for_eval in ("distill", "rft", "star") else _live
                             if _mission_task_type_for_eval in ("distill", "rft"):
                                 # Held-out is now a PROGRESS SIGNAL ONLY. Recorded
                                 # so a run's within-training trajectory stays
@@ -3098,12 +3098,11 @@ class LoopStateMachine:
         if not new_output:
             return pass_rate_step
 
-        # For distill, "Pass rate:" is the STATIC held-out rate, not the blended
-        # goal metric (see _distill_held_out_metric). Emitting it as "pass_rate"
-        # would put a static-scale series on the same HUD axis as a blended-scale
-        # target and best — two populations under one label, which is the failure
-        # this whole metric change exists to remove. Name it for what it is.
-        _live_name = "pass_rate_static_live" if task_type in ("distill", "rft") else "pass_rate"
+        # For distill and star, "Pass rate:" is the held-out/validation split rate, not the
+        # full-suite goal metric evaluated by bare_eval.py. Emitting it as "pass_rate"
+        # would put a smaller-population sample series on the same HUD axis as the
+        # full-suite target and best. Name it for what it is.
+        _live_name = "pass_rate_static_live" if task_type in ("distill", "rft", "star") else "pass_rate"
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
             await emit_metric(mission_id, _live_name, pct / 100.0, step=pass_rate_step, iteration=current_iteration)
