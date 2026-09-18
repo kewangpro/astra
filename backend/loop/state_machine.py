@@ -2661,8 +2661,8 @@ class LoopStateMachine:
         if not settings.sandbox_host:
             return bare_rel_dir
         check_cmd = (
-            f"test -f {finetune_dir}/{bare_rel_dir}/best/adapters.safetensors "
-            f"&& echo yes || echo no"
+            f"test -f {finetune_dir}/{bare_rel_dir}/best/adapters.safetensors && echo yes || "
+            f"(test -f {finetune_dir}/{bare_rel_dir}/final/adapters.safetensors && echo final || echo no)"
         )
         try:
             result = subprocess.run(
@@ -2671,15 +2671,20 @@ class LoopStateMachine:
             )
         except Exception as exc:
             logger.warning(
-                "LoopStateMachine: best/ existence check failed for %s (%s) — "
+                "LoopStateMachine: adapter existence check failed for %s (%s) — "
                 "falling back to bare checkpoint dir", bare_rel_dir, exc,
             )
             return bare_rel_dir
-        if result.stdout.strip() == "yes":
+        tag = result.stdout.strip()
+        if tag in ("yes", "best"):
             return os.path.join(bare_rel_dir, "best")
+        if tag == "final":
+            logger.info(
+                "LoopStateMachine: no best/ checkpoint for %s — using final/ directory", bare_rel_dir,
+            )
+            return os.path.join(bare_rel_dir, "final")
         logger.info(
-            "LoopStateMachine: no best/ checkpoint for %s — using bare directory "
-            "(final-epoch output was itself the best seen this run)", bare_rel_dir,
+            "LoopStateMachine: no best/ or final/ subfolder for %s — using bare directory", bare_rel_dir,
         )
         return bare_rel_dir
 

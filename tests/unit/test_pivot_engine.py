@@ -560,3 +560,13 @@ def test_loss_metric_no_pivot_when_decreasing():
     engine.record(2, {"eval_loss": 1.6})
     assert not engine.needs_pivot()
 
+
+def test_record_with_none_metric_does_not_raise():
+    """Verify that recording a None metric value when a best is already tracked does not raise TypeError."""
+    engine = PivotEngine({"pass_rate": 0.85})
+    engine.record(0, {"pass_rate": 0.75})
+    assert engine.best_metric_value() == 0.75
+    # Should not raise TypeError: '>=' not supported between instances of 'NoneType' and 'float'
+    engine.record(1, {"pass_rate": None})
+    assert engine.best_metric_value() == 0.75
+

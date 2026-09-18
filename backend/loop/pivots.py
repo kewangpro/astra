@@ -85,8 +85,10 @@ class PivotEngine:
         self._history.append({"iteration": iteration, **metrics})
         v = self._resolve_metric(self._metric_name, metrics)
         current_best = self.best_metric_value()
-        is_better = (v <= current_best) if self._is_loss else (v >= current_best)
-        if v is not None and (current_best is None or is_better):
+        is_better = False
+        if v is not None:
+            is_better = (current_best is None) or ((v <= current_best) if self._is_loss else (v >= current_best))
+        if v is not None and is_better:
             if policy_kwargs is not None:
                 # Explicit arch at new best — always record it.
                 self._best_policy_kwargs = policy_kwargs

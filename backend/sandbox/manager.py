@@ -300,7 +300,23 @@ class SandboxManager:
                     remote_pid, settings.sandbox_host, mission_id,
                 )
                 data_dir = self._mission_data_dir(mission_id)
-                config = SandboxConfig(mission_id=mission_id, script_path="", data_dir=data_dir)
+                remote_ckpt_dir = None
+                train_py = os.path.join(data_dir, "train.py")
+                if os.path.exists(train_py):
+                    try:
+                        with open(train_py, "r") as f:
+                            import re
+                            m = re.search(r'["\']--save-dir["\'],\s*["\']([^"\']+)["\']', f.read())
+                            if m:
+                                remote_ckpt_dir = m.group(1)
+                    except Exception:
+                        pass
+                config = SandboxConfig(
+                    mission_id=mission_id,
+                    script_path="",
+                    data_dir=data_dir,
+                    remote_checkpoint_dir=remote_ckpt_dir,
+                )
                 sandbox = SSHSandbox(config, host=settings.sandbox_host, remote_data_root=settings.sandbox_data_path)
                 sandbox._remote_pid = remote_pid
                 sandbox.status = SandboxStatus.RUNNING
