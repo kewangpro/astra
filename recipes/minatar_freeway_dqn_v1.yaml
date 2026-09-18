@@ -8,8 +8,7 @@ description: "DQN for MinAtar Freeway arcade benchmark (10x10 pure Python Gymnas
 
 env_id: MinAtar-Freeway-v0
 target_metric:
-  metric: score
-  target: 15.0
+  score: 15.0
 
 hyperparameters:
   learning_rate: 0.00025

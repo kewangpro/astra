@@ -8,8 +8,7 @@ description: "DQN for MinAtar Asteroids arcade benchmark (10x10 pure Python Gymn
 
 env_id: MinAtar-Asteroids-v0
 target_metric:
-  metric: score
-  target: 15.0
+  score: 15.0
 
 hyperparameters:
   learning_rate: 0.00025

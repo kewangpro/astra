@@ -251,6 +251,9 @@ async def dispatch_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
         target_metric = content.get("target_metric", {})
         goal = content.get("description") or f"Execute recipe {clean_name} on {domain}"
 
+    if isinstance(target_metric, dict) and "metric" in target_metric and "target" in target_metric:
+        target_metric = {str(target_metric["metric"]): target_metric["target"]}
+
     current_plan = {"recipe": clean_name, "task_type": str(task_type).lower()}
     stages = content.get("stages")
     if stages:

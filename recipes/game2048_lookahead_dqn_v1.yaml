@@ -8,8 +8,7 @@ description: "Lookahead-augmented Deep Q-Network for Game2048-v0 utilizing 1-ste
 
 env_id: Game2048-v0
 target_metric:
-  metric: score
-  target: 4096.0
+  score: 4096.0
 
 hyperparameters:
   learning_rate: 0.0003
