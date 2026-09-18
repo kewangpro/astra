@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
@@ -296,48 +295,101 @@ function MissionCard({ m }: { m: Mission }) {
   );
 }
 
-// Kanban columns layout in workflow order (operational board).
-const MISSION_COLUMNS: { key: string; label: string; match: (s: string) => boolean }[] = [
-  { key: "running", label: "Running / Active", match: (s) => !["completed", "failed", "stalled", "paused"].includes(s) },
-  { key: "stalled", label: "Stalled / Paused", match: (s) => s === "stalled" || s === "paused" },
-  { key: "failed",  label: "Failed",           match: (s) => s === "failed" },
+// Operational Board rows layout in workflow priority order.
+const OPERATIONAL_ROWS: {
+  key: string;
+  label: string;
+  color: string;
+  match: (s: string) => boolean;
+  alwaysShow?: boolean;
+}[] = [
+  {
+    key: "running",
+    label: "Running / Active",
+    color: STATUS_COLOR.running,
+    match: (s) => !["completed", "failed", "stalled", "paused"].includes(s),
+    alwaysShow: true,
+  },
+  {
+    key: "stalled",
+    label: "Stalled / Paused",
+    color: STATUS_COLOR.stalled,
+    match: (s) => s === "stalled" || s === "paused",
+  },
+  {
+    key: "failed",
+    label: "Failed",
+    color: STATUS_COLOR.failed,
+    match: (s) => s === "failed",
+  },
 ];
 
-function KanbanColumn({
+function OperationalRow({
   label,
+  color,
   missions,
+  alwaysShow = false,
 }: {
   label: string;
+  color: string;
   missions: Mission[];
+  alwaysShow?: boolean;
 }) {
+  if (!missions.length && !alwaysShow) return null;
+
+  const isRunning = label.toLowerCase().includes("running") || label.toLowerCase().includes("active");
+
   return (
-    <div className="flex flex-col min-w-0 bg-[#0f172a]/30 rounded-xl p-3 border border-[rgba(255,255,255,0.03)]">
-      <div className="flex items-center justify-between pb-2 mb-3 border-b border-[rgba(255,255,255,0.04)]">
-        <h3 className="text-[10px] text-[#64748b] tracking-widest uppercase flex items-center gap-2 font-medium">
-          {label}
-          <span className="text-[#475569]">{missions.length}</span>
-        </h3>
-      </div>
-      <div
-        className="space-y-3 overflow-y-auto max-h-[calc(100vh-250px)] pr-1"
-        style={{
-          scrollbarWidth: "thin",
-          scrollbarColor: "rgba(255,255,255,0.1) transparent",
-        }}
-      >
-        {missions.length === 0 ? (
-          <div
-            className="py-12 text-center border border-dashed rounded-lg"
-            style={{ borderColor: "rgba(255,255,255,0.04)" }}
-          >
-            <span className="text-[10px] text-[#475569] tracking-widest uppercase">
-              No missions
+    <div className="space-y-3 bg-[#0f172a]/30 border border-[rgba(255,255,255,0.03)] rounded-xl p-4">
+      {/* Row Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-[rgba(255,255,255,0.04)]">
+        <div className="flex items-center gap-2">
+          {isRunning && missions.length > 0 ? (
+            <span className="relative flex h-2 w-2">
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                style={{ backgroundColor: color }}
+              />
+              <span
+                className="relative inline-flex rounded-full h-2 w-2"
+                style={{ backgroundColor: color }}
+              />
             </span>
-          </div>
-        ) : (
-          missions.map((m) => <MissionCard key={m.id} m={m} />)
-        )}
+          ) : (
+            <span
+              className="inline-block w-2 h-2 rounded-full"
+              style={{ backgroundColor: color }}
+            />
+          )}
+          <h3 className="text-[11px] text-[#cbd5e1] tracking-widest uppercase font-semibold">
+            {label}
+          </h3>
+          <span
+            className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+            style={{
+              color,
+              background: `${color}15`,
+            }}
+          >
+            {missions.length}
+          </span>
+        </div>
       </div>
+
+      {/* Row Missions Grid */}
+      {missions.length === 0 ? (
+        <div className="py-6 text-center border border-dashed rounded-lg border-[rgba(255,255,255,0.04)]">
+          <span className="text-[10px] text-[#475569] tracking-widest uppercase">
+            No active runs currently in-flight
+          </span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {missions.map((m) => (
+            <MissionCard key={m.id} m={m} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -347,12 +399,14 @@ export function MissionsGrid() {
 
   if (isLoading)
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-        {Array.from({ length: 3 }).map((_, colIdx) => (
-          <div key={colIdx} className="space-y-3 bg-[#0f172a]/30 rounded-xl p-3 border border-[rgba(255,255,255,0.03)]">
-            <div className="h-2 w-14 bg-[#2d3f57] rounded mb-3 animate-pulse" />
-            <SkeletonCard />
-            <SkeletonCard />
+      <div className="space-y-4">
+        {Array.from({ length: 2 }).map((_, rowIdx) => (
+          <div key={rowIdx} className="space-y-3 bg-[#0f172a]/30 rounded-xl p-4 border border-[rgba(255,255,255,0.03)]">
+            <div className="h-2 w-28 bg-[#2d3f57] rounded mb-3 animate-pulse" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
           </div>
         ))}
       </div>
@@ -383,50 +437,26 @@ export function MissionsGrid() {
       </div>
     );
 
-  const completedCount = missions.filter((m) => m.status === "completed").length;
-  const activeMissions = missions.filter((m) => m.status !== "completed");
-
-  if (activeMissions.length === 0 && completedCount > 0) {
-    return (
-      <div className="py-12 px-6 rounded-xl bg-[#1e293b]/40 border border-[#334155]/60 text-center space-y-4">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#4ade80]/10 border border-[#4ade80]/20 text-xl text-[#4ade80]">
-          ✓
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-[#e2e8f0]">All Active Missions Concluded</h3>
-          <p className="text-xs text-[#94a3b8] max-w-md mx-auto mt-1">
-            There are currently no running, stalled, or failed missions requiring attention on the operational board.
-          </p>
-        </div>
-        <div className="pt-1">
-          <Link
-            href="/completed"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold bg-[#14b8a6] hover:bg-[#0d9488] text-[#0f172a] transition-colors shadow-lg shadow-[#14b8a6]/10"
-          >
-            <span>🏆</span> View {completedCount} Completed Missions →
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   // Newest first within each group, by creation time.
   const ordered = [...missions].sort(
     (a, b) => parseTs(b.created_at).getTime() - parseTs(a.created_at).getTime(),
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-      {MISSION_COLUMNS.map((col) => (
-        <KanbanColumn
-          key={col.key}
-          label={col.label}
-          missions={ordered.filter((m) => col.match(m.status))}
+    <div className="space-y-6">
+      {OPERATIONAL_ROWS.map((row) => (
+        <OperationalRow
+          key={row.key}
+          label={row.label}
+          color={row.color}
+          alwaysShow={row.alwaysShow}
+          missions={ordered.filter((m) => row.match(m.status))}
         />
       ))}
     </div>
   );
 }
+
 
 
 export const MissionsKanban = MissionsGrid;

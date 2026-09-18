@@ -2259,10 +2259,10 @@ Redesign the Command Center to declutter operational workflows by moving complet
   - **Completed Mission Cards**: Rich cards displaying `#id`, task type pill, remote node host, completion relative/exact timestamps, goal text, convergence benchmark box (target metric, achieved metric, progress bar, iterations, elapsed duration), and quick actions.
   - **Manifest & Proof Inspection Modal**: Inspects verifiable requirement manifests loaded directly from `/missions/{id}/manifest` (`score >= target: PASSED`, `clean sandbox exit: PASSED`, `checkpoint saved: PASSED`), along with raw metadata and direct navigation to Mission HUD.
 
-- [x] **Command Center Decluttering (`frontend/src/app/page.tsx` & `frontend/src/components/command-center/MissionsGrid.tsx`)**:
-  - **3-Column Operational Board**: Removed the cluttered `Completed` column from the Kanban grid, focusing operational attention exclusively on active/in-flight runs: `Running / Active`, `Stalled / Paused`, and `Failed`.
-  - **Concluded State Banner**: When all operational tasks are finished (0 active missions), renders a clean celebration banner indicating all active missions have concluded with a 1-click button to browse the Completed Missions Archive.
-  - **Interactive Global Stats & Section Header**: Made the "Completed" stat in `GlobalStats` an interactive link to `/completed`, and added a direct action banner in the Missions section header showing total completed runs.
+- [x] **Command Center Operational Board Row Layout (`frontend/src/app/page.tsx` & `frontend/src/components/command-center/MissionsGrid.tsx`)**:
+  - **Row-Based Layout**: Replaced the vertical Kanban columns with an elegant, responsive row-based layout (`OperationalRow`). Each status group occupies a full-width horizontal section (`Running / Active`, `Stalled / Paused`, `Failed`) with responsive mission cards (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`).
+  - **Smart Empty States**: `Running / Active` displays a sleek, compact indicator when 0 runs are in-flight, while non-active groups (`Stalled`, `Failed`) are automatically hidden when empty so operators are only alerted when attention is required.
+  - **Operational Focus**: Kept the Command Center strictly focused on active missions, removing completed buttons and completed counters from the Command Center header and global stats. Completed missions are accessed exclusively via the dedicated Completed tab in top navigation.
 
 - [x] **Global Navigation & Shared Utilities (`frontend/src/app/layout.tsx`, `frontend/src/lib/date.ts`, `frontend/src/lib/api.ts`, `frontend/src/lib/hooks/useMissions.ts`)**:
   - `layout.tsx`: Added `Completed` to global top navigation (`Command Center` | `Completed` | `Recipes` | `Models & Tournaments`).
