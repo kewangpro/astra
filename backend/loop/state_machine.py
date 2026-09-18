@@ -3192,6 +3192,12 @@ class LoopStateMachine:
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""
+        if not getattr(settings, "auto_crystallize", False):
+            logger.info(
+                "LoopStateMachine: skipping auto-crystallization for mission=%s — auto_crystallize is disabled",
+                mission_id,
+            )
+            return
         task_type = (plan or {}).get("task_type", "").lower()
         if task_type in self._NO_CRYSTALLIZE_TASK_TYPES:
             logger.info(

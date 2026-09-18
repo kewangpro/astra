@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     api_port: int = 8200
     log_level: str = "INFO"
     autonomy_mode: Literal["guided", "supervised", "full_autonomy"] = "supervised"
+    auto_crystallize: bool = False
 
     # ── Inference providers ───────────────────────────────────────────────────
     # Lead agent (planning / pivots) — MLX on local MacBook

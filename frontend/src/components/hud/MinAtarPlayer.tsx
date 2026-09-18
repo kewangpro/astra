@@ -304,19 +304,38 @@ function drawFreeway(ctx: CanvasRenderingContext2D, grid: number[]) {
 }
 
 function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: string) {
-  const isFreeway = envId.toLowerCase().includes("freeway");
-  const isSeaquest = envId.toLowerCase().includes("seaquest");
+  const lower = envId.toLowerCase();
+  const isFreeway = lower.includes("freeway");
+  const isSeaquest = lower.includes("seaquest");
+  const isSpaceInvaders = lower.includes("space");
+  const isAsteroids = lower.includes("asteroid");
 
   if (isFreeway) {
     drawFreeway(ctx, grid);
     return;
   }
 
-  ctx.fillStyle = isSeaquest ? "#091428" : "#0f172a";
+  if (isSeaquest) {
+    ctx.fillStyle = "#091428";
+  } else if (isSpaceInvaders) {
+    ctx.fillStyle = "#080b18";
+  } else if (isAsteroids) {
+    ctx.fillStyle = "#050811";
+  } else {
+    ctx.fillStyle = "#0f172a";
+  }
   ctx.fillRect(0, 0, W, H);
 
   // Subtle grid lines
-  ctx.strokeStyle = isSeaquest ? "rgba(56, 189, 248, 0.08)" : "rgba(20, 184, 166, 0.06)";
+  if (isSeaquest) {
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.08)";
+  } else if (isSpaceInvaders) {
+    ctx.strokeStyle = "rgba(192, 132, 252, 0.07)";
+  } else if (isAsteroids) {
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.05)";
+  } else {
+    ctx.strokeStyle = "rgba(20, 184, 166, 0.06)";
+  }
   ctx.lineWidth = 0.5;
   for (let c = 0; c <= COLS; c++) {
     ctx.beginPath(); ctx.moveTo(c * CELL, 0); ctx.lineTo(c * CELL, H); ctx.stroke();
@@ -389,17 +408,106 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
           ctx.fillStyle = "#ef4444";
           ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
         }
-      } else {
-        // Breakout / Space Invaders / Asteroids
+      } else if (isSpaceInvaders) {
         if (cell === 1) {
-          // Player (paddle, cannon, ship)
+          // Cannon (Player)
+          ctx.fillStyle = "#4ade80";
+          ctx.shadowColor = "rgba(74, 222, 128, 0.8)";
+          ctx.shadowBlur = 6;
+          ctx.fillRect(x + 2, y + 8, CELL - 4, CELL - 11);
+          ctx.fillRect(x + CELL / 2 - 1.5, y + 2, 3, 6);
+          ctx.shadowBlur = 0;
+        } else if (cell === 2) {
+          // Alien Invader (Magenta / Violet neon)
+          ctx.fillStyle = "#e879f9";
+          ctx.shadowColor = "rgba(232, 121, 249, 0.8)";
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.roundRect(x + 3, y + 5, CELL - 6, CELL - 10, 3);
+          ctx.fill();
+          // Antennae & Claws
+          ctx.fillRect(x + 4, y + 2, 2, 3);
+          ctx.fillRect(x + CELL - 6, y + 2, 2, 3);
+          ctx.fillRect(x + 4, y + CELL - 5, 2, 3);
+          ctx.fillRect(x + CELL - 6, y + CELL - 5, 2, 3);
+          // Eyes
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = "#080b18";
+          ctx.fillRect(x + 6, y + 8, 2, 2);
+          ctx.fillRect(x + CELL - 8, y + 8, 2, 2);
+        } else if (cell === 3) {
+          // Alien Bomb (Dropping red energy bolt)
+          ctx.fillStyle = "#f43f5e";
+          ctx.shadowColor = "rgba(244, 63, 94, 0.9)";
+          ctx.shadowBlur = 8;
+          ctx.fillRect(x + CELL / 2 - 1.5, y + 2, 3, CELL - 4);
+          ctx.shadowBlur = 0;
+        } else if (cell === 4) {
+          // Player Laser (Cyan laser bolt)
+          ctx.fillStyle = "#38bdf8";
+          ctx.shadowColor = "rgba(56, 189, 248, 0.9)";
+          ctx.shadowBlur = 8;
+          ctx.fillRect(x + CELL / 2 - 1, y + 1, 2, CELL - 2);
+          ctx.shadowBlur = 0;
+        } else if (cell === 5) {
+          // Bunker Shield (Teal barrier)
+          ctx.fillStyle = "#0d9488";
+          ctx.strokeStyle = "#2dd4bf";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(x + 2, y + 3, CELL - 4, CELL - 6, 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else if (isAsteroids) {
+        if (cell === 1) {
+          // Spaceship (Cyan arrowhead wedge)
+          ctx.fillStyle = "#38bdf8";
+          ctx.shadowColor = "rgba(56, 189, 248, 0.85)";
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.moveTo(x + CELL / 2, y + 3);
+          ctx.lineTo(x + CELL - 4, y + CELL - 4);
+          ctx.lineTo(x + CELL / 2, y + CELL - 7);
+          ctx.lineTo(x + 4, y + CELL - 4);
+          ctx.closePath();
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 2) {
+          // Asteroid (Slate rock with crater)
+          ctx.fillStyle = "#cbd5e1";
+          ctx.shadowColor = "rgba(203, 213, 225, 0.6)";
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 2.7, 0, Math.PI * 2);
+          ctx.fill();
+          // Crater detail
+          ctx.fillStyle = "#64748b";
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2 - 2, y + CELL / 2 - 2, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 4) {
+          // Laser Bullet (Yellow plasma orb)
+          ctx.fillStyle = "#facc15";
+          ctx.shadowColor = "rgba(250, 204, 21, 0.9)";
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      } else {
+        // Breakout
+        if (cell === 1) {
+          // Player (paddle)
           ctx.fillStyle = "#4ade80";
           ctx.shadowColor = "rgba(74, 222, 128, 0.5)";
           ctx.shadowBlur = 6;
           ctx.fillRect(x + 1, y + 6, CELL - 2, CELL - 12);
           ctx.shadowBlur = 0;
         } else if (cell === 2) {
-          // Ball / Alien / Asteroid
+          // Ball
           ctx.fillStyle = "#ffffff";
           ctx.shadowColor = "rgba(255, 255, 255, 0.8)";
           ctx.shadowBlur = 8;
@@ -408,23 +516,12 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
           ctx.fill();
           ctx.shadowBlur = 0;
         } else if (cell === 3) {
-          // Brick or bomb
+          // Brick
           const color = BRICK_ROW_COLORS[(r - 1) % BRICK_ROW_COLORS.length] || "#f87171";
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.roundRect(x + 2, y + 4, CELL - 4, CELL - 8, 3);
           ctx.fill();
-        } else if (cell === 4) {
-          // Laser / Bullet
-          ctx.fillStyle = "#38bdf8";
-          ctx.shadowColor = "rgba(56, 189, 248, 0.9)";
-          ctx.shadowBlur = 6;
-          ctx.fillRect(x + CELL / 2 - 1.5, y + 2, 3, CELL - 4);
-          ctx.shadowBlur = 0;
-        } else if (cell === 5) {
-          // Shield
-          ctx.fillStyle = "#38bdf8";
-          ctx.fillRect(x + 2, y + 4, CELL - 4, CELL - 8);
         }
       }
     }
@@ -433,8 +530,11 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
 
 function initialGrid(envId: string): number[] {
   const g = new Array(100).fill(0);
-  const isFreeway = envId.toLowerCase().includes("freeway");
-  const isSeaquest = envId.toLowerCase().includes("seaquest");
+  const lower = envId.toLowerCase();
+  const isFreeway = lower.includes("freeway");
+  const isSeaquest = lower.includes("seaquest");
+  const isSpaceInvaders = lower.includes("space");
+  const isAsteroids = lower.includes("asteroid");
 
   if (isFreeway) {
     // Goal & Start Sidewalks
@@ -470,6 +570,41 @@ function initialGrid(envId: string): number[] {
     g[3 * 10 + 7] = 2;
     // Diver at row 7 col 8
     g[7 * 10 + 8] = 3;
+    return g;
+  }
+
+  if (isSpaceInvaders) {
+    // Marching alien armada across rows 1, 2, 3
+    for (let c = 1; c <= 8; c += 2) {
+      g[1 * 10 + c] = 2;
+      g[2 * 10 + (c === 7 ? 6 : c + 1)] = 2;
+      g[3 * 10 + c] = 2;
+    }
+    // Bunker shields at row 7
+    g[7 * 10 + 2] = 5;
+    g[7 * 10 + 4] = 5;
+    g[7 * 10 + 7] = 5;
+    // Alien bomb dropping
+    g[4 * 10 + 3] = 3;
+    // Player cannon at row 9 col 4
+    g[9 * 10 + 4] = 1;
+    // Player laser firing upward
+    g[6 * 10 + 4] = 4;
+    return g;
+  }
+
+  if (isAsteroids) {
+    // Spaceship in center
+    g[5 * 10 + 5] = 1;
+    // Floating asteroids of various positions
+    g[1 * 10 + 2] = 2;
+    g[2 * 10 + 8] = 2;
+    g[4 * 10 + 1] = 2;
+    g[7 * 10 + 2] = 2;
+    g[8 * 10 + 7] = 2;
+    g[6 * 10 + 8] = 2;
+    // Plasma bullet shot
+    g[3 * 10 + 5] = 4;
     return g;
   }
 
@@ -591,16 +726,37 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
     };
   }, [missionId, envId, speed, stop]);
 
-  // Initial draw
+  // Initial draw & stats initialization
   useEffect(() => {
+    const lower = envId.toLowerCase();
+    if (lower.includes("freeway")) {
+      setStatA({ label: "Crossings", value: 0 });
+      setStatB({ label: "Collisions", value: 0 });
+    } else if (lower.includes("seaquest")) {
+      setStatA({ label: "Divers", value: 0 });
+      setStatB({ label: "Oxygen", value: 200 });
+    } else if (lower.includes("space")) {
+      setStatA({ label: "Aliens", value: 0 });
+      setStatB(null);
+    } else if (lower.includes("asteroid")) {
+      setStatA({ label: "Asteroids", value: 0 });
+      setStatB(null);
+    } else {
+      setStatA({ label: "Bricks", value: 0 });
+      setStatB(null);
+    }
     const ctx = canvasRef.current?.getContext("2d");
     if (ctx) drawMinAtar(ctx, initialGrid(envId), envId);
   }, [envId]);
 
   useEffect(() => () => { wsRef.current?.close(); }, []);
 
-  const isFreeway = envId.toLowerCase().includes("freeway");
-  const isSeaquest = envId.toLowerCase().includes("seaquest");
+  const lower = envId.toLowerCase();
+  const isFreeway = lower.includes("freeway");
+  const isSeaquest = lower.includes("seaquest");
+  const isSpaceInvaders = lower.includes("space");
+  const isAsteroids = lower.includes("asteroid");
+  const isBreakout = !isFreeway && !isSeaquest && !isSpaceInvaders && !isAsteroids;
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5 space-y-4">
@@ -721,6 +877,24 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
                 <span className="font-mono text-teal-400">6 divers</span>
               </div>
             )}
+            {isSpaceInvaders && (
+              <div className="flex justify-between">
+                <span>Armada:</span>
+                <span className="font-mono text-fuchsia-400">Marching</span>
+              </div>
+            )}
+            {isAsteroids && (
+              <div className="flex justify-between">
+                <span>Wrap:</span>
+                <span className="font-mono text-sky-400">Toroidal</span>
+              </div>
+            )}
+            {isBreakout && (
+              <div className="flex justify-between">
+                <span>Wall:</span>
+                <span className="font-mono text-amber-400">30 bricks</span>
+              </div>
+            )}
           </div>
 
           {/* Color Legend */}
@@ -813,6 +987,114 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
                   <span className="text-[#cbd5e1]">Surface</span>
                 </span>
                 <span className="text-sky-300">O₂ Refill</span>
+              </div>
+            </div>
+          )}
+
+          {isSpaceInvaders && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-emerald-400 border border-emerald-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Cannon</span>
+                </span>
+                <span className="text-emerald-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-fuchsia-400 border border-fuchsia-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Invaders</span>
+                </span>
+                <span className="text-fuchsia-400 font-semibold">Armada</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-rose-500 border border-rose-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Bomb</span>
+                </span>
+                <span className="text-rose-400">Drop</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-sky-400 border border-sky-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Laser</span>
+                </span>
+                <span className="text-sky-400">Beam</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-teal-500 border border-teal-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Shields</span>
+                </span>
+                <span className="text-teal-400">Bunker</span>
+              </div>
+            </div>
+          )}
+
+          {isAsteroids && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-sky-400 border border-sky-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Spaceship</span>
+                </span>
+                <span className="text-sky-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-slate-300 border border-slate-200 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Asteroid</span>
+                </span>
+                <span className="text-slate-300 font-semibold">Target</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Plasma</span>
+                </span>
+                <span className="text-yellow-400">Fire</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-sky-900 border border-sky-700 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Physics</span>
+                </span>
+                <span className="text-sky-300">Inertia</span>
+              </div>
+            </div>
+          )}
+
+          {isBreakout && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-emerald-400 border border-emerald-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Paddle</span>
+                </span>
+                <span className="text-emerald-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Ball</span>
+                </span>
+                <span className="text-white font-semibold">Active</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-rose-400 border border-rose-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Bricks</span>
+                </span>
+                <span className="text-rose-400">Wall</span>
               </div>
             </div>
           )}

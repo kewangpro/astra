@@ -1785,6 +1785,7 @@ async def test_crystallize_skipped_for_fixed_recipe_task_types(task_type, monkey
     async def _fake_crystallize(*args, **kwargs):
         called.append((args, kwargs))
 
+    monkeypatch.setattr("backend.loop.state_machine.settings.auto_crystallize", True)
     monkeypatch.setattr("backend.services.crystallizer.crystallize", _fake_crystallize)
     sm = object.__new__(LoopStateMachine)
     await sm._crystallize("m", {"task_type": task_type}, 0.83)
@@ -1798,10 +1799,25 @@ async def test_crystallize_runs_for_rl(monkeypatch):
         called.append((args, kwargs))
         return None
 
+    monkeypatch.setattr("backend.loop.state_machine.settings.auto_crystallize", True)
     monkeypatch.setattr("backend.services.crystallizer.crystallize", _fake_crystallize)
     sm = object.__new__(LoopStateMachine)
     await sm._crystallize("m", {"task_type": "rl"}, 42.0)
     assert len(called) == 1
+
+
+async def test_crystallize_skipped_when_auto_crystallize_disabled(monkeypatch):
+    called = []
+
+    async def _fake_crystallize(*args, **kwargs):
+        called.append((args, kwargs))
+        return None
+
+    monkeypatch.setattr("backend.loop.state_machine.settings.auto_crystallize", False)
+    monkeypatch.setattr("backend.services.crystallizer.crystallize", _fake_crystallize)
+    sm = object.__new__(LoopStateMachine)
+    await sm._crystallize("m", {"task_type": "rl"}, 42.0)
+    assert called == []
 
 
 # ── distill floor margin ─────────────────────────────────────────────────────
