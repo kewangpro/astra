@@ -46,9 +46,271 @@ interface Frame {
   selected_action?: string;
 }
 
+function drawFreeway(ctx: CanvasRenderingContext2D, grid: number[]) {
+  // 1. Sidewalks & Road Surface
+  // Row 0: Goal Sidewalk (Safe Zone / Scoring Finish Line)
+  ctx.fillStyle = "#064e3b"; // Rich emerald turf
+  ctx.fillRect(0, 0, W, CELL);
+
+  // Checkered finish line pattern on Row 0
+  ctx.fillStyle = "#10b981";
+  for (let c = 0; c < COLS; c++) {
+    if (c % 2 === 0) {
+      ctx.fillRect(c * CELL, 0, CELL, CELL - 3);
+    }
+  }
+  ctx.fillStyle = "rgba(52, 211, 153, 0.5)";
+  ctx.fillRect(0, CELL - 3, W, 3); // Bright mint finish curb
+
+  // Rows 1..8: Deep Highway Asphalt
+  ctx.fillStyle = "#090d16"; // Crisp dark asphalt
+  ctx.fillRect(0, CELL, W, CELL * 8);
+
+  // Top and bottom road curb rails
+  ctx.strokeStyle = "#475569";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, CELL); ctx.lineTo(W, CELL);
+  ctx.moveTo(0, CELL * 9); ctx.lineTo(W, CELL * 9);
+  ctx.stroke();
+
+  // Highway Lane Dividers
+  for (let r = 1; r < 8; r++) {
+    const y = (r + 1) * CELL;
+    ctx.beginPath();
+    if (r === 4) {
+      // Center highway double yellow divider (between row 4 and 5)
+      ctx.strokeStyle = "rgba(250, 204, 21, 0.7)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(0, y - 1); ctx.lineTo(W, y - 1);
+      ctx.moveTo(0, y + 1); ctx.lineTo(W, y + 1);
+      ctx.stroke();
+    } else {
+      // Regular dashed white lane lines
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([3, 5]);
+      ctx.moveTo(0, y); ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+
+  // Faint directional lane arrows on the asphalt
+  ctx.font = "8px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let r = 1; r <= 8; r++) {
+    const y = r * CELL + CELL / 2;
+    const isLeft = r % 2 === 1;
+    ctx.fillStyle = isLeft ? "rgba(6, 182, 212, 0.09)" : "rgba(217, 70, 239, 0.09)";
+    for (let c = 1; c < COLS; c += 3) {
+      ctx.fillText(isLeft ? "◄" : "►", c * CELL + CELL / 2, y);
+    }
+  }
+
+  // Row 9: Starting Sidewalk (Spawn Curb)
+  ctx.fillStyle = "#1e293b"; // Sturdy concrete slate
+  ctx.fillRect(0, CELL * 9, W, CELL);
+  // Pavement slab dividers
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.2)";
+  ctx.lineWidth = 1;
+  for (let c = 1; c < COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * CELL, CELL * 9);
+    ctx.lineTo(c * CELL, H);
+    ctx.stroke();
+  }
+
+  // Subtle grid overlay for crisp cell alignment
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+  ctx.lineWidth = 0.5;
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c * CELL, 0); ctx.lineTo(c * CELL, H); ctx.stroke();
+  }
+
+  // 2. Render Entities
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = grid[r * COLS + c] || 0;
+      const x = c * CELL;
+      const y = r * CELL;
+
+      if (cell === 0 || cell === 4) continue;
+
+      if (cell === 1) {
+        // === PLAYER: CHICKEN ===
+        // Radiant Neon Golden Yellow & White Character with Red Comb & Orange Beak
+        const cx = x + CELL / 2;
+        const cy = y + CELL / 2;
+
+        ctx.shadowColor = "rgba(250, 204, 21, 0.9)";
+        ctx.shadowBlur = 10;
+
+        // Yellow body
+        ctx.fillStyle = "#facc15";
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 1, 7, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White wing feather highlight
+        ctx.fillStyle = "#fef08a";
+        ctx.beginPath();
+        ctx.ellipse(cx - 3, cy + 1, 2.5, 5, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Rooster Comb on top (Crimson Red)
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(cx - 2.5, cy - 7, 2, 0, Math.PI * 2);
+        ctx.arc(cx + 0.5, cy - 8, 2.2, 0, Math.PI * 2);
+        ctx.arc(cx + 3.5, cy - 6, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pointed Beak facing UP toward Goal (Vivid Orange)
+        ctx.fillStyle = "#f97316";
+        ctx.beginPath();
+        ctx.moveTo(cx - 2.5, cy - 4.5);
+        ctx.lineTo(cx + 2.5, cy - 4.5);
+        ctx.lineTo(cx, cy - 9);
+        ctx.closePath();
+        ctx.fill();
+
+        // Eyes (Crisp black with white glint)
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.arc(cx - 2.5, cy - 2.5, 1.2, 0, Math.PI * 2);
+        ctx.arc(cx + 2.5, cy - 2.5, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(cx - 2.8, cy - 2.8, 0.5, 0, Math.PI * 2);
+        ctx.arc(cx + 2.2, cy - 2.8, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+      } else if (cell === 2) {
+        // === TRAFFIC MOVING LEFT (←) ===
+        // Electric Cyan / Sky Blue Sports Car
+        ctx.shadowColor = "rgba(6, 182, 212, 0.85)";
+        ctx.shadowBlur = 8;
+
+        // Chassis (Aerodynamic nose on the left)
+        ctx.fillStyle = "#06b6d4";
+        ctx.beginPath();
+        ctx.roundRect(x + 2, y + 4, CELL - 4, CELL - 8, [5, 2, 2, 5]);
+        ctx.fill();
+
+        // Windshield (Dark blue glass)
+        ctx.fillStyle = "#082f49";
+        ctx.beginPath();
+        ctx.roundRect(x + 7, y + 6, CELL - 13, CELL - 12, 2);
+        ctx.fill();
+
+        // Roof highlight
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(x + 9, y + 7, CELL - 17, CELL - 14);
+
+        // Headlights on LEFT (White / Diamond Cyan)
+        ctx.shadowColor = "rgba(255, 255, 255, 0.95)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x + 2, y + 5, 2, 3);
+        ctx.fillRect(x + 2, y + CELL - 8, 2, 3);
+
+        // Taillights on RIGHT (Vivid Red)
+        ctx.shadowColor = "rgba(239, 68, 68, 0.85)";
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(x + CELL - 3.5, y + 5, 1.5, 3);
+        ctx.fillRect(x + CELL - 3.5, y + CELL - 8, 1.5, 3);
+        ctx.shadowBlur = 0;
+
+      } else if (cell === 3) {
+        // === TRAFFIC MOVING RIGHT (→) ===
+        // Neon Fuchsia / Amethyst Magenta Sports Car
+        ctx.shadowColor = "rgba(217, 70, 239, 0.85)";
+        ctx.shadowBlur = 8;
+
+        // Chassis (Aerodynamic nose on the right)
+        ctx.fillStyle = "#d946ef";
+        ctx.beginPath();
+        ctx.roundRect(x + 2, y + 4, CELL - 4, CELL - 8, [2, 5, 5, 2]);
+        ctx.fill();
+
+        // Windshield (Dark violet glass)
+        ctx.fillStyle = "#3b0764";
+        ctx.beginPath();
+        ctx.roundRect(x + 6, y + 6, CELL - 13, CELL - 12, 2);
+        ctx.fill();
+
+        // Roof highlight
+        ctx.fillStyle = "#f0abfc";
+        ctx.fillRect(x + 8, y + 7, CELL - 17, CELL - 14);
+
+        // Headlights on RIGHT (White / Amber LED)
+        ctx.shadowColor = "rgba(255, 255, 255, 0.95)";
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x + CELL - 4, y + 5, 2, 3);
+        ctx.fillRect(x + CELL - 4, y + CELL - 8, 2, 3);
+
+        // Taillights on LEFT (Vivid Red)
+        ctx.shadowColor = "rgba(239, 68, 68, 0.85)";
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(x + 2, y + 5, 1.5, 3);
+        ctx.fillRect(x + 2, y + CELL - 8, 1.5, 3);
+        ctx.shadowBlur = 0;
+
+      } else if (cell === 5) {
+        // === COLLISION / CRASH IMPACT ===
+        const cx = x + CELL / 2;
+        const cy = y + CELL / 2;
+
+        ctx.shadowColor = "rgba(239, 68, 68, 0.95)";
+        ctx.shadowBlur = 14;
+
+        // Red outer starburst
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const angle = (i * Math.PI) / 4;
+          const r1 = CELL / 2 - 1;
+          const r2 = CELL / 4;
+          ctx.lineTo(cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1);
+          ctx.lineTo(cx + Math.cos(angle + Math.PI / 8) * r2, cy + Math.sin(angle + Math.PI / 8) * r2);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Yellow inner star
+        ctx.fillStyle = "#fde047";
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL / 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White core
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+}
+
 function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: string) {
   const isFreeway = envId.toLowerCase().includes("freeway");
   const isSeaquest = envId.toLowerCase().includes("seaquest");
+
+  if (isFreeway) {
+    drawFreeway(ctx, grid);
+    return;
+  }
 
   ctx.fillStyle = isSeaquest ? "#091428" : "#0f172a";
   ctx.fillRect(0, 0, W, H);
@@ -71,60 +333,7 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
 
       if (cell === 0) continue;
 
-      if (isFreeway) {
-        if (cell === 4) {
-          // Safe Sidewalk
-          ctx.fillStyle = "rgba(45, 212, 191, 0.12)";
-          ctx.fillRect(x, y + 2, CELL, CELL - 4);
-          ctx.strokeStyle = "rgba(45, 212, 191, 0.4)";
-          ctx.setLineDash([2, 4]);
-          ctx.strokeRect(x, y + 2, CELL, CELL - 4);
-          ctx.setLineDash([]);
-        } else if (cell === 1) {
-          // Chicken (bright yellow/lime chicken)
-          ctx.fillStyle = "#facc15";
-          ctx.shadowColor = "rgba(250, 204, 21, 0.8)";
-          ctx.shadowBlur = 8;
-          ctx.beginPath();
-          ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 3, 0, Math.PI * 2);
-          ctx.fill();
-          // Beak
-          ctx.fillStyle = "#f97316";
-          ctx.fillRect(x + CELL / 2 - 2, y + 3, 4, 3);
-          ctx.shadowBlur = 0;
-        } else if (cell === 2) {
-          // Car moving left (rose red)
-          ctx.fillStyle = "#f43f5e";
-          ctx.shadowColor = "rgba(244, 63, 94, 0.5)";
-          ctx.shadowBlur = 6;
-          ctx.beginPath();
-          ctx.roundRect(x + 2, y + 5, CELL - 4, CELL - 10, 3);
-          ctx.fill();
-          // Headlight
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(x + 3, y + 7, 2, CELL - 14);
-          ctx.shadowBlur = 0;
-        } else if (cell === 3) {
-          // Car moving right (amber orange)
-          ctx.fillStyle = "#f59e0b";
-          ctx.shadowColor = "rgba(245, 158, 11, 0.5)";
-          ctx.shadowBlur = 6;
-          ctx.beginPath();
-          ctx.roundRect(x + 2, y + 5, CELL - 4, CELL - 10, 3);
-          ctx.fill();
-          // Headlight
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(x + CELL - 5, y + 7, 2, CELL - 14);
-          ctx.shadowBlur = 0;
-        } else if (cell === 5) {
-          // Collision flash
-          ctx.fillStyle = "#ef4444";
-          ctx.shadowColor = "rgba(239, 68, 68, 0.9)";
-          ctx.shadowBlur = 10;
-          ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
-          ctx.shadowBlur = 0;
-        }
-      } else if (isSeaquest) {
+      if (isSeaquest) {
         if (cell === 6) {
           // Surface water / Oxygen bar
           ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
@@ -235,11 +444,20 @@ function initialGrid(envId: string): number[] {
     }
     // Chicken at row 9 col 4
     g[9 * 10 + 4] = 1;
-    // Sample traffic cars
-    g[2 * 10 + 2] = 2;
-    g[4 * 10 + 7] = 3;
-    g[6 * 10 + 5] = 2;
+    // Sample traffic cars (odd rows: 2 = moving left, even rows: 3 = moving right)
+    g[1 * 10 + 2] = 2;
+    g[1 * 10 + 7] = 2;
+    g[2 * 10 + 4] = 3;
+    g[3 * 10 + 1] = 2;
+    g[3 * 10 + 6] = 2;
+    g[4 * 10 + 3] = 3;
+    g[4 * 10 + 8] = 3;
+    g[5 * 10 + 5] = 2;
+    g[6 * 10 + 2] = 3;
+    g[6 * 10 + 7] = 3;
+    g[7 * 10 + 4] = 2;
     g[8 * 10 + 1] = 3;
+    g[8 * 10 + 6] = 3;
     return g;
   }
 
@@ -504,6 +722,100 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
               </div>
             )}
           </div>
+
+          {/* Color Legend */}
+          {isFreeway && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-300 shadow-[0_0_6px_rgba(250,204,21,0.8)] inline-block"></span>
+                  <span className="text-[#cbd5e1]">Chicken</span>
+                </span>
+                <span className="text-yellow-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-cyan-400 border border-cyan-300 shadow-[0_0_6px_rgba(6,182,212,0.8)] inline-block"></span>
+                  <span className="text-[#cbd5e1]">Traffic (◄)</span>
+                </span>
+                <span className="text-cyan-400 font-semibold">Cyan</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-fuchsia-500 border border-fuchsia-400 shadow-[0_0_6px_rgba(217,70,239,0.8)] inline-block"></span>
+                  <span className="text-[#cbd5e1]">Traffic (►)</span>
+                </span>
+                <span className="text-fuchsia-400 font-semibold">Magenta</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-emerald-600 border border-emerald-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Goal Row 0</span>
+                </span>
+                <span className="text-emerald-400 font-semibold">+1 Pt</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-slate-600 border border-slate-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Start Row 9</span>
+                </span>
+                <span className="text-slate-400">Spawn</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded bg-rose-500 border border-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.9)] inline-block"></span>
+                  <span className="text-[#cbd5e1]">Collision</span>
+                </span>
+                <span className="text-rose-400">Crash</span>
+              </div>
+            </div>
+          )}
+
+          {isSeaquest && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-teal-400 border border-teal-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Submarine</span>
+                </span>
+                <span className="text-teal-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-rose-500 border border-rose-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Enemies</span>
+                </span>
+                <span className="text-rose-400">Threat</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Divers</span>
+                </span>
+                <span className="text-yellow-400">Rescue</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-sky-400 border border-sky-300 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Torpedoes</span>
+                </span>
+                <span className="text-sky-400">Fire</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2 rounded bg-sky-600/60 border border-sky-500 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Surface</span>
+                </span>
+                <span className="text-sky-300">O₂ Refill</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
