@@ -169,40 +169,53 @@ def _reject_incoherent_task_type(task_type: str, target_metric: dict) -> None:
 
 @router.post("", response_model=MissionRead, status_code=status.HTTP_201_CREATED)
 async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_db)):
-    payload_dict = payload.model_dump()
-    if not payload_dict.get("target_metric"):
-        payload_dict["target_metric"] = _parse_target_metric(payload.goal)
+    from backend.services.mission_service import prepare_mission_params
+
+    mission_dict = await prepare_mission_params(payload, db)
+
+    if not mission_dict.get("target_metric"):
+        mission_dict["target_metric"] = _parse_target_metric(mission_dict["goal"])
 
     # Reconcile task_type if omitted or if "rl" was submitted as default but goal indicates another paradigm
-    submitted_type = payload_dict.get("task_type")
-    inferred_type = _infer_task_type_from_goal(payload.goal, default="rl")
+    submitted_type = payload.task_type
+    inferred_type = _infer_task_type_from_goal(mission_dict["goal"], default=mission_dict["task_type"])
     if not submitted_type or submitted_type == "auto":
-        payload_dict["task_type"] = inferred_type
+        mission_dict["task_type"] = inferred_type
     elif submitted_type == "rl" and inferred_type != "rl":
-        # "rl" is the schema default, so an explicit rl and an omitted field are
-        # indistinguishable here — the override exists because the frontend used
-        # to send "rl" for everything (mission 6d999c84 was a rejection-sampling
-        # goal dispatched down the RL path, completing in 9 minutes with no
-        # metric). Log it: silently reinterpreting a caller's stated intent is
-        # the one case where this rule is wrong, and a line in the log is the
-        # difference between "astra chose for me" and "astra ignored me".
         logger.info(
             "Mission create: task_type 'rl' overridden to '%s' from goal text — "
             "pass an explicit non-rl task_type, or 'auto', to silence this",
             inferred_type,
         )
-        payload_dict["task_type"] = inferred_type
+        mission_dict["task_type"] = inferred_type
 
     _reject_incoherent_task_type(
-        payload_dict.get("task_type", ""), payload_dict.get("target_metric") or {}
+        mission_dict.get("task_type", ""), mission_dict.get("target_metric") or {}
     )
     _reject_unreachable_target(
-        payload_dict.get("task_type", ""), payload_dict.get("target_metric") or {}
+        mission_dict.get("task_type", ""), mission_dict.get("target_metric") or {}
     )
-    mission = Mission(**payload_dict)
+
+    import uuid
+
+    if not mission_dict.get("id"):
+        mission_dict["id"] = str(uuid.uuid4())
+
+    mission = Mission(**mission_dict)
     db.add(mission)
     await db.commit()
     await db.refresh(mission)
+
+    if payload.auto_start:
+        import asyncio
+        from backend.routers.agent import _build_loop, _running_tasks
+
+        loop = _build_loop()
+        task = asyncio.create_task(loop.run(mission.id))
+        _running_tasks[mission.id] = task
+        task.add_done_callback(lambda t: _running_tasks.pop(mission.id, None))
+        logger.info("Missions: auto-started loop for mission=%s", mission.id)
+
     return mission
 
 

@@ -2218,6 +2218,33 @@ Harden evaluation comparison resilience against null metrics, standardize recipe
 - [x] **Verification & Test Suite**:
   - Full test suite passing 100%: 1,131 / 1,131 tests (1,111 unit tests + 20 integration tests passing in ~15s).
 
+---
+
+## Phase 68: Unified Mission Creation & Recipe Dispatch Pipeline Convergence
+
+Converge `POST /missions` and `POST /recipes/{name}/dispatch` into a single, unified mission creation and dispatch pipeline with automatic canonical goal formatting and recipe seeding:
+
+- [x] **Mission Service & Canonical Goal Formatter (`backend/services/mission_service.py`)**:
+  - Implemented `format_canonical_goal(...)` guaranteeing all missions (whether typed by prompt, seeded from a recipe, or called via API) feature explicit target metrics:
+    `Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`
+    *(e.g., `Train a MinAtar-Seaquest-v0 DQN agent to achieve 25.0 score`, `Train a Tetris-v0 A2C agent to achieve 300 lines_cleared`)*.
+  - Implemented `resolve_recipe(...)` unifying recipe lookup across DB records (`RecipeRecord`) and filesystem YAMLs (`recipes/{name}.yaml`).
+  - Implemented `prepare_mission_params(...)` unifying recipe resolution, target metric normalization (`{"metric": k, "target": v}` to `{k: v}`), and multi-stage pipeline configuration seeding (`stages`, `stage_index`, `stage_checkpoints`, `active_task_type`).
+
+- [x] **Unified Mission Schema & Endpoint (`backend/schemas/mission.py` & `backend/routers/missions.py`)**:
+  - `MissionCreate`: Added first-class `recipe: Optional[str]`, `auto_start: bool = False`, and `task_type: Optional[str] = None` with Pydantic model validator requiring either `goal` or `recipe`.
+  - `create_mission` (`POST /missions`): Unified to prepare parameters via `mission_service.py`, run incoherent/unreachable target guards, guarantee `id` UUID generation, persist to DB, and optionally launch the background loop immediately when `auto_start=True`.
+
+- [x] **Thin Backwards-Compatible Dispatch Wrapper (`backend/routers/recipes.py`)**:
+  - Refactored `POST /recipes/{recipe_name}/dispatch` to delegate 100% of execution to the unified `create_mission(MissionCreate(recipe=clean_name, auto_start=True))` pipeline.
+  - Preserved full backwards compatibility with UI components (`api.dispatchRecipe`) and multi-stage test pipelines (`test_star_pipeline.py`, `test_post_training_pipeline.py`).
+  - Added `RecipeDispatchRequest` supporting optional target metric overrides (`{"target_metric": {"score": 25.0}}`) without modifying canonical recipe YAML files.
+
+- [x] **Verification & Test Suite**:
+  - `tests/unit/test_missions_router.py`: Added tests for canonical goal formatting across RL, custom goals, and missing target appending (35/35 passing).
+  - `tests/unit/test_recipe_dispatch.py`: Added tests for unified creation with recipe, target overrides, and canonical goal assertions (6/6 passing).
+  - Full test suite passing 100%: 1,136 / 1,136 tests (1,116 unit tests + 20 integration tests passing in 11.0s).
+
 
 
 

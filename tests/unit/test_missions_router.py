@@ -214,3 +214,44 @@ def test_finetune_types_may_target_pass_rate():
 def test_guard_is_inert_without_a_target():
     from backend.routers.missions import _reject_incoherent_task_type
     _reject_incoherent_task_type("rl", {})
+
+
+# ── Canonical goal generation ──────────────────────────────────────────────────
+
+def test_format_canonical_goal_rl_with_recipe():
+    from backend.services.mission_service import format_canonical_goal
+    recipe_content = {
+        "env_id": "MinAtar-Seaquest-v0",
+        "algorithm": "DQN",
+        "target_metric": {"score": 15.0},
+    }
+    goal = format_canonical_goal(
+        goal=None,
+        recipe_content=recipe_content,
+        task_type="rl",
+        target_metric={"score": 25.0},
+    )
+    assert goal == "Train a MinAtar-Seaquest-v0 DQN agent to achieve 25.0 score"
+
+
+def test_format_canonical_goal_respects_explicit_goal_with_target():
+    from backend.services.mission_service import format_canonical_goal
+    goal = format_canonical_goal(
+        goal="Train a Tetris-v0 A2C agent to achieve 300 lines_cleared",
+        recipe_content=None,
+        task_type="rl",
+        target_metric={"lines_cleared": 300.0},
+    )
+    assert goal == "Train a Tetris-v0 A2C agent to achieve 300 lines_cleared"
+
+
+def test_format_canonical_goal_appends_target_if_missing():
+    from backend.services.mission_service import format_canonical_goal
+    goal = format_canonical_goal(
+        goal="Train a Tetris-v0 agent",
+        recipe_content=None,
+        task_type="rl",
+        target_metric={"lines_cleared": 200.0},
+    )
+    assert goal == "Train a Tetris-v0 agent to achieve 200.0 lines_cleared"
+

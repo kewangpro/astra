@@ -241,7 +241,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `GET /health/ready` | Readiness probe |
 | `GET/POST/PATCH/DELETE /registry/experiments` | Experiment CRUD |
 | `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter) |
-| `GET/POST/PATCH/DELETE /missions` | Mission CRUD |
+| `GET/POST/PATCH/DELETE /missions` | Mission CRUD (supports explicit goal or first-class recipe seeding, target overrides, auto_start, and canonical goal formatting) |
 | `GET /missions/{id}/manifest` | Live requirement manifest state |
 | `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
 | `POST /agent/missions/{id}/cancel` | Cancel a running mission loop; terminates sandbox and resets to pending |
@@ -262,7 +262,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `POST /recipes/crystallize/{mission_id}` | Distil a completed mission into a recipe |
 | `POST /recipes/{id}/evolve` | Spawn a mutated child recipe |
 | `GET /recipes/{id}/lineage` | Ancestor chain for an evolved recipe |
-| `POST /recipes/{name}/dispatch` | One-click dispatch of a training recipe directly into an active Mission loop |
+| `POST /recipes/{name}/dispatch` | One-click dispatch of a training recipe (delegates to unified POST /missions pipeline with auto_start=True) |
 
 
 Interactive docs available at `http://localhost:8200/docs` when the backend is running.

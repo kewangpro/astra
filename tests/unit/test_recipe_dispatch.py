@@ -43,9 +43,64 @@ async def test_dispatch_recipe_from_db():
         assert resp.status == "dispatched"
         assert resp.recipe == "tetris_actor_critic_v1"
         assert resp.task_type == "rl"
-        assert resp.goal == "Tetris Actor-Critic baseline"
+        assert resp.goal == "Tetris Actor-Critic baseline to achieve 100.0 lines_cleared"
         db.add.assert_called_once()
         db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_recipe_with_target_override():
+    from backend.schemas.recipe import RecipeDispatchRequest
+
+    mock_record = MagicMock()
+    mock_record.name = "minatar_seaquest_dqn_v1"
+    mock_record.domain = "minatar_seaquest"
+    mock_record.task_type = "rl"
+    mock_record.target_metric = {"score": 15.0}
+    mock_record.description = "DQN for MinAtar Seaquest"
+
+    db = _make_db(record=mock_record)
+
+    mock_loop = MagicMock()
+    mock_loop.run = AsyncMock()
+
+    with patch("backend.routers.agent._build_loop", return_value=mock_loop), \
+         patch("backend.routers.agent._running_tasks", {}):
+        payload = RecipeDispatchRequest(
+            target_metric={"score": 25.0},
+            goal="Train a MinAtar-Seaquest-v0 DQN agent to achieve 25.0 score",
+        )
+        resp = await dispatch_recipe("minatar_seaquest_dqn_v1", payload=payload, db=db)
+        assert resp.status == "dispatched"
+        assert resp.goal == "Train a MinAtar-Seaquest-v0 DQN agent to achieve 25.0 score"
+        added_mission = db.add.call_args[0][0]
+        assert added_mission.target_metric == {"score": 25.0}
+        assert added_mission.goal == "Train a MinAtar-Seaquest-v0 DQN agent to achieve 25.0 score"
+
+
+@pytest.mark.asyncio
+async def test_unified_create_mission_with_recipe():
+    from backend.schemas.mission import MissionCreate
+    from backend.routers.missions import create_mission
+
+    db = _make_db(record=None)
+    mock_loop = MagicMock()
+    mock_loop.run = AsyncMock()
+
+    with patch("backend.routers.agent._build_loop", return_value=mock_loop), \
+         patch("backend.routers.agent._running_tasks", {}):
+        payload = MissionCreate(
+            recipe="minatar_seaquest_dqn_v1",
+            target_metric={"score": 25.0},
+            auto_start=True,
+        )
+        mission = await create_mission(payload, db=db)
+        assert mission.task_type == "rl"
+        assert mission.target_metric == {"score": 25.0}
+        assert mission.goal == "Train a MinAtar-Seaquest-v0 DQN agent to achieve 25.0 score"
+        db.add.assert_called_once()
+        db.commit.assert_called_once()
+
 
 
 @pytest.mark.asyncio

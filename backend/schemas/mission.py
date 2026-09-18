@@ -2,15 +2,24 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from backend.models.mission import MissionStatus
 
 
 class MissionCreate(BaseModel):
-    goal: str
-    task_type: Optional[str] = "rl"
+    goal: Optional[str] = None
+    recipe: Optional[str] = None
+    task_type: Optional[str] = None
     target_metric: dict = Field(default_factory=dict)
     autonomy_mode: str = "supervised"
+    auto_start: bool = False
+    host: Optional[str] = "local"
+
+    @model_validator(mode="after")
+    def check_goal_or_recipe(self) -> "MissionCreate":
+        if not self.goal and not self.recipe:
+            raise ValueError("Either 'goal' or 'recipe' must be provided")
+        return self
 
 
 class MissionUpdate(BaseModel):

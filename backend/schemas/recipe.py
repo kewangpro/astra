@@ -58,6 +58,11 @@ class RecipeSearchHit(BaseModel):
     distance: float
 
 
+class RecipeDispatchRequest(BaseModel):
+    target_metric: Optional[dict] = None
+    goal: Optional[str] = None
+
+
 class RecipeDispatchResponse(BaseModel):
     mission_id: str
     status: str

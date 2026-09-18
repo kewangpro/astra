@@ -105,10 +105,10 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Computes mean, std, min, max, per-seed score arrays, and tie-split win rates.
 - Automatic champion detection and crown 👑 promotion in the Model Registry.
 
-### 4.17. Recipe Library, Lineage DAG Visualizer & One-Click Dispatch
+### 4.17. Recipe Library, Lineage DAG Visualizer & Unified Mission Dispatch
 - Searchable gallery of canonical training blueprints across RL, Fine-tuning, and ML paradigms.
 - Lineage tree DAG visualizer tracking genetic evolution, hyperparameter mutations, and generational wins.
-- 1-Click mission dispatch triggering autonomous training runs directly from recipes.
+- **Converged Mission Creation & Dispatch**: Unified pipeline (`POST /missions` and `POST /recipes/{name}/dispatch`) supporting first-class recipe seeding, target metric overrides, and automated canonical goal generation (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`) without mutating canonical recipe YAML files.
 
 ### 4.18. SFT Post-Training with Strict Held-Out Splitting & Reasoning Preservation
 - End-to-end Supervised Fine-Tuning orchestrator via `SFTTrainer` supporting HuggingFace Transformers, PEFT (LoRA/QLoRA), and TRL.
