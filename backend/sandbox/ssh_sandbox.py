@@ -60,6 +60,7 @@ class SSHSandbox(BaseSandbox):
         # Build env string
         env_vars = {
             **self.config.env_vars,
+            "PYTHONUNBUFFERED": "1",
             "ASTRA_CHECKPOINT_DIR": os.path.join(self._remote_mission_dir, "checkpoints"),
         }
         if self.config.gpu_index is not None:

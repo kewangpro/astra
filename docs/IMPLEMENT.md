@@ -1,8 +1,22 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the phased implementation strategy for `ASTRA`.
+This document outlines the architectural implementation roadmap for `ASTRA`, structured into **seven strategic epochs** encompassing 66 phases of development:
+
+## Strategic Epoch Roadmap
+
+| Epoch | Focus & Strategic Capabilities | Encompassed Phases | Status |
+|---|---|---|---|
+| **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing code gen, 4-stage escalating pivots, regression rollback, vector memory | Phases 1–16 | ✅ Complete |
+| **Epoch 2: High-Throughput RL & Lookahead** | Pure Gym environments (Snake, Tetris), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space, curriculum | Phases 17–24, 31–32 | ✅ Complete |
+| **Epoch 3: Post-Training, Distillation & Cluster Scaling** | Remote SSH execution, DPO/GRPO/Distill/RFT/Prompt paradigms, Nodes cluster HUD, checkpoint chaining, convergence guards | Phases 25–30, 33–50 | ✅ Complete |
+| **Epoch 4: Arcade Simulation Suite & Live HUD** | Canonical 5-game MinAtar suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest), Game2048-v0, live policy auditor | Phases 51–54, 65 | ✅ Complete |
+| **Epoch 5: Model Registry, Tournaments & Recipe Lineage** | Multi-environment Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with evolutionary Lineage DAG | Phases 55–56 | ✅ Complete |
+| **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
+| **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
 
 ---
+
+# Epoch 1: Core Autonomous Engine & Resilience (Phases 1–16)
 
 ## Phase 1: The Foundation (Backend & Memory) ✅
 *Goal: Establish the core API, database schema, and project structure.*
@@ -687,6 +701,8 @@ This document outlines the phased implementation strategy for `ASTRA`.
 
 ---
 
+# Epoch 2: High-Throughput Reinforcement Learning & Lookahead (Phases 17–24, 31–32)
+
 ## Phase 17 — Tetris Obs Refactor + Actor-Critic Trainer
 
 *Goal: Replace the 224-element flat board observation with the proven 4-feature compact representation, and replace the rigid SB3-only code generator with a contract-based Actor-Critic approach that uses `get_next_states()` — matching the reference project that achieved 121 avg lines vs PPO's 45.*
@@ -944,6 +960,10 @@ This document outlines the phased implementation strategy for `ASTRA`.
     - `_linear_schedule` helper always emitted; opt-in guard stays inert when `lr_schedule` absent from `_hp`; activates when set to `"linear"`; `_resolve_hyperparams("Snake-v0", ...)` picks up the recipe's `lr_schedule: linear` default.
 
     Total: **598 tests** (589 unit + 9 integration).
+
+---
+
+# Epoch 3: Distributed Post-Training, Distillation & Cluster Scaling (Phases 25–30, 33–50)
 
 ## Phase 25 — DPO/GRPO Fine-Tune Task Types + Remote Telemetry Tailing
 
@@ -1691,6 +1711,8 @@ Two root causes were diagnosed:
 
 ---
 
+# Epoch 4: Arcade Simulation Suite & Live HUD Explainability (Phases 51–54, 65)
+
 ## Phase 51 — 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players
 
 **Motivation:** Astra's autonomous RL capabilities were previously focused exclusively on Snake-v0 and Tetris-v0. To expand Astra's game evaluation and RL training benchmark suite to classic puzzle and arcade benchmarks without introducing heavyweight external dependencies or native C++ build chains (such as native Atari ALE or external pip `minatar`), we implemented two high-throughput pure Python/NumPy Gymnasium environments along with end-to-end training, evaluation, WebSocket streaming, and interactive HUD canvas players.
@@ -1803,6 +1825,8 @@ Two root causes were diagnosed:
 
 ---
 
+# Epoch 5: Model Registry, Tournaments & Recipe Evolution (Phases 55–56)
+
 ## Phase 55 — Model Registry & Tournament Leaderboard
 
 **Problem:** While trained checkpoints were stored in `runs/`, there was no way to systematically evaluate models head-to-head across fixed identical seeds to prove superiority, or crown champions.
@@ -1839,6 +1863,8 @@ Two root causes were diagnosed:
 - [x] **3 new unit tests** (`tests/unit/test_recipe_dispatch.py`).
 
 ---
+
+# Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels (Phases 57–63, 66)
 
 ## Phase 57 — SFT Post-Training with Strict Held-Out Splitting & Reasoning Preservation
 
@@ -2083,6 +2109,8 @@ Enable **closed-loop reasoning bootstrapping** via the `star` task type (`task_t
 
 ---
 
+# Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments (Phase 64)
+
 ## Phase 64: Multi-Turn Agent Gym Environment & Trajectory RL
 
 Bridge Astra's Gymnasium reinforcement learning engine with multi-turn agent tool-use architectures (`MultiTurnAgentGym-v0` / `AgentGym-v0`):
@@ -2104,7 +2132,7 @@ Bridge Astra's Gymnasium reinforcement learning engine with multi-turn agent too
 
 ---
 
-## Phase 65: Complete MinAtar Arcade Suite (Freeway & Seaquest) & Dynamic HUD
+## Phase 65: Complete MinAtar Arcade Suite (Freeway & Seaquest) & Dynamic HUD (Epoch 4 Extension)
 
 Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pure Python/NumPy Gymnasium environments, canonical recipes, dynamic HUD rendering, and tournament support:
 
@@ -2143,6 +2171,28 @@ Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pur
   - `tests/unit/test_minatar_freeway_env.py`: 7 tests covering observation/action spaces, reset, vertical movement, goal crossing, car collisions, viewer grid, and Gymnasium make.
   - `tests/unit/test_minatar_seaquest_env.py`: 9 tests covering spaces, reset, 4-directional movement, torpedo kills, diver rescue & surfacing oxygen refill, oxygen depletion death, enemy collision death, viewer grid, and Gymnasium make.
   - Full MinAtar test suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) passes 100% (46/46 passed in 0.13s).
+
+---
+
+## Phase 66: STaR Checkpoint Chaining, Unbuffered Remote Logging & Telemetry Disambiguation (Epoch 6 Extension)
+
+Harden the autonomous STaR flywheel with guaranteed LoRA adapter forward-chaining across loop iterations and backend restarts, eliminate remote SSH log buffering, and disambiguate intermediate evaluation scales:
+
+- [x] **STaR LoRA Adapter Forward-Chaining**:
+  - `backend/loop/state_machine.py`: Added `"star"` to `active_t in ("dpo", "grpo", "distill", "rft", "star")` so peak LoRA checkpoints (`adapters/astra_<id>_iter<N>/best`) are recorded to `Mission.last_checkpoint_path` and forward-chained into subsequent iterations.
+  - Added `_load_last_checkpoint_path(mission_id)` in `LoopStateMachine` to refresh `_last_checkpoint_path` from SQLite prior to script generation in both standard and self-healing execution branches, preventing checkpoint loss on backend restart.
+  - `backend/agent/code_generator.py`: Enforced warm-start adapter argument formatting (`--adapter <path>`) and cleared `no_adapter` whenever a previous iteration checkpoint is supplied.
+
+- [x] **Unbuffered Remote SSH Process Streaming**:
+  - `backend/sandbox/ssh_sandbox.py`: Injected `PYTHONUNBUFFERED=1` into `env_vars` for all SSH executions, ensuring standard output and error flush immediately to remote logs without waiting for 4KB/8KB stdio buffer boundaries.
+
+- [x] **Evaluation Metric Disambiguation**:
+  - Decoupled intermediate in-training step validations (10-case validation split) as `pass_rate_static_live`, reserving `pass_rate` strictly for authoritative 78-case `bare_eval.py` benchmarks.
+  - Aligned Metric Gap card and History chart in the frontend dashboard to display consistent pass rate progress (75.90% vs. 85.0% target).
+
+- [x] **Verification & Test Suite**:
+  - Full test suite passing 100%: 1,130 / 1,130 tests (1,110 unit tests + 20 integration tests passing in 11.7s).
+
 
 
 

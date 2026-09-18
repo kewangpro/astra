@@ -50,7 +50,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task Types
 
-ASTRA supports nine training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `rft`, `prompt` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
+ASTRA supports ten training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `rft`, `prompt`, `star` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
 
 ## Quick Start
 
@@ -93,11 +93,10 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1072 unit tests across all core modules
-│   └── integration/    # 15 integration tests for the loop state machine
+│   ├── unit/           # 1110 unit tests across all core modules
+│   └── integration/    # 20 integration tests for the loop state machine and stress test suites
 ├── alembic/            # Database migrations
-├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite)
-
+├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite, AgentGym)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
@@ -119,23 +118,19 @@ make ports  # show port status for all services
 
 ## Development Milestones
 
-| Milestone | Scope & Key Capabilities | Status |
-|---|---|---|
-| **Core Architecture (Phases 1–7)** | Autonomous loop, MLX Lead Agent, SandboxManager, GAN critique, manifest state machine, vector memory | ✅ Complete |
-| **Autonomous Learning (Phases 8–16)** | Self-healing code generation, auto-approvals, 4-stage escalating pivots, regression rollback, best-arch memory | ✅ Complete |
-| **RL Environments & Lookahead (Phases 17–24, 31–32)** | Pure Gym envs (Snake, Tetris), 1-step successor lookahead trainers, flood-fill reachable space features, curriculum learning | ✅ Complete |
-| **Fine-Tuning & Distillation (Phases 25–28, 35–48)** | Remote SSH sandboxes, DPO, GRPO, Distillation, RFT, and Prompt optimization with checkpoint chaining & convergence guards | ✅ Complete |
-| **Mission Control & Kanban (Phases 34, 38, 49)** | Cluster visibility (Nodes panel), status-grouped Kanban board, live dual-metric history, and approval gates | ✅ Complete |
-| **Arcade Suite & Explainability (Phases 51–54)** | 2048 & MinAtar arcade suite (Breakout, Space Invaders, Asteroids), lookahead DQN, live Policy Audit Inspector (Q-values/entropy) | ✅ Complete |
-| **Registry, Tournaments & Recipes (Phases 55–56)** | Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with Lineage DAG, and 1-click dispatch | ✅ Complete |
-| **SFT & Reasoning Post-Training (Phase 57)** | Full SFTTrainer, strict held-out train/val splitting (val_split), reasoning CoT (<think>...</think>) preservation, AST-guarded codegen & self-healing | ✅ Complete |
-| **Remote SFT via MLX (Phase 58)** | Apple Silicon Mac Mini offload following DPO pattern, zero-orphan `os.execv` wrapper, dynamic validation batch-clamping, live SSH loss tailing | ✅ Complete |
-| **Pipeline Chaining & LoRA Auto-Detection (Phase 59)** | End-to-end SFT → DPO pipeline chaining, LoRA config auto-detection from warm-start adapters, `--load-pairs` acceleration, strict non-RL recipe hyperparameter locking | ✅ Complete |
-| **Ensemble Routing SFT-to-DPO Pipeline & Recipe Locking (Phase 60)** | Pure routing demonstration dataset (`data_routing`), strict recipe hyperparameter locking against Metal OOM, guaranteed SFT adapter checkpoint propagation, lower-is-better metric HUD | ✅ Complete |
-| **Stage 3 Online GRPO RL Chaining (Phase 61)** | Online GRPO exploration ($K=2$) warm-started from DPO Champion (`astra_4604539c`), 10× failure focus pool, reaching 88.9% model-routed / 80.3% static accuracy, and crowning new Domain Champion | ✅ Complete |
-| **Unified 3-Stage Post-Training Conductor Pipeline (Phase 62)** | Single mission execution for SFT → DPO → GRPO sequential pipeline with milestone gates, adapter forward-chaining, stage-scoped paths, and 1-click dispatch | ✅ Complete |
-| **STaR Self-Taught Reasoner Data-Flywheel (Phase 63)** | Self-generating rationalized reasoning trajectories via test-time verification, reaching 50.0% model-routed pass-rate from 10.0% cold start | ✅ Complete |
-| **Complete MinAtar Suite & Live HUD (Phase 64)** | High-throughput MinAtar Freeway & Seaquest (>100k steps/sec), completing the 5-game suite with dynamic Policy Audit HUD and Tournament Arena | ✅ Complete |
+## Strategic Development Milestones
+
+ASTRA's architecture and capabilities are structured into seven core development epochs:
+
+| Epoch | Scope & Strategic Capabilities | Key Components | Status |
+|---|---|---|---|
+| **Epoch 1: Autonomous Execution Engine** (Phases 1–16) | Autonomous Plan-Critique-Implement-Train-Eval loop, GAN-style plan critique, self-healing code generation, 4-stage escalating pivots, regression rollback, and vector memory. | `LoopStateMachine`, `LeadAgent`, `CriticAgent`, `CodeGenerator`, `PivotEngine`, `VectorMemory` | ✅ Complete |
+| **Epoch 2: Reinforcement Learning & Lookahead** (Phases 17–24, 31–32) | High-throughput pure Gymnasium environments (Snake-v0, Tetris-v0), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space features, and curriculum learning. | `SnakeEnv`, `TetrisEnv`, lookahead DQN, custom reward shaping | ✅ Complete |
+| **Epoch 3: Post-Training, Distillation & Compute Cluster** (Phases 25–30, 33–50) | Remote SSH compute sandboxes, DPO, GRPO, Distillation, RFT, and Prompt optimization; cluster visibility (Nodes panel), checkpoint chaining, and convergence guards. | `SSHSandbox`, `SandboxManager`, DPO/GRPO/Distill trainers, Nodes panel, Kanban board | ✅ Complete |
+| **Epoch 4: Arcade Simulation Suite & Live HUD Explainability** (Phases 51–54, 65) | Complete 5-game MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) & Game2048-v0 (>100k steps/sec); WebSocket play HUD with live Q-values, action distributions, and Shannon entropy. | MinAtar Suite (5 games), `Game2048Env`, `MinAtarPlayer`, `PolicyAuditor` | ✅ Complete |
+| **Epoch 5: Model Registry, Tournaments & Recipe Evolution** (Phases 55–56) | Multi-environment Model Registry, deterministic fixed-seed Tournament Arena, automatic champion crowning, and Recipe Library with evolutionary Lineage DAG. | `ModelRegistry`, `BenchmarkSuite` tournaments, `RecipeLibrary`, Lineage DAG | ✅ Complete |
+| **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels** (Phases 57–63, 66) | Unified 3-stage post-training pipeline (SFT → DPO → GRPO), `<think>...</think>` CoT reasoning preservation, MLX Apple Silicon remote offload, adapter auto-detection, and Self-Taught Reasoner (STaR) closed-loop data bootstrapping with backward rationalization. | Conductor pipeline, SFTTrainer, STaR flywheel (`star_train.py`), unbuffered streaming | ✅ Complete |
+| **Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments** (Phase 64) | `MultiTurnAgentGym-v0` 32D environment, 8 multi-turn scenarios (customer support, data triage, billing), dense milestone & task completion rewards, and PPO agent policy optimization. | `AgentToolGym`, `recipes/agent_gym_ppo_v1.yaml`, multi-turn scenario engine | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

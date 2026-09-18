@@ -667,6 +667,7 @@ class LoopStateMachine:
                     script_path = None
                 else:
                     await emit_status(mission_id, "Generating training script…", event_type="info")
+                    _last_checkpoint_path = _last_checkpoint_path or await self._load_last_checkpoint_path(mission_id)
                     script_path = await self._codegen.generate_training_script(
                         mission_id, plan, current_iteration, warm_start_adapter=_last_checkpoint_path,
                     )
@@ -788,6 +789,7 @@ class LoopStateMachine:
                         # having generated a script (skipped on reattach) —
                         # generate one now so the healer has something to patch.
                         await emit_status(mission_id, "Generating training script…", event_type="info")
+                        _last_checkpoint_path = _last_checkpoint_path or await self._load_last_checkpoint_path(mission_id)
                         script_path = await self._codegen.generate_training_script(
                             mission_id, plan, current_iteration, warm_start_adapter=_last_checkpoint_path,
                         )
@@ -1956,6 +1958,13 @@ class LoopStateMachine:
                     .where(Mission.id == mission_id)
                     .values(last_checkpoint_path=path)
                 )
+
+    async def _load_last_checkpoint_path(self, mission_id: str) -> Optional[str]:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Mission.last_checkpoint_path).where(Mission.id == mission_id)
+            )
+            return result.scalar_one_or_none()
 
     @staticmethod
     def _is_algorithm_locked(goal: str, current_algorithm: str) -> bool:
