@@ -2245,13 +2245,27 @@ Converge `POST /missions` and `POST /recipes/{name}/dispatch` into a single, uni
   - `tests/unit/test_recipe_dispatch.py`: Added tests for unified creation with recipe, target overrides, and canonical goal assertions (6/6 passing).
   - Full test suite passing 100%: 1,136 / 1,136 tests (1,116 unit tests + 20 integration tests passing in 11.0s).
 
+---
 
+## Phase 69: Command Center Redesign & Dedicated Completed Missions Archive
 
+Redesign the Command Center to declutter operational workflows by moving completed missions to a dedicated, rich Completed Missions Archive page modeled after the Recipe Library:
 
+- [x] **Dedicated Completed Missions Page (`frontend/src/app/completed/page.tsx`)**:
+  - **Visual Design**: Modeled after the Recipe Library (`/recipes`) with dark glass UI, domain tabs, KPI stats summary cards, and responsive 3-column card grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`).
+  - **Domain Filter Tabs**: 8 category tabs (`All Completed`, `MinAtar`, `Snake`, `Tetris`, `2048`, `LLM & Reasoning`, `AgentGym`, `Classic Control & ML`).
+  - **Interactive Search & Sorting**: Instant client-side search across goals, mission IDs, task types, and node hosts; sorting by newest completed, highest achieved score, or fastest duration.
+  - **KPI Metrics Summary**: Displays Total Completed Runs, Target Pass Rate (percentage of runs meeting/exceeding target thresholds), and Total Iterations Executed across historical runs.
+  - **Completed Mission Cards**: Rich cards displaying `#id`, task type pill, remote node host, completion relative/exact timestamps, goal text, convergence benchmark box (target metric, achieved metric, progress bar, iterations, elapsed duration), and quick actions.
+  - **Manifest & Proof Inspection Modal**: Inspects verifiable requirement manifests loaded directly from `/missions/{id}/manifest` (`score >= target: PASSED`, `clean sandbox exit: PASSED`, `checkpoint saved: PASSED`), along with raw metadata and direct navigation to Mission HUD.
 
+- [x] **Command Center Decluttering (`frontend/src/app/page.tsx` & `frontend/src/components/command-center/MissionsGrid.tsx`)**:
+  - **3-Column Operational Board**: Removed the cluttered `Completed` column from the Kanban grid, focusing operational attention exclusively on active/in-flight runs: `Running / Active`, `Stalled / Paused`, and `Failed`.
+  - **Concluded State Banner**: When all operational tasks are finished (0 active missions), renders a clean celebration banner indicating all active missions have concluded with a 1-click button to browse the Completed Missions Archive.
+  - **Interactive Global Stats & Section Header**: Made the "Completed" stat in `GlobalStats` an interactive link to `/completed`, and added a direct action banner in the Missions section header showing total completed runs.
 
-
-
-
-
-
+- [x] **Global Navigation & Shared Utilities (`frontend/src/app/layout.tsx`, `frontend/src/lib/date.ts`, `frontend/src/lib/api.ts`, `frontend/src/lib/hooks/useMissions.ts`)**:
+  - `layout.tsx`: Added `Completed` to global top navigation (`Command Center` | `Completed` | `Recipes` | `Models & Tournaments`).
+  - `date.ts`: Centralized `fmtTs`, `formatRelativeTime`, and `formatDuration` helpers shared between Command Center and Completed Missions.
+  - `api.ts` & `useMissions.ts`: Added `ManifestRequirement` and `ManifestRecord` types, updated `api.getMissions(statusFilter?)`, added `api.getManifest(missionId)`, and added `useMissionManifest(missionId)` hook.
+  - Verified compilation: `npx tsc --noEmit` passes with zero errors; `next build` builds all 7 pages cleanly.

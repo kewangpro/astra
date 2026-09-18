@@ -44,7 +44,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   href="/"
                   className="px-3 py-1 text-xs text-[#94a3b8] hover:text-[#e2e8f0] hover:bg-[#1e293b] rounded transition-colors"
                 >
-                  Missions
+                  Command Center
+                </Link>
+                <Link
+                  href="/completed"
+                  className="px-3 py-1 text-xs text-[#94a3b8] hover:text-[#e2e8f0] hover:bg-[#1e293b] rounded transition-colors"
+                >
+                  Completed
                 </Link>
                 <Link
                   href="/recipes"

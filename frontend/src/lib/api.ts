@@ -21,6 +21,27 @@ export interface Mission {
   completed_at: string | null;  // stamped when the mission reaches COMPLETED/FAILED/STALLED
 }
 
+export interface ManifestRequirement {
+  id: string;
+  description: string;
+  category: string;
+  check_type: string;
+  metric_name?: string | null;
+  threshold?: number | null;
+  operator?: string | null;
+  path_pattern?: string | null;
+  passed: boolean;
+  passed_at?: string | null;
+  evidence?: string | null;
+}
+
+export interface ManifestRecord {
+  version: string;
+  mission_id: string;
+  generated_at?: string | null;
+  requirements: ManifestRequirement[];
+}
+
 export interface NodeMission {
   mission_id: string;
   sandbox_id: string | null;
@@ -158,9 +179,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getMissions: () => req<Mission[]>("/missions"),
+  getMissions: (statusFilter?: string) =>
+    req<Mission[]>(statusFilter ? `/missions?status_filter=${encodeURIComponent(statusFilter)}` : "/missions"),
   getNodes: () => req<NodeStatus[]>("/nodes"),
   getMission: (id: string) => req<Mission>(`/missions/${id}`),
+  getManifest: (missionId: string) => req<ManifestRecord>(`/missions/${missionId}/manifest`),
   createMission: (goal: string, taskType?: string) =>
     req<Mission>("/missions", {
       method: "POST",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
@@ -12,7 +13,7 @@ import {
 } from "lucide-react";
 import { useMissions, useRunMission, useCancelMission } from "@/lib/hooks/useMissions";
 import type { Mission } from "@/lib/api";
-import { parseTs } from "@/lib/date";
+import { parseTs, fmtTs, formatRelativeTime } from "@/lib/date";
 
 const STATUS_COLOR: Record<string, string> = {
   pending:    "#475569",
@@ -24,33 +25,6 @@ const STATUS_COLOR: Record<string, string> = {
   failed:     "#f87171",
   stalled:    "#fb923c",
 };
-
-function fmtTs(iso: string): string {
-  return parseTs(iso).toLocaleString([], {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatRelativeTime(iso: string): string {
-  try {
-    const d = parseTs(iso);
-    const now = Date.now();
-    const diffSec = Math.floor((now - d.getTime()) / 1000);
-    if (diffSec < 60) return "just now";
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHour = Math.floor(diffMin / 60);
-    if (diffHour < 24) return `${diffHour}h ago`;
-    const diffDay = Math.floor(diffHour / 24);
-    if (diffDay < 7) return `${diffDay}d ago`;
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
-  } catch {
-    return iso;
-  }
-}
 
 function isLowerBetterMetric(key: string): boolean {
   const k = key.toLowerCase();
@@ -322,12 +296,11 @@ function MissionCard({ m }: { m: Mission }) {
   );
 }
 
-// Kanban columns layout in workflow order.
+// Kanban columns layout in workflow order (operational board).
 const MISSION_COLUMNS: { key: string; label: string; match: (s: string) => boolean }[] = [
-  { key: "running",   label: "Running",   match: (s) => !["completed", "failed", "stalled", "paused"].includes(s) },
-  { key: "completed", label: "Completed", match: (s) => s === "completed" },
-  { key: "stalled",   label: "Stalled",   match: (s) => s === "stalled" || s === "paused" },
-  { key: "failed",    label: "Failed",    match: (s) => s === "failed" },
+  { key: "running", label: "Running / Active", match: (s) => !["completed", "failed", "stalled", "paused"].includes(s) },
+  { key: "stalled", label: "Stalled / Paused", match: (s) => s === "stalled" || s === "paused" },
+  { key: "failed",  label: "Failed",           match: (s) => s === "failed" },
 ];
 
 function KanbanColumn({
@@ -374,8 +347,8 @@ export function MissionsGrid() {
 
   if (isLoading)
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
-        {Array.from({ length: 4 }).map((_, colIdx) => (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+        {Array.from({ length: 3 }).map((_, colIdx) => (
           <div key={colIdx} className="space-y-3 bg-[#0f172a]/30 rounded-xl p-3 border border-[rgba(255,255,255,0.03)]">
             <div className="h-2 w-14 bg-[#2d3f57] rounded mb-3 animate-pulse" />
             <SkeletonCard />
@@ -410,13 +383,40 @@ export function MissionsGrid() {
       </div>
     );
 
+  const completedCount = missions.filter((m) => m.status === "completed").length;
+  const activeMissions = missions.filter((m) => m.status !== "completed");
+
+  if (activeMissions.length === 0 && completedCount > 0) {
+    return (
+      <div className="py-12 px-6 rounded-xl bg-[#1e293b]/40 border border-[#334155]/60 text-center space-y-4">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#4ade80]/10 border border-[#4ade80]/20 text-xl text-[#4ade80]">
+          ✓
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-[#e2e8f0]">All Active Missions Concluded</h3>
+          <p className="text-xs text-[#94a3b8] max-w-md mx-auto mt-1">
+            There are currently no running, stalled, or failed missions requiring attention on the operational board.
+          </p>
+        </div>
+        <div className="pt-1">
+          <Link
+            href="/completed"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold bg-[#14b8a6] hover:bg-[#0d9488] text-[#0f172a] transition-colors shadow-lg shadow-[#14b8a6]/10"
+          >
+            <span>🏆</span> View {completedCount} Completed Missions →
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   // Newest first within each group, by creation time.
   const ordered = [...missions].sort(
     (a, b) => parseTs(b.created_at).getTime() - parseTs(a.created_at).getTime(),
   );
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
       {MISSION_COLUMNS.map((col) => (
         <KanbanColumn
           key={col.key}
@@ -427,5 +427,6 @@ export function MissionsGrid() {
     </div>
   );
 }
+
 
 export const MissionsKanban = MissionsGrid;

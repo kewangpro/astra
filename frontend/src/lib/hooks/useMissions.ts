@@ -1,9 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
-export function useMissions() {
-  return useQuery({ queryKey: ["missions"], queryFn: api.getMissions });
+export function useMissions(statusFilter?: string) {
+  return useQuery({
+    queryKey: statusFilter ? ["missions", { status: statusFilter }] : ["missions"],
+    queryFn: () => api.getMissions(statusFilter),
+  });
 }
+
+export function useMissionManifest(missionId?: string | null) {
+  return useQuery({
+    queryKey: ["missions", missionId, "manifest"],
+    queryFn: () => (missionId ? api.getManifest(missionId) : Promise.reject("No mission ID")),
+    enabled: !!missionId,
+  });
+}
+
 
 export function useNodes() {
   return useQuery({ queryKey: ["nodes"], queryFn: api.getNodes });
