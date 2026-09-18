@@ -4,7 +4,7 @@ task_type: rl
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0
-description: "DQN for MinAtar Asteroids arcade benchmark (10x10 pure Python Gymnasium environment with toroidal wrap-around)."
+description: "DQN for MinAtar Asteroids arcade benchmark (10x10 pure Python Gymnasium environment with toroidal wrap-around) to achieve score of 15.0."
 
 env_id: MinAtar-Asteroids-v0
 target_metric:

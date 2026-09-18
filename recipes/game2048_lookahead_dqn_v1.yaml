@@ -4,7 +4,7 @@ task_type: rl
 trainer_type: lookahead_dqn
 algorithm: LOOKAHEAD_DQN
 version: 1.0.0
-description: "Lookahead-augmented Deep Q-Network for Game2048-v0 utilizing 1-step successor state evaluation via get_next_states() for 4096+ tile achievement."
+description: "Lookahead-augmented Deep Q-Network for Game2048-v0 utilizing 1-step successor state evaluation via get_next_states() to achieve score of 4096.0."
 
 env_id: Game2048-v0
 target_metric:

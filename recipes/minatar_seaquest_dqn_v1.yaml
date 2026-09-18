@@ -4,7 +4,7 @@ task_type: rl
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0
-description: "DQN for MinAtar Seaquest arcade benchmark (10x10 pure Python Gymnasium environment with oxygen management and diver rescue)."
+description: "DQN for MinAtar Seaquest arcade benchmark (10x10 pure Python Gymnasium environment with oxygen management and diver rescue) to achieve score of 15.0."
 
 env_id: MinAtar-Seaquest-v0
 target_metric:
