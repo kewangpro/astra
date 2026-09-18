@@ -11,7 +11,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), tracking score distributions and tie-split win rates to automatically crown champion policies.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and one-click mission dispatch.
 - **Live Mission HUD & Explainability** — Real-time telemetry, memory gauges, and interactive canvas players streaming frame-by-frame Q-values, action probabilities, and Shannon policy entropy across all environments.
-- **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), and the MinAtar arcade suite (Breakout, Space Invaders, Asteroids).
+- **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), and the complete 5-game MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest).
 - **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
 
 
@@ -134,6 +134,8 @@ make ports  # show port status for all services
 | **Ensemble Routing SFT-to-DPO Pipeline & Recipe Locking (Phase 60)** | Pure routing demonstration dataset (`data_routing`), strict recipe hyperparameter locking against Metal OOM, guaranteed SFT adapter checkpoint propagation, lower-is-better metric HUD | ✅ Complete |
 | **Stage 3 Online GRPO RL Chaining (Phase 61)** | Online GRPO exploration ($K=2$) warm-started from DPO Champion (`astra_4604539c`), 10× failure focus pool, reaching 88.9% model-routed / 80.3% static accuracy, and crowning new Domain Champion | ✅ Complete |
 | **Unified 3-Stage Post-Training Conductor Pipeline (Phase 62)** | Single mission execution for SFT → DPO → GRPO sequential pipeline with milestone gates, adapter forward-chaining, stage-scoped paths, and 1-click dispatch | ✅ Complete |
+| **STaR Self-Taught Reasoner Data-Flywheel (Phase 63)** | Self-generating rationalized reasoning trajectories via test-time verification, reaching 50.0% model-routed pass-rate from 10.0% cold start | ✅ Complete |
+| **Complete MinAtar Suite & Live HUD (Phase 64)** | High-throughput MinAtar Freeway & Seaquest (>100k steps/sec), completing the 5-game suite with dynamic Policy Audit HUD and Tournament Arena | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

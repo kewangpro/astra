@@ -236,7 +236,13 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     is_tetris = hasattr(base_env, "_lines_cleared_episode")
     is_snake = hasattr(base_env, "_snake")
     is_2048 = hasattr(base_env, "_max_tile")
-    is_minatar = hasattr(base_env, "_bricks") or hasattr(base_env, "_ramming") or hasattr(base_env, "_alien_dir")
+    is_minatar = (
+        hasattr(base_env, "_bricks")
+        or hasattr(base_env, "_ramming")
+        or hasattr(base_env, "_alien_dir")
+        or hasattr(base_env, "_cars")
+        or hasattr(base_env, "_oxygen")
+    )
 
     # Action names for explainability
     if is_snake:
@@ -249,6 +255,10 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         action_names = ["NOOP", "LEFT", "RIGHT", "FIRE"]
     elif hasattr(base_env, "_ramming"):  # MinAtar Asteroids
         action_names = ["NOOP", "TURN_L", "TURN_R", "THRUST", "FIRE"]
+    elif hasattr(base_env, "_cars"):  # MinAtar Freeway
+        action_names = ["NOOP", "UP", "DOWN"]
+    elif hasattr(base_env, "_oxygen"):  # MinAtar Seaquest
+        action_names = ["NOOP", "LEFT", "RIGHT", "UP", "DOWN", "FIRE"]
     elif hasattr(base_env, "_required_sequence"):  # MultiTurnAgentGym
         action_names = ["FINISH", "QUERY_DB", "SEND_EMAIL", "SEARCH_KB", "CALC", "ESCALATE", "RETRY", "CLARIFY"]
     else:
@@ -348,6 +358,13 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
                 frame["aliens_killed"] = int(base_env._aliens_killed)
             elif hasattr(base_env, "_asteroids_hit"):
                 frame["asteroids_hit"] = int(base_env._asteroids_hit)
+            elif hasattr(base_env, "_crossings"):
+                frame["crossings"] = int(base_env._crossings)
+                frame["collisions"] = int(base_env._collisions)
+            elif hasattr(base_env, "_divers_saved"):
+                frame["divers_saved"] = int(base_env._divers_saved)
+                frame["enemies_killed"] = int(base_env._enemies_killed)
+                frame["oxygen"] = int(base_env._oxygen)
 
         frames.append(frame)
     return frames, round(episode_reward, 2)
@@ -404,6 +421,12 @@ async def play_ws(
                 _reg()
             elif resolved_env_id in ("MinAtar-Asteroids-v0",):
                 from envs.minatar_asteroids_env import register as _reg
+                _reg()
+            elif resolved_env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
+                from envs.minatar_freeway_env import register as _reg
+                _reg()
+            elif resolved_env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
+                from envs.minatar_seaquest_env import register as _reg
                 _reg()
             elif resolved_env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
                 from envs.agent_gym import register as _reg

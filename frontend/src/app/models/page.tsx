@@ -12,6 +12,8 @@ const ENV_OPTIONS = [
   { id: "MinAtar-Breakout-v0", label: "MinAtar Breakout" },
   { id: "MinAtar-SpaceInvaders-v0", label: "MinAtar Space Invaders" },
   { id: "MinAtar-Asteroids-v0", label: "MinAtar Asteroids" },
+  { id: "MinAtar-Freeway-v0", label: "MinAtar Freeway" },
+  { id: "MinAtar-Seaquest-v0", label: "MinAtar Seaquest" },
 ];
 
 export default function ModelsPage() {

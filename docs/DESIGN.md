@@ -250,7 +250,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
 | `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
 | `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
-| `WS /ws/missions/{id}/play?env_id=&fps=` | Live agent viewer with audit stream (`q_values`, `action_probs`, `entropy`, `selected_action`) — streams Snake-v0 (16×16), Tetris-v0 (10×20), Game2048-v0 (4×4), MinAtar-Breakout-v0 (10×10), MinAtar-SpaceInvaders-v0 (10×10), or MinAtar-Asteroids-v0 (10×10) |
+| `WS /ws/missions/{id}/play?env_id=&fps=` | Live agent viewer with audit stream (`q_values`, `action_probs`, `entropy`, `selected_action`) — streams Snake-v0 (16×16), Tetris-v0 (10×20), Game2048-v0 (4×4), or the complete 10×10 MinAtar Suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) |
 | `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
 | `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
 | `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter) |

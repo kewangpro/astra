@@ -236,11 +236,17 @@ export default function MissionHUD({
         mission.goal.toLowerCase().includes("breakout") ||
         mission.goal.toLowerCase().includes("spaceinvaders") ||
         mission.goal.toLowerCase().includes("space invaders") ||
-        mission.goal.toLowerCase().includes("asteroids")) && (
+        mission.goal.toLowerCase().includes("asteroids") ||
+        mission.goal.toLowerCase().includes("freeway") ||
+        mission.goal.toLowerCase().includes("seaquest")) && (
         <MinAtarPlayer
           missionId={missionId}
           envId={
-            mission.goal.toLowerCase().includes("space")
+            mission.goal.toLowerCase().includes("freeway")
+              ? "MinAtar-Freeway-v0"
+              : mission.goal.toLowerCase().includes("seaquest")
+              ? "MinAtar-Seaquest-v0"
+              : mission.goal.toLowerCase().includes("space")
               ? "MinAtar-SpaceInvaders-v0"
               : mission.goal.toLowerCase().includes("asteroid")
               ? "MinAtar-Asteroids-v0"

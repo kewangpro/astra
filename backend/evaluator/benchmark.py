@@ -192,6 +192,12 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
         elif env_id in ("MinAtar-Asteroids-v0",):
             from envs.minatar_asteroids_env import register as _reg
             _reg()
+        elif env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
+            from envs.minatar_freeway_env import register as _reg
+            _reg()
+        elif env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
+            from envs.minatar_seaquest_env import register as _reg
+            _reg()
         elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
             from envs.agent_gym import register as _reg
             _reg()
@@ -527,6 +533,10 @@ def run_tournament_match(
             from envs.minatar_space_invaders_env import register as _reg; _reg()
         elif env_id in ("MinAtar-Asteroids-v0",):
             from envs.minatar_asteroids_env import register as _reg; _reg()
+        elif env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
+            from envs.minatar_freeway_env import register as _reg; _reg()
+        elif env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
+            from envs.minatar_seaquest_env import register as _reg; _reg()
         elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
             from envs.agent_gym import register as _reg; _reg()
 

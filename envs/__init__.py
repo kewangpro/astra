@@ -5,6 +5,8 @@ from envs.game2048_env import Game2048Env
 from envs.minatar_env import MinAtarBreakoutEnv
 from envs.minatar_space_invaders_env import MinAtarSpaceInvadersEnv
 from envs.minatar_asteroids_env import MinAtarAsteroidsEnv
+from envs.minatar_freeway_env import MinAtarFreewayEnv
+from envs.minatar_seaquest_env import MinAtarSeaquestEnv
 
 __all__ = [
     "SnakeEnv",
@@ -13,5 +15,7 @@ __all__ = [
     "MinAtarBreakoutEnv",
     "MinAtarSpaceInvadersEnv",
     "MinAtarAsteroidsEnv",
+    "MinAtarFreewayEnv",
+    "MinAtarSeaquestEnv",
 ]
 

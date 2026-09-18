@@ -2052,6 +2052,10 @@ class LoopStateMachine:
             "MinAtar-SpaceInvaders-v0": {"max_steps", "alien_kill_reward", "wave_clear_bonus", "death_penalty"},
             "MinAtar-Space-Invaders-v0": {"max_steps", "alien_kill_reward", "wave_clear_bonus", "death_penalty"},
             "MinAtar-Asteroids-v0": {"max_steps", "asteroid_hit_reward", "wave_clear_bonus", "death_penalty"},
+            "MinAtar-Freeway-v0": {"max_steps", "cross_reward", "death_penalty", "terminate_on_collision"},
+            "MinAtar-Freeway": {"max_steps", "cross_reward", "death_penalty", "terminate_on_collision"},
+            "MinAtar-Seaquest-v0": {"max_steps", "enemy_kill_reward", "diver_pickup_reward", "diver_rescue_reward", "wave_clear_bonus", "death_penalty", "oxygen_max"},
+            "MinAtar-Seaquest": {"max_steps", "enemy_kill_reward", "diver_pickup_reward", "diver_rescue_reward", "wave_clear_bonus", "death_penalty", "oxygen_max"},
             "MultiTurnAgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
             "AgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
         }
@@ -2424,6 +2428,12 @@ class LoopStateMachine:
                 register()
             elif env_id in ("MinAtar-Asteroids-v0",):
                 from envs.minatar_asteroids_env import register
+                register()
+            elif env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
+                from envs.minatar_freeway_env import register
+                register()
+            elif env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
+                from envs.minatar_seaquest_env import register
                 register()
             elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
                 from envs.agent_gym import register

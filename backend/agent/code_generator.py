@@ -69,9 +69,13 @@ import gymnasium as gym
 from envs.minatar_env import register as _register_minatar
 from envs.minatar_space_invaders_env import register as _register_space_invaders
 from envs.minatar_asteroids_env import register as _register_asteroids
+from envs.minatar_freeway_env import register as _register_freeway
+from envs.minatar_seaquest_env import register as _register_seaquest
 _register_minatar()
 _register_space_invaders()
 _register_asteroids()
+_register_freeway()
+_register_seaquest()
 """
 
 _AGENT_GYM_SETUP = """\
@@ -1513,6 +1517,8 @@ _ENV_RECIPE: dict = {
     "MinAtar-SpaceInvaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Space-Invaders-v0": "minatar_space_invaders_dqn_v1.yaml",
     "MinAtar-Asteroids-v0": "minatar_asteroids_dqn_v1.yaml",
+    "MinAtar-Freeway-v0": "minatar_freeway_dqn_v1.yaml",
+    "MinAtar-Seaquest-v0": "minatar_seaquest_dqn_v1.yaml",
     "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
     "AgentGym-v0": "agent_gym_ppo_v1.yaml",
     "agent-gym": "agent_gym_ppo_v1.yaml",
@@ -1842,7 +1848,13 @@ class CodeGenerator:
                 elif env_id in ("Game2048-v0", "2048") and "register" not in code:
                     code = _GAME2048_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected Game2048-v0 registration preamble")
-                elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar", "minatar-breakout") and "register" not in code:
+                elif env_id in (
+                    "MinAtar-Breakout-v0", "MinAtar-v0", "minatar", "minatar-breakout",
+                    "MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0", "minatar-space-invaders",
+                    "MinAtar-Asteroids-v0", "minatar-asteroids",
+                    "MinAtar-Freeway-v0", "minatar-freeway", "freeway",
+                    "MinAtar-Seaquest-v0", "minatar-seaquest", "seaquest",
+                ) and "register" not in code:
                     code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected MinAtar registration preamble")
                 elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym") and "register" not in code:

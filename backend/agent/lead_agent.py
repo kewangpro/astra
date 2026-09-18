@@ -65,7 +65,15 @@ Available environments:
   - Custom ASTRA env: "Game2048-v0" (4×4 grid, discrete 4-action UP/DOWN/LEFT/RIGHT, score reward)
     Use "Game2048-v0" when the goal mentions 2048.
   - Custom ASTRA env: "MinAtar-Breakout-v0" (10×10 grid, discrete 3-action NOOP/LEFT/RIGHT, brick reward)
-    Use "MinAtar-Breakout-v0" when the goal mentions MinAtar or Breakout.
+    Use "MinAtar-Breakout-v0" when the goal mentions Breakout.
+  - Custom ASTRA env: "MinAtar-SpaceInvaders-v0" (10×10 grid, discrete 4-action NOOP/LEFT/RIGHT/FIRE, alien kill reward)
+    Use "MinAtar-SpaceInvaders-v0" when the goal mentions Space Invaders.
+  - Custom ASTRA env: "MinAtar-Asteroids-v0" (10×10 grid, discrete 5-action NOOP/TURN_L/TURN_R/THRUST/FIRE, toroidal wrap)
+    Use "MinAtar-Asteroids-v0" when the goal mentions Asteroids.
+  - Custom ASTRA env: "MinAtar-Freeway-v0" (10×10 grid, discrete 3-action NOOP/UP/DOWN, highway crossing reward)
+    Use "MinAtar-Freeway-v0" when the goal mentions Freeway.
+  - Custom ASTRA env: "MinAtar-Seaquest-v0" (10×10 grid, discrete 6-action NOOP/LEFT/RIGHT/UP/DOWN/FIRE, oxygen & diver rescue)
+    Use "MinAtar-Seaquest-v0" when the goal mentions Seaquest.
 Valid SB3 PPO hyperparameter keys: learning_rate, n_steps, batch_size, n_epochs, gamma,
 gae_lambda, clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
 Do NOT include env_id, dataset_path, entropy_coeff, actor_lr, or any non-SB3 key in hyperparameters."""

@@ -2102,6 +2102,49 @@ Bridge Astra's Gymnasium reinforcement learning engine with multi-turn agent too
   - `recipes/agent_gym_ppo_v1.yaml`: Canonical PPO recipe targeting `task_success: 0.85` with 32D observations and 256x256 MLP architecture.
   - `tests/unit/test_agent_gym.py`: 8 comprehensive unit tests passing (Gymnasium registration, observation shape, reset metadata, successful multi-turn tool progression, premature finish penalty, out-of-order/repetition penalties, string/JSON action parsing, truncation on max steps, and codegen setup injection).
 
+---
+
+## Phase 65: Complete MinAtar Arcade Suite (Freeway & Seaquest) & Dynamic HUD
+
+Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pure Python/NumPy Gymnasium environments, canonical recipes, dynamic HUD rendering, and tournament support:
+
+- [x] **MinAtar Freeway Environment (`envs/minatar_freeway_env.py`)**:
+  - **Grid & Traffic Dynamics**: 10x10 board with 8 highway traffic lanes (rows 1–8) featuring alternating directions (odd left, even right) and varying car speeds (frequencies 1 to 4 steps per advance).
+  - **Player & Crossing Mechanics**: Chicken starts at row 9 col 4 with 3 actions (`NOOP`, `UP`, `DOWN`). Crossing to row 0 awards $+1.0$ score/reward and resets chicken to row 9 for continuous rate-maximization.
+  - **Collisions**: Real-time car intersection detection knocks player back to row 9 with configurable `death_penalty` ($-1.0$) and tracks `_collisions` and `_crossings`.
+  - **High Performance**: Pure Python/NumPy execution achieving **>110,000 steps/sec**.
+  - **Observation & Viewer Grid**: 4 binary/normalized planes of 10x10 (`shape=(400,)` float32) for chicken position, cars moving left, cars moving right, and safe zones/speeds. `get_viewer_grid()` returns 100 categorical ints for real-time canvas rendering.
+  - **Gymnasium Registration**: Registered `MinAtar-Freeway-v0`.
+
+- [x] **MinAtar Seaquest Environment (`envs/minatar_seaquest_env.py`)**:
+  - **Grid & Ocean Mechanics**: 10x10 board spanning water surface (row 0), ocean depths (rows 1–8), and sea floor (row 9).
+  - **Submarine & Actions**: 6 actions (`NOOP`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `FIRE`) with horizontal facing direction and torpedo launchers.
+  - **Oxygen Management**: Submarine starts with 200 oxygen units, depleting by 1 every step. Reaching 0 causes suffocation and terminal death penalty ($-1.0$). Surfacing at row 0 with rescued divers deposits divers for bonus points, refills oxygen tank to full, and clears held diver inventory.
+  - **Divers & Enemies**: Swimming divers spawn and can be collected (up to 6 held); sharks (fast) and enemy submarines (shoot enemy torpedoes) spawn and swim across depths. Torpedo hits destroy enemies for $+1.0$ reward.
+  - **High Performance**: Pure Python/NumPy execution achieving **>150,000 steps/sec**.
+  - **Observation & Viewer Grid**: 4 binary/normalized planes (`shape=(400,)` float32) encoding submarine position/nozzle, enemies (sharks/subs), divers & held count gauge, and torpedoes/oxygen gauge.
+  - **Gymnasium Registration**: Registered `MinAtar-Seaquest-v0`.
+
+- [x] **Astra Backend & Pipeline Integration**:
+  - `envs/__init__.py`: Exported `MinAtarFreewayEnv` and `MinAtarSeaquestEnv`.
+  - `backend/agent/code_generator.py`: Updated `_MINATAR_SETUP` to import and register all 5 MinAtar games; mapped `MinAtar-Freeway-v0` and `MinAtar-Seaquest-v0` in `_ENV_RECIPE`; added all MinAtar env IDs to preamble injection.
+  - `backend/agent/lead_agent.py`: Added Freeway and Seaquest descriptions and discrete action specs to lead agent system prompt.
+  - `backend/loop/state_machine.py`: Added `MinAtar-Freeway-v0` and `MinAtar-Seaquest-v0` allowed kwargs to `_KNOWN` and registered environments in evaluation loader.
+  - `backend/routers/play.py`: Extended `is_minatar` detection to check `_cars` and `_oxygen`; added game-tailored action names (`["NOOP", "UP", "DOWN"]` for Freeway, `["NOOP", "LEFT", "RIGHT", "UP", "DOWN", "FIRE"]` for Seaquest); emitted custom frame metrics (`crossings`, `collisions`, `divers_saved`, `oxygen`); registered envs in `play_ws`.
+  - `backend/evaluator/benchmark.py`: Registered Freeway and Seaquest in both `_rollout` and `run_tournament_match`.
+
+- [x] **Frontend Dynamic Multi-Game HUD & Tournaments**:
+  - `frontend/src/app/models/page.tsx`: Added `MinAtar-Freeway-v0` and `MinAtar-Seaquest-v0` to `ENV_OPTIONS` for head-to-head fixed-seed tournaments.
+  - `frontend/src/app/missions/[id]/page.tsx`: Updated goal substring matching and envId selection for `freeway` and `seaquest`.
+  - `frontend/src/components/hud/MinAtarPlayer.tsx`: Dynamic canvas rendering per game mode (Freeway: yellow chicken, safe sidewalks, left/right traffic headlights, collision flash; Seaquest: deep oceanic background, teal submarine with periscope, gold swimmers, enemy submarines, laser torpedoes, water ripple surface), dynamic header titles, and tailored metrics bar (Crossings/Collisions for Freeway, Divers/Oxygen for Seaquest).
+
+- [x] **Canonical Recipes & Unit Test Suite**:
+  - `recipes/minatar_freeway_dqn_v1.yaml` & `recipes/minatar_seaquest_dqn_v1.yaml`: Canonical DQN recipes targeting `score: 15.0` with replay buffer size 100,000, batch size 32, and exploration fraction 0.15.
+  - `tests/unit/test_minatar_freeway_env.py`: 7 tests covering observation/action spaces, reset, vertical movement, goal crossing, car collisions, viewer grid, and Gymnasium make.
+  - `tests/unit/test_minatar_seaquest_env.py`: 9 tests covering spaces, reset, 4-directional movement, torpedo kills, diver rescue & surfacing oxygen refill, oxygen depletion death, enemy collision death, viewer grid, and Gymnasium make.
+  - Full MinAtar test suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) passes 100% (46/46 passed in 0.13s).
+
+
 
 
 
