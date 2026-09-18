@@ -2193,6 +2193,32 @@ Harden the autonomous STaR flywheel with guaranteed LoRA adapter forward-chainin
 - [x] **Verification & Test Suite**:
   - Full test suite passing 100%: 1,130 / 1,130 tests (1,110 unit tests + 20 integration tests passing in 11.7s).
 
+---
+
+## Phase 67: Autonomous Evaluation Hardening, Recipe Target Metric Normalization & MinAtar Autonomous Mission Execution
+
+Harden evaluation comparison resilience against null metrics, standardize recipe target metric shapes across arcade benchmarks, and execute/validate end-to-end autonomous MinAtar mission workflows:
+
+- [x] **Evaluation & Pivot Engine Null-Metric Guard**:
+  - `backend/loop/pivots.py` (`PivotEngine.record`): Guarded `is_better = prev_best is not None and (prev_best >= self._target_value)` against `TypeError: '>=' not supported between instances of 'NoneType' and 'float'` when an evaluation metric or score is None / unpopulated during intermediate iterations.
+  - `tests/unit/test_pivot_engine.py`: Added regression unit test `test_record_with_none_metric_does_not_raise` verifying safe record handling with null metrics.
+
+- [x] **Adapter Resolution Fallback & SSH Sandbox Recovery**:
+  - `backend/loop/state_machine.py` (`_resolve_adapter_or_bare`): Added layered fallback (`best/` -> `final/` -> bare root directory), preventing evaluator crashes when fine-tuning trainers output only `final/`.
+  - `backend/sandbox/manager.py`: Parsed `--save-dir` from `train.py` to preserve and synchronize remote checkpoints upon SSH sandbox reattachment.
+
+- [x] **Recipe Target Metric Normalization**:
+  - Standardized `target_metric` representation across recipes (`recipes/minatar_freeway_dqn_v1.yaml`, `recipes/minatar_seaquest_dqn_v1.yaml`, `recipes/minatar_asteroids_dqn_v1.yaml`, `recipes/minatar_space_invaders_dqn_v1.yaml`, `recipes/game2048_lookahead_dqn_v1.yaml`) to canonical `{<metric_name>: <threshold>}` dictionaries (`score: 15.0`).
+  - `backend/routers/recipes.py` (`dispatch_recipe`): Added defensive normalization translating `{metric: ..., target: ...}` structures to canonical `{metric: target}` format.
+
+- [x] **Autonomous MinAtar Freeway Mission Execution**:
+  - Dispatched and verified live execution of `minatar_freeway_dqn_v1` (`MinAtar-Freeway-v0`, mission `0c78f300-ed48-4dd0-9ad5-5dff4c5f06fb`).
+  - Verified full closed loop: preflight validation -> LeadAgent planning -> CriticAgent approval (7.7) -> CodeGenerator MinAtar preamble injection -> AutoApprover execution grant -> SubprocessSandbox 300,000 steps training -> SpecialistEvaluator checkpoint rollout -> ManifestEvaluator requirement checks -> automated iteration escalation.
+
+- [x] **Verification & Test Suite**:
+  - Full test suite passing 100%: 1,131 / 1,131 tests (1,111 unit tests + 20 integration tests passing in ~15s).
+
+
 
 
 
