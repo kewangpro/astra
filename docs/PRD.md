@@ -134,6 +134,10 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Strict Recipe Locking**: Hardened code generation and hyperparameter resolution that strictly lock hardware-critical settings (batch size, layer count, dataset path) to recipe specifications, preventing planner hallucinations from triggering Apple Silicon Metal OOM crashes.
 - **Lower-is-Better Metric Visualizations**: Comprehensive telemetry and dashboard support for loss minimization goals, displaying accurate remaining metric gaps and progress percentages toward convergence.
 
+### 4.22. Completed Missions Archive & Row-Based Operational Board
+- **Dedicated Completed Missions Archive (`/completed`)**: A dedicated historical repository modeled after the Recipe Library, featuring domain category filtering, full-text search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`, `checkpoint saved: PASSED`).
+- **Operational Board Row Layout**: The Command Center separates historical completed runs from active workflows, presenting operational tasks in full-width horizontal status rows (`Running / Active`, `Stalled / Paused`, `Failed`) with responsive mission cards, keeping operator focus strictly on in-flight and attention-needed tasks.
+
 ## 5. User Experience & Autonomy Model
 
 

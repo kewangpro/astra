@@ -10,6 +10,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts.
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), tracking score distributions and tie-split win rates to automatically crown champion policies.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
+- **Dedicated Completed Missions Archive & Proof Verification** — Dedicated historical repository (`/completed`) with multi-domain category tabs, instant search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`).
 - **Live Mission HUD & Explainability** — Real-time telemetry, memory gauges, and interactive canvas players streaming frame-by-frame Q-values, action probabilities, and Shannon policy entropy across all environments.
 - **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), and the complete 5-game MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest).
 - **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
@@ -19,7 +20,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 | Command Center | Mission HUD |
 |---|---|
-| ![Command Center — mission grid with status badges and Run button](docs/screenshots/command_center.png) | ![Mission HUD — metric chart, log stream, pivot timeline, Snake live viewer](docs/screenshots/mission_hud.png) |
+| ![Command Center — operational board with priority status rows, active execution tracking, and cluster health](docs/screenshots/command_center.png) | ![Mission HUD — metric chart, log stream, pivot timeline, Snake live viewer](docs/screenshots/mission_hud.png) |
 
 | Metric History (current vs. prior run) | Auto-Approve & Approval Panel |
 |---|---|
@@ -93,7 +94,7 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1111 unit tests across all core modules
+│   ├── unit/           # 1116 unit tests across all core modules
 │   └── integration/    # 20 integration tests for the loop state machine and stress test suites
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite, AgentGym)

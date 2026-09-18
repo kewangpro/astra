@@ -13,8 +13,12 @@
 
 ### 2.1. The "Command Center" (Home)
 - **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200") paired with a task type selector (`auto (detect)`, `rft`, `distill`, `dpo`, `grpo`, `prompt`, `rl`, `sft`, `ml`, `mlx_lora`). In `auto` mode, the task type is semantically inferred from keywords in the goal text, and backend reconciliation ensures that submitted defaults never misdirect fine-tuning or distillation missions into RL.
-- **Active Missions**: A grid of training-loop cards with status badges (Planning, Running, Evaluating, Completed, Failed, Stalled — converged below target, escalation exhausted). Each card shows the best metric value, current iteration, and its compute node. Cards are grouped into labelled sections in order — **Running** (any non-terminal status), **Failed**, **Stalled**, **Completed** — each with a count; empty sections are hidden; newest-first within each group.
-- **Global Metrics**: A stat row — Total, then Running / Failed / Stalled / Completed mission counts (same order as the card sections).
+- **Operational Board**: A row-based layout of active training-loop cards organized into full-width horizontal sections in workflow priority order:
+  - **Running / Active** (teal indicator with live pulse animation when runs are active; displays a subtle compact indicator when 0 runs are in-flight).
+  - **Stalled / Paused** (orange indicator; rendered dynamically when stalled runs exist, hidden when 0).
+  - **Failed** (red indicator; rendered dynamically when failed runs exist, hidden when 0).
+  Within each active row, missions are arranged in a responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`). Historical completed runs are cleanly moved to the dedicated Completed Missions Archive (`/completed`) to preserve operational clarity.
+- **Global Metrics**: A top-right stat row showing active operational counts: `Total`, `Running`, `Stalled`, and `Failed`.
 
 ### 2.2. Live Training HUD (The "Loop" View)
 - **The Metric Gap**: An arc gauge showing the all-time best metric value. Gap (`−X to close`) and percentage of target sit directly below the arc. For lower-is-better metrics (`eval_loss`, `train_loss`, `perplexity`), the component computes progress inversely (tracking loss reduction toward the target threshold), showing positive convergence progress rather than inverted percentages. If `target_metric` was not explicitly extracted at mission creation, the component extracts the target percentage directly from the mission goal string rather than falling back to an arbitrary constant. Right column shows two lines: "best at iter N" (which iteration achieved the peak) and the current iteration's score when it differs from the best. This makes it unambiguous whether the displayed score is the historical peak or the latest result.
@@ -40,6 +44,15 @@
   - Side-by-side simulation evaluating SB3 and Lookahead PyTorch models on identical seeds.
   - Dynamic Leaderboard displaying Gold 🥇, Silver 🥈, and Bronze 🥉 ranks, Mean Score $\pm$ Std, Min/Max range, Win Rate %, and per-episode score breakdowns.
   - "Crown as Champion" action promoting top performers into production status.
+
+### 2.5. The Completed Missions Archive (`/completed`)
+- **Gallery Layout**: Modeled after the Recipe Library (`/recipes`) with dark glass UI, KPI overview cards, and responsive 3-column card grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`).
+- **Domain Filter Tabs**: 8 category tabs (`All Completed`, `MinAtar`, `Snake`, `Tetris`, `2048`, `LLM & Reasoning`, `AgentGym`, `Classic Control & ML`).
+- **Interactive Search & Sorting**: Real-time filtering across goals, IDs, environments, hosts, and task types; sortable by newest, highest metric score, or fastest duration.
+- **KPI Summary Cards**: Displays Total Completed Runs, Target Pass Rate (% meeting or exceeding target), and Total Iterations Executed across historical runs.
+- **Convergence Cards**: Shows short ID, task type tag, remote/local node host, relative/exact timestamp, goal text, target metric vs achieved best score, progress bar, iterations, duration, and direct actions.
+- **Manifest Verification Modal**: Inspects verifiable requirement manifests loaded directly from `/missions/{id}/manifest` (`score >= target: PASSED`, `clean sandbox exit: PASSED`, `checkpoint saved: PASSED`), evidence strings, and 1-click navigation to Mission HUD.
+
 
 
 ## 3. Technology Stack Recommendation
