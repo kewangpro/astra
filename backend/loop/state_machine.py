@@ -1040,7 +1040,7 @@ class LoopStateMachine:
                 # history can't block it.
                 active_t = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
                 if (
-                    active_t in ("dpo", "grpo", "distill", "rft")
+                    active_t in ("dpo", "grpo", "distill", "rft", "star")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
