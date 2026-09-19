@@ -2260,7 +2260,7 @@ Redesign the Command Center to declutter operational workflows by moving complet
   - **Manifest & Proof Inspection Modal**: Inspects verifiable requirement manifests loaded directly from `/missions/{id}/manifest` (`score >= target: PASSED`, `clean sandbox exit: PASSED`, `checkpoint saved: PASSED`), along with raw metadata and direct navigation to Mission HUD.
 
 - [x] **Command Center Operational Board Row Layout (`frontend/src/app/page.tsx` & `frontend/src/components/command-center/MissionsGrid.tsx`)**:
-  - **Row-Based Layout**: Replaced the vertical Kanban columns with an elegant, responsive row-based layout (`OperationalRow`). Each status group occupies a full-width horizontal section (`Running / Active`, `Stalled / Paused`, `Failed`) with responsive mission cards (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`).
+  - **Row-Based Layout**: Replaced the vertical Kanban columns with an elegant, responsive row-based layout (`OperationalRow`). Each status group occupies a full-width horizontal section (`Running / Active`, `Stalled / Paused`, `Failed`) with responsive mission cards (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`, matching `/completed` and `/recipes`).
   - **Smart Empty States**: `Running / Active` displays a sleek, compact indicator when 0 runs are in-flight, while non-active groups (`Stalled`, `Failed`) are automatically hidden when empty so operators are only alerted when attention is required.
   - **Operational Focus**: Kept the Command Center strictly focused on active missions, removing completed buttons and completed counters from the Command Center header and global stats. Completed missions are accessed exclusively via the dedicated Completed tab in top navigation.
 

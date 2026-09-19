@@ -400,7 +400,7 @@ function OperationalRow({
           </span>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {missions.map((m) => (
             <MissionCard key={m.id} m={m} />
           ))}
@@ -419,7 +419,7 @@ export function MissionsGrid() {
         {Array.from({ length: 2 }).map((_, rowIdx) => (
           <div key={rowIdx} className="space-y-3 bg-[#0f172a]/30 rounded-xl p-4 border border-[rgba(255,255,255,0.03)]">
             <div className="h-2 w-28 bg-[#2d3f57] rounded mb-3 animate-pulse" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               <SkeletonCard />
               <SkeletonCard />
             </div>

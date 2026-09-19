@@ -17,7 +17,7 @@
   - **Running / Active** (teal indicator with live pulse animation when runs are active; displays a subtle compact indicator when 0 runs are in-flight).
   - **Stalled / Paused** (orange indicator; rendered dynamically when stalled runs exist, hidden when 0). Stalled cards show `error_log` and **do not** offer Resume — the search is finished; start a new mission. Paused cards still offer Resume.
   - **Failed** (red indicator; rendered dynamically when failed runs exist, hidden when 0).
-  Within each active row, missions are arranged in a responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`). Historical completed runs are cleanly moved to the dedicated Completed Missions Archive (`/completed`) to preserve operational clarity.
+  Within each active row, missions are arranged in a responsive grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), the same breakpoints as `/completed` and `/recipes`. Historical completed runs are cleanly moved to the dedicated Completed Missions Archive (`/completed`) to preserve operational clarity.
 - **Global Metrics**: A top-right stat row showing active operational counts: `Total`, `Running`, `Stalled`, and `Failed`.
 
 ### 2.2. Live Training HUD (The "Loop" View)
