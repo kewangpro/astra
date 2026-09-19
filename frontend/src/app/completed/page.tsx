@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import Link from "next/link";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -10,18 +9,10 @@ import {
   Clock,
   Server,
   ArrowUpRight,
-  FileText,
-  Search,
-  X,
-  ShieldCheck,
-  Award,
-  Sparkles,
   Layers,
-  ChevronRight,
-  ExternalLink,
 } from "lucide-react";
-import { useMissions, useMissionManifest } from "@/lib/hooks/useMissions";
-import { api, Mission, ManifestRecord } from "@/lib/api";
+import { useMissions } from "@/lib/hooks/useMissions";
+import type { Mission } from "@/lib/api";
 import { parseTs, fmtTs, formatRelativeTime, formatDuration } from "@/lib/date";
 
 const DOMAIN_TABS = [
@@ -70,257 +61,6 @@ function getTargetProgress(m: Mission): { targetKey: string; targetVal: number; 
   return { targetKey: key, targetVal, progressPct: Math.round(pct), isPassed };
 }
 
-function ManifestModal({
-  mission,
-  onClose,
-}: {
-  mission: Mission;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const [manifest, setManifest] = useState<ManifestRecord | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [activeView, setActiveView] = useState<"requirements" | "config">("requirements");
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .getManifest(mission.id)
-      .then((data) => {
-        if (!cancelled) setManifest(data);
-      })
-      .catch(() => {
-        if (!cancelled) setManifest(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mission.id]);
-
-  const targetProgress = getTargetProgress(mission);
-  const durationStr = formatDuration(mission.created_at, mission.completed_at);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#1e293b] border border-[#334155] rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-[#334155] flex items-start justify-between gap-4 bg-[#0f172a]/60">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <span className="text-[11px] font-mono text-[#64748b] bg-[#0f172a] border border-[#334155] px-2 py-0.5 rounded">
-                #{mission.id.slice(0, 8)}
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-[#4ade80]/15 text-[#4ade80] border border-[#4ade80]/30 font-medium uppercase tracking-wider">
-                COMPLETED
-              </span>
-              {mission.task_type && (
-                <span className="text-[10px] px-2 py-0.5 rounded bg-[#334155] text-[#cbd5e1] font-mono uppercase">
-                  {mission.task_type}
-                </span>
-              )}
-              {mission.host && (
-                <span className="text-[10px] text-[#94a3b8] flex items-center gap-1 font-mono">
-                  <Server className="w-3 h-3 text-[#64748b]" />
-                  {mission.host}
-                </span>
-              )}
-            </div>
-            <h3 className="text-sm sm:text-base font-semibold text-[#e2e8f0] leading-snug">
-              {mission.goal}
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-xs text-[#94a3b8] hover:text-[#e2e8f0] p-1.5 rounded-lg hover:bg-[#334155] transition-colors"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* View Switcher Tabs */}
-        <div className="px-5 pt-3 border-b border-[#334155] flex gap-4 bg-[#0f172a]/30 text-xs">
-          <button
-            onClick={() => setActiveView("requirements")}
-            className={`pb-2.5 font-medium transition-colors border-b-2 ${
-              activeView === "requirements"
-                ? "border-[#14b8a6] text-[#14b8a6]"
-                : "border-transparent text-[#94a3b8] hover:text-[#e2e8f0]"
-            }`}
-          >
-            Requirement Manifest & Checks
-          </button>
-          <button
-            onClick={() => setActiveView("config")}
-            className={`pb-2.5 font-medium transition-colors border-b-2 ${
-              activeView === "config"
-                ? "border-[#14b8a6] text-[#14b8a6]"
-                : "border-transparent text-[#94a3b8] hover:text-[#e2e8f0]"
-            }`}
-          >
-            Raw Config & Metadata
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
-          {/* Quick Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-[#0f172a] border border-[#334155] rounded-lg p-3">
-              <span className="text-[10px] text-[#64748b] uppercase tracking-wider block mb-1">
-                Achieved Best
-              </span>
-              <span className="text-sm font-semibold font-mono text-[#4ade80]">
-                {mission.best_metric_value ?? "—"}
-              </span>
-              {mission.best_metric_iteration !== null && (
-                <span className="text-[10px] text-[#64748b] block mt-0.5">
-                  @ iter {mission.best_metric_iteration}
-                </span>
-              )}
-            </div>
-
-            <div className="bg-[#0f172a] border border-[#334155] rounded-lg p-3">
-              <span className="text-[10px] text-[#64748b] uppercase tracking-wider block mb-1">
-                Target Metric
-              </span>
-              <span className="text-sm font-semibold font-mono text-[#14b8a6]">
-                {targetProgress ? `${targetProgress.targetVal} (${targetProgress.targetKey})` : "—"}
-              </span>
-              {targetProgress && (
-                <span className="text-[10px] text-[#4ade80] block mt-0.5">
-                  {targetProgress.progressPct}% of goal
-                </span>
-              )}
-            </div>
-
-            <div className="bg-[#0f172a] border border-[#334155] rounded-lg p-3">
-              <span className="text-[10px] text-[#64748b] uppercase tracking-wider block mb-1">
-                Total Duration
-              </span>
-              <span className="text-sm font-semibold text-[#e2e8f0]">
-                {durationStr}
-              </span>
-              <span className="text-[10px] text-[#64748b] block mt-0.5">
-                {mission.current_iteration} total iterations
-              </span>
-            </div>
-
-            <div className="bg-[#0f172a] border border-[#334155] rounded-lg p-3">
-              <span className="text-[10px] text-[#64748b] uppercase tracking-wider block mb-1">
-                Completed
-              </span>
-              <span className="text-xs font-medium text-[#cbd5e1]">
-                {formatRelativeTime(mission.completed_at || mission.created_at)}
-              </span>
-              <span className="text-[9px] text-[#64748b] block mt-0.5">
-                {fmtTs(mission.completed_at || mission.created_at)}
-              </span>
-            </div>
-          </div>
-
-          {activeView === "requirements" ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-[#cbd5e1] uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#14b8a6]" />
-                  Manifest Requirements Verification
-                </h4>
-                {manifest && (
-                  <span className="text-[10px] text-[#64748b] font-mono">
-                    Manifest v{manifest.version}
-                  </span>
-                )}
-              </div>
-
-              {loading ? (
-                <div className="py-8 text-center text-xs text-[#64748b]">
-                  Loading manifest requirements...
-                </div>
-              ) : manifest && manifest.requirements.length > 0 ? (
-                <div className="space-y-2">
-                  {manifest.requirements.map((req) => (
-                    <div
-                      key={req.id}
-                      className="bg-[#0f172a] border border-[#334155] rounded-lg p-3 flex items-start justify-between gap-3"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                              req.passed
-                                ? "bg-[#4ade80]/20 text-[#4ade80] border border-[#4ade80]/40"
-                                : "bg-[#f87171]/20 text-[#f87171] border border-[#f87171]/40"
-                            }`}
-                          >
-                            {req.passed ? "✓" : "✕"}
-                          </span>
-                          <span className="text-xs font-medium text-[#e2e8f0]">
-                            {req.description}
-                          </span>
-                        </div>
-                        {req.evidence && (
-                          <div className="pl-6 text-[11px] text-[#94a3b8] font-mono">
-                            Evidence: <span className="text-[#14b8a6]">{req.evidence}</span>
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#1e293b] border border-[#334155] text-[#94a3b8] font-mono shrink-0">
-                        {req.category}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-[#0f172a] border border-[#334155] rounded-lg p-4 text-xs text-[#94a3b8] space-y-2">
-                  <div className="flex items-center gap-2 text-[#4ade80]">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span className="font-semibold">Mission Completed Successfully</span>
-                  </div>
-                  <p className="text-[11px] text-[#64748b]">
-                    The training loop satisfied the stopping criteria and completed without unhandled errors. Target metric: {JSON.stringify(mission.target_metric)}.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-[#cbd5e1] uppercase tracking-wider">
-                Full Mission Record
-              </h4>
-              <pre className="bg-[#0f172a] border border-[#334155] rounded-lg p-4 font-mono text-xs text-[#cbd5e1] overflow-x-auto max-h-64">
-                {JSON.stringify(mission, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="p-4 border-t border-[#334155] flex items-center justify-between bg-[#0f172a]/60">
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 rounded text-xs text-[#94a3b8] hover:text-[#e2e8f0] transition-colors"
-          >
-            Close
-          </button>
-          <button
-            onClick={() => {
-              onClose();
-              router.push(`/missions/${mission.id}`);
-            }}
-            className="px-4 py-2 rounded text-xs font-semibold bg-[#14b8a6] hover:bg-[#0d9488] text-[#0f172a] flex items-center gap-1.5 transition-colors"
-          >
-            <span>Open Mission HUD</span>
-            <ArrowUpRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function CompletedMissionsPage() {
   const router = useRouter();
@@ -328,7 +68,6 @@ export default function CompletedMissionsPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeTab, setActiveTab] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"newest" | "score" | "duration">("newest");
-  const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
 
   // Filter only completed missions
   const completedMissions = useMemo(() => {
@@ -469,7 +208,7 @@ export default function CompletedMissionsPage() {
           </h1>
         </div>
         <p className="text-xs text-[#94a3b8]">
-          Browse converged training missions, verify requirement manifests, review achieved benchmarks, and replay runs.
+          Browse converged training missions and open a run to replay charts, logs, and the live player.
         </p>
       </div>
 
@@ -594,10 +333,10 @@ export default function CompletedMissionsPage() {
             return (
               <div
                 key={m.id}
-                className="bg-[#1e293b]/70 border border-[#334155] rounded-lg p-5 flex flex-col justify-between hover:border-[#4ade80]/40 transition-all hover:shadow-lg hover:shadow-[#4ade80]/5"
+                className="group cursor-pointer bg-[#1e293b]/70 border border-[#334155] rounded-lg p-5 hover:border-[#4ade80]/40 transition-all hover:shadow-lg hover:shadow-[#4ade80]/5"
+                onClick={() => router.push(`/missions/${m.id}`)}
               >
-                <div>
-                  {/* Top Bar: ID, Type, Host, Timestamp */}
+                {/* Top Bar: ID, Type, Host, Timestamp */}
                   <div className="flex items-start justify-between gap-2 mb-2.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[10px] text-[#64748b] tracking-widest font-mono">
@@ -615,19 +354,19 @@ export default function CompletedMissionsPage() {
                         </span>
                       )}
                     </div>
-                    <span
-                      className="text-[10px] text-[#64748b]"
-                      title={`Completed at ${fmtTs(m.completed_at || m.created_at)}`}
-                    >
-                      {formatRelativeTime(m.completed_at || m.created_at)}
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className="text-[10px] text-[#64748b]"
+                        title={`Completed at ${fmtTs(m.completed_at || m.created_at)}`}
+                      >
+                        {formatRelativeTime(m.completed_at || m.created_at)}
+                      </span>
+                      <ArrowUpRight className="w-3 h-3 text-[#64748b] group-hover:text-[#cbd5e1] transition-colors" />
                     </span>
                   </div>
 
                   {/* Goal Description */}
-                  <h3
-                    onClick={() => router.push(`/missions/${m.id}`)}
-                    className="text-sm font-semibold text-[#e2e8f0] break-words line-clamp-2 mb-3 cursor-pointer hover:text-[#14b8a6] transition-colors leading-relaxed"
-                  >
+                  <h3 className="text-sm font-semibold text-[#e2e8f0] break-words line-clamp-2 mb-3 group-hover:text-[#14b8a6] transition-colors leading-relaxed">
                     {m.goal}
                   </h3>
 
@@ -674,7 +413,7 @@ export default function CompletedMissionsPage() {
                   </div>
 
                   {/* Badges / Duration */}
-                  <div className="flex items-center justify-between text-[11px] text-[#64748b] mb-2">
+                  <div className="flex items-center justify-between text-[11px] text-[#64748b]">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {duration}
@@ -683,38 +422,10 @@ export default function CompletedMissionsPage() {
                       ✓ Converged
                     </span>
                   </div>
-                </div>
-
-                {/* Card Footer / Actions */}
-                <div className="pt-4 border-t border-[#334155]/60 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => setSelectedMission(m)}
-                    className="text-xs text-[#94a3b8] hover:text-[#e2e8f0] flex items-center gap-1 transition-colors"
-                  >
-                    <FileText className="w-3 h-3" />
-                    Manifest
-                  </button>
-
-                  <Link
-                    href={`/missions/${m.id}`}
-                    className="px-3 py-1.5 rounded text-xs font-semibold bg-[#14b8a6]/10 hover:bg-[#14b8a6]/20 border border-[#14b8a6]/30 text-[#14b8a6] hover:text-[#2dd4bf] flex items-center gap-1 transition-colors"
-                  >
-                    <span>Mission HUD</span>
-                    <ArrowUpRight className="w-3 h-3" />
-                  </Link>
-                </div>
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Manifest & Verification Modal */}
-      {selectedMission && (
-        <ManifestModal
-          mission={selectedMission}
-          onClose={() => setSelectedMission(null)}
-        />
       )}
     </div>
   );

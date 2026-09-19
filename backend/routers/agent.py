@@ -94,12 +94,17 @@ async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
-    if mission.status not in ("pending", "paused", "failed", "stalled"):
+    if mission.status == "stalled":
+        raise HTTPException(
+            status_code=409,
+            detail="Mission is stalled (search exhausted). Start a new mission instead of resuming.",
+        )
+    if mission.status not in ("pending", "paused", "failed"):
         raise HTTPException(status_code=409, detail=f"Mission is already in state '{mission.status}'")
     if mission_id in _running_tasks and not _running_tasks[mission_id].done():
         raise HTTPException(status_code=409, detail="Mission loop already running")
 
-    if mission.status in ("failed", "stalled"):
+    if mission.status == "failed":
         mission.status = "pending"
         mission.error_log = None
         mission.completed_at = None

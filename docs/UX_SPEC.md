@@ -15,7 +15,7 @@
 - **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200") paired with a task type selector (`auto (detect)`, `rft`, `distill`, `dpo`, `grpo`, `prompt`, `rl`, `sft`, `ml`, `mlx_lora`). In `auto` mode, the task type is semantically inferred from keywords in the goal text, and backend reconciliation ensures that submitted defaults never misdirect fine-tuning or distillation missions into RL.
 - **Operational Board**: A row-based layout of active training-loop cards organized into full-width horizontal sections in workflow priority order:
   - **Running / Active** (teal indicator with live pulse animation when runs are active; displays a subtle compact indicator when 0 runs are in-flight).
-  - **Stalled / Paused** (orange indicator; rendered dynamically when stalled runs exist, hidden when 0).
+  - **Stalled / Paused** (orange indicator; rendered dynamically when stalled runs exist, hidden when 0). Stalled cards show `error_log` and **do not** offer Resume — the search is finished; start a new mission. Paused cards still offer Resume.
   - **Failed** (red indicator; rendered dynamically when failed runs exist, hidden when 0).
   Within each active row, missions are arranged in a responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`). Historical completed runs are cleanly moved to the dedicated Completed Missions Archive (`/completed`) to preserve operational clarity.
 - **Global Metrics**: A top-right stat row showing active operational counts: `Total`, `Running`, `Stalled`, and `Failed`.
@@ -50,8 +50,7 @@
 - **Domain Filter Tabs**: 8 category tabs (`All Completed`, `MinAtar`, `Snake`, `Tetris`, `2048`, `LLM & Reasoning`, `AgentGym`, `Classic Control & ML`).
 - **Interactive Search & Sorting**: Real-time filtering across goals, IDs, environments, hosts, and task types; sortable by newest, highest metric score, or fastest duration.
 - **KPI Summary Cards**: Displays Total Completed Runs, Target Pass Rate (% meeting or exceeding target), and Total Iterations Executed across historical runs.
-- **Convergence Cards**: Shows short ID, task type tag, remote/local node host, relative/exact timestamp, goal text, target metric vs achieved best score, progress bar, iterations, duration, and direct actions.
-- **Manifest Verification Modal**: Inspects verifiable requirement manifests loaded directly from `/missions/{id}/manifest` (`score >= target: PASSED`, `clean sandbox exit: PASSED`, `checkpoint saved: PASSED`), evidence strings, and 1-click navigation to Mission HUD.
+- **Convergence Cards**: Shows short ID, task type tag, remote/local node host, relative/exact timestamp, goal text, target metric vs achieved best score, progress bar, iterations, and duration. Clicking a card opens the Mission HUD.
 
 
 

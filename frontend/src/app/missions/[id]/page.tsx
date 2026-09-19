@@ -15,6 +15,7 @@ import { Game2048Player } from "@/components/hud/Game2048Player";
 import { MinAtarPlayer } from "@/components/hud/MinAtarPlayer";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
 import type { TelemetryEvent } from "@/lib/api";
+import { canStartMission } from "@/lib/api";
 
 function SidebarLayout({
   events,
@@ -118,7 +119,7 @@ export default function MissionHUD({
     );
 
   const statusColor = STATUS_COLOR[mission.status] ?? "#94a3b8";
-  const canRun = mission.status === "pending" || mission.status === "paused" || mission.status === "failed" || mission.status === "stalled";
+  const canRun = canStartMission(mission.status);
   const isRunning = mission.status === "running" || mission.status === "planning" || mission.status === "evaluating";
 
   return (
@@ -152,6 +153,11 @@ export default function MissionHUD({
           <p className="text-[#e2e8f0] text-sm leading-relaxed line-clamp-2">
             {mission.goal}
           </p>
+          {(mission.status === "stalled" || mission.status === "failed") && mission.error_log && (
+            <p className="mt-1.5 text-[11px] text-[#94a3b8] font-mono line-clamp-2" title={mission.error_log}>
+              {mission.error_log.split("\n")[0]}
+            </p>
+          )}
           {mission.last_checkpoint_path && (
             <div className="mt-2 flex items-center gap-2 text-[10px] text-[#64748b] font-mono">
               <span>checkpoint:</span>
@@ -173,7 +179,13 @@ export default function MissionHUD({
               onClick={() => run.mutate(missionId)}
               disabled={run.isPending}
               className="text-[11px] px-2.5 py-1 rounded border border-[#22c55e]/40 text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20 transition-colors flex items-center gap-1.5 disabled:opacity-40"
-              title={mission.status === "pending" ? "Run mission" : "Resume mission"}
+              title={
+                mission.status === "failed"
+                  ? (mission.error_log?.split("\n")[0] ?? "Resume from last checkpoint")
+                  : mission.status === "pending"
+                    ? "Run mission"
+                    : "Resume mission"
+              }
             >
               <span>▶</span>
               <span>{mission.status === "pending" ? "Run" : "Resume"}</span>

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useMissions, useRunMission, useCancelMission } from "@/lib/hooks/useMissions";
 import type { Mission } from "@/lib/api";
+import { canStartMission } from "@/lib/api";
 import { parseTs, fmtTs, formatRelativeTime } from "@/lib/date";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -85,7 +86,7 @@ function MissionCard({ m }: { m: Mission }) {
   const router = useRouter();
   const color = STATUS_COLOR[m.status] ?? STATUS_COLOR.pending;
   const isRunning = m.status === "running" || m.status === "planning" || m.status === "evaluating";
-  const canRun = m.status === "pending" || m.status === "paused" || m.status === "failed" || m.status === "stalled";
+  const canRun = canStartMission(m.status);
   const targetProgress = getTargetProgress(m);
 
   const bestValFormatted = useMemo(() => {
@@ -260,6 +261,13 @@ function MissionCard({ m }: { m: Mission }) {
                   borderColor: `${ACTION_COLOR}30`,
                   color: ACTION_COLOR,
                 }}
+                title={
+                  m.status === "failed"
+                    ? (m.error_log?.split("\n")[0] ?? "Resume from last checkpoint")
+                    : m.status === "pending"
+                      ? "Run mission"
+                      : "Resume mission"
+                }
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLButtonElement).style.background = `${ACTION_COLOR}10`;
                 }}

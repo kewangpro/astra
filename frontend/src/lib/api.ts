@@ -22,6 +22,11 @@ export interface Mission {
   completed_at: string | null;  // stamped when the mission reaches COMPLETED/FAILED/STALLED
 }
 
+/** Stalled is a finished search — start a new mission instead of resuming. */
+export function canStartMission(status: string): boolean {
+  return status === "pending" || status === "paused" || status === "failed";
+}
+
 export interface ManifestRequirement {
   id: string;
   description: string;
