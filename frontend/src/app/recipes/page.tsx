@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, Recipe, RecipeRecord } from "@/lib/api";
 
@@ -110,32 +109,16 @@ export default function RecipesPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">📚</span>
-            <h1 className="text-lg font-semibold text-[#e2e8f0] tracking-wide">
-              Recipe Library & Lineage Visualizer
-            </h1>
-          </div>
-          <p className="text-xs text-[#94a3b8]">
-            Browse canonical YAML training blueprints, inspect genetic mutation lineage, and dispatch 1-click missions.
-          </p>
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xl">📚</span>
+          <h1 className="text-lg font-semibold text-[#e2e8f0] tracking-wide">
+            Recipe Library & Lineage Visualizer
+          </h1>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="text-xs text-[#14b8a6] hover:text-[#2dd4bf] transition-colors border border-[#14b8a6]/20 bg-[#14b8a6]/5 px-3 py-1.5 rounded"
-          >
-            ← Command Center
-          </Link>
-          <Link
-            href="/models"
-            className="text-xs text-[#94a3b8] hover:text-[#e2e8f0] transition-colors border border-[#334155] bg-[#1e293b] px-3 py-1.5 rounded"
-          >
-            Model Registry →
-          </Link>
-        </div>
+        <p className="text-xs text-[#94a3b8]">
+          Browse canonical YAML training blueprints, inspect genetic mutation lineage, and dispatch 1-click missions.
+        </p>
       </div>
 
       {/* Filter Tabs & Search Bar */}

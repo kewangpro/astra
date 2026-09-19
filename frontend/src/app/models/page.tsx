@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { api, ModelRecord, TournamentResponse, TournamentEntry } from "@/lib/api";
 
 const ENV_OPTIONS = [
@@ -89,32 +88,16 @@ export default function ModelsPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">🏆</span>
-            <h1 className="text-lg font-semibold text-[#e2e8f0] tracking-wide">
-              Model Registry & Tournament Arena
-            </h1>
-          </div>
-          <p className="text-xs text-[#94a3b8]">
-            Benchmark policy checkpoints side-by-side across fixed seeds, track win rates, and crown champion models.
-          </p>
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xl">🏆</span>
+          <h1 className="text-lg font-semibold text-[#e2e8f0] tracking-wide">
+            Model Registry & Tournament Arena
+          </h1>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="text-xs text-[#14b8a6] hover:text-[#2dd4bf] transition-colors border border-[#14b8a6]/20 bg-[#14b8a6]/5 px-3 py-1.5 rounded"
-          >
-            ← Command Center
-          </Link>
-          <Link
-            href="/recipes"
-            className="text-xs text-[#94a3b8] hover:text-[#e2e8f0] transition-colors border border-[#334155] bg-[#1e293b] px-3 py-1.5 rounded"
-          >
-            Recipe Library →
-          </Link>
-        </div>
+        <p className="text-xs text-[#94a3b8]">
+          Benchmark policy checkpoints side-by-side across fixed seeds, track win rates, and crown champion models.
+        </p>
       </div>
 
       {/* Tournament Arena Section */}
