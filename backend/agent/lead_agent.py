@@ -123,14 +123,9 @@ Escalation levels — follow the level provided in the user message (RL task typ
     "SB3 PPO"/"SB3 DQN" (those are the same trainers as PPO/DQN and do not count as a switch).
     For Snake-v0, PPO with [256, 256] net_arch is strongly recommended over DQN.
     Also update hyperparameters to suit the new algorithm.
-  Level 3 (deeply stuck): reshape the reward function via "env_kwargs". For Snake-v0:
-    - Disable distance shaping (set distance_weight=0) to prevent greedy body collision
-    - Increase food_reward (e.g. 20.0) to make food-seeking the dominant signal
-    - Adjust survival_bonus (e.g. 0.05) and death_penalty (e.g. -5.0)
-    env_kwargs example: {"food_reward": 20.0, "death_penalty": -5.0, "distance_weight": 0.0, "survival_bonus": 0.05}
-    For Game2048-v0:
-    - Adjust merge_multiplier (e.g. 1.5), empty_tile_bonus (e.g. 0.2), corner_bonus (e.g. 1.0)
-    env_kwargs example: {"merge_multiplier": 1.5, "empty_tile_bonus": 0.2, "corner_bonus": 1.0}
+  Level 3 (deeply stuck): reshape the reward function via "env_kwargs".
+    Use ONLY the keys listed in the user message for this env_id.
+    Never copy Snake-v0 keys (food_reward, distance_weight, survival_bonus) onto another env.
 
 PPO hyperparameter ranges:
   learning_rate: 1e-5 to 1e-2 | n_steps: 1024–4096 | batch_size: 64–512
@@ -143,6 +138,79 @@ DQN hyperparameter ranges:
   target_update_interval: 500–10000 | learning_starts: 1000–50000
 
 Do NOT set n_epochs > 20 or n_steps < 512 for PPO — these destabilize training."""
+
+
+_ENV_REWARD_GUIDANCE: dict[str, str] = {
+    "Snake-v0": (
+        "Valid env_kwargs ONLY: food_reward, death_penalty, distance_weight, survival_bonus. "
+        "Disable distance shaping (distance_weight=0) to prevent greedy body collision. "
+        "Increase food_reward (e.g. 20.0). Keep death_penalty in [-20, -1]; survival_bonus ≤ 0.2. "
+        "Example: {\"food_reward\": 20.0, \"death_penalty\": -5.0, \"distance_weight\": 0.0, \"survival_bonus\": 0.05}."
+    ),
+    "Game2048-v0": (
+        "Valid env_kwargs ONLY: max_steps, merge_multiplier, empty_tile_bonus, corner_bonus. "
+        "Example: {\"merge_multiplier\": 1.5, \"empty_tile_bonus\": 0.2, \"corner_bonus\": 1.0}."
+    ),
+    "Tetris-v0": (
+        "Valid env_kwargs ONLY: max_steps, line_clear_multiplier, piece_placement, death_penalty. "
+        "Do not use Snake food_reward or 2048 merge_multiplier."
+    ),
+    "MinAtar-Seaquest-v0": (
+        "Valid env_kwargs ONLY: max_steps, enemy_kill_reward, diver_pickup_reward, "
+        "diver_rescue_reward, wave_clear_bonus, death_penalty, oxygen_max. "
+        "Prefer death_penalty near -1.0 (recipe default); -5.0 teaches the agent to avoid dying "
+        "instead of rescuing divers. Do NOT propose food_reward, distance_weight, or survival_bonus."
+    ),
+    "MinAtar-Seaquest": (
+        "Valid env_kwargs ONLY: max_steps, enemy_kill_reward, diver_pickup_reward, "
+        "diver_rescue_reward, wave_clear_bonus, death_penalty, oxygen_max. "
+        "Prefer death_penalty near -1.0. Do NOT propose Snake food_reward/distance_weight."
+    ),
+    "MinAtar-Breakout-v0": (
+        "Valid env_kwargs ONLY: max_steps, brick_reward, paddle_hit_reward, death_penalty. "
+        "Do not use Snake food_reward or Seaquest diver keys."
+    ),
+    "MinAtar-v0": (
+        "Valid env_kwargs ONLY: max_steps, brick_reward, paddle_hit_reward, death_penalty."
+    ),
+    "MinAtar-SpaceInvaders-v0": (
+        "Valid env_kwargs ONLY: max_steps, alien_kill_reward, wave_clear_bonus, death_penalty."
+    ),
+    "MinAtar-Space-Invaders-v0": (
+        "Valid env_kwargs ONLY: max_steps, alien_kill_reward, wave_clear_bonus, death_penalty."
+    ),
+    "MinAtar-Asteroids-v0": (
+        "Valid env_kwargs ONLY: max_steps, asteroid_hit_reward, wave_clear_bonus, death_penalty."
+    ),
+    "MinAtar-Freeway-v0": (
+        "Valid env_kwargs ONLY: max_steps, cross_reward, death_penalty, terminate_on_collision."
+    ),
+    "MinAtar-Freeway": (
+        "Valid env_kwargs ONLY: max_steps, cross_reward, death_penalty, terminate_on_collision."
+    ),
+    "MultiTurnAgentGym-v0": (
+        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, invalid_penalty."
+    ),
+    "AgentGym-v0": (
+        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, invalid_penalty."
+    ),
+}
+
+_GENERIC_REWARD_GUIDANCE = (
+    "Only propose env_kwargs keys that belong to THIS environment. "
+    "Never copy Snake-v0 keys (food_reward, distance_weight, survival_bonus) onto another env."
+)
+
+
+def env_reward_guidance(env_id: str) -> str:
+    if not env_id:
+        return _GENERIC_REWARD_GUIDANCE
+    if env_id in _ENV_REWARD_GUIDANCE:
+        return _ENV_REWARD_GUIDANCE[env_id]
+    for key, text in _ENV_REWARD_GUIDANCE.items():
+        if env_id.startswith(key):
+            return text
+    return _GENERIC_REWARD_GUIDANCE
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -231,6 +299,7 @@ class LeadAgent:
         best_metric_value: Optional[float] = None,
         best_metric_iteration: Optional[int] = None,
         tried_architectures: Optional[list] = None,
+        env_id: str = "",
     ) -> dict:
         """
         Analyze a stalled run and propose a strategic pivot.
@@ -280,29 +349,32 @@ class LeadAgent:
                 f"Propose a small, incremental change."
             )
         elif algorithm_locked:
+            _reshape = (
+                "Reshape the reward function via env_kwargs using ONLY the keys in "
+                "the Reward-shaping constraints for this environment."
+            )
             escalation_desc = {
                 0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
                 1: "Level 1 — try a larger network architecture in addition to HP tuning.",
-                2: f"Level 2 — the algorithm ({current_algorithm}) is fixed by the user. "
-                   "Reshape the reward function via env_kwargs instead. For Snake-v0, try disabling "
-                   "distance shaping (distance_weight=0) and increasing food_reward to 20+.",
-                3: f"Level 3 — prior reward shaping did not help. Try more aggressive env_kwargs: "
-                   "higher food_reward (25–30), lower death_penalty (−3 to −5), survival_bonus 0.02–0.1. "
-                   "Also consider tuning architecture and HPs together.",
+                2: f"Level 2 — the algorithm ({current_algorithm}) is fixed by the user. {_reshape}",
+                3: f"Level 3 — prior reward shaping did not help. Try more aggressive env_kwargs "
+                   f"from this env's allowlist (not another game's). Also consider architecture and HPs.",
                 4: f"Level 4 — DEEP PLATEAU. Every combination of HP tuning and reward shaping tried "
                    f"so far has failed to break through.{_tried_arch_desc} Also consider a materially "
                    f"different reward structure, not just scaled versions of what's already been tried.",
             }.get(escalation_level, "Level 0 — tune hyperparameters only.")
         else:
+            _reshape = (
+                "Reshape the reward function via env_kwargs using ONLY the keys in "
+                "the Reward-shaping constraints for this environment."
+            )
             escalation_desc = {
                 0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
                 1: "Level 1 — try a larger network architecture in addition to HP tuning.",
                 2: f"Level 2 — the current algorithm ({current_algorithm}) is not working. "
                    "Switch to a different canonical algorithm (PPO, DQN, A2C, or SAC). "
                    "'SB3 PPO' is the same trainer as PPO — that is NOT a switch.",
-                3: f"Level 3 — algorithm and architecture changes have not worked. "
-                   "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
-                   "distance shaping (distance_weight=0) and increasing food_reward.",
+                3: f"Level 3 — algorithm and architecture changes have not worked. {_reshape}",
                 4: f"Level 4 — DEEP PLATEAU. Algorithm switches, architecture changes, and reward "
                    f"shaping have all failed to break through.{_tried_arch_desc} Strongly consider "
                    f"switching algorithm if you haven't already (a real different trainer — not "
@@ -321,6 +393,11 @@ class LeadAgent:
             current_state_lines.append(f"Current hyperparameters: {json.dumps(current_hyperparameters)}")
         if current_env_kwargs:
             current_state_lines.append(f"Current env_kwargs: {json.dumps(current_env_kwargs)}")
+        if current_algorithm.upper() not in ("DPO", "GRPO", "DISTILL", "RFT"):
+            current_state_lines.append(
+                f"Reward-shaping constraints for env_id={env_id or 'unknown'}: "
+                f"{env_reward_guidance(env_id)}"
+            )
         if best_policy_kwargs is not None:
             best_arch_desc = json.dumps(best_policy_kwargs) if best_policy_kwargs else "default MLP (no net_arch override)"
             _metric_label = self._metric_name_from_history(history)

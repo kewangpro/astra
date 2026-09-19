@@ -38,7 +38,7 @@ class _MockLeadAgent:
             "sandbox_memory_gb": 4.0,
         }
 
-    async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None):
+    async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None, env_id=""):
         return {"reason": "plateau_detected", "adjustments": {"learning_rate": 1e-4}}
 
     def flush_iteration_context(self):
@@ -375,6 +375,7 @@ async def test_max_retries_exceeded_marks_failed(seeded_mission, db_session, pat
     await db_session.refresh(seeded_mission)
     assert seeded_mission.status == MissionStatus.FAILED.value
     assert seeded_mission.completed_at is not None  # FAILED is terminal → stamped
+    assert seeded_mission.error_log and seeded_mission.error_log.startswith("max_retries:")
 
 
 @pytest.mark.asyncio
@@ -524,9 +525,9 @@ async def test_plateau_triggers_pivot_then_goal_met(seeded_mission, db_session, 
         agent = _MockLeadAgent()
         propose_calls = []
         _orig = agent.propose_pivot
-        async def _track_pivot(m, h, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None):
-            propose_calls.append((m, h))
-            return await _orig(m, h)
+        async def _track_pivot(*args, **kwargs):
+            propose_calls.append((args[0] if args else kwargs.get("current_metrics"), args[1] if len(args) > 1 else None))
+            return await _orig(*args, **kwargs)
         agent.propose_pivot = _track_pivot
 
         sm = _build_sm(agent, _MockCodeGen(tmp), _MockHealer(tmp), _MockSandbox(tmp), evaluator)
@@ -593,7 +594,7 @@ async def test_manifest_reconciled_when_plan_task_type_differs(db_session, patch
                 "hyperparameters": {"n_estimators": 100},
                 "sandbox_memory_gb": 1.0,
             }
-        async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None):
+        async def propose_pivot(self, current_metrics, history, escalation_level=0, current_algorithm="PPO", algorithm_locked=False, current_policy_kwargs=None, current_hyperparameters=None, current_env_kwargs=None, best_policy_kwargs=None, best_metric_value=None, best_metric_iteration=None, tried_architectures=None, env_id=""):
             return {"reason": "plateau", "adjustments": {}}
         def flush_iteration_context(self):
             pass

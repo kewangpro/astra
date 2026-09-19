@@ -255,3 +255,32 @@ def test_format_canonical_goal_appends_target_if_missing():
     )
     assert goal == "Train a Tetris-v0 agent to achieve 200.0 lines_cleared"
 
+
+# ── PATCH status coercion ─────────────────────────────────────────────────────
+
+def test_coerce_stalled_without_convergence_becomes_failed():
+    from backend.models.mission import ERROR_STOPPED_BY_REQUEST
+    from backend.routers.missions import coerce_patch_status
+
+    status, elog = coerce_patch_status("stalled", None, None)
+    assert status == "failed"
+    assert elog.startswith(ERROR_STOPPED_BY_REQUEST)
+
+
+def test_coerce_stalled_keeps_convergence_error_log():
+    from backend.models.mission import ERROR_CONVERGED_BELOW_TARGET
+    from backend.routers.missions import coerce_patch_status
+
+    existing = f"{ERROR_CONVERGED_BELOW_TARGET} best=21.5"
+    status, elog = coerce_patch_status("stalled", None, existing)
+    assert status == "stalled"
+    assert elog is None  # leave existing error_log on the row
+
+
+def test_coerce_failed_unchanged():
+    from backend.routers.missions import coerce_patch_status
+
+    status, elog = coerce_patch_status("failed", "cancelled_by_user: stop requested", None)
+    assert status == "failed"
+    assert elog == "cancelled_by_user: stop requested"
+

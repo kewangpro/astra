@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.logging_config import get_logger
 from backend.database import get_db
-from backend.models.mission import Mission, MissionStatus
+from backend.models.mission import (
+    Mission,
+    MissionStatus,
+    ERROR_STOPPED_BY_REQUEST,
+    is_convergence_stall,
+)
 from backend.models.manifest import RequirementManifest
 from backend.models.approval import ApprovalGate, ApprovalStatus
 from backend.schemas.mission import MissionCreate, MissionRead, MissionUpdate
@@ -236,13 +241,44 @@ async def get_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     return mission
 
 
+def coerce_patch_status(
+    requested_status: Optional[str],
+    requested_error_log: Optional[str],
+    existing_error_log: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """STALLED is loop-only (`is_converged()`). A PATCH that asks for stalled
+    without a `converged_below_target:` error_log is coerced to FAILED so
+    Stop / manual edits cannot mint a stall."""
+    if requested_status != MissionStatus.STALLED.value:
+        return requested_status, requested_error_log
+    elog = requested_error_log if requested_error_log is not None else existing_error_log
+    if is_convergence_stall(elog):
+        return requested_status, requested_error_log
+    return (
+        MissionStatus.FAILED.value,
+        requested_error_log
+        if requested_error_log is not None
+        else f"{ERROR_STOPPED_BY_REQUEST} stalled is reserved for convergence stop",
+    )
+
+
 @router.patch("/{mission_id}", response_model=MissionRead)
 async def update_mission(mission_id: str, payload: MissionUpdate, db: AsyncSession = Depends(get_db)):
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
     from sqlalchemy.orm.attributes import flag_modified
-    for k, v in payload.model_dump(exclude_none=True).items():
+    updates = payload.model_dump(exclude_none=True)
+    if "status" in updates:
+        raw = updates["status"]
+        status_val = raw.value if isinstance(raw, MissionStatus) else raw
+        new_status, new_elog = coerce_patch_status(
+            status_val, updates.get("error_log"), mission.error_log,
+        )
+        updates["status"] = new_status
+        if new_elog is not None:
+            updates["error_log"] = new_elog
+    for k, v in updates.items():
         if k == "status" and v is not None:
             setattr(mission, k, v.value if isinstance(v, MissionStatus) else v)
         else:

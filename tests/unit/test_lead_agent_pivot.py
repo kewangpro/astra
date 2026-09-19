@@ -133,3 +133,29 @@ class TestDpoGrpoEscalation:
         )
         query = agent._generate_structured.call_args.args[0][-1].content
         assert "k_collect" in query
+
+
+class TestEnvSpecificRewardGuidance:
+    @pytest.mark.asyncio
+    async def test_seaquest_level_three_lists_diver_keys_not_snake_actions(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"score": 21.5}, [], escalation_level=3,
+            current_algorithm="DQN", env_id="MinAtar-Seaquest-v0",
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "diver_rescue_reward" in query
+        assert "distance_weight=0" not in query
+        assert "food_reward to 20" not in query
+
+    @pytest.mark.asyncio
+    async def test_snake_level_three_still_mentions_food_reward(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"food_eaten": 40.0}, [], escalation_level=3,
+            current_algorithm="DQN", algorithm_locked=True,
+            env_id="Snake-v0",
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "food_reward" in query
+        assert "distance_weight" in query

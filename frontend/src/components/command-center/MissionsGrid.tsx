@@ -185,6 +185,14 @@ function MissionCard({ m }: { m: Mission }) {
         <p className="text-[13px] text-[#94a3b8] leading-relaxed line-clamp-2 mb-3 group-hover:text-[#cbd5e1] transition-colors">
           {m.goal}
         </p>
+        {(m.status === "stalled" || m.status === "failed") && m.error_log && (
+          <p
+            className="text-[10px] text-[#64748b] font-mono line-clamp-1 -mt-2 mb-3"
+            title={m.error_log}
+          >
+            {m.error_log.split("\n")[0]}
+          </p>
+        )}
 
         {/* Metric & Progress Display */}
         <div

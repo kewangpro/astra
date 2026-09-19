@@ -20,7 +20,15 @@ from typing import NamedTuple, Optional
 from sqlalchemy import select, update
 
 from backend.database import AsyncSessionLocal
-from backend.models.mission import Mission, MissionStatus
+from backend.models.mission import (
+    Mission,
+    MissionStatus,
+    ERROR_CANCELLED_BY_USER,
+    ERROR_CONVERGED_BELOW_TARGET,
+    ERROR_EXECUTION_REJECTED,
+    ERROR_MAX_RETRIES,
+    ERROR_UNHANDLED,
+)
 from backend.models.approval import ApprovalGate, ApprovalStatus, GateType
 from backend.agent.lead_agent import LeadAgent
 from backend.agent.code_generator import (
@@ -353,6 +361,13 @@ class LoopStateMachine:
         self._critic = critic
         self._manifest_evaluator = ManifestEvaluator()
         self._preflight = PreflightChecker()
+        # Set by POST /agent/missions/{id}/cancel before task.cancel(). Distinguishes
+        # a user Stop (FAILED) from uvicorn/process shutdown (PENDING so the
+        # mission can resume after restart).
+        self._user_cancelled = False
+
+    def request_user_cancel(self) -> None:
+        self._user_cancelled = True
 
     async def run(self, mission_id: str, resume_existing_sandbox: bool = False) -> None:
         """Entry point: runs the full autonomous loop for a mission.
@@ -696,7 +711,10 @@ class LoopStateMachine:
                     if not approved:
                         logger.info("LoopStateMachine: EXECUTE_CODE gate rejected — aborting")
                         await emit_status(mission_id, "Execution rejected by user", event_type="error")
-                        await self._transition(mission_id, MissionStatus.FAILED)
+                        await self._transition(
+                            mission_id, MissionStatus.FAILED,
+                            error_log=f"{ERROR_EXECUTION_REJECTED} EXECUTE_CODE gate rejected",
+                        )
                         return
                     approval_note = "auto-approve" if is_auto else "manual-approve"
                     await emit_status(mission_id, f"Execution approved: {approval_note}", event_type="success")
@@ -762,7 +780,10 @@ class LoopStateMachine:
                     if error_count > MAX_RETRIES:
                         logger.error("LoopStateMachine: max retries exceeded — failing mission")
                         await emit_status(mission_id, "Max retries exceeded", event_type="error")
-                        await self._transition(mission_id, MissionStatus.FAILED)
+                        await self._transition(
+                            mission_id, MissionStatus.FAILED,
+                            error_log=f"{ERROR_MAX_RETRIES} sandbox errors exceeded {MAX_RETRIES}",
+                        )
                         return
                     if _ENVIRONMENTAL_ERROR_RE.search(error_output):
                         # Resource exhaustion on the training host. Not a script
@@ -1366,7 +1387,14 @@ class LoopStateMachine:
                         "Converged below target — stopping (every pivot lever exhausted)",
                         event_type="warn", value=f"best={best}", iteration=current_iteration,
                     )
-                    await self._transition(mission_id, MissionStatus.STALLED)
+                    await self._transition(
+                        mission_id, MissionStatus.STALLED,
+                        error_log=(
+                            f"{ERROR_CONVERGED_BELOW_TARGET} best={best} unbeaten for "
+                            f"{pivot_engine.iters_since_best()} iters "
+                            f"pivot_count={pivot_engine.pivot_count}"
+                        ),
+                    )
                     await self._crystallize(mission_id, plan, best)
                     self._terminate_sandbox(mission_id, "convergence stall")
                     return
@@ -1407,6 +1435,7 @@ class LoopStateMachine:
                             best_metric_value=pivot_engine.best_metric_value(),
                             best_metric_iteration=pivot_engine.best_metric_iteration(),
                             tried_architectures=plan.get("all_arches_tried") or None,
+                            env_id=plan.get("env_id") or "",
                         )
                     except Exception as exc:
                         # A malformed LLM response (e.g. invalid JSON that survived
@@ -1626,6 +1655,17 @@ class LoopStateMachine:
                             plan["all_algos_tried"] = _tried_algos
                             plan["algorithm"] = pivot["algorithm"]
                             plan["hyperparameters"] = pivot.get("adjustments", {})
+                            # Drop leftover reward shaping from the previous trainer
+                            # (Seaquest death_penalty=-5 after Snake Level 3) and give
+                            # the new algo a full escalation ladder instead of stalling
+                            # a few pivots later at ESCALATION_FORCE_NOVEL.
+                            self._reset_search_after_algorithm_switch(
+                                plan, pivot_engine, pivot["algorithm"],
+                            )
+                            await self._save_pivot_count(mission_id, 0)
+                            # Same-pivot env_kwargs are almost always the wrong env
+                            # (Snake keys on a Seaquest switch). Skip them.
+                            env_kwargs_changed = False
                             # Reset best_score so the new algorithm can save its own checkpoint
                             best_score_path = os.path.join(
                                 settings.data_path, "missions", mission_id,
@@ -1712,8 +1752,21 @@ class LoopStateMachine:
                 current_iteration += 1
 
             except asyncio.CancelledError:
-                logger.info("LoopStateMachine: mission=%s cancelled (shutdown) — terminating sandbox and resetting to pending", mission_id)
                 self._terminate_sandbox(mission_id, "cancel")
+                if self._user_cancelled:
+                    logger.info(
+                        "LoopStateMachine: mission=%s cancelled by user — marking failed",
+                        mission_id,
+                    )
+                    await self._transition(
+                        mission_id, MissionStatus.FAILED,
+                        error_log=f"{ERROR_CANCELLED_BY_USER} stop requested",
+                    )
+                    return
+                logger.info(
+                    "LoopStateMachine: mission=%s cancelled (shutdown) — terminating sandbox and resetting to pending",
+                    mission_id,
+                )
                 await self._transition(mission_id, MissionStatus.PENDING)
                 raise  # propagate so asyncio knows the task is done
 
@@ -1721,7 +1774,10 @@ class LoopStateMachine:
                 logger.exception("LoopStateMachine: unhandled error in mission=%s: %s", mission_id, e)
                 self._terminate_sandbox(mission_id, "failure")
                 await emit_status(mission_id, "Mission failed", event_type="error", value=str(e))
-                await self._transition(mission_id, MissionStatus.FAILED)
+                await self._transition(
+                    mission_id, MissionStatus.FAILED,
+                    error_log=f"{ERROR_UNHANDLED} {e}",
+                )
                 return
 
     def _terminate_sandbox(self, mission_id: str, context: str) -> None:
@@ -2206,6 +2262,33 @@ class LoopStateMachine:
         if not cls._is_algorithm_locked(goal, algorithm):
             return None
         return f"lookahead_{algorithm.lower()}"
+
+    @staticmethod
+    def _recipe_env_kwargs(env_id: str, algorithm: str = "") -> dict:
+        """Recipe env_kwargs for env+algorithm, or {} if the recipe has none.
+
+        Used to wipe leftover reward shaping when switching trainers so a
+        Seaquest DQN run does not inherit Snake death_penalty from Level 3.
+        """
+        recipe = _load_recipe_for_env(env_id, algorithm) or {}
+        return dict(recipe.get("env_kwargs") or {})
+
+    def _reset_search_after_algorithm_switch(
+        self, plan: dict, pivot_engine: PivotEngine, new_algorithm: str,
+    ) -> None:
+        """Replace plan env_kwargs with recipe defaults and restart escalation."""
+        env_id = plan.get("env_id") or ""
+        plan["env_kwargs"] = self._clamp_env_kwargs(
+            self._recipe_env_kwargs(env_id, new_algorithm), env_id,
+        )
+        pivot_engine.restore_pivot_count(0)
+        best = pivot_engine.best_metric_value()
+        if best is not None:
+            pivot_engine.restore_best_at_last_pivot(best)
+        logger.info(
+            "LoopStateMachine: algo switch reset env_kwargs=%s pivot_count=0",
+            plan["env_kwargs"],
+        )
 
     @staticmethod
     def _clamp_env_kwargs(env_kwargs: dict, env_id: str = "") -> dict:

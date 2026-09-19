@@ -2084,3 +2084,31 @@ def test_remote_script_check_does_not_block_on_unreachable_host():
         out = _preflight()._check_remote_script("grpo")
     assert out[0]["passed"] is True
     assert "unreachable" in out[0]["detail"]
+
+
+# ── algo-switch env_kwargs + escalation reset ─────────────────────────────────
+
+def test_recipe_env_kwargs_seaquest_dqn_is_empty():
+    """minatar_seaquest_dqn_v1 has no env_kwargs — a switch to DQN must wipe leftovers."""
+    assert LoopStateMachine._recipe_env_kwargs("MinAtar-Seaquest-v0", "DQN") == {}
+
+
+def test_reset_search_after_algorithm_switch_clears_env_kwargs_and_pivot_count():
+    from backend.loop.pivots import PivotEngine
+
+    plan = {
+        "env_id": "MinAtar-Seaquest-v0",
+        "algorithm": "PPO",
+        "env_kwargs": {"death_penalty": -5.0, "food_reward": 20.0},
+    }
+    engine = PivotEngine({"score": 50.0})
+    engine.restore_pivot_count(13)
+    engine.restore_history([{"iteration": 6, "score": 21.5}])
+    engine.restore_best_at_last_pivot(21.5)
+
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._reset_search_after_algorithm_switch(plan, engine, "DQN")
+
+    assert plan["env_kwargs"] == {}
+    assert engine.pivot_count == 0
+    assert engine._best_at_last_pivot == 21.5

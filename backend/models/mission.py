@@ -17,11 +17,26 @@ class MissionStatus(str, Enum):
     EVALUATING = "evaluating"
     COMPLETED = "completed"
     FAILED = "failed"
-    # Target not reached, but the search has exhausted every lever it has
-    # (escalation maxed, no new best for a long stretch). Terminal, like
-    # COMPLETED/FAILED — the loop stops and keeps the best checkpoint instead
-    # of burning compute indefinitely on an unreachable target.
+    # Target not reached AND PivotEngine.is_converged() is true (escalation
+    # maxed, no new best for STALL_ITERS_WITHOUT_BEST). Terminal, like
+    # COMPLETED/FAILED — the loop stops and keeps the best checkpoint.
+    # Other stops (user cancel, gate reject, max retries, PATCH) are FAILED
+    # with an error_log prefix; they must not mint this status.
     STALLED = "stalled"
+
+
+# error_log prefixes. STALLED is reserved for is_converged(); everything else
+# that stops a mission is FAILED with one of these reasons.
+ERROR_CONVERGED_BELOW_TARGET = "converged_below_target:"
+ERROR_CANCELLED_BY_USER = "cancelled_by_user:"
+ERROR_STOPPED_BY_REQUEST = "stopped_by_request:"
+ERROR_MAX_RETRIES = "max_retries:"
+ERROR_EXECUTION_REJECTED = "execution_rejected:"
+ERROR_UNHANDLED = "unhandled_error:"
+
+
+def is_convergence_stall(error_log: Optional[str]) -> bool:
+    return bool(error_log) and error_log.startswith(ERROR_CONVERGED_BELOW_TARGET)
 
 
 class Mission(Base):

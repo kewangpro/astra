@@ -73,6 +73,7 @@ def _build_loop() -> LoopStateMachine:
 
 # Tracks running mission tasks so they can be cancelled on shutdown
 _running_tasks: dict[str, asyncio.Task] = {}
+_running_loops: dict[str, LoopStateMachine] = {}
 
 # Shared code provider — reused by the approvals auto-approve endpoint
 _code_provider: Optional[InferenceProvider] = None
@@ -107,20 +108,30 @@ async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     loop = _build_loop()
     task = asyncio.create_task(loop.run(mission_id))
     _running_tasks[mission_id] = task
-    task.add_done_callback(lambda t: _running_tasks.pop(mission_id, None))
+    _running_loops[mission_id] = loop
+
+    def _cleanup(_t: asyncio.Task, mid: str = mission_id) -> None:
+        _running_tasks.pop(mid, None)
+        _running_loops.pop(mid, None)
+
+    task.add_done_callback(_cleanup)
     logger.info("Agent: launched loop for mission=%s", mission_id)
     return {"mission_id": mission_id, "status": "loop_started"}
 
 
 @router.post("/missions/{mission_id}/cancel", status_code=202)
 async def cancel_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
-    """Cancel a running mission loop, terminating the sandbox and reverting to pending."""
+    """Cancel a running mission loop. User Stop marks FAILED (`cancelled_by_user`);
+    process shutdown CancelledError without this flag still resets to pending."""
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
     if mission.status not in ("running", "planning", "evaluating"):
         raise HTTPException(status_code=409, detail=f"Mission is not running (status='{mission.status}')")
 
+    loop = _running_loops.get(mission_id)
+    if loop is not None:
+        loop.request_user_cancel()
     task = _running_tasks.get(mission_id)
     if task and not task.done():
         task.cancel()

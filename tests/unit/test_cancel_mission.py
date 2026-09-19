@@ -109,3 +109,23 @@ async def test_cancel_planning_mission():
 
     task.cancel.assert_called_once()
     assert result["status"] == "cancelling"
+
+
+@pytest.mark.asyncio
+async def test_cancel_marks_loop_user_cancelled():
+    """User Stop must set the loop flag before cancelling so CancelledError
+    becomes FAILED, not PENDING (uvicorn shutdown)."""
+    from backend.routers.agent import cancel_mission
+
+    task = MagicMock(spec=asyncio.Task)
+    task.done.return_value = False
+    loop = MagicMock()
+
+    db = _make_db(mission=_make_mission("running"))
+
+    with patch("backend.routers.agent._running_tasks", {"test-mission-id": task}), \
+         patch("backend.routers.agent._running_loops", {"test-mission-id": loop}):
+        await cancel_mission("test-mission-id", db)
+
+    loop.request_user_cancel.assert_called_once()
+    task.cancel.assert_called_once()

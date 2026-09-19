@@ -15,6 +15,7 @@ export interface Mission {
   target_metric: Record<string, number> | null;
   host: string | null;    // which node this mission's sandbox is/was running on
   last_checkpoint_path?: string | null;
+  error_log?: string | null;
   autonomy_mode?: string;
   created_at: string;
   updated_at: string;
