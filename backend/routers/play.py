@@ -358,6 +358,8 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
                 frame["aliens_killed"] = int(base_env._aliens_killed)
             elif hasattr(base_env, "_asteroids_hit"):
                 frame["asteroids_hit"] = int(base_env._asteroids_hit)
+                if hasattr(base_env, "_ship_dir"):
+                    frame["ship_dir"] = int(base_env._ship_dir)
             elif hasattr(base_env, "_crossings"):
                 frame["crossings"] = int(base_env._crossings)
                 frame["collisions"] = int(base_env._collisions)

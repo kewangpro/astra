@@ -40,6 +40,7 @@ interface Frame {
   oxygen?: number;
   done?: boolean;
   message?: string;
+  ship_dir?: number;
   q_values?: Record<string, number>;
   action_probs?: Record<string, number>;
   entropy?: number | null;
@@ -303,7 +304,7 @@ function drawFreeway(ctx: CanvasRenderingContext2D, grid: number[]) {
   }
 }
 
-function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: string) {
+function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: string, shipDir: number = 0) {
   const lower = envId.toLowerCase();
   const isFreeway = lower.includes("freeway");
   const isSeaquest = lower.includes("seaquest");
@@ -461,18 +462,21 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
         }
       } else if (isAsteroids) {
         if (cell === 1) {
-          // Spaceship (Cyan arrowhead wedge)
+          // Spaceship (Cyan arrowhead wedge) rotated to heading (0: UP, 1: RIGHT, 2: DOWN, 3: LEFT)
+          ctx.save();
+          ctx.translate(x + CELL / 2, y + CELL / 2);
+          ctx.rotate((shipDir * Math.PI) / 2);
           ctx.fillStyle = "#38bdf8";
           ctx.shadowColor = "rgba(56, 189, 248, 0.85)";
           ctx.shadowBlur = 8;
           ctx.beginPath();
-          ctx.moveTo(x + CELL / 2, y + 3);
-          ctx.lineTo(x + CELL - 4, y + CELL - 4);
-          ctx.lineTo(x + CELL / 2, y + CELL - 7);
-          ctx.lineTo(x + 4, y + CELL - 4);
+          ctx.moveTo(0, -CELL / 2 + 3);
+          ctx.lineTo(CELL / 2 - 4, CELL / 2 - 4);
+          ctx.lineTo(0, CELL / 2 - 7);
+          ctx.lineTo(-CELL / 2 + 4, CELL / 2 - 4);
           ctx.closePath();
           ctx.fill();
-          ctx.shadowBlur = 0;
+          ctx.restore();
         } else if (cell === 2) {
           // Asteroid (Slate rock with crater)
           ctx.fillStyle = "#cbd5e1";
@@ -647,6 +651,7 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [policyTelemetry, setPolicyTelemetry] = useState<PolicyTelemetry | null>(null);
+  const shipDirRef = useRef<number>(0);
 
   const stop = useCallback(() => {
     wsRef.current?.close();
@@ -673,8 +678,11 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
     ws.onmessage = (e) => {
       const frame: Frame = JSON.parse(e.data as string);
       if (frame.type === "frame" && frame.grid) {
+        if (frame.ship_dir !== undefined) {
+          shipDirRef.current = frame.ship_dir;
+        }
         const ctx = canvasRef.current?.getContext("2d");
-        if (ctx) drawMinAtar(ctx, frame.grid, envId);
+        if (ctx) drawMinAtar(ctx, frame.grid, envId, frame.ship_dir ?? shipDirRef.current);
 
         if (frame.step !== undefined) setStep(frame.step);
         if (frame.score !== undefined) {
@@ -884,10 +892,16 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
               </div>
             )}
             {isAsteroids && (
-              <div className="flex justify-between">
-                <span>Wrap:</span>
-                <span className="font-mono text-sky-400">Toroidal</span>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <span>Wrap:</span>
+                  <span className="font-mono text-sky-400">Toroidal</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Motion:</span>
+                  <span className="font-mono text-teal-400">Grid Step</span>
+                </div>
+              </>
             )}
             {isBreakout && (
               <div className="flex justify-between">
@@ -1041,31 +1055,26 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
               </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2 rounded bg-sky-400 border border-sky-300 inline-block"></span>
+                  <svg className="w-2.5 h-2.5 text-sky-400 drop-shadow-[0_0_4px_rgba(56,189,248,0.8)] inline-block" viewBox="0 0 10 10" fill="currentColor">
+                    <polygon points="5,1 9,9 5,7 1,9" />
+                  </svg>
                   <span className="text-[#cbd5e1]">Spaceship</span>
                 </span>
                 <span className="text-sky-400 font-semibold">Player</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2 rounded bg-slate-300 border border-slate-200 inline-block"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300 border border-slate-200 inline-block"></span>
                   <span className="text-[#cbd5e1]">Asteroid</span>
                 </span>
                 <span className="text-slate-300 font-semibold">Target</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-300 inline-block"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-yellow-300 shadow-[0_0_6px_rgba(250,204,21,0.8)] inline-block"></span>
                   <span className="text-[#cbd5e1]">Plasma</span>
                 </span>
                 <span className="text-yellow-400">Fire</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2 rounded bg-sky-900 border border-sky-700 inline-block"></span>
-                  <span className="text-[#cbd5e1]">Physics</span>
-                </span>
-                <span className="text-sky-300">Inertia</span>
               </div>
             </div>
           )}
