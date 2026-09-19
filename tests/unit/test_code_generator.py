@@ -1244,6 +1244,38 @@ def test_resolve_hyperparams_plan_overrides_recipe():
     assert result["total_timesteps"] == 500_000
 
 
+def test_resolve_hyperparams_dqn_strips_ppo_keys_but_keeps_pivots():
+    """PPO leftover keys drop; a real DQN pivot (lr / exploration) must stick."""
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams(
+        "MinAtar-Seaquest-v0",
+        {
+            "learning_rate": 0.0005,
+            "n_steps": 1024,
+            "n_epochs": 10,
+            "batch_size": 64,
+            "exploration_fraction": 0.4,
+        },
+        algorithm="DQN",
+    )
+    assert result["learning_rate"] == 0.0005
+    assert result["exploration_fraction"] == 0.4
+    assert result["buffer_size"] == 100000
+    assert "n_steps" not in result
+
+
+def test_resolve_hyperparams_named_ppo_seaquest_skips_dqn_recipe():
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams(
+        "MinAtar-Seaquest-v0",
+        {"learning_rate": 0.0003, "n_steps": 2048},
+        algorithm="PPO",
+    )
+    assert result["learning_rate"] == 0.0003
+    assert result["n_steps"] == 2048
+    assert "buffer_size" not in result
+
+
 def test_build_user_prompt_snake_uses_recipe_env_kwargs(tmp_path, monkeypatch):
     """Snake-v0 prompt includes obs_type='features' and max_steps=2000 from recipe."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))

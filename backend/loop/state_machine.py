@@ -36,6 +36,8 @@ from backend.agent.code_generator import (
     canonicalize_algorithm,
     finetune_checkpoint_dir,
     _load_recipe_for_env,
+    _recipe_hyperparameters_for,
+    _strip_foreign_hp_keys,
 )
 from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
@@ -510,6 +512,7 @@ class LoopStateMachine:
                     async with AsyncSessionLocal() as _s:
                         _m = await _s.get(Mission, mission_id)
                         plan = dict(_m.current_plan) if _m and _m.current_plan else {}
+                    self._strip_plan_foreign_hyperparameters(plan)
                     skip_replan_from_db = False
                     # On reattach, the sandbox is already running this exact
                     # plan — "continuing with pivoted plan" implies a new
@@ -1654,11 +1657,8 @@ class LoopStateMachine:
                                 _tried_algos.append(current_algo)
                             plan["all_algos_tried"] = _tried_algos
                             plan["algorithm"] = pivot["algorithm"]
-                            plan["hyperparameters"] = pivot.get("adjustments", {})
-                            # Drop leftover reward shaping from the previous trainer
-                            # (Seaquest death_penalty=-5 after Snake Level 3) and give
-                            # the new algo a full escalation ladder instead of stalling
-                            # a few pivots later at ESCALATION_FORCE_NOVEL.
+                            # Drop leftover reward shaping / PPO-prior HPs from the
+                            # previous trainer and restart the escalation ladder.
                             self._reset_search_after_algorithm_switch(
                                 plan, pivot_engine, pivot["algorithm"],
                             )
@@ -2111,7 +2111,7 @@ class LoopStateMachine:
         named = cls._named_algorithm_in_goal(goal)
         if named:
             plan["algorithm"] = named
-            return plan
+            return cls._apply_recipe_hyperparameters(plan)
         env_id = plan.get("env_id") or ""
         recipe_algo = canonicalize_algorithm(
             (_load_recipe_for_env(env_id) or {}).get("algorithm") or ""
@@ -2122,6 +2122,42 @@ class LoopStateMachine:
             canon = canonicalize_algorithm(plan["algorithm"])
             if canon:
                 plan["algorithm"] = canon
+        return cls._apply_recipe_hyperparameters(plan)
+
+    @classmethod
+    def _apply_recipe_hyperparameters(cls, plan: dict) -> dict:
+        """Replace plan HPs with the matching recipe, or strip foreign-algo keys.
+
+        Real incident: a locked Seaquest DQN mission kept the Lead Agent's PPO
+        prior (`learning_rate=0.001`, `n_steps`) because `_seed_plan_algorithm`
+        only wrote `algorithm` and `_resolve_hyperparams` treats plan as base.
+        """
+        if (plan.get("task_type") or "rl") != "rl":
+            return plan
+        algorithm = (
+            canonicalize_algorithm(plan.get("algorithm") or "")
+            or plan.get("algorithm")
+            or ""
+        )
+        recipe_hp = _recipe_hyperparameters_for(plan.get("env_id") or "", algorithm)
+        if recipe_hp is not None:
+            plan["hyperparameters"] = recipe_hp
+            return plan
+        return cls._strip_plan_foreign_hyperparameters(plan)
+
+    @classmethod
+    def _strip_plan_foreign_hyperparameters(cls, plan: dict) -> dict:
+        """Drop other-algo constructor keys; keep same-algo pivots and policy_kwargs."""
+        if (plan.get("task_type") or "rl") != "rl":
+            return plan
+        algorithm = (
+            canonicalize_algorithm(plan.get("algorithm") or "")
+            or plan.get("algorithm")
+            or ""
+        )
+        plan["hyperparameters"] = _strip_foreign_hp_keys(
+            dict(plan.get("hyperparameters") or {}), algorithm,
+        )
         return plan
 
     @classmethod
@@ -2276,18 +2312,21 @@ class LoopStateMachine:
     def _reset_search_after_algorithm_switch(
         self, plan: dict, pivot_engine: PivotEngine, new_algorithm: str,
     ) -> None:
-        """Replace plan env_kwargs with recipe defaults and restart escalation."""
+        """Replace env_kwargs + HPs with recipe defaults and restart escalation."""
         env_id = plan.get("env_id") or ""
+        plan["algorithm"] = canonicalize_algorithm(new_algorithm) or new_algorithm
         plan["env_kwargs"] = self._clamp_env_kwargs(
             self._recipe_env_kwargs(env_id, new_algorithm), env_id,
         )
+        self._apply_recipe_hyperparameters(plan)
         pivot_engine.restore_pivot_count(0)
         best = pivot_engine.best_metric_value()
         if best is not None:
             pivot_engine.restore_best_at_last_pivot(best)
         logger.info(
-            "LoopStateMachine: algo switch reset env_kwargs=%s pivot_count=0",
+            "LoopStateMachine: algo switch reset env_kwargs=%s hps=%s pivot_count=0",
             plan["env_kwargs"],
+            {k: plan.get("hyperparameters", {}).get(k) for k in ("learning_rate", "buffer_size", "n_steps")},
         )
 
     @staticmethod

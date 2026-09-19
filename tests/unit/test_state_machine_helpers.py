@@ -363,6 +363,28 @@ def test_seed_unnamed_seaquest_uses_recipe_dqn():
     }
     out = _seed(plan, "Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score")
     assert out["algorithm"] == "DQN"
+    assert out["hyperparameters"]["learning_rate"] == 0.00025
+    assert "n_steps" not in out["hyperparameters"]
+
+
+def test_seed_named_dqn_seaquest_replaces_ppo_prior_hps():
+    """Locked DQN still arrived with the planner's PPO hyperparameters."""
+    plan = {
+        "task_type": "rl",
+        "algorithm": "SB3 PPO",
+        "env_id": "MinAtar-Seaquest-v0",
+        "hyperparameters": {
+            "learning_rate": 0.001,
+            "n_steps": 2048,
+            "n_epochs": 10,
+            "batch_size": 64,
+        },
+    }
+    out = _seed(plan, "Train a MinAtar-Seaquest-v0 DQN agent to achieve 50 score")
+    assert out["algorithm"] == "DQN"
+    assert out["hyperparameters"]["learning_rate"] == 0.00025
+    assert out["hyperparameters"]["buffer_size"] == 100000
+    assert "n_steps" not in out["hyperparameters"]
 
 
 def test_seed_named_ppo_seaquest_keeps_ppo():
@@ -370,10 +392,13 @@ def test_seed_named_ppo_seaquest_keeps_ppo():
         "task_type": "rl",
         "algorithm": "DQN",
         "env_id": "MinAtar-Seaquest-v0",
-        "hyperparameters": {},
+        "hyperparameters": {"learning_rate": 0.0003, "n_steps": 2048},
     }
     out = _seed(plan, "Train a MinAtar-Seaquest-v0 PPO agent to achieve 50 score")
     assert out["algorithm"] == "PPO"
+    assert out["hyperparameters"]["learning_rate"] == 0.0003
+    assert out["hyperparameters"]["n_steps"] == 2048
+    assert "buffer_size" not in out["hyperparameters"]
 
 
 def test_seed_non_rl_only_canonicalizes():
@@ -2099,7 +2124,9 @@ def test_reset_search_after_algorithm_switch_clears_env_kwargs_and_pivot_count()
     plan = {
         "env_id": "MinAtar-Seaquest-v0",
         "algorithm": "PPO",
+        "task_type": "rl",
         "env_kwargs": {"death_penalty": -5.0, "food_reward": 20.0},
+        "hyperparameters": {"learning_rate": 0.001, "n_steps": 2048},
     }
     engine = PivotEngine({"score": 50.0})
     engine.restore_pivot_count(13)
@@ -2110,5 +2137,27 @@ def test_reset_search_after_algorithm_switch_clears_env_kwargs_and_pivot_count()
     sm._reset_search_after_algorithm_switch(plan, engine, "DQN")
 
     assert plan["env_kwargs"] == {}
+    assert plan["algorithm"] == "DQN"
+    assert plan["hyperparameters"]["learning_rate"] == 0.00025
+    assert "n_steps" not in plan["hyperparameters"]
     assert engine.pivot_count == 0
     assert engine._best_at_last_pivot == 21.5
+
+
+def test_strip_plan_foreign_hps_keeps_dqn_pivots():
+    plan = {
+        "task_type": "rl",
+        "algorithm": "DQN",
+        "env_id": "MinAtar-Seaquest-v0",
+        "hyperparameters": {
+            "learning_rate": 0.0005,
+            "n_steps": 1024,
+            "exploration_fraction": 0.4,
+            "policy_kwargs": {"net_arch": []},
+        },
+    }
+    out = LoopStateMachine._strip_plan_foreign_hyperparameters(plan)
+    assert out["hyperparameters"]["learning_rate"] == 0.0005
+    assert out["hyperparameters"]["exploration_fraction"] == 0.4
+    assert out["hyperparameters"]["policy_kwargs"] == {"net_arch": []}
+    assert "n_steps" not in out["hyperparameters"]

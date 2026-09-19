@@ -1621,6 +1621,44 @@ def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
         return {}
 
 
+def _recipe_hyperparameters_for(env_id: str, algorithm: str = "") -> Optional[dict]:
+    """Recipe HPs when they belong to this algorithm; None if there is no match.
+
+    Env-keyed recipes (Seaquest) always load the DQN yaml even for a named PPO
+    goal. Applying those HPs would put buffer_size on a PPO plan. A recipe
+    without an `algorithm` field still applies (Snake PPO yaml).
+    """
+    recipe = _load_recipe_for_env(env_id, algorithm) or {}
+    recipe_hp = recipe.get("hyperparameters") or {}
+    if not isinstance(recipe_hp, dict) or not recipe_hp:
+        return None
+    recipe_algo = canonicalize_algorithm(recipe.get("algorithm") or "")
+    plan_algo = canonicalize_algorithm(algorithm) if algorithm else ""
+    if recipe_algo and plan_algo and recipe_algo != plan_algo:
+        return None
+    return dict(recipe_hp)
+
+
+def _strip_foreign_hp_keys(plan_hp: dict, algorithm: str) -> dict:
+    """Drop constructor keys that belong to another SB3 algo; keep pivots.
+
+    Real incident: Lead Agent PPO prior (`n_steps`, `n_epochs`) survived on a
+    DQN Seaquest plan. Stripping those must not also discard a later DQN pivot
+    such as `exploration_fraction=0.4` or `learning_rate=0.0005`.
+    """
+    canon = (canonicalize_algorithm(algorithm) or algorithm or "").upper()
+    own = _VALID_ALGO_KEYS.get(canon, set())
+    if not own:
+        return dict(plan_hp or {})
+    foreign: set = set()
+    for name, keys in _VALID_ALGO_KEYS.items():
+        if name == canon:
+            continue
+        foreign |= keys
+    foreign -= own
+    return {k: v for k, v in (plan_hp or {}).items() if k not in foreign}
+
+
 def recipe_metric_ceiling(env_id: str, algorithm: str = "") -> dict:
     """Return the recipe's declared `metric_ceiling` map ({metric_name: value}),
     or {} if the recipe doesn't declare one. This is the empirically-observed
@@ -1717,7 +1755,9 @@ def _resolve_hyperparams(
             # rule with the value it depends on.
             hp["no_adapter"] = False
         return hp
-    hp = dict(plan_hp)
+    matching_hp = _recipe_hyperparameters_for(env_id, algorithm)
+    recipe_hp = matching_hp if matching_hp is not None else {}
+    hp = _strip_foreign_hp_keys(plan_hp, algorithm)
     for k, v in recipe_hp.items():
         hp.setdefault(k, v)
     # If plan provided a placeholder for base_model (e.g. "Ensemble" or "Ensemble model")
