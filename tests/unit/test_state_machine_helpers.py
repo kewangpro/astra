@@ -325,6 +325,142 @@ def test_algo_locked_ppo_named():
     assert _locked("Train PPO on CartPole-v1", "PPO")
 
 
+def test_algo_locked_sb3_ppo_alias_matches_ppo_in_goal():
+    """'SB3 PPO' is PPO — a goal that names PPO must stay locked."""
+    assert _locked("Train a Snake-v0 PPO agent", "SB3 PPO")
+
+
+def test_algo_unlocked_untitled_rl_agent():
+    assert not _locked("Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score", "PPO")
+    assert not _locked("Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score", "SB3 PPO")
+
+
+# ── _named_algorithm_in_goal / _seed_plan_algorithm ──────────────────────────
+
+_named = LoopStateMachine._named_algorithm_in_goal
+_seed = LoopStateMachine._seed_plan_algorithm
+
+
+def test_named_algo_untitled_rl_agent_is_none():
+    assert _named("Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score") is None
+
+
+def test_named_algo_dqn_in_title():
+    assert _named("Train a MinAtar-Seaquest-v0 DQN agent to achieve 100 score") == "DQN"
+
+
+def test_named_algo_ppo_beats_recipe():
+    assert _named("Train a MinAtar-Seaquest-v0 PPO agent to achieve 50 score") == "PPO"
+
+
+def test_seed_unnamed_seaquest_uses_recipe_dqn():
+    """Real incident: untitled Seaquest plans defaulted to SB3 PPO."""
+    plan = {
+        "task_type": "rl",
+        "algorithm": "SB3 PPO",
+        "env_id": "MinAtar-Seaquest-v0",
+        "hyperparameters": {},
+    }
+    out = _seed(plan, "Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score")
+    assert out["algorithm"] == "DQN"
+
+
+def test_seed_named_ppo_seaquest_keeps_ppo():
+    plan = {
+        "task_type": "rl",
+        "algorithm": "DQN",
+        "env_id": "MinAtar-Seaquest-v0",
+        "hyperparameters": {},
+    }
+    out = _seed(plan, "Train a MinAtar-Seaquest-v0 PPO agent to achieve 50 score")
+    assert out["algorithm"] == "PPO"
+
+
+def test_seed_non_rl_only_canonicalizes():
+    plan = {"task_type": "dpo", "algorithm": "DPO", "hyperparameters": {}}
+    out = _seed(plan, "DPO preference tuning")
+    assert out["algorithm"] == "DPO"
+
+
+# ── _resolve_pivot_algorithm ─────────────────────────────────────────────────
+
+_resolve_algo = LoopStateMachine._resolve_pivot_algorithm
+
+
+def test_resolve_sb3_ppo_to_ppo_is_not_a_switch():
+    algo, changed = _resolve_algo(
+        goal="Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score",
+        current_algorithm="SB3 PPO",
+        proposed_algorithm="PPO",
+        escalation=0,
+        env_id="MinAtar-Seaquest-v0",
+    )
+    assert algo == "PPO"
+    assert changed is False
+
+
+def test_resolve_forces_dqn_on_unnamed_seaquest_level_two_noop():
+    """Level 2 'switch' that only renames SB3 PPO → PPO must become DQN."""
+    algo, changed = _resolve_algo(
+        goal="Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score",
+        current_algorithm="SB3 PPO",
+        proposed_algorithm="PPO",
+        escalation=2,
+        env_id="MinAtar-Seaquest-v0",
+    )
+    assert changed is True
+    assert algo == "DQN"
+
+
+def test_resolve_does_not_force_when_goal_names_ppo():
+    algo, changed = _resolve_algo(
+        goal="Train a MinAtar-Seaquest-v0 PPO agent to achieve 50 score",
+        current_algorithm="PPO",
+        proposed_algorithm="DQN",
+        escalation=2,
+        env_id="MinAtar-Seaquest-v0",
+    )
+    assert changed is False
+    assert algo == "PPO"
+
+
+def test_resolve_does_not_force_again_after_a_real_switch():
+    algo, changed = _resolve_algo(
+        goal="Train a MinAtar-Seaquest-v0 RL agent",
+        current_algorithm="DQN",
+        proposed_algorithm="DQN",
+        escalation=3,
+        tried_algorithms=["PPO"],
+        env_id="MinAtar-Seaquest-v0",
+    )
+    assert changed is False
+    assert algo == "DQN"
+
+
+def test_resolve_accepts_a_real_proposed_switch():
+    algo, changed = _resolve_algo(
+        goal="Train a MinAtar-Seaquest-v0 RL agent",
+        current_algorithm="PPO",
+        proposed_algorithm="A2C",
+        escalation=2,
+        env_id="MinAtar-Seaquest-v0",
+    )
+    assert changed is True
+    assert algo == "A2C"
+
+
+def test_pick_switch_algorithm_prefers_recipe():
+    assert LoopStateMachine._pick_switch_algorithm(
+        "PPO", [], "MinAtar-Seaquest-v0"
+    ) == "DQN"
+
+
+def test_pick_switch_algorithm_skips_tried():
+    assert LoopStateMachine._pick_switch_algorithm(
+        "DQN", ["PPO"], "MinAtar-Seaquest-v0"
+    ) == "A2C"
+
+
 # ── _should_force_actor_critic ────────────────────────────────────────────────
 # Real incident: this override was previously unconditional — every Tetris-v0
 # mission ever trained the custom Actor-Critic model regardless of what

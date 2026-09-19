@@ -7,7 +7,7 @@ import re
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from backend.agent.code_generator import CodeGenerator
+from backend.agent.code_generator import CodeGenerator, canonicalize_algorithm
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -2113,8 +2113,20 @@ def test_valid_algo_keys_case_insensitive():
     assert CodeGenerator.valid_algo_keys("dqn") == CodeGenerator.valid_algo_keys("DQN")
 
 
+def test_valid_algo_keys_sb3_ppo_alias():
+    assert CodeGenerator.valid_algo_keys("SB3 PPO") == CodeGenerator.valid_algo_keys("PPO")
+
+
 def test_valid_algo_keys_unknown_returns_empty():
     assert CodeGenerator.valid_algo_keys("UNKNOWN_ALGO") == set()
+
+
+def test_canonicalize_algorithm_aliases():
+    assert canonicalize_algorithm("SB3 PPO") == "PPO"
+    assert canonicalize_algorithm("ppo") == "PPO"
+    assert canonicalize_algorithm("SB3 DQN") == "DQN"
+    assert canonicalize_algorithm("") == ""
+    assert canonicalize_algorithm("UNKNOWN_ALGO") == "UNKNOWN_ALGO"
 
 
 # ── distill cold start ───────────────────────────────────────────────────────

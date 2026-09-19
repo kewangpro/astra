@@ -23,7 +23,12 @@ from backend.database import AsyncSessionLocal
 from backend.models.mission import Mission, MissionStatus
 from backend.models.approval import ApprovalGate, ApprovalStatus, GateType
 from backend.agent.lead_agent import LeadAgent
-from backend.agent.code_generator import CodeGenerator, finetune_checkpoint_dir
+from backend.agent.code_generator import (
+    CodeGenerator,
+    canonicalize_algorithm,
+    finetune_checkpoint_dir,
+    _load_recipe_for_env,
+)
 from backend.agent.error_analyzer import ErrorAnalyzer
 from backend.agent.model_manager import ModelManager
 from backend.sandbox.manager import SandboxManager, _FINETUNE_REMOTE_TASK_TYPES
@@ -514,7 +519,6 @@ class LoopStateMachine:
                     await self._save_plan(mission_id, plan)
                     did_replan = False
                 elif mission.task_type == "post-training":
-                    from backend.agent.code_generator import _load_recipe_for_env
                     rcp = _load_recipe_for_env("post-training")
                     stages = rcp.get("stages", [])
                     plan = {
@@ -538,6 +542,7 @@ class LoopStateMachine:
                     plan = await self._agent.plan(
                         mission.goal, mission.task_type, mission.target_metric
                     )
+                    plan = self._seed_plan_algorithm(plan, mission.goal)
                     if mission.current_plan and "recipe" in mission.current_plan:
                         plan["recipe"] = mission.current_plan["recipe"]
                     if mission.current_plan and "stages" in mission.current_plan:
@@ -601,6 +606,7 @@ class LoopStateMachine:
                             value=f"score={critique.overall_score:.1f} revision {rev}/{CRITIC_MAX_REVISIONS}",
                         )
                         plan = await self._agent.revise_plan(plan, critique.feedback)
+                        plan = self._seed_plan_algorithm(plan, mission.goal)
                         if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
                             plan["task_type"] = mission.task_type
                         if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
@@ -644,6 +650,11 @@ class LoopStateMachine:
                     )
                     if _lookahead_tt:
                         plan["trainer_type"] = _lookahead_tt
+
+                if plan.get("algorithm"):
+                    _canon = canonicalize_algorithm(plan["algorithm"])
+                    if _canon:
+                        plan["algorithm"] = _canon
 
                 if did_replan:
                     plan = self._clamp_fresh_plan(plan)
@@ -1372,7 +1383,10 @@ class LoopStateMachine:
                 pivot_reason = None
                 if not _pivot_reverted and pivot_engine.needs_pivot():
                     escalation = pivot_engine.escalation_level()
-                    current_algo = plan.get("algorithm", "PPO")
+                    current_algo = (
+                        canonicalize_algorithm(plan.get("algorithm", "PPO")) or plan.get("algorithm", "PPO")
+                    )
+                    plan["algorithm"] = current_algo
                     # Detect if the user's goal explicitly names an algorithm.
                     # If so, never switch algorithms — remap level 2 to reward shaping.
                     algo_locked = self._is_algorithm_locked(mission.goal, current_algo)
@@ -1470,16 +1484,28 @@ class LoopStateMachine:
                         if _hp_changed(k, v)
                     }
                     # Never switch algorithms when the user explicitly named one in the goal.
-                    proposed_algo = pivot.get("algorithm")
-                    algo_changed = bool(
-                        proposed_algo
-                        and proposed_algo != current_algo
-                        and not algo_locked
+                    # Unnamed goals: a "switch" to an alias of the current algo (SB3 PPO → PPO)
+                    # is not a switch — force a real different trainer once at level 2+.
+                    proposed_algo, algo_changed = self._resolve_pivot_algorithm(
+                        goal=mission.goal,
+                        current_algorithm=current_algo,
+                        proposed_algorithm=pivot.get("algorithm"),
+                        escalation=escalation,
+                        tried_algorithms=plan.get("all_algos_tried") or [],
+                        env_id=plan.get("env_id") or "",
+                        task_type=plan.get("task_type", "rl"),
+                        trainer_type=plan.get("trainer_type") or "",
                     )
-                    if algo_locked and proposed_algo and proposed_algo != current_algo:
+                    if algo_changed:
+                        pivot["algorithm"] = proposed_algo
+                    elif (
+                        algo_locked
+                        and pivot.get("algorithm")
+                        and canonicalize_algorithm(pivot.get("algorithm")) != current_algo
+                    ):
                         logger.info(
                             "LoopStateMachine: ignoring algo switch %s→%s — algorithm locked by goal",
-                            current_algo, proposed_algo,
+                            current_algo, pivot.get("algorithm"),
                         )
                     _proposed_pky = self._clamp_net_arch(pivot.get("policy_kwargs"))
                     _current_pky = plan.get("hyperparameters", {}).get("policy_kwargs")
@@ -1594,6 +1620,10 @@ class LoopStateMachine:
                                 "LoopStateMachine: algorithm switch %s → %s",
                                 current_algo, pivot["algorithm"],
                             )
+                            _tried_algos = list(plan.get("all_algos_tried") or [])
+                            if current_algo and current_algo not in _tried_algos:
+                                _tried_algos.append(current_algo)
+                            plan["all_algos_tried"] = _tried_algos
                             plan["algorithm"] = pivot["algorithm"]
                             plan["hyperparameters"] = pivot.get("adjustments", {})
                             # Reset best_score so the new algorithm can save its own checkpoint
@@ -1966,16 +1996,155 @@ class LoopStateMachine:
             )
             return result.scalar_one_or_none()
 
+    # Whole-word patterns for algorithms the user can name in a goal.
+    # Longer/more-specific labels first so LOOKAHEAD_DQN does not also match DQN.
+    _NAMED_ALGO_PATTERNS: list = [
+        ("LOOKAHEAD_DQN", r"\bLOOKAHEAD[_\s-]?DQN\b"),
+        ("LOOKAHEAD_PPO", r"\bLOOKAHEAD[_\s-]?PPO\b"),
+        ("LOOKAHEAD_A2C", r"\bLOOKAHEAD[_\s-]?A2C\b"),
+        ("Actor-Critic", r"\bactor[_\s-]?critic\b"),
+        ("PPO", r"\b(?:SB3\s+)?PPO\b"),
+        ("DQN", r"\b(?:SB3\s+)?DQN\b"),
+        ("A2C", r"\b(?:SB3\s+)?A2C\b"),
+        ("SAC", r"\bSAC\b"),
+        ("TD3", r"\bTD3\b"),
+    ]
+
+    _DISCRETE_SWITCH_ALGOS = ("DQN", "PPO", "A2C")
+    _CONTINUOUS_SWITCH_ALGOS = ("SAC", "TD3")
+
     @staticmethod
     def _is_algorithm_locked(goal: str, current_algorithm: str) -> bool:
         """Return True if the goal explicitly names the current algorithm.
 
         When a user writes "Train a Snake-v0 DQN agent …", switching to PPO
-        would violate their intent. We detect this by checking whether the
-        algorithm name appears as a word in the goal string (case-insensitive).
+        would violate their intent. Aliases ("SB3 PPO") collapse to the same
+        trainer as the canonical name so a PPO-titled mission stays locked.
         """
-        import re
-        return bool(re.search(rf"\b{re.escape(current_algorithm)}\b", goal, re.IGNORECASE))
+        named = LoopStateMachine._named_algorithm_in_goal(goal)
+        if not named:
+            return False
+        current = canonicalize_algorithm(current_algorithm) or current_algorithm
+        return bool(current) and named == current
+
+    @classmethod
+    def _named_algorithm_in_goal(cls, goal: str) -> Optional[str]:
+        """Return the canonical algorithm the goal names, or None if unnamed."""
+        if not goal:
+            return None
+        for canon, pattern in cls._NAMED_ALGO_PATTERNS:
+            if re.search(pattern, goal, re.IGNORECASE):
+                return canon
+        return None
+
+    @classmethod
+    def _seed_plan_algorithm(cls, plan: dict, goal: str) -> dict:
+        """On a fresh plan: honor a named algo; otherwise take the env recipe.
+
+        Real incident: untitled Seaquest missions ("… RL agent …") let the
+        Lead Agent default to "SB3 PPO" even though minatar_seaquest_dqn_v1
+        is DQN. Unnamed goals should start from the recipe, not the PPO prior
+        in the planning prompt.
+        """
+        if (plan.get("task_type") or "rl") != "rl":
+            if plan.get("algorithm"):
+                canon = canonicalize_algorithm(plan["algorithm"])
+                if canon:
+                    plan["algorithm"] = canon
+            return plan
+        named = cls._named_algorithm_in_goal(goal)
+        if named:
+            plan["algorithm"] = named
+            return plan
+        env_id = plan.get("env_id") or ""
+        recipe_algo = canonicalize_algorithm(
+            (_load_recipe_for_env(env_id) or {}).get("algorithm") or ""
+        )
+        if recipe_algo:
+            plan["algorithm"] = recipe_algo
+        elif plan.get("algorithm"):
+            canon = canonicalize_algorithm(plan["algorithm"])
+            if canon:
+                plan["algorithm"] = canon
+        return plan
+
+    @classmethod
+    def _pick_switch_algorithm(
+        cls,
+        current_algorithm: str,
+        tried_algorithms: list,
+        env_id: str = "",
+    ) -> Optional[str]:
+        """First discrete (or continuous) SB3 algo not yet tried this mission."""
+        current = canonicalize_algorithm(current_algorithm) or current_algorithm
+        tried = {canonicalize_algorithm(a) or a for a in tried_algorithms}
+        tried.add(current)
+        recipe_algo = canonicalize_algorithm(
+            (_load_recipe_for_env(env_id) or {}).get("algorithm") or ""
+        )
+        if current in cls._CONTINUOUS_SWITCH_ALGOS:
+            candidates = list(cls._CONTINUOUS_SWITCH_ALGOS)
+        else:
+            candidates = list(cls._DISCRETE_SWITCH_ALGOS)
+        ordered: list[str] = []
+        if recipe_algo in candidates and recipe_algo != current:
+            ordered.append(recipe_algo)
+        for algo in candidates:
+            if algo not in ordered:
+                ordered.append(algo)
+        for algo in ordered:
+            if algo not in tried:
+                return algo
+        return None
+
+    @classmethod
+    def _resolve_pivot_algorithm(
+        cls,
+        *,
+        goal: str,
+        current_algorithm: str,
+        proposed_algorithm: Optional[str],
+        escalation: int,
+        tried_algorithms: Optional[list] = None,
+        env_id: str = "",
+        task_type: str = "rl",
+        trainer_type: str = "",
+    ) -> tuple[str, bool]:
+        """Return (algorithm to use, whether this is a real trainer switch).
+
+        Unlocked level-2+ pivots that propose the same trainer under an alias
+        (SB3 PPO → PPO) are rewritten to a different algorithm, once, matching
+        `_pick_untried_net_arch` for architectures.
+        """
+        current = canonicalize_algorithm(current_algorithm) or current_algorithm or "PPO"
+        proposed = canonicalize_algorithm(proposed_algorithm or "") if proposed_algorithm else ""
+        locked = cls._is_algorithm_locked(goal, current)
+        if locked:
+            return current, False
+        real_proposal = bool(proposed and proposed != current)
+        if real_proposal:
+            return proposed, True
+        vanilla_rl = (task_type or "rl") == "rl" and not trainer_type
+        tried = list(tried_algorithms or [])
+        distinct = {canonicalize_algorithm(a) or a for a in tried}
+        distinct.add(current)
+        # One forced switch per mission: at the algo-switch rung (level 2) or
+        # deep plateau (level 4) if we still have never left the starting algo.
+        should_force = (
+            vanilla_rl
+            and escalation >= 2
+            and len(distinct) < 2
+        )
+        if should_force:
+            forced = cls._pick_switch_algorithm(current, tried, env_id)
+            if forced:
+                logger.info(
+                    "LoopStateMachine: forcing algorithm switch %s → %s "
+                    "(escalation=%d, proposed=%r was not a different trainer)",
+                    current, forced, escalation, proposed_algorithm,
+                )
+                return forced, True
+        return current, False
 
     @classmethod
     def _should_force_actor_critic(cls, env_id: str, algorithm: str, trainer_type: str, goal: str) -> bool:
@@ -2397,7 +2566,7 @@ class LoopStateMachine:
         import numpy as np
 
         env_id = plan.get("env_id", "")
-        algorithm = plan.get("algorithm", "PPO").upper()
+        algorithm = canonicalize_algorithm(plan.get("algorithm", "PPO")) or "PPO"
         checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
 
         # Prefer actor_critic .pth; fall back to SB3 .zip
@@ -2495,7 +2664,7 @@ class LoopStateMachine:
 
             # SB3 path
             from stable_baselines3 import PPO, SAC, A2C, DQN, TD3
-            algo_cls = {"PPO": PPO, "SAC": SAC, "A2C": A2C, "DQN": DQN, "TD3": TD3}.get(algorithm, PPO)
+            algo_cls = {"PPO": PPO, "SAC": SAC, "A2C": A2C, "DQN": DQN, "TD3": TD3}.get(algorithm.upper(), PPO)
             env = gym.make(env_id, **_env_kwargs)
             model = algo_cls.load(checkpoint_path, env=env)
 

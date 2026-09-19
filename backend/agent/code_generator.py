@@ -1458,6 +1458,40 @@ def _resolve_env_kwargs(env_id: str, plan_env_kwargs: Optional[dict]) -> dict:
     return kw
 
 
+# Canonical SB3 / custom-trainer labels. The Lead Agent often emits "SB3 PPO"
+# which is the same trainer as "PPO"; treating them as distinct made level-2
+# "algorithm switches" no-ops (Seaquest missions bef66c1e / 7c567090).
+_ALGO_CANONICAL: dict[str, str] = {
+    "PPO": "PPO",
+    "SB3 PPO": "PPO",
+    "STABLE BASELINES3 PPO": "PPO",
+    "DQN": "DQN",
+    "SB3 DQN": "DQN",
+    "A2C": "A2C",
+    "SB3 A2C": "A2C",
+    "SAC": "SAC",
+    "TD3": "TD3",
+    "ACTOR CRITIC": "Actor-Critic",
+    "LOOKAHEAD DQN": "LOOKAHEAD_DQN",
+    "LOOKAHEAD PPO": "LOOKAHEAD_PPO",
+    "LOOKAHEAD A2C": "LOOKAHEAD_A2C",
+}
+
+
+def canonicalize_algorithm(name: str) -> str:
+    """Map LLM/UI algorithm labels to a single trainer name.
+
+    Empty/unknown strings are returned stripped (or empty) so callers can
+    distinguish "not set" from a real algo. Known aliases collapse to the
+    SB3 class name (or the custom-trainer label).
+    """
+    if not name or not str(name).strip():
+        return ""
+    raw = str(name).strip()
+    key = " ".join(raw.upper().replace("-", " ").replace("_", " ").split())
+    return _ALGO_CANONICAL.get(key, raw)
+
+
 # Valid constructor kwargs per SB3 algorithm — used to filter _hp before model(...)
 _VALID_ALGO_KEYS: dict[str, set] = {
     "PPO": {
@@ -1765,7 +1799,8 @@ class CodeGenerator:
     @staticmethod
     def valid_algo_keys(algorithm: str) -> set:
         """Return the set of valid SB3 constructor kwargs for an algorithm (empty = unknown)."""
-        return _VALID_ALGO_KEYS.get(algorithm.upper(), set())
+        canon = canonicalize_algorithm(algorithm)
+        return _VALID_ALGO_KEYS.get(canon.upper(), set()) if canon else set()
 
     async def generate_training_script(
         self,
@@ -1861,7 +1896,7 @@ class CodeGenerator:
                     code = _AGENT_GYM_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected MultiTurnAgentGym-v0 registration preamble")
                 # Inject curriculum loop if recipe defines phases
-                _algo = plan.get("algorithm", "PPO")
+                _algo = canonicalize_algorithm(plan.get("algorithm", "PPO")) or "PPO"
                 _recipe = _load_recipe_for_env(env_id, _algo)
                 _curriculum_phases = (_recipe.get("curriculum") or {}).get("phases")
                 if _curriculum_phases:
@@ -1886,7 +1921,7 @@ class CodeGenerator:
             os.makedirs(checkpoint_dir, exist_ok=True)
             _env_id = plan.get("env_id", "")
             train_cfg = {
-                "algorithm": plan.get("algorithm", "PPO"),
+                "algorithm": canonicalize_algorithm(plan.get("algorithm", "PPO")) or "PPO",
                 "env_id": _env_id,
                 "env_kwargs": _resolve_env_kwargs(_env_id, plan.get("env_kwargs")),
                 "trainer_type": plan.get("trainer_type", ""),
@@ -2012,7 +2047,8 @@ class CodeGenerator:
     ) -> str:
         effective_task_type = plan.get("active_task_type", "sft") if task_type == "post-training" else task_type
         recipe_key = plan.get("recipe") or (plan.get("env_id", "") if effective_task_type == "rl" else effective_task_type)
-        _plan_algo = plan.get("algorithm", "PPO" if effective_task_type == "rl" else "")
+        _raw_algo = plan.get("algorithm", "PPO" if effective_task_type == "rl" else "")
+        _plan_algo = canonicalize_algorithm(_raw_algo) or _raw_algo
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}), algorithm=_plan_algo,
             warm_start_adapter=warm_start_adapter,
@@ -2056,7 +2092,7 @@ class CodeGenerator:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
             else:
                 env_kwargs_str = ""
-            algorithm = plan.get("algorithm", "PPO")
+            algorithm = canonicalize_algorithm(plan.get("algorithm", "PPO")) or "PPO"
             recipe_trainer_type = _load_recipe_for_env(recipe_key, algorithm).get("trainer_type", "")
             trainer_type = plan.get("trainer_type", "") or recipe_trainer_type
             if trainer_type == "actor_critic":
@@ -2137,7 +2173,7 @@ class CodeGenerator:
                 lookahead_ctx.update({"n_steps": hp.get("n_steps", 5)})
                 return _LOOKAHEAD_A2C_CONTRACT.format(**lookahead_ctx)
             # Build algorithm-aware valid-keys filter for the model constructor block
-            algo_upper = algorithm.upper()
+            algo_upper = canonicalize_algorithm(algorithm).upper() or "PPO"
             valid_keys = _VALID_ALGO_KEYS.get(algo_upper, _VALID_ALGO_KEYS["PPO"])
             valid_keys_var = f"_VALID_{algo_upper}_KEYS"
             valid_keys_set = "{" + ", ".join(f'"{k}"' for k in sorted(valid_keys)) + "}"

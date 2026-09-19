@@ -76,6 +76,8 @@ Available environments:
     Use "MinAtar-Seaquest-v0" when the goal mentions Seaquest.
 Valid SB3 PPO hyperparameter keys: learning_rate, n_steps, batch_size, n_epochs, gamma,
 gae_lambda, clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
+Set "algorithm" to a canonical name (PPO, DQN, A2C, SAC, TD3) — never "SB3 PPO".
+If the goal does not name an algorithm, prefer the env's recipe algorithm (e.g. DQN for MinAtar-Seaquest-v0).
 Do NOT include env_id, dataset_path, entropy_coeff, actor_lr, or any non-SB3 key in hyperparameters."""
 
 _PIVOT_SYSTEM = """\
@@ -117,7 +119,8 @@ Escalation levels — follow the level provided in the user message (RL task typ
     IMPORTANT: if a "Best performing architecture" is listed below, reuse it — do NOT switch
     to a different architecture. Only deviate if the best arch is identical to the current one.
   Level 2 (stuck for many pivots): switch to a fundamentally different algorithm if the
-    current one is not working. Set "algorithm" to "PPO", "SAC", "A2C", or "DQN".
+    current one is not working. Set "algorithm" to "PPO", "SAC", "A2C", or "DQN" — never
+    "SB3 PPO"/"SB3 DQN" (those are the same trainers as PPO/DQN and do not count as a switch).
     For Snake-v0, PPO with [256, 256] net_arch is strongly recommended over DQN.
     Also update hyperparameters to suit the new algorithm.
   Level 3 (deeply stuck): reshape the reward function via "env_kwargs". For Snake-v0:
@@ -295,16 +298,18 @@ class LeadAgent:
                 0: "Level 0 — tune hyperparameters only, keep algorithm and architecture.",
                 1: "Level 1 — try a larger network architecture in addition to HP tuning.",
                 2: f"Level 2 — the current algorithm ({current_algorithm}) is not working. "
-                   "Consider switching to a different algorithm entirely (e.g. PPO if currently DQN).",
+                   "Switch to a different canonical algorithm (PPO, DQN, A2C, or SAC). "
+                   "'SB3 PPO' is the same trainer as PPO — that is NOT a switch.",
                 3: f"Level 3 — algorithm and architecture changes have not worked. "
                    "Reshape the reward function via env_kwargs. For Snake-v0, try disabling "
                    "distance shaping (distance_weight=0) and increasing food_reward.",
                 4: f"Level 4 — DEEP PLATEAU. Algorithm switches, architecture changes, and reward "
                    f"shaping have all failed to break through.{_tried_arch_desc} Strongly consider "
-                   f"switching algorithm if you haven't already, in addition to a novel architecture.",
+                   f"switching algorithm if you haven't already (a real different trainer — not "
+                   f"renaming SB3 PPO to PPO), in addition to a novel architecture.",
             }.get(escalation_level, "Level 0 — tune hyperparameters only.")
-        from backend.agent.code_generator import _VALID_ALGO_KEYS
-        _valid_keys = _VALID_ALGO_KEYS.get(current_algorithm.upper(), set())
+        from backend.agent.code_generator import CodeGenerator
+        _valid_keys = CodeGenerator.valid_algo_keys(current_algorithm)
         current_state_lines = [f"Current algorithm: {current_algorithm}"]
         if _valid_keys:
             current_state_lines.append(
