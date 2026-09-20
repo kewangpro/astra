@@ -34,6 +34,7 @@ from backend.agent.lead_agent import LeadAgent
 from backend.agent.code_generator import (
     CodeGenerator,
     canonicalize_algorithm,
+    default_sb3_hyperparameters,
     finetune_checkpoint_dir,
     _load_recipe_for_env,
     _recipe_hyperparameters_for,
@@ -466,6 +467,12 @@ class LoopStateMachine:
                     "LoopStateMachine: replayed %d goal metric history entries for mission=%s",
                     len(history_entries), mission_id,
                 )
+        _plan_for_origin = mission.current_plan if isinstance(mission.current_plan, dict) else None
+        if _plan_for_origin and _plan_for_origin.get("_search_origin_iteration") is not None:
+            try:
+                pivot_engine.restore_search_origin(int(_plan_for_origin["_search_origin_iteration"]))
+            except (TypeError, ValueError):
+                pass
 
         manifest = self._load_or_create_manifest(mission_id, mission)
         mission_dir = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id))
@@ -1159,7 +1166,8 @@ class LoopStateMachine:
                     )
                     _pre_hps = plan.pop("_pre_pivot_hps", None)
                     _pre_score = plan.pop("_pre_pivot_best_score", None)
-                    _best_iter = pivot_engine.best_metric_iteration()
+                    _pre_algo = plan.pop("_pre_pivot_algorithm", None)
+                    _best_iter = pivot_engine.search_best_iteration()
                     # Ignore the synthetic seed iteration (-1) used on restart when
                     # best_metric_iteration was not persisted — there is no checkpoint for it.
                     if _best_iter is not None and _best_iter < 0:
@@ -1191,6 +1199,15 @@ class LoopStateMachine:
                             logger.warning("LoopStateMachine: could not restore best_score.txt: %s", _e)
                     if _pre_hps is not None:
                         plan["hyperparameters"] = _pre_hps
+                    if _pre_algo:
+                        _canon_pre = canonicalize_algorithm(_pre_algo) or _pre_algo
+                        _canon_now = canonicalize_algorithm(plan.get("algorithm") or "") or plan.get("algorithm")
+                        if _canon_pre != _canon_now:
+                            # Full trainer rollback — never leave PPO HPs off a DQN zip.
+                            plan["algorithm"] = _canon_pre
+                            self._strip_plan_foreign_hyperparameters(plan)
+                    else:
+                        self._strip_plan_foreign_hyperparameters(plan)
                     pivot_engine.revert_escalation()
                     await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
                     await self._save_pivot_pre_best(mission_id, None)
@@ -1610,11 +1627,17 @@ class LoopStateMachine:
                         # Snapshot before mutating so display shows old→new correctly
                         old_hps = {k: plan["hyperparameters"].get(k) for k in real_adjustments}
                         # Before any arch/algo change: arm regression detector
-                        if arch_changed or algo_changed:
+                        # Before any arch change: arm regression against this trainer's
+                        # best. Do not arm on an algorithm switch — the new trainer's
+                        # first scores will lose to the old peak (8bb85cc5).
+                        if arch_changed and not algo_changed:
                             plan["_pre_pivot_hps"] = dict(plan.get("hyperparameters", {}))
-                            plan["_pre_pivot_best_score"] = pivot_engine.best_metric_value()
+                            plan["_pre_pivot_best_score"] = pivot_engine.search_best_value()
+                            plan["_pre_pivot_algorithm"] = current_algo
                             pivot_engine.record_arch_pivot_baseline()
                             await self._save_pivot_pre_best(mission_id, pivot_engine._pre_pivot_best)
+                        elif algo_changed:
+                            await self._save_pivot_pre_best(mission_id, None)
                         plan["hyperparameters"].update(real_adjustments)
                         if arch_changed:
                             # Track the outgoing arch so future pivots back to it are suppressed
@@ -2220,12 +2243,12 @@ class LoopStateMachine:
         tried = list(tried_algorithms or [])
         distinct = {canonicalize_algorithm(a) or a for a in tried}
         distinct.add(current)
-        # One forced switch per mission: at the algo-switch rung (level 2) or
-        # deep plateau (level 4) if we still have never left the starting algo.
-        should_force = (
-            vanilla_rl
-            and escalation >= 2
-            and len(distinct) < 2
+        # Level 2: one forced switch off the starting trainer (alias no-ops).
+        # Level 3+: force the next untried canonical trainer so a failed PPO
+        # run can still reach A2C (8bb85cc5: HUD said "switch" but algo stuck).
+        should_force = vanilla_rl and (
+            (escalation >= 2 and len(distinct) < 2)
+            or escalation >= 3
         )
         if should_force:
             forced = cls._pick_switch_algorithm(current, tried, env_id)
@@ -2319,14 +2342,29 @@ class LoopStateMachine:
             self._recipe_env_kwargs(env_id, new_algorithm), env_id,
         )
         self._apply_recipe_hyperparameters(plan)
+        recipe_hp = _recipe_hyperparameters_for(env_id, new_algorithm)
+        if recipe_hp is None:
+            # Seaquest (and other env-keyed DQN yamls) do not match PPO/A2C, so
+            # apply_recipe only strips keys and leaves a DQN-shaped plan. Seed
+            # SB3 constructor defaults instead (8bb85cc5: PPO + buffer_size).
+            defaults = default_sb3_hyperparameters(new_algorithm)
+            if defaults:
+                prev = dict(plan.get("hyperparameters") or {})
+                hps = dict(defaults)
+                if prev.get("total_timesteps") is not None:
+                    hps["total_timesteps"] = prev["total_timesteps"]
+                plan["hyperparameters"] = hps
         pivot_engine.restore_pivot_count(0)
+        pivot_engine.begin_algorithm_search()
+        plan["_search_origin_iteration"] = pivot_engine.search_origin_iteration()
         best = pivot_engine.best_metric_value()
         if best is not None:
             pivot_engine.restore_best_at_last_pivot(best)
         logger.info(
-            "LoopStateMachine: algo switch reset env_kwargs=%s hps=%s pivot_count=0",
+            "LoopStateMachine: algo switch reset env_kwargs=%s hps=%s pivot_count=0 origin=%s",
             plan["env_kwargs"],
             {k: plan.get("hyperparameters", {}).get(k) for k in ("learning_rate", "buffer_size", "n_steps")},
+            plan.get("_search_origin_iteration"),
         )
 
     @staticmethod

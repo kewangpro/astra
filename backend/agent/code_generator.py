@@ -140,7 +140,13 @@ The script must:
 3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
 
        _best_ckpt = "{checkpoint_dir}/best_model.zip"
-       if os.path.exists(_best_ckpt):
+       _algo_tag = "{checkpoint_dir}/best_model_algo.txt"
+       _ckpt_algo = ""
+       try:
+           _ckpt_algo = open(_algo_tag).read().strip()
+       except Exception:
+           _ckpt_algo = ""
+       if os.path.exists(_best_ckpt) and (not _ckpt_algo or _ckpt_algo == "{algorithm}"):
            try:
                _warm = {algorithm}.load(_best_ckpt, env=env)
                _warm_sd = _warm.policy.state_dict()
@@ -157,6 +163,11 @@ The script must:
                del _warm, _warm_sd, _model_sd, _matched
            except Exception as _e:
                logging.warning("Warm-start skipped (architecture mismatch or load error): %s", _e)
+       elif os.path.exists(_best_ckpt) and _ckpt_algo and _ckpt_algo != "{algorithm}":
+           logging.warning(
+               "Warm-start skipped: checkpoint algo %s != current %s",
+               _ckpt_algo, "{algorithm}",
+           )
 
    This resumes training from the best previously saved weights while keeping the new hyperparameters.
    If the checkpoint architecture differs (e.g. after a net_arch pivot), only the tensors whose
@@ -1538,6 +1549,56 @@ _VALID_ALGO_KEYS: dict[str, set] = {
     },
 }
 
+# Constructor defaults when switching to an algorithm that has no matching env
+# recipe (Seaquest yaml is DQN-only). Used by algo-switch search reset, not by
+# named-goal seeding (that still strips then keeps plan HPs).
+_DEFAULT_SB3_HYPERPARAMETERS: dict[str, dict] = {
+    "PPO": {
+        "learning_rate": 0.0003,
+        "n_steps": 2048,
+        "batch_size": 64,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+        "ent_coef": 0.0,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "total_timesteps": 300000,
+    },
+    "A2C": {
+        "learning_rate": 0.0007,
+        "n_steps": 5,
+        "gamma": 0.99,
+        "gae_lambda": 1.0,
+        "ent_coef": 0.0,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "total_timesteps": 300000,
+    },
+    "DQN": {
+        "learning_rate": 0.0001,
+        "buffer_size": 100000,
+        "learning_starts": 1000,
+        "batch_size": 32,
+        "gamma": 0.99,
+        "train_freq": 4,
+        "gradient_steps": 1,
+        "target_update_interval": 1000,
+        "exploration_fraction": 0.15,
+        "exploration_initial_eps": 1.0,
+        "exploration_final_eps": 0.02,
+        "total_timesteps": 300000,
+    },
+}
+
+
+def default_sb3_hyperparameters(algorithm: str) -> dict:
+    """SB3 constructor defaults for an algorithm with no matching env recipe."""
+    canon = (canonicalize_algorithm(algorithm) or algorithm or "").upper()
+    raw = _DEFAULT_SB3_HYPERPARAMETERS.get(canon)
+    return dict(raw) if raw else {}
+
 # Canonical recipe file per env_id or task_type — hyperparameters and env_kwargs
 # from these files are used as defaults when the LLM plan omits a value.
 _ENV_RECIPE: dict = {
@@ -1758,7 +1819,8 @@ def _resolve_hyperparams(
     matching_hp = _recipe_hyperparameters_for(env_id, algorithm)
     recipe_hp = matching_hp if matching_hp is not None else {}
     hp = _strip_foreign_hp_keys(plan_hp, algorithm)
-    for k, v in recipe_hp.items():
+    fill = recipe_hp if matching_hp is not None else default_sb3_hyperparameters(algorithm)
+    for k, v in fill.items():
         hp.setdefault(k, v)
     # If plan provided a placeholder for base_model (e.g. "Ensemble" or "Ensemble model")
     # that is neither an HF repo ID with a slash nor an existing local path, fall back to recipe's base_model

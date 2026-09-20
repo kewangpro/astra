@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 67 complete  
+**Status:** Phase 72 complete  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -41,7 +41,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
   - **MinAtar Suite** (`MinAtar-Breakout-v0`, `MinAtar-SpaceInvaders-v0`, `MinAtar-Asteroids-v0`, `MinAtar-Freeway-v0`, `MinAtar-Seaquest-v0`): `brick_reward`, `alien_kill_reward`, `asteroid_hit_reward`, `cross_reward`, `enemy_kill_reward`, `diver_rescue_reward`, `death_penalty`.
   At escalation level 3 the pivot agent proposes `env_kwargs` overrides from the **current** env's allowlist (`env_reward_guidance(env_id)` — Seaquest uses diver/oxygen keys, not Snake `food_reward`). These flow through pivot → plan → code generator → `gym.make()` automatically.
 - **Algorithm-locked escalation**: when a mission goal explicitly names an algorithm (e.g. "Train a Snake-v0 DQN agent", including Phase 68 canonical recipe-dispatch goals), ASTRA never switches away from that trainer. Escalation level 2 remaps to reward shaping instead. Aliases count as the same trainer (`SB3 PPO` is PPO), so a PPO-titled run cannot slip the lock by renaming.
-  - **Unnamed RL missions**: a goal that only says "RL agent" (no PPO/DQN/A2C/…) is unlocked. The first plan is seeded from the env recipe's `algorithm` and matching hyperparameters when present (Seaquest → DQN at `lr=2.5e-4`, not the PPO prior). At escalation level 2+, a pivot that does not actually change trainer (`SB3 PPO` → `PPO`) is rewritten to a different discrete SB3 algorithm, once, and that switch resets leftover `env_kwargs`, hyperparameters, plus the stall clock. Custom Tetris/2048 trainers are left alone.
+  - **Unnamed RL missions**: a goal that only says "RL agent" (no PPO/DQN/A2C/…) is unlocked. The first plan is seeded from the env recipe's `algorithm` and matching hyperparameters when present (Seaquest → DQN at `lr=2.5e-4`, not the PPO prior). At escalation level 2, a pivot that does not actually change trainer (`SB3 PPO` → `PPO`) is rewritten to a different discrete SB3 algorithm **once**; at level 3+ the next untried canonical trainer is forced (PPO → A2C). A real switch resets leftover `env_kwargs`, seeds matching-recipe or SB3-default HPs, restarts the stall clock, and does **not** revert to the previous algorithm's best checkpoint. Custom Tetris/2048 trainers are left alone.
 - **Escalation persistence**: the consecutive-failed-pivot counter (`pivot_escalation_count`) is saved to the DB after every pivot and restored on server restart, so long-running missions correctly escalate even across process restarts or crashes.
 - **Convergence stop**: a mission that has maxed out escalation and still not set a new best for many evaluated iterations is recognized as converged below target — it is stopped and marked `stalled` (terminal) with `error_log` `converged_below_target:…` and its best checkpoint kept. Resume is not offered; start a new mission. User cancel, gate reject, max retries, and a `PATCH` that asks for `stalled` without that prefix are `failed` with a reason (Resume is still available). Process shutdown without a user-cancel flag stays `pending` so the mission can resume. Targets that exceed a recipe's declared empirical ceiling are rejected when the mission is created.
 

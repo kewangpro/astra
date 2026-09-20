@@ -406,6 +406,34 @@ def test_revert_escalation_clears_regression_state():
     assert not e.should_revert_pivot()
 
 
+def test_algo_switch_search_does_not_revert_against_old_peak():
+    """DQN 53.5 then PPO 6s must not look like an arch regression."""
+    e = PivotEngine({"score": 100.0})
+    e.record(11, {"score": 53.5})
+    e.begin_algorithm_search()
+    e.record_arch_pivot_baseline()
+    e.record(30, {"score": 6.0})
+    e.record(31, {"score": 7.5})
+    e.record(32, {"score": 13.0})
+    assert e.search_best_value() == 13.0
+    assert e.search_best_iteration() == 32
+    assert e.best_metric_value() == 53.5
+    assert not e.should_revert_pivot()
+
+
+def test_arch_revert_uses_search_best_not_all_time():
+    e = PivotEngine({"score": 100.0})
+    e.record(11, {"score": 53.5})
+    e.begin_algorithm_search()
+    e.record(30, {"score": 27.5})
+    e.record_arch_pivot_baseline()
+    e.record(31, {"score": 4.0})
+    e.record(32, {"score": 5.0})
+    e.record(33, {"score": 6.0})
+    assert e.should_revert_pivot()
+    assert e.search_best_iteration() == 30
+
+
 # ── best_policy_kwargs tracking ───────────────────────────────────────────────
 
 def test_best_policy_kwargs_none_initially():

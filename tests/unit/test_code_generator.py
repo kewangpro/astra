@@ -358,6 +358,8 @@ def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     # that actually changed shape. Warm-start must now copy shape-matching
     # tensors individually so unrelated layers survive an arch pivot.
     assert "v.shape == _model_sd[k].shape" in prompt
+    assert "best_model_algo.txt" in prompt
+    assert "_ckpt_algo" in prompt
 
 
 def test_build_user_prompt_ml_hardcodes_checkpoint_path(tmp_path, monkeypatch):
@@ -1274,6 +1276,24 @@ def test_resolve_hyperparams_named_ppo_seaquest_skips_dqn_recipe():
     assert result["learning_rate"] == 0.0003
     assert result["n_steps"] == 2048
     assert "buffer_size" not in result
+
+
+def test_resolve_hyperparams_ppo_seaquest_fills_defaults_when_plan_is_dqn_shaped():
+    from backend.agent.code_generator import _resolve_hyperparams
+    result = _resolve_hyperparams(
+        "MinAtar-Seaquest-v0",
+        {
+            "learning_rate": 0.001,
+            "buffer_size": 100000,
+            "exploration_fraction": 0.4,
+            "total_timesteps": 300000,
+        },
+        algorithm="PPO",
+    )
+    assert result["learning_rate"] == 0.001
+    assert result["n_steps"] == 2048
+    assert "buffer_size" not in result
+    assert "exploration_fraction" not in result
 
 
 def test_build_user_prompt_snake_uses_recipe_env_kwargs(tmp_path, monkeypatch):

@@ -449,17 +449,31 @@ def test_resolve_does_not_force_when_goal_names_ppo():
     assert algo == "PPO"
 
 
-def test_resolve_does_not_force_again_after_a_real_switch():
+def test_resolve_does_not_force_again_at_level_two_after_a_real_switch():
     algo, changed = _resolve_algo(
         goal="Train a MinAtar-Seaquest-v0 RL agent",
         current_algorithm="DQN",
         proposed_algorithm="DQN",
-        escalation=3,
+        escalation=2,
         tried_algorithms=["PPO"],
         env_id="MinAtar-Seaquest-v0",
     )
     assert changed is False
     assert algo == "DQN"
+
+
+def test_resolve_forces_next_untried_at_level_three():
+    """After DQN→PPO, level-3 'switch' no-ops must still pick A2C."""
+    algo, changed = _resolve_algo(
+        goal="Train a MinAtar-Seaquest-v0 RL agent",
+        current_algorithm="PPO",
+        proposed_algorithm="PPO",
+        escalation=3,
+        tried_algorithms=["DQN"],
+        env_id="MinAtar-Seaquest-v0",
+    )
+    assert changed is True
+    assert algo == "A2C"
 
 
 def test_resolve_accepts_a_real_proposed_switch():
@@ -2142,6 +2156,42 @@ def test_reset_search_after_algorithm_switch_clears_env_kwargs_and_pivot_count()
     assert "n_steps" not in plan["hyperparameters"]
     assert engine.pivot_count == 0
     assert engine._best_at_last_pivot == 21.5
+    assert engine.search_origin_iteration() == 7
+    assert plan["_search_origin_iteration"] == 7
+
+
+def test_reset_search_after_switch_to_ppo_seeds_n_steps_not_buffer():
+    """Seaquest recipe is DQN-only; PPO switch must not keep replay-buffer HPs."""
+    from backend.loop.pivots import PivotEngine
+
+    plan = {
+        "env_id": "MinAtar-Seaquest-v0",
+        "algorithm": "DQN",
+        "task_type": "rl",
+        "env_kwargs": {"death_penalty": -5.0},
+        "hyperparameters": {
+            "learning_rate": 0.0005,
+            "buffer_size": 100000,
+            "exploration_fraction": 0.4,
+            "total_timesteps": 300000,
+        },
+    }
+    engine = PivotEngine({"score": 100.0})
+    engine.restore_history([{"iteration": 11, "score": 53.5}])
+    engine.restore_pivot_count(6)
+    sm = LoopStateMachine.__new__(LoopStateMachine)
+    sm._reset_search_after_algorithm_switch(plan, engine, "PPO")
+
+    assert plan["algorithm"] == "PPO"
+    assert plan["env_kwargs"] == {}
+    assert plan["hyperparameters"]["n_steps"] == 2048
+    assert plan["hyperparameters"]["learning_rate"] == 0.0003
+    assert plan["hyperparameters"]["total_timesteps"] == 300000
+    assert "buffer_size" not in plan["hyperparameters"]
+    assert "exploration_fraction" not in plan["hyperparameters"]
+    assert engine.pivot_count == 0
+    assert engine._pivot_applied is False
+    assert engine.search_best_value() is None
 
 
 def test_strip_plan_foreign_hps_keeps_dqn_pivots():

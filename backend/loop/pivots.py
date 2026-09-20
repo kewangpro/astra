@@ -80,6 +80,10 @@ class PivotEngine:
         self._post_pivot_best: Optional[float] = None
         self._iters_since_pivot: int = 0
         self._best_policy_kwargs: Optional[dict] = None
+        # Metrics before this iteration belong to a previous trainer. Arch
+        # regression / checkpoint restore must not use the old algorithm's peak
+        # (live: PPO vs DQN 53.5 → revert to iter 11 forever).
+        self._search_origin_iteration: Optional[int] = None
 
     def record(self, iteration: int, metrics: dict, policy_kwargs: Optional[dict] = None) -> None:
         self._history.append({"iteration": iteration, **metrics})
@@ -150,9 +154,53 @@ class PivotEngine:
                 self._history.append(entry)
                 existing_iters.add(entry.get("iteration"))
 
+    def begin_algorithm_search(self) -> None:
+        """Start a new trainer's search: ignore prior-algo scores for revert.
+
+        Real incident: 8bb85cc5 switched DQN→PPO then `should_revert_pivot`
+        compared PPO evals to the DQN all-time best and restored
+        `checkpoint_iter_11` on every plateau window.
+        """
+        last = -1
+        for h in self._history:
+            it = h.get("iteration")
+            if isinstance(it, int) and it > last:
+                last = it
+        self._search_origin_iteration = last + 1
+        self._pivot_applied = False
+        self._pre_pivot_best = None
+        self._post_pivot_best = None
+        self._iters_since_pivot = 0
+        logger.info(
+            "PivotEngine: algorithm search origin=%s (prior-algo metrics ignored for revert)",
+            self._search_origin_iteration,
+        )
+
+    def restore_search_origin(self, origin: Optional[int]) -> None:
+        """Seed search origin from the persisted plan after a restart."""
+        self._search_origin_iteration = origin
+
+    def search_origin_iteration(self) -> Optional[int]:
+        return self._search_origin_iteration
+
+    def search_best_value(self) -> Optional[float]:
+        entry = self._search_best_entry()
+        return entry[1] if entry else None
+
+    def search_best_iteration(self) -> Optional[int]:
+        """Iteration of the current-trainer best, else all-time best.
+
+        Used to pick which `checkpoint_iter_*` to restore on an arch revert.
+        """
+        entry = self._search_best_entry()
+        if entry is None:
+            return self.best_metric_iteration()
+        iteration = entry[0]
+        return None if iteration == -1 else iteration
+
     def record_arch_pivot_baseline(self) -> None:
-        """Call before applying an arch or algo pivot to arm regression detection."""
-        self._pre_pivot_best = self.best_metric_value()
+        """Arm regression detection against this trainer's best, not all-time."""
+        self._pre_pivot_best = self.search_best_value()
         self._post_pivot_best = None
         self._iters_since_pivot = 0
         self._pivot_applied = True
@@ -355,15 +403,25 @@ class PivotEngine:
 
     def _best_entry(self) -> Optional[tuple]:
         """Return (iteration, value) for the history entry with the highest metric (lowest for loss)."""
+        return self._best_entry_from(None)
+
+    def _search_best_entry(self) -> Optional[tuple]:
+        return self._best_entry_from(self._search_origin_iteration)
+
+    def _best_entry_from(self, min_iteration: Optional[int]) -> Optional[tuple]:
+        """Return (iteration, value) for the best metric, optionally after a cutoff."""
         best_val: Optional[float] = None
         best_iter: Optional[int] = None
         for h in self._history:
+            it = h.get("iteration")
+            if min_iteration is not None and (not isinstance(it, int) or it < min_iteration):
+                continue
             v = self._resolve_metric(self._metric_name, h)
             if v is not None:
                 is_better = (best_val is None) or ((v < best_val) if self._is_loss else (v > best_val))
                 if is_better:
                     best_val = v
-                    best_iter = h.get("iteration")
+                    best_iter = it
         return (best_iter, best_val) if best_val is not None else None
 
     def history_snapshot(self) -> list[dict]:
