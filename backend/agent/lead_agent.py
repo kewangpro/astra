@@ -159,7 +159,8 @@ _ENV_REWARD_GUIDANCE: dict[str, str] = {
         "Valid env_kwargs ONLY: max_steps, enemy_kill_reward, diver_pickup_reward, "
         "diver_rescue_reward, wave_clear_bonus, death_penalty, oxygen_max. "
         "Prefer death_penalty near -1.0 (recipe default); -5.0 teaches the agent to avoid dying "
-        "instead of rescuing divers. Do NOT propose food_reward, distance_weight, or survival_bonus."
+        "instead of rescuing divers. Empty surfacing (row 0, no divers) is terminal. "
+        "Do NOT propose food_reward, distance_weight, or survival_bonus."
     ),
     "MinAtar-Seaquest": (
         "Valid env_kwargs ONLY: max_steps, enemy_kill_reward, diver_pickup_reward, "

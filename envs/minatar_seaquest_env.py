@@ -11,10 +11,15 @@ class MinAtarSeaquestEnv(gym.Env):
     Gymnasium environment for MinAtar Seaquest (Young & Tian, 2019).
     Pure Python/NumPy implementation running at >50,000 steps/sec.
 
-    Grid: 10 rows x 10 cols.
-      Row 0: Surface water (oxygen refill & diver deposit)
-      Rows 1..8: Ocean depths (enemies, divers, torpedoes)
-      Row 9: Sea floor
+    Grid: 10 rows x 10 cols (Young & Tian 2019 seaquest.py).
+      Row 0: Surface (refill & deposit; oxygen does not drain)
+      Rows 1-8: Ocean depths (enemies & divers; max sub row is 8)
+      Row 9: Observation gauge strip (not a legal sub position)
+
+    Oxygen drains only while submerged. Returning to row 0 with zero
+    divers terminates (original empty-surface death). The surface latch
+    does not re-fire while parked. Action order stays Astra
+    NOOP/LEFT/RIGHT/UP/DOWN/FIRE (not original n,l,u,r,d,f).
 
     Actions:
       0: NOOP
@@ -38,6 +43,7 @@ class MinAtarSeaquestEnv(gym.Env):
     ROWS = 10
     COLS = 10
     SURFACE_ROW = 0
+    MAX_DIVE_ROW = 8
     MAX_DIVERS_HELD = 6
 
     def __init__(
@@ -70,11 +76,12 @@ class MinAtarSeaquestEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # Player state
-        self._sub_r: int = 5
-        self._sub_c: int = 2
+        # Player state (original spawn is surface col 5)
+        self._sub_r: int = 0
+        self._sub_c: int = 5
         self._facing: int = 1  # 1: right, -1: left
         self._oxygen: int = self.oxygen_max
+        self._at_surface: bool = True
         self._divers_held: int = 0
 
         # Entities
@@ -98,10 +105,11 @@ class MinAtarSeaquestEnv(gym.Env):
         super().reset(seed=seed)
         self._rng = np.random.default_rng(seed)
 
-        self._sub_r = 5
-        self._sub_c = 2
+        self._sub_r = 0
+        self._sub_c = 5
         self._facing = 1
         self._oxygen = self.oxygen_max
+        self._at_surface = True
         self._divers_held = 0
 
         self._enemies.clear()
@@ -159,7 +167,6 @@ class MinAtarSeaquestEnv(gym.Env):
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, dict]:
         self._step_count += 1
-        self._oxygen -= 1
         reward = 0.0
         terminated = False
         self._destroyed = False
@@ -174,7 +181,7 @@ class MinAtarSeaquestEnv(gym.Env):
         elif action == 3:  # UP
             self._sub_r = max(0, self._sub_r - 1)
         elif action == 4:  # DOWN
-            self._sub_r = min(self.ROWS - 1, self._sub_r + 1)
+            self._sub_r = min(self.MAX_DIVE_ROW, self._sub_r + 1)
         elif action == 5:  # FIRE
             if len(self._player_torpedoes) < 2:
                 self._player_torpedoes.append({
@@ -183,37 +190,7 @@ class MinAtarSeaquestEnv(gym.Env):
                     "dir": self._facing,
                 })
 
-        # 2. Oxygen Depletion Check
-        if self._oxygen <= 0:
-            self._destroyed = True
-            reward += self.death_penalty
-            terminated = True
-            truncated = self._step_count >= self.max_steps
-            info = {
-                "score": self._score,
-                "enemies_killed": self._enemies_killed,
-                "divers_saved": self._divers_saved,
-                "oxygen": max(0, self._oxygen),
-                "step": self._step_count,
-            }
-            return self._get_obs(), reward, terminated, truncated, info
-
-        # 3. Surfacing Check (at surface row 0)
-        if self._sub_r == self.SURFACE_ROW:
-            if self._divers_held > 0:
-                rescue_reward = self._divers_held * self.diver_rescue_reward
-                if self._divers_held >= self.MAX_DIVERS_HELD:
-                    rescue_reward += self.wave_clear_bonus
-                reward += rescue_reward
-                self._score += rescue_reward
-                self._divers_saved += self._divers_held
-                self._divers_held = 0
-                self._oxygen = self.oxygen_max  # Tank refilled!
-            else:
-                # Surfacing without divers: small penalty and no oxygen refill
-                reward -= 0.1
-
-        # 4. Advance Player Torpedoes & Check Collision with Enemies
+        # 2. Advance Player Torpedoes & Check Collision with Enemies
         new_torps = []
         for torp in self._player_torpedoes:
             tr = torp["r"]
@@ -300,6 +277,26 @@ class MinAtarSeaquestEnv(gym.Env):
         if self._rng.random() < 0.05:
             self._spawn_diver()
 
+        # Original MinAtar: oxygen only while sub_y > 0; empty-surface death
+        # on the transition to row 0 (`surface` latch), not every parked frame.
+        if not terminated:
+            if self._sub_r > self.SURFACE_ROW:
+                self._oxygen -= 1
+                self._at_surface = False
+                if self._oxygen <= 0:
+                    self._destroyed = True
+                    terminated = True
+                    reward += self.death_penalty
+                    self._score += self.death_penalty
+            elif not self._at_surface:
+                if self._divers_held <= 0:
+                    self._destroyed = True
+                    terminated = True
+                    reward += self.death_penalty
+                    self._score += self.death_penalty
+                else:
+                    reward += self._apply_surface()
+
         truncated = self._step_count >= self.max_steps
         info = {
             "score": self._score,
@@ -311,6 +308,22 @@ class MinAtarSeaquestEnv(gym.Env):
         }
 
         return self._get_obs(), reward, terminated, truncated, info
+
+    def _apply_surface(self) -> float:
+        """Deposit on arrival at row 0 with at least one diver (once per visit)."""
+        self._at_surface = True
+        if self._divers_held >= self.MAX_DIVERS_HELD:
+            n = self._divers_held
+            rescue = n * self.diver_rescue_reward + self.wave_clear_bonus
+            self._divers_saved += n
+            self._divers_held = 0
+        else:
+            rescue = self.diver_rescue_reward
+            self._divers_held -= 1
+            self._divers_saved += 1
+        self._oxygen = self.oxygen_max
+        self._score += rescue
+        return rescue
 
     def _get_obs(self) -> np.ndarray:
         obs = np.zeros((4, self.ROWS, self.COLS), dtype=np.float32)

@@ -2145,9 +2145,9 @@ Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pur
   - **Gymnasium Registration**: Registered `MinAtar-Freeway-v0`.
 
 - [x] **MinAtar Seaquest Environment (`envs/minatar_seaquest_env.py`)**:
-  - **Grid & Ocean Mechanics**: 10x10 board spanning water surface (row 0), ocean depths (rows 1–8), and sea floor (row 9).
-  - **Submarine & Actions**: 6 actions (`NOOP`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `FIRE`) with horizontal facing direction and torpedo launchers.
-  - **Oxygen Management**: Submarine starts with 200 oxygen units, depleting by 1 every step. Reaching 0 causes suffocation and terminal death penalty ($-1.0$). Surfacing at row 0 with rescued divers deposits divers for bonus points, refills oxygen tank to full, and clears held diver inventory.
+  - **Grid & Ocean Mechanics**: 10x10 board spanning water surface (row 0), ocean depths (rows 1–8). Submarine max depth is row 8; row 9 is the observation gauge strip (original MinAtar).
+  - **Submarine & Actions**: 6 actions (`NOOP`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `FIRE`) with horizontal facing direction and torpedo launchers. Spawn is surface col 5. Action *order* stays Astra (not original `n,l,u,r,d,f`) so trained policies remain valid.
+  - **Oxygen Management** (Phase 74): Oxygen drains only while `sub_r > 0`. Returning to row 0 with zero divers is terminal (`death_penalty`). A surface latch matches original `surface` so parking after a legal deposit does not re-fire. Partial loads deposit one diver per visit; a full tank of 6 dumps all plus `wave_clear_bonus` and refills oxygen.
   - **Divers & Enemies**: Swimming divers spawn and can be collected (up to 6 held); sharks (fast) and enemy submarines (shoot enemy torpedoes) spawn and swim across depths. Torpedo hits destroy enemies for $+1.0$ reward.
   - **High Performance**: Pure Python/NumPy execution achieving **>150,000 steps/sec**.
   - **Observation & Viewer Grid**: 4 binary/normalized planes (`shape=(400,)` float32) encoding submarine position/nozzle, enemies (sharks/subs), divers & held count gauge, and torpedoes/oxygen gauge.
@@ -2169,7 +2169,7 @@ Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pur
 - [x] **Canonical Recipes & Unit Test Suite**:
   - `recipes/minatar_freeway_dqn_v1.yaml` & `recipes/minatar_seaquest_dqn_v1.yaml`: Canonical DQN recipes targeting `score: 15.0` with replay buffer size 100,000, batch size 32, and exploration fraction 0.15.
   - `tests/unit/test_minatar_freeway_env.py`: 7 tests covering observation/action spaces, reset, vertical movement, goal crossing, car collisions, viewer grid, and Gymnasium make.
-  - `tests/unit/test_minatar_seaquest_env.py`: 9 tests covering spaces, reset, 4-directional movement, torpedo kills, diver rescue & surfacing oxygen refill, oxygen depletion death, enemy collision death, viewer grid, and Gymnasium make.
+  - `tests/unit/test_minatar_seaquest_env.py`: original-MinAtar oxygen/surface rules (Phase 74): spawn at row 0 col 5, max depth 8, drain only while submerged, empty-surface death, one diver per visit unless holding 6.
   - Full MinAtar test suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) passes 100% (46/46 passed in 0.13s).
 
 ---
@@ -2320,3 +2320,13 @@ Collecting pytest (and Cursor's sandboxed tool runner) imported `backend.loop` �
 - [x] **Lazy `mlx` proxies** — `_MLX_AVAILABLE` is `find_spec("mlx")` only. `mx` / `mlx_lm` / `make_sampler` import the real modules on first use, and only if `is_metal_available()`. `ModelManager._gc()` returns before `import mlx.core` when Metal is blocked; `except Exception` (not just `ImportError`) covers a failed init.
 - [x] **Accelerate import order** — `tests/conftest.py` and `backend/services/vector_memory.py` pre-import `accelerate` / `accelerate.big_modeling` so sentence-transformers does not hit a circular import during collection once MLX is no longer crashing first.
 - [x] **No new unit tests** in `58ea914` (Metal probe is host-dependent). Collection of the Phase 72 files no longer SIGABRTs in a sandbox.
+
+---
+
+## Phase 74: MinAtar Seaquest Surface Camping Was an Env Spec Bug
+
+Live Player showed the submarine parked on row 0. That was not a HUD grid bug: `MinAtarSeaquestEnv` was safer than kenjyoung/MinAtar `seaquest.py`. Oxygen decremented every step (including the surface), empty surfacing only cost `-0.1` and did not terminate, DOWN could enter the gauge row 9, and spawn was mid-ocean. Row 0 has no enemies, so a trained policy camped the surface until oxygen death.
+
+- [x] **Original oxygen / surface latch** (`envs/minatar_seaquest_env.py`) — drain only while `sub_r > 0`. Arriving at row 0 with zero divers is terminal (`death_penalty`). `_at_surface` matches original `surface` so a legal deposit does not re-fire while parked. Holding 1–5 deposits one diver per visit and refills oxygen; holding 6 dumps all plus `wave_clear_bonus`.
+- [x] **Spawn and max depth** — reset at row 0 col 5; `DOWN` clamps to row 8 (row 9 stays the held-diver gauge). Action order remains `NOOP/LEFT/RIGHT/UP/DOWN/FIRE` so existing Seaquest zips stay valid (original MinAtar is `n,l,u,r,d,f`).
+- [x] **Tests** — surface idle does not drain oxygen; dive-then-empty-resurface terminates; max depth 8; partial deposit; spawn/viewer indices updated.
