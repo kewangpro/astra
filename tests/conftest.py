@@ -4,6 +4,12 @@ import os
 import uuid
 from unittest.mock import patch, MagicMock, AsyncMock
 
+try:
+    import accelerate
+    import accelerate.big_modeling
+except ImportError:
+    pass
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession

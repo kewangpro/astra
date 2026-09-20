@@ -6,6 +6,11 @@ from __future__ import annotations
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+try:
+    import accelerate
+    import accelerate.big_modeling
+except ImportError:
+    pass
 from sentence_transformers import SentenceTransformer
 from backend.config import settings
 from backend.logging_config import get_logger

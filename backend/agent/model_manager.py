@@ -158,9 +158,12 @@ class ModelManager:
     async def _gc(self) -> None:
         gc.collect()
         if platform.system() == "Darwin":
+            from backend.agent.inference.mlx_provider import is_metal_available
+            if not is_metal_available():
+                return
             try:
                 import mlx.core as mx
-            except ImportError:
+            except Exception:
                 return
             # Real incident: this call raced against an in-flight, lock-held
             # MLXProvider.generate() call (running in a background thread via

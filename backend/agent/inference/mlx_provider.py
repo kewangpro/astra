@@ -19,6 +19,11 @@ from typing import Optional
 
 import psutil
 
+import ctypes
+import ctypes.util
+import importlib.util
+import platform
+
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
 from backend.agent.inference.metal_lock import get_metal_lock
 from backend.agent.model_manager import MODEL_FOOTPRINTS
@@ -46,14 +51,140 @@ logger = get_logger(__name__)
 # higher free-memory bar than a small one.
 _LOW_MEMORY_SAFETY_MARGIN_GB = 2.0
 
-_MLX_AVAILABLE = False
-try:
-    import mlx.core as mx
-    import mlx_lm
-    from mlx_lm.sample_utils import make_sampler
-    _MLX_AVAILABLE = True
-except ImportError:
-    pass
+
+def is_metal_available() -> bool:
+    """Check whether Metal GPU devices are accessible in this process context.
+
+    Under restricted environments (e.g. sandboxed IDE runners, test subshells, or
+    containers), macOS blocks access to Metal devices. Direct import of mlx.core
+    in that state triggers mlx::core::metal::Device::Device() which throws an
+    uncaught Objective-C NSRangeException (-[__NSArray0 objectAtIndex:]),
+    aborting Python with SIGABRT (Abort trap: 6).
+    """
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return False
+    try:
+        metal_path = ctypes.util.find_library("Metal")
+        if not metal_path:
+            return False
+        metal = ctypes.cdll.LoadLibrary(metal_path)
+        metal.MTLCopyAllDevices.restype = ctypes.c_void_p
+        devices = metal.MTLCopyAllDevices()
+        if not devices:
+            return False
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        objc.objc_msgSend.restype = ctypes.c_ulong
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        count = objc.objc_msgSend(devices, objc.sel_registerName(b"count"))
+        return count > 0
+    except Exception:
+        return False
+
+
+def _check_mlx_installed() -> bool:
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return False
+    return (
+        importlib.util.find_spec("mlx") is not None
+        and importlib.util.find_spec("mlx_lm") is not None
+    )
+
+
+_MLX_AVAILABLE = _check_mlx_installed()
+
+_real_mx = None
+_real_mlx_lm = None
+_real_make_sampler = None
+
+
+def _get_real_mx():
+    global _real_mx
+    if _real_mx is None and _MLX_AVAILABLE and is_metal_available():
+        try:
+            import mlx.core as mx_mod
+            _real_mx = mx_mod
+        except Exception as exc:
+            logger.warning("MLXProvider: failed to import mlx.core: %s", exc)
+    return _real_mx
+
+
+def _get_real_mlx_lm():
+    global _real_mlx_lm
+    if _real_mlx_lm is None and _MLX_AVAILABLE and is_metal_available():
+        try:
+            import mlx_lm as mlx_lm_mod
+            _real_mlx_lm = mlx_lm_mod
+        except Exception as exc:
+            logger.warning("MLXProvider: failed to import mlx_lm: %s", exc)
+    return _real_mlx_lm
+
+
+def _get_real_make_sampler():
+    global _real_make_sampler
+    if _real_make_sampler is None and _MLX_AVAILABLE and is_metal_available():
+        try:
+            from mlx_lm.sample_utils import make_sampler as sampler_fn
+            _real_make_sampler = sampler_fn
+        except Exception as exc:
+            logger.warning("MLXProvider: failed to import make_sampler: %s", exc)
+    return _real_make_sampler
+
+
+class _MetalProxy:
+    def clear_cache(self):
+        real = _get_real_mx()
+        if real is not None and hasattr(real, "metal"):
+            real.metal.clear_cache()
+
+    def __getattr__(self, item):
+        real = _get_real_mx()
+        if real is not None and hasattr(real, "metal"):
+            return getattr(real.metal, item)
+        raise AttributeError(f"Metal has no attribute '{item}'")
+
+
+class _MxProxy:
+    def __init__(self):
+        self.metal = _MetalProxy()
+
+    def __getattr__(self, item):
+        real = _get_real_mx()
+        if real is not None:
+            return getattr(real, item)
+        raise AttributeError(f"mlx.core has no attribute '{item}'")
+
+
+class _MlxLmProxy:
+    def load(self, *args, **kwargs):
+        real = _get_real_mlx_lm()
+        if real is not None:
+            return real.load(*args, **kwargs)
+        raise RuntimeError("mlx_lm is not available")
+
+    def generate(self, *args, **kwargs):
+        real = _get_real_mlx_lm()
+        if real is not None:
+            return real.generate(*args, **kwargs)
+        raise RuntimeError("mlx_lm is not available")
+
+    def __getattr__(self, item):
+        real = _get_real_mlx_lm()
+        if real is not None:
+            return getattr(real, item)
+        raise AttributeError(f"mlx_lm has no attribute '{item}'")
+
+
+def make_sampler(*args, **kwargs):
+    real_fn = _get_real_make_sampler()
+    if real_fn is not None:
+        return real_fn(*args, **kwargs)
+    return None
+
+
+mx = _MxProxy()
+mlx_lm = _MlxLmProxy()
 
 
 class MLXProvider(InferenceProvider):
