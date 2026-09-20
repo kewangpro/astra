@@ -56,7 +56,7 @@ ASTRA builds custom optimization layers on top of MLX to maximize the 24GB footp
 
 #### 2.1.2. Memory & Engine Tiers
 The choice of inference engine depends on available **Unified Memory**:
-- **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)** for local models; **Ollama** for offloading to a second 24GB machine. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes.
+- **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)** for local models; **Ollama** for offloading to a second 24GB machine. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes. **`mlx.core` must not load at import time** — a Darwin process without Metal devices (`MTLCopyAllDevices` empty, Cursor/pytest sandbox) aborts with an uncaught `NSRangeException`. `MLXProvider.is_metal_available()` probes first; real MLX imports happen on first use (Phase 73). Concurrent Metal ops still take `get_metal_lock()` (Phase 28).
 - **Advanced (64GB+ RAM)**: **vLLM (Metal)**. Recommended for high-concurrency multi-agent setups. Leverages **PagedAttention** for massive log contexts and **Continuous Batching** for simultaneous specialist reasoning.
 
 Deployed configuration (both machines: Apple M4, 24 GB unified memory):

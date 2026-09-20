@@ -72,7 +72,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
 
 - [x] **Step 3.1: Lead Agent (The Orchestrator)**
     - `backend/agent/inference/`: `InferenceProvider` ABC + three implementations:
-      - `MLXProvider` — native `mlx-lm` (Apple Silicon; lazy-load, `mx.metal.clear_cache()` on unload).
+      - `MLXProvider` — native `mlx-lm` (Apple Silicon). Weights still lazy-load on first `generate()`; `mlx.core` itself is also deferred until `is_metal_available()` (Phase 73) so importing the backend in a sandbox does not SIGABRT. `mx.metal.clear_cache()` on unload, under `get_metal_lock()`.
       - `VLLMProvider` — vLLM Metal (optional, 64GB+).
       - `MockProvider` — deterministic scripted responses for testing (no model weights required).
     - `backend/agent/model_manager.py`: `ModelManager` — tracks estimated VRAM usage, evicts speculative drafter before sandbox launch via `before_sandbox_launch()`, restores on `after_sandbox_exit()`, triggers GC + Metal cache clear.
@@ -2309,3 +2309,14 @@ Unnamed Seaquest `8bb85cc5` (target 100) did switch `DQN→PPO` at iter 29, then
 - [x] **Warm-start skips a different `best_model_algo.txt`** — the RL template does not `PPO.load` a DQN zip. Same-algo net_arch mismatches still copy shape-matching tensors.
 - [x] **Force the next untried trainer at level 3+** — level 2 remains one forced switch off the starting algo. At `escalation_level() ≥ 3`, a no-op proposal (`PPO` → `PPO`) still calls `_pick_switch_algorithm` (DQN tried → A2C). Locked goals and custom trainers are unchanged.
 - [x] **Tests** — `test_algo_switch_search_does_not_revert_against_old_peak`, `test_arch_revert_uses_search_best_not_all_time`, `test_reset_search_after_switch_to_ppo_seeds_n_steps_not_buffer`, `test_resolve_forces_next_untried_at_level_three`, `test_resolve_hyperparams_ppo_seaquest_fills_defaults_when_plan_is_dqn_shaped`, warm-start prompt asserts `best_model_algo.txt`. `tests/unit/test_pivot_engine.py` + `test_state_machine_helpers.py` + `test_code_generator.py`: 445 passed.
+
+---
+
+## Phase 73: Do Not Import `mlx.core` Until Metal Devices Exist
+
+Collecting pytest (and Cursor's sandboxed tool runner) imported `backend.loop` → `lead_agent` → `mlx_provider`, which did `import mlx.core` at module load. On Darwin/arm64 without a usable Metal device list, `mlx::core::metal::Device::Device()` throws an uncaught Objective-C `NSRangeException` (`-[__NSArray0 objectAtIndex:]`) and Python dies with SIGABRT — the same uncatchable Metal abort class as Phase 28, but at **import time**, so no `try/except` around `generate()` could help. Symptom: `Fatal Python error: Aborted` during test collection.
+
+- [x] **`is_metal_available()`** (`backend/agent/inference/mlx_provider.py`) — Darwin/arm64 only; `MTLCopyAllDevices()` + ObjC `count`. False on non-Apple, missing Metal, empty device list, or any ctypes error. Does not import `mlx`.
+- [x] **Lazy `mlx` proxies** — `_MLX_AVAILABLE` is `find_spec("mlx")` only. `mx` / `mlx_lm` / `make_sampler` import the real modules on first use, and only if `is_metal_available()`. `ModelManager._gc()` returns before `import mlx.core` when Metal is blocked; `except Exception` (not just `ImportError`) covers a failed init.
+- [x] **Accelerate import order** — `tests/conftest.py` and `backend/services/vector_memory.py` pre-import `accelerate` / `accelerate.big_modeling` so sentence-transformers does not hit a circular import during collection once MLX is no longer crashing first.
+- [x] **No new unit tests** in `58ea914` (Metal probe is host-dependent). Collection of the Phase 72 files no longer SIGABRTs in a sandbox.
