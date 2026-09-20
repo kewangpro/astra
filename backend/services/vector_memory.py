@@ -35,8 +35,8 @@ def _get_client() -> chromadb.ClientAPI:
 def _get_embedding_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        logger.info("Loading embedding model (all-MiniLM-L6-v2)...")
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        logger.info("Loading embedding model (all-MiniLM-L6-v2 on CPU)...")
+        _model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
     return _model
 
 
