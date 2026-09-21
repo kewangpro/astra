@@ -146,6 +146,9 @@ async def test_tournament_runs_match_and_updates_champion(tmp_path):
     rec1.checkpoint_path = ckpt1
     rec1.weights_path = None
     rec1.is_champion = False
+    rec1.extra_metadata = {}
+    rec1.best_metric_value = 52.0
+    rec1.created_at = "1"
 
     rec2 = MagicMock()
     rec2.id = "model-2"
@@ -154,8 +157,16 @@ async def test_tournament_runs_match_and_updates_champion(tmp_path):
     rec2.checkpoint_path = ckpt2
     rec2.weights_path = None
     rec2.is_champion = True
+    rec2.extra_metadata = {}
+    rec2.best_metric_value = 30.0
+    rec2.created_at = "2"
 
     db = _make_db(item=rec1, items=[rec1, rec2])
+
+    async def _get(_cls, ident):
+        return {"model-1": rec1, "model-2": rec2}.get(ident)
+
+    db.get = AsyncMock(side_effect=_get)
 
     fake_result = {
         "env_id": "Snake-v0",
@@ -387,5 +398,48 @@ async def test_prune_orphan_model_records():
     await _prune_orphan_model_records(db)
     db.delete.assert_awaited_once_with(orphan)
     db.commit.assert_awaited()
+
+
+def test_canonical_checkpoint_path_collapses_dot_slash():
+    from backend.routers.registry import canonical_checkpoint_path
+    a = canonical_checkpoint_path("data/missions/abc/checkpoints/best_model.zip")
+    b = canonical_checkpoint_path("./data/missions/abc/checkpoints/best_model.zip")
+    assert a == b
+    assert a is not None
+    assert a.endswith("data/missions/abc/checkpoints/best_model.zip")
+
+
+@pytest.mark.asyncio
+async def test_prune_duplicate_model_records_keeps_champion():
+    from backend.routers.registry import _prune_duplicate_model_records, canonical_checkpoint_path
+
+    path_a = "data/missions/m1/checkpoints/best_model.zip"
+    path_b = "./data/missions/m1/checkpoints/best_model.zip"
+    champ = MagicMock()
+    champ.id = "keep"
+    champ.is_champion = True
+    champ.best_metric_value = 6.84
+    champ.created_at = "2026-01-01"
+    champ.checkpoint_path = path_a
+    champ.weights_path = path_a
+    dup = MagicMock()
+    dup.id = "drop"
+    dup.is_champion = False
+    dup.best_metric_value = 6.84
+    dup.created_at = "2026-09-01"
+    dup.checkpoint_path = path_b
+    dup.weights_path = path_b
+
+    db = AsyncMock()
+    result = MagicMock()
+    scalars = MagicMock()
+    scalars.all = MagicMock(return_value=[dup, champ])
+    result.scalars = MagicMock(return_value=scalars)
+    db.execute = AsyncMock(return_value=result)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+    await _prune_duplicate_model_records(db)
+    db.delete.assert_awaited_once_with(dup)
+    assert champ.checkpoint_path == canonical_checkpoint_path(path_a)
 
 

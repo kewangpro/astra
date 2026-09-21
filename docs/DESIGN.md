@@ -245,7 +245,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `GET /health` | System status + memory stats |
 | `GET /health/ready` | Readiness probe |
 | `GET/POST/PATCH/DELETE /registry/experiments` | Experiment CRUD |
-| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter). List auto-syncs checkpoints only for **live** missions and prunes registry rows whose mission was deleted. |
+| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter). List auto-syncs checkpoints only for **live** missions, prunes rows whose mission was deleted, and collapses duplicate rows for the same zip (`data/…` vs `./data/…`). |
 | `GET/POST/PATCH/DELETE /missions` | Mission CRUD (supports explicit goal or first-class recipe seeding, target overrides, auto_start, and canonical goal formatting) |
 | `GET /missions/{id}/manifest` | Live requirement manifest state |
 | `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
@@ -258,7 +258,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `WS /ws/missions/{id}/play?env_id=&fps=` | Live agent viewer with audit stream (`q_values`, `action_probs`, `entropy`, `selected_action`) — streams Snake-v0 (16×16), Tetris-v0 (10×20), Game2048-v0 (4×4), or the complete 10×10 MinAtar Suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) |
 | `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
 | `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
-| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter). List auto-syncs checkpoints only for **live** missions and prunes registry rows whose mission was deleted. |
+| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter). List auto-syncs checkpoints only for **live** missions, prunes rows whose mission was deleted, and collapses duplicate rows for the same zip (`data/…` vs `./data/…`). |
 | `POST /registry/tournament` | Run head-to-head multi-model tournament across fixed seeds; returns leaderboard and crowns champion |
 | `GET /recipes` | List all recipes (disk + DB merged) |
 | `GET /recipes/db` | List DB-backed recipes (`domain`, `golden_only` filters) |

@@ -2362,3 +2362,13 @@ Phase 75 stopped *new* `[128]` pivots and skipped partial warm-start. Live `601c
 - [x] **`_auto_sync_disk_checkpoints` / tournament disk fallback** — skip checkpoint dirs whose mission id is not in `missions`. `_prune_orphan_model_records` drops leftover registry rows on list/tournament.
 - [x] **Tests** — `test_delete_purges_registry_and_workdir`, `test_remove_mission_workdir_deletes_only_under_data`, `test_mission_id_from_model_metadata_and_path`, `test_auto_sync_skips_deleted_mission_dir`, `test_prune_orphan_model_records`.
 
+---
+
+## Phase 78: Tournament Must Not Run the Same Zip Twice
+
+Seaquest tournament listed six rows that were three zips: `data/missions/<id>/…/best_model.zip` and `./data/missions/<id>/…/best_model.zip` each had a `model_records` row (auto-sync compared path strings). Identical 20-seed scores (80942f33 15.8, 601c2404 7.7, 28e65efd 7.3) and 20% win-rate ties were the same policy fighting itself.
+
+- [x] **`canonical_checkpoint_path`** — `abspath(normpath(…))` so `./data` and `data` match.
+- [x] **`_prune_duplicate_model_records`** — keep champion (else higher metric); rewrite the kept path to canonical. Tournament `_add_entry` skips a path already seen.
+- [x] **Tests** — `test_canonical_checkpoint_path_collapses_dot_slash`, `test_prune_duplicate_model_records_keeps_champion`.
+

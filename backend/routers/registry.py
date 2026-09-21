@@ -28,6 +28,13 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/registry", tags=["registry"])
 
 
+def canonical_checkpoint_path(path: Optional[str]) -> Optional[str]:
+    """Same zip under data/… vs ./data/… must compare equal."""
+    if not path:
+        return None
+    return os.path.abspath(os.path.normpath(path))
+
+
 def _missions_dir() -> str:
     return os.path.join(settings.data_path, "missions")
 
@@ -83,6 +90,51 @@ async def _prune_orphan_model_records(db: AsyncSession) -> None:
             await db.commit()
         except Exception as e:
             logger.warning("Failed to commit orphan model prune: %s", e)
+
+
+async def _prune_duplicate_model_records(db: AsyncSession) -> None:
+    """Drop extra registry rows that point at the same checkpoint file.
+
+    Auto-sync used string equality on checkpoint_path, so `data/missions/…`
+    and `./data/missions/…` each got a row. Tournaments then ran the same
+    zip twice (identical 20-seed scores, Seaquest 80942f33 / 601c2404).
+    """
+    res = await db.execute(select(ModelRecord))
+    recs = list(res.scalars().all())
+    by_key: dict = {}
+    for rec in recs:
+        key = canonical_checkpoint_path(rec.checkpoint_path or rec.weights_path)
+        if not key:
+            continue
+        by_key.setdefault(key, []).append(rec)
+    removed = False
+    for group in by_key.values():
+        if len(group) < 2:
+            continue
+        keep = max(
+            group,
+            key=lambda r: (
+                bool(r.is_champion),
+                float(r.best_metric_value) if r.best_metric_value is not None else float("-inf"),
+                str(r.created_at or ""),
+            ),
+        )
+        for rec in group:
+            if rec.id == keep.id:
+                rec.checkpoint_path = canonical_checkpoint_path(rec.checkpoint_path) or rec.checkpoint_path
+                rec.weights_path = canonical_checkpoint_path(rec.weights_path) or rec.weights_path
+                continue
+            await db.delete(rec)
+            removed = True
+            logger.info(
+                "registry: pruned duplicate model %s (same checkpoint as %s)",
+                rec.id, keep.id,
+            )
+    if removed:
+        try:
+            await db.commit()
+        except Exception as e:
+            logger.warning("Failed to commit duplicate model prune: %s", e)
 
 
 
@@ -158,7 +210,10 @@ async def _auto_sync_disk_checkpoints(db: AsyncSession) -> None:
 
     try:
         res = await db.execute(select(ModelRecord.checkpoint_path).where(ModelRecord.checkpoint_path.is_not(None)))
-        existing_paths = set(res.scalars().all())
+        existing_paths = {
+            canonical_checkpoint_path(p) for p in res.scalars().all() if p
+        }
+        existing_paths.discard(None)
     except Exception:
         existing_paths = set()
 
@@ -182,8 +237,8 @@ async def _auto_sync_disk_checkpoints(db: AsyncSession) -> None:
                 continue
 
             for fn in ("best_model.zip", "best_model.pth"):
-                p = os.path.join(ckpt_dir, fn)
-                if os.path.exists(p) and p not in existing_paths:
+                p = canonical_checkpoint_path(os.path.join(ckpt_dir, fn))
+                if p and os.path.exists(p) and p not in existing_paths:
                     score = None
                     metric_name = "task_success" if "agent" in env_id.lower() else "mean_reward"
                     score_file = os.path.join(ckpt_dir, "best_score.txt")
@@ -232,6 +287,7 @@ async def list_model_records(
 ):
     await _auto_sync_disk_checkpoints(db)
     await _prune_orphan_model_records(db)
+    await _prune_duplicate_model_records(db)
     q = select(ModelRecord)
     if domain:
         q = q.where(ModelRecord.domain == domain)
@@ -276,14 +332,22 @@ async def delete_model_record(model_id: str, db: AsyncSession = Depends(get_db))
 async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(get_db)):
     await _auto_sync_disk_checkpoints(db)
     await _prune_orphan_model_records(db)
+    await _prune_duplicate_model_records(db)
     entries: List[dict] = []
+    seen_paths: set = set()
+
+    def _add_entry(eid: str, name: str, path: Optional[str]) -> None:
+        key = canonical_checkpoint_path(path)
+        if not key or not os.path.exists(key) or key in seen_paths:
+            return
+        seen_paths.add(key)
+        entries.append({"id": eid, "name": name, "path": key})
+
     if payload.model_ids:
         for mid in payload.model_ids:
             rec = await db.get(ModelRecord, mid)
             if rec:
-                path = rec.checkpoint_path or rec.weights_path
-                if path and os.path.exists(path):
-                    entries.append({"id": rec.id, "name": rec.name, "path": path})
+                _add_entry(rec.id, rec.name, rec.checkpoint_path or rec.weights_path)
     else:
         q = select(ModelRecord).where(
             (ModelRecord.domain == payload.env_id) | (ModelRecord.domain.ilike(f"%{payload.env_id}%"))
@@ -291,9 +355,7 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
         res = await db.execute(q)
         records = res.scalars().all()
         for rec in records:
-            path = rec.checkpoint_path or rec.weights_path
-            if path and os.path.exists(path):
-                entries.append({"id": rec.id, "name": rec.name, "path": path})
+            _add_entry(rec.id, rec.name, rec.checkpoint_path or rec.weights_path)
 
     # Fallback 1: auto-discover checkpoints from data/missions
     if len(entries) < 2:
@@ -320,12 +382,12 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
                         algo = cfg.get("algorithm", "RL")
                         for fn in ("best_model.zip", "best_model.pth", "last_model.zip"):
                             p = os.path.join(ckpt_dir, fn)
-                            if os.path.exists(p) and not any(e["path"] == p for e in entries):
-                                entries.append({
-                                    "id": f"mission-{m_id[:8]}-{fn.split('.')[0]}",
-                                    "name": f"{algo} ({m_id[:8]})",
-                                    "path": p,
-                                })
+                            if os.path.exists(p):
+                                _add_entry(
+                                    f"mission-{m_id[:8]}-{fn.split('.')[0]}",
+                                    f"{algo} ({m_id[:8]})",
+                                    p,
+                                )
                                 break
                 except Exception:
                     pass
@@ -354,15 +416,15 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
                                 for iter_f in sorted(os.listdir(iter_dir), reverse=True):
                                     if iter_f.endswith((".zip", ".pth")):
                                         iter_p = os.path.join(iter_dir, iter_f)
-                                        if not any(e["path"] == iter_p for e in entries):
-                                            iter_lbl = iter_f.replace("checkpoint_iter_", "iter-")
-                                            entries.append({
-                                                "id": f"mission-{m_id[:8]}-{iter_lbl}",
-                                                "name": f"{algo} ({m_id[:8]} {iter_lbl})",
-                                                "path": iter_p,
-                                            })
-                                            if len(entries) >= 6:
-                                                break
+                                        before = len(entries)
+                                        iter_lbl = iter_f.replace("checkpoint_iter_", "iter-")
+                                        _add_entry(
+                                            f"mission-{m_id[:8]}-{iter_lbl}",
+                                            f"{algo} ({m_id[:8]} {iter_lbl})",
+                                            iter_p,
+                                        )
+                                        if len(entries) > before and len(entries) >= 6:
+                                            break
                     except Exception:
                         pass
                     if len(entries) >= 6:
@@ -376,11 +438,10 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
                 for f in files:
                     if f.endswith((".zip", ".pth")):
                         full_p = os.path.join(root, f)
-                        if not any(e["path"] == full_p for e in entries):
-                            name = f"{os.path.basename(root)}/{f}"
-                            entries.append({"id": f"auto-{len(entries)+1}", "name": name, "path": full_p})
-                            if len(entries) >= 6:
-                                break
+                        name = f"{os.path.basename(root)}/{f}"
+                        _add_entry(f"auto-{len(entries)+1}", name, full_p)
+                        if len(entries) >= 6:
+                            break
                 if len(entries) >= 6:
                     break
 
