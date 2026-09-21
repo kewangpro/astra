@@ -206,23 +206,21 @@ export default function RecipesPage() {
             return (
               <div
                 key={r.name}
-                className="bg-[#1e293b]/70 border border-[#334155] rounded-lg p-5 flex flex-col justify-between hover:border-[#14b8a6]/40 transition-all hover:shadow-lg hover:shadow-[#14b8a6]/5"
+                className="bg-[#1e293b]/70 border border-[#334155] rounded-lg p-5 flex flex-col justify-between min-w-0 overflow-hidden hover:border-[#14b8a6]/40 transition-all hover:shadow-lg hover:shadow-[#14b8a6]/5"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="text-sm font-semibold text-[#e2e8f0] break-words">
-                      {r.name}
-                    </h3>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {autoCrystallized && (
-                        <span className="text-[10px] bg-[#0f172a] border border-[#64748b]/40 text-[#94a3b8] px-2 py-0.5 rounded">
-                          Auto-crystallized
-                        </span>
-                      )}
-                      <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#14b8a6] px-2 py-0.5 rounded font-mono">
-                        {r.domain || (r.content as any)?.domain || "RL"}
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-[#e2e8f0] break-all">
+                    {r.name}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2 mb-2">
+                    {autoCrystallized && (
+                      <span className="text-[10px] bg-[#0f172a] border border-[#64748b]/40 text-[#94a3b8] px-2 py-0.5 rounded shrink-0">
+                        Auto-crystallized
                       </span>
-                    </div>
+                    )}
+                    <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#14b8a6] px-2 py-0.5 rounded font-mono break-all max-w-full">
+                      {r.domain || (r.content as any)?.domain || "RL"}
+                    </span>
                   </div>
 
                   <p className="text-xs text-[#94a3b8] line-clamp-2 mb-4 leading-relaxed">
@@ -231,9 +229,9 @@ export default function RecipesPage() {
 
                   {/* Target metric pill */}
                   {targetStr && (
-                    <div className="mb-4 inline-flex items-center gap-1.5 text-[11px] bg-[#0f172a] border border-[#14b8a6]/30 text-[#14b8a6] px-2.5 py-1 rounded">
-                      <span className="text-xs">🎯</span>
-                      <span className="font-mono">{targetStr}</span>
+                    <div className="mb-4 inline-flex items-center gap-1.5 text-[11px] bg-[#0f172a] border border-[#14b8a6]/30 text-[#14b8a6] px-2.5 py-1 rounded max-w-full min-w-0">
+                      <span className="text-xs shrink-0">🎯</span>
+                      <span className="font-mono break-all">{targetStr}</span>
                     </div>
                   )}
                 </div>
