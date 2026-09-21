@@ -247,6 +247,25 @@ def test_snake_viewer_grid_works_with_grid_obs_type():
     assert 1.0 in grid  # head present
 
 
+def test_run_episode_pacman_includes_player_dir():
+    from backend.routers.play import _run_episode
+    from envs.grid_pacman_env import GridPacManEnv
+    import numpy as np
+
+    class MockLeftModel:
+        device = "cpu"
+        def predict(self, obs, deterministic=True):
+            return np.array(1), None  # LEFT
+
+    env = GridPacManEnv(max_steps=3)
+    env.reset(seed=0)
+    env._ghosts = []
+    frames, _ = _run_episode(MockLeftModel(), env)
+    assert frames
+    assert frames[0]["player_dir"] == 2
+    assert frames[0]["selected_action"] == "LEFT"
+
+
 def test_run_episode_handles_0d_numpy_action():
     from backend.routers.play import _run_episode
     from envs.minatar_env import MinAtarBreakoutEnv

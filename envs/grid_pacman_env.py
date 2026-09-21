@@ -82,6 +82,8 @@ class GridPacManEnv(gym.Env):
         self._ghosts: List[Dict] = []
         self._player_r = 7
         self._player_c = 4
+        # Viewer heading: 0 RIGHT, 1 DOWN, 2 LEFT, 3 UP (mouth drawn facing right).
+        self._player_dir = 0
         self._power_timer = 0
         self._score = 0.0
         self._ghosts_eaten = 0
@@ -112,6 +114,7 @@ class GridPacManEnv(gym.Env):
         super().reset(seed=seed)
         self._rng = np.random.default_rng(seed)
         self._player_r, self._player_c = 7, 4
+        self._player_dir = 0
         self._power_timer = 0
         self._pellets = set(self._home_pellets)
         self._power = set(self._home_power)
@@ -124,17 +127,24 @@ class GridPacManEnv(gym.Env):
 
     def _move_player(self, action: int) -> None:
         dr, dc = 0, 0
+        facing = None
         if action == 1:
             dc = -1
+            facing = 2  # LEFT
         elif action == 2:
             dc = 1
+            facing = 0  # RIGHT
         elif action == 3:
             dr = -1
+            facing = 3  # UP
         elif action == 4:
             dr = 1
+            facing = 1  # DOWN
         nr, nc = self._player_r + dr, self._player_c + dc
         if self._walkable(nr, nc):
             self._player_r, self._player_c = nr, nc
+            if facing is not None:
+                self._player_dir = facing
 
     def _move_ghosts(self) -> None:
         pr, pc = self._player_r, self._player_c
@@ -239,6 +249,7 @@ class GridPacManEnv(gym.Env):
             "pellets_left": int(len(self._pellets) + len(self._power)),
             "pellets_eaten": int(self._pellets_eaten),
             "power_timer": int(self._power_timer),
+            "player_dir": int(self._player_dir),
         }
 
 

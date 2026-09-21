@@ -40,6 +40,7 @@ interface Frame {
   done?: boolean;
   message?: string;
   ship_dir?: number;
+  player_dir?: number;
   q_values?: Record<string, number>;
   action_probs?: Record<string, number>;
   entropy?: number | null;
@@ -303,6 +304,21 @@ function drawFreeway(ctx: CanvasRenderingContext2D, grid: number[]) {
   }
 }
 
+function headingFromAction(action?: string): number | undefined {
+  switch (action) {
+    case "RIGHT":
+      return 0;
+    case "DOWN":
+      return 1;
+    case "LEFT":
+      return 2;
+    case "UP":
+      return 3;
+    default:
+      return undefined;
+  }
+}
+
 function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: string, shipDir: number = 0) {
   const lower = envId.toLowerCase();
   const isFreeway = lower.includes("freeway");
@@ -504,15 +520,20 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
         }
       } else if (isPacMan) {
         if (cell === 1) {
+          // Mouth wedge is drawn facing right; rotate by heading
+          // (0 RIGHT, 1 DOWN, 2 LEFT, 3 UP).
+          ctx.save();
+          ctx.translate(x + CELL / 2, y + CELL / 2);
+          ctx.rotate((shipDir * Math.PI) / 2);
           ctx.fillStyle = "#facc15";
           ctx.shadowColor = "rgba(250, 204, 21, 0.7)";
           ctx.shadowBlur = 8;
           ctx.beginPath();
-          ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 2.4, 0.35, Math.PI * 2 - 0.35);
-          ctx.lineTo(x + CELL / 2, y + CELL / 2);
+          ctx.arc(0, 0, CELL / 2.4, 0.35, Math.PI * 2 - 0.35);
+          ctx.lineTo(0, 0);
           ctx.closePath();
           ctx.fill();
-          ctx.shadowBlur = 0;
+          ctx.restore();
         } else if (cell === 2) {
           ctx.fillStyle = "#1e3a5f";
           ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
@@ -803,11 +824,23 @@ export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0
     ws.onmessage = (e) => {
       const frame: Frame = JSON.parse(e.data as string);
       if (frame.type === "frame" && frame.grid) {
-        if (frame.ship_dir !== undefined) {
+        const actionHeading = headingFromAction(frame.selected_action);
+        if (frame.player_dir !== undefined) {
+          shipDirRef.current = frame.player_dir;
+        } else if (frame.ship_dir !== undefined) {
           shipDirRef.current = frame.ship_dir;
+        } else if (actionHeading !== undefined) {
+          shipDirRef.current = actionHeading;
         }
         const ctx = canvasRef.current?.getContext("2d");
-        if (ctx) drawMinAtar(ctx, frame.grid, envId, frame.ship_dir ?? shipDirRef.current);
+        if (ctx) {
+          drawMinAtar(
+            ctx,
+            frame.grid,
+            envId,
+            frame.player_dir ?? frame.ship_dir ?? actionHeading ?? shipDirRef.current,
+          );
+        }
 
         if (frame.step !== undefined) setStep(frame.step);
         if (frame.score !== undefined) {

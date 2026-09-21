@@ -37,6 +37,39 @@ def test_pacman_wall_blocks():
     assert env._player_r == 1
 
 
+def test_pacman_faces_move_direction():
+    env = GridPacManEnv()
+    env.reset(seed=0)
+    env._ghosts = []
+    assert env._player_dir == 0  # default RIGHT
+    assert env._info()["player_dir"] == 0
+
+    env.step(1)  # LEFT from (7, 4) along the open corridor
+    assert env._player_c == 3
+    assert env._player_dir == 2
+
+    env.step(2)  # RIGHT back to spawn
+    assert env._player_c == 4
+    assert env._player_dir == 0
+
+    env.step(3)  # UP into the center gap
+    assert env._player_r == 6
+    assert env._player_dir == 3
+
+    env.step(4)  # DOWN
+    assert env._player_r == 7
+    assert env._player_dir == 1
+
+    env.step(0)  # NOOP keeps last facing
+    assert env._player_dir == 1
+
+    env._player_r, env._player_c = 1, 1
+    env._player_dir = 0
+    env.step(3)  # UP into wall — blocked, heading unchanged
+    assert env._player_r == 1
+    assert env._player_dir == 0
+
+
 def test_pacman_pellet_eat():
     env = GridPacManEnv()
     env.reset(seed=0)

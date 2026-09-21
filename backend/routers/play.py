@@ -400,6 +400,8 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             elif hasattr(base_env, "_pellets"):
                 frame["ghosts_eaten"] = int(base_env._ghosts_eaten)
                 frame["pellets_left"] = int(len(base_env._pellets) + len(base_env._power))
+                if hasattr(base_env, "_player_dir"):
+                    frame["player_dir"] = int(base_env._player_dir)
 
         frames.append(frame)
     return frames, round(episode_reward, 2)
