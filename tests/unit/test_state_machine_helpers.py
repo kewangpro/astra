@@ -1057,6 +1057,44 @@ def test_arch_unchanged_when_same_as_current_regardless_of_history():
     assert not oscillation  # not oscillation — just a no-op
 
 
+def test_gate_arch_level_zero_drops_net_arch():
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    proposed = {"net_arch": [256, 256]}
+    current = {"net_arch": [64, 64]}
+    assert LSM._gate_arch_proposal(0, proposed, current, None) is None
+
+
+def test_gate_arch_level_one_allows_larger_net():
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    proposed = {"net_arch": [400, 300]}
+    current = {"net_arch": [256, 256]}
+    assert LSM._gate_arch_proposal(1, proposed, current, current) == proposed
+
+
+def test_gate_arch_rejects_shrink_below_best_until_level_four():
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    proposed = {"net_arch": [128]}
+    current = {"net_arch": [400, 300]}
+    best = {"net_arch": [400, 300]}
+    assert LSM._gate_arch_proposal(1, proposed, current, best) is None
+    assert LSM._gate_arch_proposal(3, proposed, current, best) is None
+    assert LSM._gate_arch_proposal(4, proposed, current, best) == proposed
+
+
+def test_gate_arch_same_as_current_passes_through():
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    pky = {"net_arch": [256, 256]}
+    assert LSM._gate_arch_proposal(0, pky, pky, pky) == pky
+
+
+def test_is_strictly_smaller_net_arch():
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    assert LSM._is_strictly_smaller_net_arch([128], [400, 300])
+    assert LSM._is_strictly_smaller_net_arch([256, 256], [400, 300])
+    assert not LSM._is_strictly_smaller_net_arch([512, 512], [400, 300])
+    assert not LSM._is_strictly_smaller_net_arch([256, 256, 128], [400, 300])
+
+
 def test_recent_arches_updated_on_arch_change():
     """When arch changes, the outgoing arch is prepended to recent_arches (capped at 3)."""
     plan = {

@@ -151,16 +151,19 @@ The script must:
                _warm = {algorithm}.load(_best_ckpt, env=env)
                _warm_sd = _warm.policy.state_dict()
                _model_sd = model.policy.state_dict()
-               _matched = {{k: v for k, v in _warm_sd.items()
-                           if k in _model_sd and v.shape == _model_sd[k].shape}}
-               _model_sd.update(_matched)
-               model.policy.load_state_dict(_model_sd)
-               if len(_matched) < len(_model_sd):
+               _shapes_ok = (
+                   set(_warm_sd) == set(_model_sd)
+                   and all(_warm_sd[k].shape == _model_sd[k].shape for k in _model_sd)
+               )
+               if _shapes_ok:
+                   model.policy.load_state_dict(_warm_sd)
+               else:
                    logging.warning(
-                       "Warm-start: %d/%d policy tensors matched shape after net_arch/algo "
-                       "change; the rest kept their random init", len(_matched), len(_model_sd),
+                       "Warm-start skipped: policy tensor shapes differ from checkpoint "
+                       "(%d checkpoint tensors, %d current) — random init for this net_arch",
+                       len(_warm_sd), len(_model_sd),
                    )
-               del _warm, _warm_sd, _model_sd, _matched
+               del _warm, _warm_sd, _model_sd
            except Exception as _e:
                logging.warning("Warm-start skipped (architecture mismatch or load error): %s", _e)
        elif os.path.exists(_best_ckpt) and _ckpt_algo and _ckpt_algo != "{algorithm}":
@@ -170,9 +173,9 @@ The script must:
            )
 
    This resumes training from the best previously saved weights while keeping the new hyperparameters.
-   If the checkpoint architecture differs (e.g. after a net_arch pivot), only the tensors whose
-   shape still matches are copied — layers whose shape changed keep the freshly initialized
-   weights instead of discarding the ENTIRE policy. `os` and `logging` are already imported.
+   Load the full policy only when every tensor name and shape matches. If the checkpoint
+   architecture differs (e.g. after a net_arch pivot), skip the load and keep the freshly
+   initialized weights — do not copy a subset of tensors. `os` and `logging` are already imported.
    The block is MANDATORY — do not remove or skip it.
 4. Implement a custom BaseCallback. Copy this ENTIRE class EXACTLY — do not add, remove, or
    modify any line:

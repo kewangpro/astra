@@ -1558,6 +1558,20 @@ class LoopStateMachine:
                         )
                     _proposed_pky = self._clamp_net_arch(pivot.get("policy_kwargs"))
                     _current_pky = plan.get("hyperparameters", {}).get("policy_kwargs")
+                    _gated_pky = self._gate_arch_proposal(
+                        escalation,
+                        _proposed_pky,
+                        _current_pky,
+                        pivot_engine.best_policy_kwargs(),
+                    )
+                    if _proposed_pky and _gated_pky is None:
+                        logger.warning(
+                            "LoopStateMachine: dropping net_arch %s at escalation=%d "
+                            "(level 0 is HP-only, or shrink vs best %s)",
+                            _proposed_pky, escalation, pivot_engine.best_policy_kwargs(),
+                        )
+                        pivot.pop("policy_kwargs", None)
+                    _proposed_pky = _gated_pky
                     _recent_arches = plan.get("recent_arches", [])
                     # At deep-plateau escalation, also reject anything from the FULL
                     # mission history (not just the last-5 oscillation window) — the
@@ -2468,6 +2482,57 @@ class LoopStateMachine:
             # "never pass garbage through" rule.
             clamped.pop("net_arch", None)
         return clamped
+
+    @staticmethod
+    def _net_arch_list(policy_kwargs: Optional[dict]) -> Optional[list]:
+        """SB3 list-style net_arch, or None for missing/dict-style nets."""
+        if not isinstance(policy_kwargs, dict):
+            return None
+        arch = policy_kwargs.get("net_arch")
+        if not isinstance(arch, list) or not arch:
+            return None
+        try:
+            return [int(x) for x in arch]
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _is_strictly_smaller_net_arch(proposed: list, reference: list) -> bool:
+        """True if proposed is shallower and/or thinner, and not larger on the other axis."""
+        pd, pu = len(proposed), sum(proposed)
+        rd, ru = len(reference), sum(reference)
+        return (pd <= rd and pu <= ru) and (pd < rd or pu < ru)
+
+    @classmethod
+    def _gate_arch_proposal(
+        cls,
+        escalation: int,
+        proposed_pky: Optional[dict],
+        current_pky: Optional[dict],
+        best_pky: Optional[dict],
+    ) -> Optional[dict]:
+        """Drop net_arch the ladder does not yet allow.
+
+        Level 0 is HP-only. Below level 4, refuse a strictly smaller list-style
+        net than the best (else current) architecture. Real incident: 601c2404
+        at esc=1 applied [128] over a 43-score [400, 300] DQN; partial
+        warm-start copied 0/8 tensors and eval collapsed to 3.
+        """
+        if not proposed_pky:
+            return None
+        if proposed_pky == current_pky:
+            return proposed_pky
+        if escalation < 1:
+            return None
+        if escalation >= 4:
+            return proposed_pky
+        proposed = cls._net_arch_list(proposed_pky)
+        if proposed is None:
+            return proposed_pky
+        ref = cls._net_arch_list(best_pky) or cls._net_arch_list(current_pky)
+        if ref and cls._is_strictly_smaller_net_arch(proposed, ref):
+            return None
+        return proposed_pky
 
     # RL architectures to try, in order, when a deep-plateau pivot's proposal
     # keeps oscillating back to something already tried (see call site in

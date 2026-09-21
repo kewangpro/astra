@@ -352,14 +352,13 @@ def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     assert "_best_ckpt" in prompt
     # architecture mismatch must be caught, not crash the script
     assert "except" in prompt
-    # real incident: a net_arch pivot (e.g. [256,256] -> [400,300]) changes every
-    # tensor's shape, so a plain load_state_dict() throws and the except branch
-    # discarded the ENTIRE policy back to random init instead of only the layers
-    # that actually changed shape. Warm-start must now copy shape-matching
-    # tensors individually so unrelated layers survive an arch pivot.
-    assert "v.shape == _model_sd[k].shape" in prompt
+    # architecture mismatch must skip the whole load — copying 2/12 matching
+    # tensors (601c2404 [400,300]→[128]) leaves a random net that still looks
+    # "warm-started". Require identical tensor names and shapes.
+    assert "Warm-start skipped: policy tensor shapes differ" in prompt
     assert "best_model_algo.txt" in prompt
     assert "_ckpt_algo" in prompt
+    assert "the rest kept their random init" not in prompt
 
 
 def test_build_user_prompt_ml_hardcodes_checkpoint_path(tmp_path, monkeypatch):

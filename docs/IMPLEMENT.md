@@ -2330,3 +2330,14 @@ Live Player showed the submarine parked on row 0. That was not a HUD grid bug: `
 - [x] **Original oxygen / surface latch** (`envs/minatar_seaquest_env.py`) — drain only while `sub_r > 0`. Arriving at row 0 with zero divers is terminal (`death_penalty`). `_at_surface` matches original `surface` so a legal deposit does not re-fire while parked. Holding 1–5 deposits one diver per visit and refills oxygen; holding 6 dumps all plus `wave_clear_bonus`.
 - [x] **Spawn and max depth** — reset at row 0 col 5; `DOWN` clamps to row 8 (row 9 stays the held-diver gauge). Action order remains `NOOP/LEFT/RIGHT/UP/DOWN/FIRE` so existing Seaquest zips stay valid (original MinAtar is `n,l,u,r,d,f`).
 - [x] **Tests** — surface idle does not drain oxygen; dive-then-empty-resurface terminates; max depth 8; partial deposit; spawn/viewer indices updated.
+
+---
+
+## Phase 75: Do Not Partial-Load a Mismatched `net_arch`
+
+Locked DQN-70 `601c2404` hit **43 at iter 11** on `[400, 300]`, then eval **16 → 3** after the LLM shrank to `[128]` at `esc=1`. Sandbox logged `Warm-start: 2/12` then `0/8` matching tensors: the template copied leftover layers into a new MLP and left the rest random, so eval scored a near-random net while HUD still showed "DQN". DESIGN already said Level 0 is HP-only and Level 1 should prefer the best architecture; neither was enforced.
+
+- [x] **Full-match warm-start** (`backend/agent/code_generator.py` `_RL_TEMPLATE`) — load `best_model.zip` only when every policy tensor name and shape matches. Otherwise skip (fresh init) instead of copying a subset.
+- [x] **`_gate_arch_proposal`** (`backend/loop/state_machine.py`) — drop `net_arch` at escalation 0; levels 1–3 refuse a strictly smaller list-style net than `best_policy_kwargs` (else current); level 4 may shrink. HP / `env_kwargs` / algo changes on the same pivot still apply.
+- [x] **Tests** — `test_build_user_prompt_rl_includes_warm_start_block` asserts the skip warning; `test_gate_arch_*` / `test_is_strictly_smaller_net_arch` pin the ladder.
+
