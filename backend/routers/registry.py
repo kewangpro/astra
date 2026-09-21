@@ -9,8 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
+from backend.config import settings
 from backend.logging_config import get_logger
 from backend.models.experiment import Experiment
+from backend.models.mission import Mission
 from backend.models.model_registry import ModelRecord
 from backend.schemas.experiment import ExperimentCreate, ExperimentRead, ExperimentUpdate
 from backend.schemas.model_registry import (
@@ -24,6 +26,63 @@ from backend.evaluator.benchmark import run_tournament_match, _load_env_kwargs
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/registry", tags=["registry"])
+
+
+def _missions_dir() -> str:
+    return os.path.join(settings.data_path, "missions")
+
+
+def mission_id_from_model(record: ModelRecord) -> Optional[str]:
+    """Mission UUID stored on the record, or parsed from data/missions/<id>/..."""
+    meta = record.extra_metadata or {}
+    if isinstance(meta, dict):
+        mid = meta.get("mission_id")
+        if mid:
+            return str(mid)
+    path = record.checkpoint_path or record.weights_path or ""
+    parts = os.path.normpath(path).split(os.sep)
+    if "missions" in parts:
+        i = parts.index("missions")
+        if i + 1 < len(parts) and parts[i + 1]:
+            return parts[i + 1]
+    return None
+
+
+async def _alive_mission_ids(db: AsyncSession) -> set:
+    res = await db.execute(select(Mission.id))
+    return set(res.scalars().all())
+
+
+async def purge_models_for_mission(db: AsyncSession, mission_id: str) -> int:
+    """Drop registry rows that belong to a deleted mission. Caller commits."""
+    res = await db.execute(select(ModelRecord))
+    n = 0
+    for rec in res.scalars().all():
+        if mission_id_from_model(rec) == mission_id:
+            await db.delete(rec)
+            n += 1
+    return n
+
+
+async def _prune_orphan_model_records(db: AsyncSession) -> None:
+    """Remove models whose mission row is gone (delete used to leave them behind)."""
+    alive = await _alive_mission_ids(db)
+    res = await db.execute(select(ModelRecord))
+    removed = False
+    for rec in res.scalars().all():
+        mid = mission_id_from_model(rec)
+        if mid and mid not in alive:
+            await db.delete(rec)
+            removed = True
+            logger.info(
+                "registry: pruned orphan model %s (mission %s no longer exists)",
+                rec.id, mid,
+            )
+    if removed:
+        try:
+            await db.commit()
+        except Exception as e:
+            logger.warning("Failed to commit orphan model prune: %s", e)
 
 
 
@@ -88,8 +147,12 @@ async def create_model_record(payload: ModelRecordCreate, db: AsyncSession = Dep
 
 
 async def _auto_sync_disk_checkpoints(db: AsyncSession) -> None:
-    """Scan data/missions for trained checkpoints and ensure they exist in ModelRecord."""
-    missions_dir = "data/missions"
+    """Scan data/missions for trained checkpoints and ensure they exist in ModelRecord.
+
+    Skip directories whose mission row was deleted — leftover checkpoints used
+    to reappear on the Models page after DELETE /missions/{id}.
+    """
+    missions_dir = _missions_dir()
     if not os.path.isdir(missions_dir):
         return
 
@@ -99,13 +162,20 @@ async def _auto_sync_disk_checkpoints(db: AsyncSession) -> None:
     except Exception:
         existing_paths = set()
 
+    try:
+        alive = await _alive_mission_ids(db)
+    except Exception:
+        alive = set()
+
     added = False
-    for cfg_path in sorted(glob.glob(f"{missions_dir}/*/checkpoints/train_config.json")):
+    for cfg_path in sorted(glob.glob(os.path.join(missions_dir, "*", "checkpoints", "train_config.json"))):
         try:
             with open(cfg_path) as f:
                 cfg = json.load(f)
             ckpt_dir = os.path.dirname(cfg_path)
             m_id = os.path.basename(os.path.dirname(ckpt_dir))
+            if m_id not in alive:
+                continue
             env_id = cfg.get("env_id")
             algo = cfg.get("algorithm", "RL")
             if not env_id:
@@ -161,6 +231,7 @@ async def list_model_records(
     db: AsyncSession = Depends(get_db),
 ):
     await _auto_sync_disk_checkpoints(db)
+    await _prune_orphan_model_records(db)
     q = select(ModelRecord)
     if domain:
         q = q.where(ModelRecord.domain == domain)
@@ -204,6 +275,7 @@ async def delete_model_record(model_id: str, db: AsyncSession = Depends(get_db))
 @router.post("/tournament", response_model=TournamentResponse)
 async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(get_db)):
     await _auto_sync_disk_checkpoints(db)
+    await _prune_orphan_model_records(db)
     entries: List[dict] = []
     if payload.model_ids:
         for mid in payload.model_ids:
@@ -225,9 +297,13 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
 
     # Fallback 1: auto-discover checkpoints from data/missions
     if len(entries) < 2:
-        missions_dir = "data/missions"
+        missions_dir = _missions_dir()
         if os.path.isdir(missions_dir):
-            for cfg_path in sorted(glob.glob(f"{missions_dir}/*/checkpoints/train_config.json")):
+            try:
+                alive = await _alive_mission_ids(db)
+            except Exception:
+                alive = set()
+            for cfg_path in sorted(glob.glob(os.path.join(missions_dir, "*", "checkpoints", "train_config.json"))):
                 try:
                     with open(cfg_path) as f:
                         cfg = json.load(f)
@@ -239,6 +315,8 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
                     ):
                         ckpt_dir = os.path.dirname(cfg_path)
                         m_id = os.path.basename(os.path.dirname(ckpt_dir))
+                        if m_id not in alive:
+                            continue
                         algo = cfg.get("algorithm", "RL")
                         for fn in ("best_model.zip", "best_model.pth", "last_model.zip"):
                             p = os.path.join(ckpt_dir, fn)
@@ -256,7 +334,7 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
 
             # If still need candidates, search iter/ subdirectories
             if len(entries) < 2:
-                for cfg_path in sorted(glob.glob(f"{missions_dir}/*/checkpoints/train_config.json")):
+                for cfg_path in sorted(glob.glob(os.path.join(missions_dir, "*", "checkpoints", "train_config.json"))):
                     try:
                         with open(cfg_path) as f:
                             cfg = json.load(f)
@@ -268,6 +346,8 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
                         ):
                             ckpt_dir = os.path.dirname(cfg_path)
                             m_id = os.path.basename(os.path.dirname(ckpt_dir))
+                            if m_id not in alive:
+                                continue
                             algo = cfg.get("algorithm", "RL")
                             iter_dir = os.path.join(ckpt_dir, "iter")
                             if os.path.isdir(iter_dir):

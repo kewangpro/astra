@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from backend.models.mission import (
 from backend.models.manifest import RequirementManifest
 from backend.models.approval import ApprovalGate, ApprovalStatus
 from backend.schemas.mission import MissionCreate, MissionRead, MissionUpdate
+from backend.routers.registry import purge_models_for_mission
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 
@@ -325,5 +327,17 @@ async def delete_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
         gate.status = ApprovalStatus.REJECTED.value
         gate.reviewer_note = "mission deleted"
 
+    await purge_models_for_mission(db, mission_id)
     await db.delete(mission)
     await db.commit()
+    _remove_mission_workdir(mission_id)
+
+
+def _remove_mission_workdir(mission_id: str) -> None:
+    """Delete data/missions/<id> so leftover zips cannot re-sync into the registry."""
+    root = os.path.abspath(os.path.join(settings.data_path, "missions"))
+    mission_dir = os.path.abspath(os.path.join(root, mission_id))
+    if not mission_dir.startswith(root + os.sep):
+        return
+    if os.path.isdir(mission_dir):
+        shutil.rmtree(mission_dir, ignore_errors=True)

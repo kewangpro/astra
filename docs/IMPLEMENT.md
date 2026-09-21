@@ -2352,3 +2352,13 @@ Phase 75 stopped *new* `[128]` pivots and skipped partial warm-start. Live `601c
 - [x] **`_apply_best_arch_to_plan`** — after restoring `_pre_pivot_hps`, overwrite `policy_kwargs` with `best_policy_kwargs` so the next `train.py` matches the zip.
 - [x] **Tests** — `test_restore_arch_pivot_baseline_keeps_window`, `test_recount_post_pivot_from_origin_iteration`, `test_should_restore_undersized_arch_until_level_four`, `test_apply_best_arch_overwrites_pre_pivot_net`, `test_sync_regression_plan_fields_roundtrip`.
 
+---
+
+## Phase 77: Deleted Missions Must Not Linger on the Models Page
+
+`DELETE /missions/{id}` removed the mission row and cancelled the loop, but left `data/missions/<id>/checkpoints` and `model_records` intact. `GET /registry/models` then `_auto_sync_disk_checkpoints` re-created `DQN MinAtar-Seaquest-v0 (xxxxxxxx)` from those leftover zips, so the Models page still listed runs the user had deleted.
+
+- [x] **`purge_models_for_mission` / `_remove_mission_workdir`** — delete matching registry rows (via `extra_metadata.mission_id` or the `data/missions/<id>/` path) and `rmtree` the mission directory after the DB commit.
+- [x] **`_auto_sync_disk_checkpoints` / tournament disk fallback** — skip checkpoint dirs whose mission id is not in `missions`. `_prune_orphan_model_records` drops leftover registry rows on list/tournament.
+- [x] **Tests** — `test_delete_purges_registry_and_workdir`, `test_remove_mission_workdir_deletes_only_under_data`, `test_mission_id_from_model_metadata_and_path`, `test_auto_sync_skips_deleted_mission_dir`, `test_prune_orphan_model_records`.
+

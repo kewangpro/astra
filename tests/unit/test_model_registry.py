@@ -261,7 +261,7 @@ def test_run_tournament_match_nlp(tmp_path):
 
 @pytest.mark.asyncio
 async def test_tournament_auto_discovers_missions_checkpoints(tmp_path, monkeypatch):
-    """Verify that tournament auto-discovers checkpoints from data/missions when not in DB."""
+    """Disk fallback still finds live-mission zips that are not yet in the registry."""
     import json
     missions_dir = tmp_path / "data" / "missions"
     m1_ckpt = missions_dir / "m1" / "checkpoints"
@@ -296,12 +296,96 @@ async def test_tournament_auto_discovers_missions_checkpoints(tmp_path, monkeypa
         "champion_id": "m1",
     }
 
-    with patch("backend.routers.registry.run_tournament_match", return_value=fake_result) as mock_match:
-        resp = await run_tournament(req, db=db)
-        assert resp["champion_id"] == "m1"
-        assert len(resp["leaderboard"]) == 2
-        mock_match.assert_called_once()
-        call_kwargs = mock_match.call_args[1]
-        assert len(call_kwargs["checkpoint_entries"]) == 2
+    with patch("backend.routers.registry._alive_mission_ids", new_callable=AsyncMock, return_value={"m1", "m2"}):
+        with patch("backend.routers.registry.run_tournament_match", return_value=fake_result) as mock_match:
+            resp = await run_tournament(req, db=db)
+            assert resp["champion_id"] == "m1"
+            assert len(resp["leaderboard"]) == 2
+            mock_match.assert_called_once()
+            call_kwargs = mock_match.call_args[1]
+            assert len(call_kwargs["checkpoint_entries"]) == 2
+
+
+def test_mission_id_from_model_metadata_and_path():
+    from backend.routers.registry import mission_id_from_model
+
+    rec = MagicMock()
+    rec.extra_metadata = {"mission_id": "601c2404-ee20-4fb5-af2b-bebfbff4c98e"}
+    rec.checkpoint_path = None
+    rec.weights_path = None
+    assert mission_id_from_model(rec) == "601c2404-ee20-4fb5-af2b-bebfbff4c98e"
+
+    rec.extra_metadata = {}
+    rec.checkpoint_path = "data/missions/28e65efd-aaaa-bbbb-cccc-dddddddddddd/checkpoints/best_model.zip"
+    assert mission_id_from_model(rec).startswith("28e65efd")
+
+    rec.checkpoint_path = "/tmp/other.zip"
+    rec.weights_path = None
+    assert mission_id_from_model(rec) is None
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_skips_deleted_mission_dir(tmp_path, monkeypatch):
+    import json
+    from backend.config import settings
+    from backend.routers.registry import _auto_sync_disk_checkpoints
+
+    monkeypatch.setattr(settings, "data_path", str(tmp_path))
+    mid = "deadbeef-0000-0000-0000-000000000001"
+    ckpt = tmp_path / "missions" / mid / "checkpoints"
+    ckpt.mkdir(parents=True)
+    (ckpt / "train_config.json").write_text(json.dumps({
+        "env_id": "MinAtar-Seaquest-v0", "algorithm": "DQN",
+    }))
+    (ckpt / "best_model.zip").write_bytes(b"zip")
+
+    db = AsyncMock()
+    empty = MagicMock()
+    empty.all = MagicMock(return_value=[])
+    result = MagicMock()
+    result.scalars = MagicMock(return_value=empty)
+    db.execute = AsyncMock(return_value=result)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    await _auto_sync_disk_checkpoints(db)
+    db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_orphan_model_records():
+    from backend.routers.registry import _prune_orphan_model_records
+
+    alive_id = "live-mission-id"
+    orphan = MagicMock()
+    orphan.id = "orphan-model"
+    orphan.extra_metadata = {"mission_id": "deleted-mission-id"}
+    orphan.checkpoint_path = None
+    orphan.weights_path = None
+    keep = MagicMock()
+    keep.id = "keep-model"
+    keep.extra_metadata = {"mission_id": alive_id}
+    keep.checkpoint_path = None
+    keep.weights_path = None
+
+    db = AsyncMock()
+
+    def _execute(stmt):
+        result = MagicMock()
+        scalars = MagicMock()
+        text = str(stmt)
+        if "missions" in text.lower() or "mission" in text.lower():
+            scalars.all = MagicMock(return_value=[alive_id])
+        else:
+            scalars.all = MagicMock(return_value=[orphan, keep])
+        result.scalars = MagicMock(return_value=scalars)
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+    await _prune_orphan_model_records(db)
+    db.delete.assert_awaited_once_with(orphan)
+    db.commit.assert_awaited()
 
 
