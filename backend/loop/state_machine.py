@@ -446,16 +446,6 @@ class LoopStateMachine:
                 "LoopStateMachine: restored best_policy_kwargs=%s for mission=%s",
                 mission.best_policy_kwargs, mission_id,
             )
-        # Re-arm regression detector if a pivot was in-flight before the restart.
-        if mission.pivot_pre_best is not None:
-            try:
-                pivot_engine.restore_arch_pivot_baseline(float(mission.pivot_pre_best))
-                logger.info(
-                    "LoopStateMachine: re-armed regression detector with pre_pivot_best=%.4f for mission=%s",
-                    float(mission.pivot_pre_best), mission_id,
-                )
-            except (ValueError, TypeError):
-                pass
         # Replay per-iteration goal metric history from telemetry so needs_pivot()
         # has full context immediately rather than waiting for PLATEAU_WINDOW fresh iters.
         metric_name_for_history = next(iter(mission.target_metric), None)
@@ -472,6 +462,28 @@ class LoopStateMachine:
             try:
                 pivot_engine.restore_search_origin(int(_plan_for_origin["_search_origin_iteration"]))
             except (TypeError, ValueError):
+                pass
+        # Re-arm regression detector if a pivot was in-flight before the restart.
+        # History must already be replayed so recount_post_pivot can fill the window.
+        if mission.pivot_pre_best is not None:
+            try:
+                _pre = float(mission.pivot_pre_best)
+                _plan_reg = _plan_for_origin or {}
+                _iters = _plan_reg.get("_iters_since_pivot") or 0
+                _post = _plan_reg.get("_post_pivot_best")
+                _post_f = float(_post) if _post is not None else None
+                pivot_engine.restore_arch_pivot_baseline(
+                    _pre, iters_since=_iters, post_best=_post_f,
+                )
+                _arch_origin = _plan_reg.get("_arch_pivot_iteration")
+                if _arch_origin is not None:
+                    pivot_engine.recount_post_pivot(int(_arch_origin))
+                logger.info(
+                    "LoopStateMachine: re-armed regression detector pre_pivot_best=%.4f "
+                    "iters_since=%d for mission=%s",
+                    _pre, pivot_engine._iters_since_pivot, mission_id,
+                )
+            except (ValueError, TypeError):
                 pass
 
         manifest = self._load_or_create_manifest(mission_id, mission)
@@ -693,6 +705,23 @@ class LoopStateMachine:
                     # immediately after changing `plan`; this brings the fresh/
                     # critic-revised path in line with that convention.
                     await self._save_plan(mission_id, plan)
+
+                if (
+                    not _skip_launch
+                    and plan is not None
+                    and self._should_restore_undersized_arch(
+                        pivot_engine.escalation_level(),
+                        plan.get("hyperparameters", {}).get("policy_kwargs"),
+                        pivot_engine.best_policy_kwargs(),
+                    )
+                ):
+                    # Resume must heal before codegen — post-eval restore is too
+                    # late after a restart (601c2404 loaded [512] and began
+                    # generating train.py). Do not rewrite a live sandbox.
+                    await self._revert_to_search_best_checkpoint(
+                        mission_id, plan, pivot_engine, current_iteration,
+                        undersized=True, detector_was_armed=pivot_engine._pivot_applied,
+                    )
 
                 error_history: list[str] = []   # accumulated errors for this script
                 if _skip_launch:
@@ -1070,6 +1099,7 @@ class LoopStateMachine:
                 _current_policy_kwargs = plan.get("hyperparameters", {}).get("policy_kwargs")
                 pivot_engine.record(current_iteration, current_metrics, policy_kwargs=_current_policy_kwargs)
                 await self._save_best_policy_kwargs(mission_id, pivot_engine.best_policy_kwargs())
+                self._sync_regression_plan_fields(plan, pivot_engine)
                 # Chain dpo/grpo warm-start adapter forward only when this iteration's
                 # own training genuinely matched or beat the prior best — not every
                 # raw output (training within one iteration has repeatedly been
@@ -1160,71 +1190,23 @@ class LoopStateMachine:
                 # de-escalate so HP tuning resumes from the good baseline.
                 _pivot_reverted = False
                 _was_pivot_applied = pivot_engine._pivot_applied
-                if pivot_engine.should_revert_pivot():
-                    _checkpoint_dir = os.path.join(
-                        settings.data_path, "missions", mission_id, "checkpoints"
+                _undersized_arch = self._should_restore_undersized_arch(
+                    pivot_engine.escalation_level(),
+                    plan.get("hyperparameters", {}).get("policy_kwargs"),
+                    pivot_engine.best_policy_kwargs(),
+                )
+                if pivot_engine.should_revert_pivot() or _undersized_arch:
+                    await self._revert_to_search_best_checkpoint(
+                        mission_id, plan, pivot_engine, current_iteration,
+                        undersized=_undersized_arch,
+                        detector_was_armed=_was_pivot_applied,
                     )
-                    _pre_hps = plan.pop("_pre_pivot_hps", None)
-                    _pre_score = plan.pop("_pre_pivot_best_score", None)
-                    _pre_algo = plan.pop("_pre_pivot_algorithm", None)
-                    _best_iter = pivot_engine.search_best_iteration()
-                    # Ignore the synthetic seed iteration (-1) used on restart when
-                    # best_metric_iteration was not persisted — there is no checkpoint for it.
-                    if _best_iter is not None and _best_iter < 0:
-                        _best_iter = None
-                    # Support both .pth (actor_critic) and .zip (SB3)
-                    _best_pth = os.path.join(_checkpoint_dir, "best_model.pth")
-                    _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
-                    _ckpt_ext = ".pth" if os.path.exists(_best_pth) else ".zip"
-                    _best_model = _best_pth if _ckpt_ext == ".pth" else _best_zip
-                    _iter_ckpt = (
-                        os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}{_ckpt_ext}")
-                        if _best_iter is not None else None
-                    )
-                    _restore_src = _iter_ckpt if _iter_ckpt and os.path.exists(_iter_ckpt) else None
-                    if _restore_src:
-                        try:
-                            shutil.copy2(_restore_src, _best_model)
-                            logger.info(
-                                "LoopStateMachine: restored checkpoint from %s for mission=%s",
-                                os.path.basename(_restore_src), mission_id,
-                            )
-                        except Exception as _e:
-                            logger.warning("LoopStateMachine: could not restore checkpoint: %s", _e)
-                    if _pre_score is not None:
-                        try:
-                            with open(os.path.join(_checkpoint_dir, "best_score.txt"), "w") as _f:
-                                _f.write(str(_pre_score))
-                        except Exception as _e:
-                            logger.warning("LoopStateMachine: could not restore best_score.txt: %s", _e)
-                    if _pre_hps is not None:
-                        plan["hyperparameters"] = _pre_hps
-                    if _pre_algo:
-                        _canon_pre = canonicalize_algorithm(_pre_algo) or _pre_algo
-                        _canon_now = canonicalize_algorithm(plan.get("algorithm") or "") or plan.get("algorithm")
-                        if _canon_pre != _canon_now:
-                            # Full trainer rollback — never leave PPO HPs off a DQN zip.
-                            plan["algorithm"] = _canon_pre
-                            self._strip_plan_foreign_hyperparameters(plan)
-                    else:
-                        self._strip_plan_foreign_hyperparameters(plan)
-                    pivot_engine.revert_escalation()
-                    await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
-                    await self._save_pivot_pre_best(mission_id, None)
-                    await self._save_plan(mission_id, plan)
                     skip_replan_in_memory = False
-                    _revert_label = (
-                        f"iter {_best_iter}" if _best_iter is not None else "pre-pivot backup"
-                    )
-                    await emit_status(
-                        mission_id,
-                        f"Pivot reverted — restored checkpoint from {_revert_label}, resuming HP tuning",
-                        event_type="warn",
-                        iteration=current_iteration,
-                    )
                     _pivot_reverted = True
                 elif _was_pivot_applied and not pivot_engine._pivot_applied:
                     # Recovery confirmed — should_revert_pivot cleared _pivot_applied
+                    plan.pop("_arch_pivot_iteration", None)
+                    self._sync_regression_plan_fields(plan, pivot_engine)
                     await self._save_pivot_pre_best(mission_id, None)
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
@@ -1648,7 +1630,9 @@ class LoopStateMachine:
                             plan["_pre_pivot_hps"] = dict(plan.get("hyperparameters", {}))
                             plan["_pre_pivot_best_score"] = pivot_engine.search_best_value()
                             plan["_pre_pivot_algorithm"] = current_algo
+                            plan["_arch_pivot_iteration"] = current_iteration
                             pivot_engine.record_arch_pivot_baseline()
+                            self._sync_regression_plan_fields(plan, pivot_engine)
                             await self._save_pivot_pre_best(mission_id, pivot_engine._pre_pivot_best)
                         elif algo_changed:
                             await self._save_pivot_pre_best(mission_id, None)
@@ -2374,6 +2358,7 @@ class LoopStateMachine:
         best = pivot_engine.best_metric_value()
         if best is not None:
             pivot_engine.restore_best_at_last_pivot(best)
+        self._sync_regression_plan_fields(plan, pivot_engine)
         logger.info(
             "LoopStateMachine: algo switch reset env_kwargs=%s hps=%s pivot_count=0 origin=%s",
             plan["env_kwargs"],
@@ -2533,6 +2518,127 @@ class LoopStateMachine:
         if ref and cls._is_strictly_smaller_net_arch(proposed, ref):
             return None
         return proposed_pky
+
+    async def _revert_to_search_best_checkpoint(
+        self,
+        mission_id: str,
+        plan: dict,
+        pivot_engine: PivotEngine,
+        current_iteration: int,
+        *,
+        undersized: bool,
+        detector_was_armed: bool,
+    ) -> Optional[int]:
+        """Copy search-best zip onto best_model and align plan net_arch with it."""
+        _checkpoint_dir = os.path.join(
+            settings.data_path, "missions", mission_id, "checkpoints"
+        )
+        _pre_hps = plan.pop("_pre_pivot_hps", None)
+        _pre_score = plan.pop("_pre_pivot_best_score", None)
+        _pre_algo = plan.pop("_pre_pivot_algorithm", None)
+        _best_iter = pivot_engine.search_best_iteration()
+        if _best_iter is not None and _best_iter < 0:
+            _best_iter = None
+        _best_pth = os.path.join(_checkpoint_dir, "best_model.pth")
+        _best_zip = os.path.join(_checkpoint_dir, "best_model.zip")
+        _ckpt_ext = ".pth" if os.path.exists(_best_pth) else ".zip"
+        _best_model = _best_pth if _ckpt_ext == ".pth" else _best_zip
+        _iter_ckpt = (
+            os.path.join(_checkpoint_dir, "iter", f"checkpoint_iter_{_best_iter}{_ckpt_ext}")
+            if _best_iter is not None else None
+        )
+        _restore_src = _iter_ckpt if _iter_ckpt and os.path.exists(_iter_ckpt) else None
+        if _restore_src:
+            try:
+                shutil.copy2(_restore_src, _best_model)
+                logger.info(
+                    "LoopStateMachine: restored checkpoint from %s for mission=%s",
+                    os.path.basename(_restore_src), mission_id,
+                )
+            except Exception as _e:
+                logger.warning("LoopStateMachine: could not restore checkpoint: %s", _e)
+        if _pre_score is not None:
+            try:
+                with open(os.path.join(_checkpoint_dir, "best_score.txt"), "w") as _f:
+                    _f.write(str(_pre_score))
+            except Exception as _e:
+                logger.warning("LoopStateMachine: could not restore best_score.txt: %s", _e)
+        if _pre_hps is not None:
+            plan["hyperparameters"] = _pre_hps
+        self._apply_best_arch_to_plan(plan, pivot_engine.best_policy_kwargs())
+        if _pre_algo:
+            _canon_pre = canonicalize_algorithm(_pre_algo) or _pre_algo
+            _canon_now = canonicalize_algorithm(plan.get("algorithm") or "") or plan.get("algorithm")
+            if _canon_pre != _canon_now:
+                plan["algorithm"] = _canon_pre
+                self._strip_plan_foreign_hyperparameters(plan)
+        else:
+            self._strip_plan_foreign_hyperparameters(plan)
+        pivot_engine.revert_escalation()
+        self._sync_regression_plan_fields(plan, pivot_engine)
+        await self._save_pivot_count(mission_id, pivot_engine.pivot_count)
+        await self._save_pivot_pre_best(mission_id, None)
+        await self._save_plan(mission_id, plan)
+        _revert_label = (
+            f"iter {_best_iter}" if _best_iter is not None else "pre-pivot backup"
+        )
+        _revert_msg = (
+            f"Restored best architecture (undersized net_arch) from {_revert_label}"
+            if undersized and not detector_was_armed
+            else f"Pivot reverted — restored checkpoint from {_revert_label}, resuming HP tuning"
+        )
+        await emit_status(
+            mission_id,
+            _revert_msg,
+            event_type="warn",
+            iteration=current_iteration,
+        )
+        return _best_iter
+
+    @classmethod
+    def _should_restore_undersized_arch(
+        cls,
+        escalation: int,
+        current_pky: Optional[dict],
+        best_pky: Optional[dict],
+    ) -> bool:
+        """True when the live plan is a strictly smaller net than the best zip.
+
+        Phase 75 only blocks *future* shrinks. 601c2404 was already on [128]
+        with a 43-score [256, 256] checkpoint; restart also zeroed the revert
+        clock so should_revert_pivot never restored it.
+        """
+        if escalation >= 4:
+            return False
+        current = cls._net_arch_list(current_pky)
+        best = cls._net_arch_list(best_pky)
+        if not current or not best:
+            return False
+        return cls._is_strictly_smaller_net_arch(current, best)
+
+    @staticmethod
+    def _apply_best_arch_to_plan(plan: dict, best_pky: Optional[dict]) -> None:
+        """Keep reverted HPs on the same net_arch as checkpoint_iter_{best}.
+
+        Restoring _pre_pivot_hps alone can leave [400, 300] on a [256, 256]
+        zip (601c2404: shrink snapshot was the failed larger net).
+        """
+        hps = plan.setdefault("hyperparameters", {})
+        if best_pky:
+            hps["policy_kwargs"] = best_pky
+        elif best_pky == {}:
+            hps.pop("policy_kwargs", None)
+
+    @staticmethod
+    def _sync_regression_plan_fields(plan: dict, pivot_engine) -> None:
+        """Persist revert-window counters on the plan (survives uvicorn restart)."""
+        if pivot_engine._pivot_applied:
+            plan["_iters_since_pivot"] = pivot_engine._iters_since_pivot
+            plan["_post_pivot_best"] = pivot_engine._post_pivot_best
+        else:
+            plan.pop("_iters_since_pivot", None)
+            plan.pop("_post_pivot_best", None)
+            plan.pop("_arch_pivot_iteration", None)
 
     # RL architectures to try, in order, when a deep-plateau pivot's proposal
     # keeps oscillating back to something already tried (see call site in

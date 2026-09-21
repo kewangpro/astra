@@ -2341,3 +2341,14 @@ Locked DQN-70 `601c2404` hit **43 at iter 11** on `[400, 300]`, then eval **16 �
 - [x] **`_gate_arch_proposal`** (`backend/loop/state_machine.py`) — drop `net_arch` at escalation 0; levels 1–3 refuse a strictly smaller list-style net than `best_policy_kwargs` (else current); level 4 may shrink. HP / `env_kwargs` / algo changes on the same pivot still apply.
 - [x] **Tests** — `test_build_user_prompt_rl_includes_warm_start_block` asserts the skip warning; `test_gate_arch_*` / `test_is_strictly_smaller_net_arch` pin the ladder.
 
+---
+
+## Phase 76: Persist the Revert Window and Heal an Already-Shrunk Net
+
+Phase 75 stopped *new* `[128]` pivots and skipped partial warm-start. Live `601c2404` was already on `[128]`, and a uvicorn restart re-armed `pivot_pre_best=43` while **zeroing** `_iters_since_pivot`, so evals 14–16 never tripped `should_revert_pivot()`. Revert HPs also came from `_pre_pivot_hps` (`[400, 300]`) while `checkpoint_iter_11` is the 43-score `[256, 256]` zip.
+
+- [x] **`restore_arch_pivot_baseline(..., iters_since=, post_best=)`** — keep the 3-eval clock. Plan fields `_iters_since_pivot` / `_post_pivot_best` / `_arch_pivot_iteration` are written after every eval; startup recounts history after the origin iter.
+- [x] **`_should_restore_undersized_arch`** — below level 4, if current `net_arch` is strictly smaller than `best_policy_kwargs`, take the same restore path as a regression revert (copy `checkpoint_iter_{search_best}`, restore `best_score.txt`). Runs **before codegen on resume** as well as after eval — a restart that loaded `[512]` otherwise trained the wrong net for a full iteration first.
+- [x] **`_apply_best_arch_to_plan`** — after restoring `_pre_pivot_hps`, overwrite `policy_kwargs` with `best_policy_kwargs` so the next `train.py` matches the zip.
+- [x] **Tests** — `test_restore_arch_pivot_baseline_keeps_window`, `test_recount_post_pivot_from_origin_iteration`, `test_should_restore_undersized_arch_until_level_four`, `test_apply_best_arch_overwrites_pre_pivot_net`, `test_sync_regression_plan_fields_roundtrip`.
+

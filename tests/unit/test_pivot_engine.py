@@ -421,6 +421,35 @@ def test_algo_switch_search_does_not_revert_against_old_peak():
     assert not e.should_revert_pivot()
 
 
+def test_restore_arch_pivot_baseline_keeps_window():
+    """Restart must not zero the 3-eval revert clock (601c2404)."""
+    e = PivotEngine({"score": 70.0})
+    e.record(11, {"score": 43.0})
+    e.record_arch_pivot_baseline()
+    e.record(14, {"score": 21.0})
+    e.record(15, {"score": 13.5})
+    e.restore_arch_pivot_baseline(43.0, iters_since=2, post_best=21.0)
+    assert e._pivot_applied is True
+    assert e._iters_since_pivot == 2
+    assert e._post_pivot_best == 21.0
+    e.record(16, {"score": 17.0})
+    assert e.should_revert_pivot()
+
+
+def test_recount_post_pivot_from_origin_iteration():
+    e = PivotEngine({"score": 70.0})
+    e.restore_history([
+        {"iteration": 11, "score": 43.0},
+        {"iteration": 12, "score": 16.0},
+        {"iteration": 13, "score": 3.0},
+        {"iteration": 14, "score": 21.0},
+    ])
+    e.restore_arch_pivot_baseline(43.0)
+    e.recount_post_pivot(12)  # shrink applied after iter 12
+    assert e._iters_since_pivot == 2
+    assert e._post_pivot_best == 21.0
+
+
 def test_arch_revert_uses_search_best_not_all_time():
     e = PivotEngine({"score": 100.0})
     e.record(11, {"score": 53.5})

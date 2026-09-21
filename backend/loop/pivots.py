@@ -205,16 +205,59 @@ class PivotEngine:
         self._iters_since_pivot = 0
         self._pivot_applied = True
 
-    def restore_arch_pivot_baseline(self, pre_pivot_best: float) -> None:
-        """Re-arm regression detector after a restart using the persisted pre-pivot best."""
+    def restore_arch_pivot_baseline(
+        self,
+        pre_pivot_best: float,
+        *,
+        iters_since: int = 0,
+        post_best: Optional[float] = None,
+    ) -> None:
+        """Re-arm regression detector after a restart using persisted pre-pivot state.
+
+        Do not zero `_iters_since_pivot`: a restart mid-window used to miss
+        `should_revert_pivot()` (live: 601c2404, [128] evals 14–16 after uvicorn
+        restart, detector re-armed at 0).
+        """
         self._pre_pivot_best = pre_pivot_best
-        self._post_pivot_best = None
-        self._iters_since_pivot = 0
+        self._post_pivot_best = post_best
+        try:
+            self._iters_since_pivot = max(0, int(iters_since))
+        except (TypeError, ValueError):
+            self._iters_since_pivot = 0
         self._pivot_applied = True
         logger.info(
-            "PivotEngine: arch/algo pivot armed — pre_pivot_best=%.3f",
+            "PivotEngine: arch pivot armed — pre_pivot_best=%.3f iters_since=%d post_best=%s",
             self._pre_pivot_best if self._pre_pivot_best is not None else float("nan"),
+            self._iters_since_pivot,
+            f"{self._post_pivot_best:.3f}" if self._post_pivot_best is not None else "None",
         )
+
+    def recount_post_pivot(self, origin_iteration: int) -> None:
+        """Set iters/post-best from history after the eval that armed the detector."""
+        if not self._pivot_applied:
+            return
+        try:
+            origin = int(origin_iteration)
+        except (TypeError, ValueError):
+            return
+        n = 0
+        post: Optional[float] = None
+        for h in self._history:
+            it = h.get("iteration")
+            if not isinstance(it, int) or it <= origin:
+                continue
+            v = self._resolve_metric(self._metric_name, h)
+            if v is None:
+                continue
+            n += 1
+            if post is None:
+                post = v
+            else:
+                better = (v < post) if self._is_loss else (v > post)
+                if better:
+                    post = v
+        self._iters_since_pivot = n
+        self._post_pivot_best = post
 
     def should_revert_pivot(self) -> bool:
         """True if the new config is still materially worse after PLATEAU_WINDOW iters.

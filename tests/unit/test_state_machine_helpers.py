@@ -1095,6 +1095,48 @@ def test_is_strictly_smaller_net_arch():
     assert not LSM._is_strictly_smaller_net_arch([256, 256, 128], [400, 300])
 
 
+def test_should_restore_undersized_arch_until_level_four():
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    current = {"net_arch": [128]}
+    best = {"net_arch": [256, 256]}
+    assert LSM._should_restore_undersized_arch(2, current, best)
+    assert LSM._should_restore_undersized_arch(1, {"net_arch": [512]}, best)
+    assert not LSM._should_restore_undersized_arch(4, current, best)
+    assert not LSM._should_restore_undersized_arch(1, best, best)
+    assert not LSM._should_restore_undersized_arch(1, current, None)
+
+
+def test_apply_best_arch_overwrites_pre_pivot_net():
+    """Revert HPs must match the restored zip, not the failed larger net."""
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    plan = {
+        "hyperparameters": {
+            "learning_rate": 0.0002,
+            "policy_kwargs": {"net_arch": [400, 300]},
+        }
+    }
+    LSM._apply_best_arch_to_plan(plan, {"net_arch": [256, 256]})
+    assert plan["hyperparameters"]["policy_kwargs"] == {"net_arch": [256, 256]}
+    assert plan["hyperparameters"]["learning_rate"] == 0.0002
+
+
+def test_sync_regression_plan_fields_roundtrip():
+    from backend.loop.pivots import PivotEngine
+    from backend.loop.state_machine import LoopStateMachine as LSM
+    e = PivotEngine({"score": 70.0})
+    e.record(11, {"score": 43.0})
+    e.record_arch_pivot_baseline()
+    e.record(13, {"score": 3.0})
+    plan = {"_arch_pivot_iteration": 12}
+    LSM._sync_regression_plan_fields(plan, e)
+    assert plan["_iters_since_pivot"] == 1
+    assert plan["_post_pivot_best"] == 3.0
+    e.revert_escalation()
+    LSM._sync_regression_plan_fields(plan, e)
+    assert "_iters_since_pivot" not in plan
+    assert "_arch_pivot_iteration" not in plan
+
+
 def test_recent_arches_updated_on_arch_change():
     """When arch changes, the outgoing arch is prepended to recent_arches (capped at 3)."""
     plan = {
