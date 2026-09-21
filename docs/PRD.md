@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 78 complete  
+**Status:** Phase 79 complete  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -52,7 +52,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 ### 4.5. Smart Visualizer
 - Automatically captures video of "Breakthrough Moments."
 - Generates CNN activation maps and feature plots.
-- **Unified Live Game Players**: Real-time interactive game HUD canvas players with live WebSocket streaming for Snake-v0, Tetris-v0, Game2048-v0, and the complete 5-game MinAtar Suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest), featuring unified dark slate telemetry cards, live connection indicators, pre-rendered initial board states, and game-tailored speed controls.
+- **Play / inference**: Live canvas on `/models/{id}`. Missions train; models run the checkpoint. Snake, Tetris, 2048, MinAtar suite.
 
 ### 4.6. Autonomous Iteration Loop
 - Continuous "Plan-Train-Evaluate-Refine" cycle.

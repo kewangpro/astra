@@ -62,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   href="/models"
                   className="px-3 py-1 text-xs text-[#94a3b8] hover:text-[#e2e8f0] hover:bg-[#1e293b] rounded transition-colors"
                 >
-                  Models & Tournaments
+                  Models
                 </Link>
               </div>
             </nav>

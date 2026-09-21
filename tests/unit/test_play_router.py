@@ -209,6 +209,33 @@ def test_snake_viewer_grid_body_is_0_5():
         assert grid[r * env.grid_w + c] == 0.5
 
 
+def test_checkpoint_dir_for_file_strips_iter_subdir(tmp_path):
+    from backend.routers.play import checkpoint_dir_for_file
+
+    p = tmp_path / "checkpoints" / "iter" / "checkpoint_iter_0.zip"
+    p.parent.mkdir(parents=True)
+    p.write_bytes(b"x")
+    assert checkpoint_dir_for_file(str(p)) == str((tmp_path / "checkpoints").resolve())
+
+
+def test_mission_best_checkpoint_prefers_pth(tmp_path, monkeypatch):
+    import backend.routers.play as play
+
+    monkeypatch.setattr(play.settings, "data_path", str(tmp_path))
+    d = tmp_path / "missions" / "m1" / "checkpoints"
+    d.mkdir(parents=True)
+    (d / "best_model.zip").write_bytes(b"z")
+    (d / "best_model.pth").write_bytes(b"p")
+    assert play.mission_best_checkpoint("m1") == str(d / "best_model.pth")
+
+
+def test_mission_best_checkpoint_missing(tmp_path, monkeypatch):
+    import backend.routers.play as play
+
+    monkeypatch.setattr(play.settings, "data_path", str(tmp_path))
+    assert play.mission_best_checkpoint("nope") is None
+
+
 def test_snake_viewer_grid_works_with_grid_obs_type():
     from backend.routers.play import _snake_viewer_grid
     from envs.snake_env import SnakeEnv

@@ -6,12 +6,8 @@ const GRID = 16;
 const CELL = 20; // px per cell
 const CANVAS_SIZE = GRID * CELL;
 
-const WS_BASE =
-  typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8200`
-    : "ws://localhost:8200";
-
 import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+import { policyPlayUrl } from "@/lib/playWs";
 
 interface Frame {
   type: "frame" | "episode_end" | "error";
@@ -69,11 +65,12 @@ function drawFrame(ctx: CanvasRenderingContext2D, grid: number[]) {
 }
 
 interface Props {
-  missionId: string;
+  missionId?: string;
+  modelId?: string;
   envId?: string;
 }
 
-export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
+export function SnakePlayer({ missionId, modelId, envId = "Snake-v0" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -100,7 +97,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
     setLoading(true);
 
     const ws = new WebSocket(
-      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
+      policyPlayUrl({ modelId, missionId }, envId, speed)
     );
     wsRef.current = ws;
 
@@ -146,7 +143,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
       setLoading(false);
       wsRef.current = null;
     };
-  }, [missionId, envId, speed, stop]);
+  }, [missionId, modelId, envId, speed, stop]);
 
   // Initial canvas draw
   useEffect(() => {
@@ -180,7 +177,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
             )}
           </div>
           <h3 className="text-xs font-semibold text-[#e2e8f0] tracking-wide mt-1">
-            Snake Live Player
+            Snake
           </h3>
         </div>
 
@@ -232,7 +229,7 @@ export function SnakePlayer({ missionId, envId = "Snake-v0" }: Props) {
                 : "bg-teal-500 hover:bg-teal-400 text-[#0f172a] shadow-sm"
             } disabled:opacity-40`}
           >
-            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Watch Game"}
+            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Play"}
           </button>
 
           <div className="pt-2 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">

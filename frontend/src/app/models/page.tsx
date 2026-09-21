@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { api, ModelRecord, TournamentResponse, TournamentEntry } from "@/lib/api";
+import { envIdFromDomain, isPlayableEnv } from "@/lib/playWs";
 
 const ENV_OPTIONS = [
   { id: "Snake-v0", label: "Snake-v0" },
@@ -16,6 +19,7 @@ const ENV_OPTIONS = [
 ];
 
 export default function ModelsPage() {
+  const router = useRouter();
   const [models, setModels] = useState<ModelRecord[]>([]);
   const [selectedEnv, setSelectedEnv] = useState<string>("Snake-v0");
   const [filterDomain, setFilterDomain] = useState<string>("all");
@@ -92,11 +96,11 @@ export default function ModelsPage() {
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xl">🏆</span>
           <h1 className="text-lg font-semibold text-[#e2e8f0] tracking-wide">
-            Model Registry & Tournament Arena
+            Models
           </h1>
         </div>
         <p className="text-xs text-[#94a3b8]">
-          Benchmark policy checkpoints side-by-side across fixed seeds, track win rates, and crown champion models.
+          Play and inference. Missions train; models run the checkpoint.
         </p>
       </div>
 
@@ -237,9 +241,18 @@ export default function ModelsPage() {
                         </span>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-[#e2e8f0]">
-                              {entry.name}
-                            </span>
+                            {/^[0-9a-f-]{36}$/i.test(entry.model_id) ? (
+                              <Link
+                                href={`/models/${entry.model_id}`}
+                                className="text-sm font-medium text-[#e2e8f0] hover:text-[#14b8a6]"
+                              >
+                                {entry.name}
+                              </Link>
+                            ) : (
+                              <span className="text-sm font-medium text-[#e2e8f0]">
+                                {entry.name}
+                              </span>
+                            )}
                             {isFirst && (
                               <span className="text-[10px] bg-[#fbbf24]/20 text-[#fbbf24] px-2 py-0.5 rounded">
                                 Winner
@@ -302,10 +315,10 @@ export default function ModelsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-[#e2e8f0]">
-              Registered Model Checkpoints
+              Checkpoints
             </h2>
             <p className="text-xs text-[#94a3b8] mt-0.5">
-              Production candidate models tracked in the SQLite Model Registry.
+              Open a card to play that policy.
             </p>
           </div>
 
@@ -338,78 +351,90 @@ export default function ModelsPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-[#e2e8f0]">
-              <thead className="text-[11px] text-[#64748b] uppercase border-b border-[#334155]/60">
-                <tr>
-                  <th className="py-2.5 px-3">Name</th>
-                  <th className="py-2.5 px-3">Domain</th>
-                  <th className="py-2.5 px-3">Framework / Architecture</th>
-                  <th className="py-2.5 px-3">Best Metric</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#334155]/40">
-                {filteredModels.map((m) => (
-                  <tr key={m.id} className="hover:bg-[#0f172a]/40 transition-colors">
-                    <td className="py-3 px-3 font-medium">
-                      <div className="flex items-center gap-2">
-                        <span>{m.name}</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredModels.map((m) => {
+              const playable = isPlayableEnv(envIdFromDomain(m.domain));
+              return (
+                <article
+                  key={m.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => router.push(`/models/${m.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      router.push(`/models/${m.id}`);
+                    }
+                  }}
+                  className={`block rounded-lg border p-4 cursor-pointer transition-colors hover:border-[#14b8a6]/50 hover:bg-[#0f172a]/50 ${
+                    m.is_champion
+                      ? "border-[#fbbf24]/40 bg-[#fbbf24]/5"
+                      : "border-[#334155]/70 bg-[#0f172a]/40"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-[#e2e8f0] truncate">
+                          {m.name}
+                        </span>
                         {m.is_champion && (
-                          <span className="text-[10px] bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30 px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <span>👑</span> Champion
+                          <span className="text-[10px] bg-[#fbbf24]/20 text-[#fbbf24] border border-[#fbbf24]/30 px-1.5 py-0.5 rounded shrink-0">
+                            Champion
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-[#64748b] font-mono truncate max-w-xs">
-                        {m.checkpoint_path || m.weights_path}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="bg-[#0f172a] border border-[#334155] px-2 py-0.5 rounded text-[11px] text-[#14b8a6]">
+                      <span className="inline-block mt-1.5 bg-[#0f172a] border border-[#334155] px-2 py-0.5 rounded text-[11px] text-[#14b8a6]">
                         {m.domain}
                       </span>
-                    </td>
-                    <td className="py-3 px-3 text-[#94a3b8]">
-                      {m.framework || "PyTorch"} / {m.architecture || "Custom"}
-                    </td>
-                    <td className="py-3 px-3">
+                    </div>
+                    <span className="text-[10px] text-[#64748b] shrink-0">
+                      {playable ? "Play →" : "Open →"}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] text-[#64748b]">
+                        {m.framework || "PyTorch"} / {m.architecture || "Custom"}
+                      </div>
                       {m.best_metric_name ? (
-                        <span className="font-mono text-[#4ade80]">
+                        <div className="font-mono text-[#4ade80] text-xs mt-0.5">
                           {m.best_metric_name}={m.best_metric_value ?? "-"}
-                        </span>
+                        </div>
                       ) : (
-                        <span className="text-[#64748b]">-</span>
+                        <div className="text-[#64748b] text-xs mt-0.5">No metric yet</div>
                       )}
-                    </td>
-                    <td className="py-3 px-3">
-                      {m.is_champion ? (
-                        <span className="text-[#fbbf24] font-medium text-[11px]">Active Champ</span>
-                      ) : (
-                        <span className="text-[#64748b] text-[11px]">Contender</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-right space-x-2">
+                    </div>
+                    <div className="flex gap-2">
                       {!m.is_champion && (
                         <button
-                          onClick={() => handleSetChampion(m.id)}
-                          className="text-[11px] text-[#fbbf24] hover:text-[#fde68a] transition-colors"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleSetChampion(m.id);
+                          }}
+                          className="text-[11px] text-[#fbbf24] hover:text-[#fde68a]"
                         >
-                          Crown Champ
+                          Crown
                         </button>
                       )}
                       <button
-                        onClick={() => handleDeleteModel(m.id)}
-                        className="text-[11px] text-[#f87171] hover:text-[#fca5a5] transition-colors"
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteModel(m.id);
+                        }}
+                        className="text-[11px] text-[#f87171] hover:text-[#fca5a5]"
                       >
                         Delete
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </div>

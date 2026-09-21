@@ -8,10 +8,8 @@ const PADDING = 10;
 const GAP = 10;
 const TILE_SIZE = (CANVAS_SIZE - PADDING * 2 - GAP * (SIZE - 1)) / SIZE;
 
-const WS_BASE =
-  typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8200`
-    : "ws://localhost:8200";
+import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+import { policyPlayUrl } from "@/lib/playWs";
 
 const TILE_COLORS: Record<number, { bg: string; text: string }> = {
   0:    { bg: "rgba(51, 65, 85, 0.35)", text: "transparent" },
@@ -28,8 +26,6 @@ const TILE_COLORS: Record<number, { bg: string; text: string }> = {
   2048: { bg: "#eab308", text: "#ffffff" },
   4096: { bg: "#f59e0b", text: "#ffffff" },
 };
-
-import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
 
 interface Frame {
   type: "frame" | "episode_end" | "error";
@@ -106,11 +102,12 @@ function drawBoard(ctx: CanvasRenderingContext2D, grid: number[], isGameOver: bo
 }
 
 interface Props {
-  missionId: string;
+  missionId?: string;
+  modelId?: string;
   envId?: string;
 }
 
-export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
+export function Game2048Player({ missionId, modelId, envId = "Game2048-v0" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -142,7 +139,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
     setIsGameOver(false);
 
     const ws = new WebSocket(
-      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
+      policyPlayUrl({ modelId, missionId }, envId, speed)
     );
     wsRef.current = ws;
 
@@ -199,7 +196,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
       setIsGameOver(false);
       wsRef.current = null;
     };
-  }, [missionId, envId, speed, stop]);
+  }, [missionId, modelId, envId, speed, stop]);
 
   // Initial draw
   useEffect(() => {
@@ -237,7 +234,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
             )}
           </div>
           <h3 className="text-xs font-semibold text-[#e2e8f0] tracking-wide mt-1">
-            2048 Live Player
+            2048
           </h3>
         </div>
 
@@ -288,7 +285,7 @@ export function Game2048Player({ missionId, envId = "Game2048-v0" }: Props) {
                 : "bg-teal-500 hover:bg-teal-400 text-[#0f172a] shadow-sm"
             } disabled:opacity-40`}
           >
-            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Watch Game"}
+            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Play"}
           </button>
 
           <div className="pt-2 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">

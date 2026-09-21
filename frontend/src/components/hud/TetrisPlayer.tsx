@@ -8,10 +8,8 @@ const CELL = 18;
 const W = COLS * CELL;
 const H = ROWS * CELL;
 
-const WS_BASE =
-  typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8200`
-    : "ws://localhost:8200";
+import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+import { policyPlayUrl } from "@/lib/playWs";
 
 const PIECE_COLORS = [
   "#06b6d4", // I — cyan
@@ -24,8 +22,6 @@ const PIECE_COLORS = [
 ];
 const PIECE_NAMES = ["I", "O", "T", "S", "Z", "J", "L"];
 const FALLBACK_COLOR = "#14b8a6";
-
-import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
 
 interface Frame {
   type: "frame" | "episode_end" | "error";
@@ -86,11 +82,12 @@ function drawFrame(
 }
 
 interface Props {
-  missionId: string;
+  missionId?: string;
+  modelId?: string;
   envId?: string;
 }
 
-export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
+export function TetrisPlayer({ missionId, modelId, envId = "Tetris-v0" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const cellColorsRef = useRef<(string | null)[]>(new Array(ROWS * COLS).fill(null));
@@ -124,7 +121,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
     prevBoardRef.current = null;
 
     const ws = new WebSocket(
-      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
+      policyPlayUrl({ modelId, missionId }, envId, speed)
     );
     wsRef.current = ws;
 
@@ -194,7 +191,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
 
     ws.onerror = () => { setError("WebSocket connection failed"); stop(); };
     ws.onclose = () => { setPlaying(false); setLoading(false); wsRef.current = null; };
-  }, [missionId, envId, speed, stop]);
+  }, [missionId, modelId, envId, speed, stop]);
 
   // Initial draw
   useEffect(() => {
@@ -227,7 +224,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
             )}
           </div>
           <h3 className="text-xs font-semibold text-[#e2e8f0] tracking-wide mt-1">
-            Tetris Live Player
+            Tetris
           </h3>
         </div>
 
@@ -312,7 +309,7 @@ export function TetrisPlayer({ missionId, envId = "Tetris-v0" }: Props) {
                 : "bg-teal-500 hover:bg-teal-400 text-[#0f172a] shadow-sm"
             } disabled:opacity-40`}
           >
-            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Watch Game"}
+            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Play"}
           </button>
 
           <div className="pt-2 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">

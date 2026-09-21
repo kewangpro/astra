@@ -1,8 +1,9 @@
 """
-WebSocket endpoint for running trained RL model inference and streaming
-game frames to the mission HUD.
+WebSocket endpoints for running trained RL model inference and streaming
+game frames to the model viewer (and a legacy mission alias).
 
-WS /ws/missions/{id}/play?env_id=Snake-v0
+WS /ws/models/{id}/play?env_id=&fps=
+WS /ws/missions/{id}/play?env_id=Snake-v0   (loads that mission's best_model)
 
 Streams JSON frames:
   {"type": "frame", "grid": [...256 floats...], "episode": 1, "step": 42,
@@ -21,7 +22,9 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.config import settings
+from backend.database import AsyncSessionLocal
 from backend.logging_config import get_logger
+from backend.models.model_registry import ModelRecord
 
 logger = get_logger(__name__)
 
@@ -60,6 +63,25 @@ def _checkpoint_algorithm(ckpt_dir: str, cfg: dict) -> str:
         if algo:
             return algo
     return cfg.get("algorithm", "PPO")
+
+
+def checkpoint_dir_for_file(ckpt_path: str) -> str:
+    """train_config.json lives in checkpoints/, even when the zip is under iter/."""
+    d = os.path.dirname(os.path.abspath(ckpt_path))
+    if os.path.basename(d) == "iter":
+        return os.path.dirname(d)
+    return d
+
+
+def mission_best_checkpoint(mission_id: str) -> Optional[str]:
+    ckpt_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+    ckpt_pth = os.path.join(ckpt_dir, "best_model.pth")
+    ckpt_zip = os.path.join(ckpt_dir, "best_model.zip")
+    if os.path.exists(ckpt_pth):
+        return ckpt_pth
+    if os.path.exists(ckpt_zip):
+        return ckpt_zip
+    return None
 
 
 def _get_algo_class(algorithm: str):
@@ -372,25 +394,15 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     return frames, round(episode_reward, 2)
 
 
-@router.websocket("/ws/missions/{mission_id}/play")
-async def play_ws(
+async def _stream_play(
     ws: WebSocket,
-    mission_id: str,
-    env_id: str = "Snake-v0",
-    fps: int = 12,
-):
-    await ws.accept()
-
-    ckpt_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
-    # Prefer PyTorch .pth for actor_critic trainers; fall back to SB3 .zip
-    ckpt_pth = os.path.join(ckpt_dir, "best_model.pth")
-    ckpt_zip = os.path.join(ckpt_dir, "best_model.zip")
-    ckpt_path = ckpt_pth if os.path.exists(ckpt_pth) else ckpt_zip
-    if not os.path.exists(ckpt_path):
-        await ws.send_json({"type": "error", "message": "No best_model.pth or best_model.zip found for this mission."})
-        await ws.close()
-        return
-
+    ckpt_path: str,
+    env_id: str,
+    fps: int,
+    log_id: str,
+) -> None:
+    ckpt_dir = checkpoint_dir_for_file(ckpt_path)
+    env = None
     try:
         loop = asyncio.get_event_loop()
 
@@ -455,7 +467,7 @@ async def play_ws(
                 sys.modules["__main__"].Game2048ValueNet = Game2048ValueNet
                 model = torch.load(ckpt_path, weights_only=False)
                 model.eval()
-                logger.info("play_ws: loaded ActorCritic PyTorch model for mission=%s env=%s", mission_id, resolved_env_id)
+                logger.info("play_ws: loaded ActorCritic PyTorch model for %s env=%s", log_id, resolved_env_id)
                 return model, env, True  # True = is_actor_critic
 
             # Try the detected algorithm first; if it fails with a policy mismatch,
@@ -469,19 +481,18 @@ async def play_ws(
                     model = AlgoClass.load(ckpt_path, env=env)
                     if algo_name != algorithm:
                         logger.warning(
-                            "play_ws: %s.load failed — loaded with %s instead (mission=%s)",
-                            algorithm, algo_name, mission_id,
+                            "play_ws: %s.load failed — loaded with %s instead (%s)",
+                            algorithm, algo_name, log_id,
                         )
                     logger.info(
-                        "play_ws: loaded %s model for mission=%s env=%s env_kwargs=%s",
-                        algo_name, mission_id, resolved_env_id, env_kwargs,
+                        "play_ws: loaded %s model for %s env=%s env_kwargs=%s",
+                        algo_name, log_id, resolved_env_id, env_kwargs,
                     )
                     return model, env, False
                 except Exception as exc:
                     last_exc = exc
                     continue
-            raise RuntimeError(f"Could not load best_model.zip with any known algorithm: {last_exc}")
-
+            raise RuntimeError(f"Could not load checkpoint with any known algorithm: {last_exc}")
 
         model, env, is_ac = await loop.run_in_executor(_EXECUTOR, _load)
         episode_fn = _run_episode_actor_critic if is_ac else _run_episode
@@ -522,15 +533,57 @@ async def play_ws(
             await asyncio.sleep(1.0)
 
     except WebSocketDisconnect:
-        logger.info("play_ws: client disconnected mission=%s", mission_id)
+        logger.info("play_ws: client disconnected %s", log_id)
     except Exception as exc:
-        logger.exception("play_ws: error mission=%s: %s", mission_id, exc)
+        logger.exception("play_ws: error %s: %s", log_id, exc)
         try:
             await ws.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
     finally:
-        try:
-            env.close()
-        except Exception:
-            pass
+        if env is not None:
+            try:
+                env.close()
+            except Exception:
+                pass
+
+
+@router.websocket("/ws/models/{model_id}/play")
+async def play_model_ws(
+    ws: WebSocket,
+    model_id: str,
+    env_id: str = "Snake-v0",
+    fps: int = 12,
+):
+    await ws.accept()
+    async with AsyncSessionLocal() as db:
+        rec = await db.get(ModelRecord, model_id)
+    if not rec:
+        await ws.send_json({"type": "error", "message": "Model record not found."})
+        await ws.close()
+        return
+    ckpt_path = rec.checkpoint_path or rec.weights_path
+    if not ckpt_path or not os.path.exists(ckpt_path):
+        await ws.send_json({"type": "error", "message": "No checkpoint file found for this model."})
+        await ws.close()
+        return
+    resolved_env = env_id
+    if rec.domain:
+        resolved_env = rec.domain
+    await _stream_play(ws, ckpt_path, resolved_env, fps, log_id=f"model={model_id}")
+
+
+@router.websocket("/ws/missions/{mission_id}/play")
+async def play_ws(
+    ws: WebSocket,
+    mission_id: str,
+    env_id: str = "Snake-v0",
+    fps: int = 12,
+):
+    await ws.accept()
+    ckpt_path = mission_best_checkpoint(mission_id)
+    if not ckpt_path:
+        await ws.send_json({"type": "error", "message": "No best_model.pth or best_model.zip found for this mission."})
+        await ws.close()
+        return
+    await _stream_play(ws, ckpt_path, env_id, fps, log_id=f"mission={mission_id}")

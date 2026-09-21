@@ -8,11 +8,6 @@ const CELL = 24;
 const W = COLS * CELL;
 const H = ROWS * CELL;
 
-const WS_BASE =
-  typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8200`
-    : "ws://localhost:8200";
-
 const BRICK_ROW_COLORS = [
   "#f87171", // Row 1: red
   "#fbbf24", // Row 2: amber
@@ -21,6 +16,7 @@ const BRICK_ROW_COLORS = [
 ];
 
 import { PolicyInspector, PolicyTelemetry } from "./PolicyInspector";
+import { policyPlayUrl } from "@/lib/playWs";
 
 interface Frame {
   type: "frame" | "episode_end" | "error";
@@ -624,19 +620,20 @@ function initialGrid(envId: string): number[] {
 
 function getGameTitle(envId: string): string {
   const lower = envId.toLowerCase();
-  if (lower.includes("freeway")) return "MinAtar Freeway Live Player";
-  if (lower.includes("seaquest")) return "MinAtar Seaquest Live Player";
-  if (lower.includes("space")) return "MinAtar Space Invaders Live Player";
-  if (lower.includes("asteroid")) return "MinAtar Asteroids Live Player";
-  return "MinAtar Breakout Live Player";
+  if (lower.includes("freeway")) return "MinAtar Freeway";
+  if (lower.includes("seaquest")) return "MinAtar Seaquest";
+  if (lower.includes("space")) return "MinAtar Space Invaders";
+  if (lower.includes("asteroid")) return "MinAtar Asteroids";
+  return "MinAtar Breakout";
 }
 
 interface Props {
-  missionId: string;
+  missionId?: string;
+  modelId?: string;
   envId?: string;
 }
 
-export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Props) {
+export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -666,7 +663,7 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
     setLoading(true);
 
     const ws = new WebSocket(
-      `${WS_BASE}/ws/missions/${missionId}/play?env_id=${envId}&fps=${speed}`
+      policyPlayUrl({ modelId, missionId }, envId, speed)
     );
     wsRef.current = ws;
 
@@ -732,7 +729,7 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
       setLoading(false);
       wsRef.current = null;
     };
-  }, [missionId, envId, speed, stop]);
+  }, [missionId, modelId, envId, speed, stop]);
 
   // Initial draw & stats initialization
   useEffect(() => {
@@ -846,7 +843,7 @@ export function MinAtarPlayer({ missionId, envId = "MinAtar-Breakout-v0" }: Prop
                 : "bg-teal-500 hover:bg-teal-400 text-[#0f172a] shadow-sm"
             } disabled:opacity-40`}
           >
-            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Watch Game"}
+            {loading ? "Connecting…" : playing ? "■ Stop" : "▶ Play"}
           </button>
 
           <div className="pt-2 border-t border-[rgba(255,255,255,0.05)] space-y-1.5">

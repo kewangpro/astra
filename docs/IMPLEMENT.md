@@ -2372,3 +2372,13 @@ Seaquest tournament listed six rows that were three zips: `data/missions/<id>/�
 - [x] **`_prune_duplicate_model_records`** — keep champion (else higher metric); rewrite the kept path to canonical. Tournament `_add_entry` skips a path already seen.
 - [x] **Tests** — `test_canonical_checkpoint_path_collapses_dot_slash`, `test_prune_duplicate_model_records_keeps_champion`.
 
+---
+
+## Phase 79: Missions Train; Models Play
+
+The canvas sat on the Mission HUD, so play was mixed with training. Registry rows were a table, not a destination.
+
+- [x] **`WS /ws/models/{id}/play`** — load `ModelRecord.checkpoint_path`; `checkpoint_dir_for_file` still finds `train_config.json` when the zip is under `iter/`. Mission WS remains as `best_model` alias.
+- [x] **`/models` cards → `/models/{id}`** — play / inference on the model page. Mission HUD is training only (no player).
+- [x] **Tests** — `test_checkpoint_dir_for_file_strips_iter_subdir`, `test_mission_best_checkpoint_prefers_pth`.
+

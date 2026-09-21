@@ -9,10 +9,6 @@ import { MetricChart } from "@/components/hud/MetricChart";
 import { LogStream } from "@/components/hud/LogStream";
 import { PivotTimeline } from "@/components/hud/PivotTimeline";
 import { CritiqueTrace } from "@/components/hud/CritiqueTrace";
-import { SnakePlayer } from "@/components/hud/SnakePlayer";
-import { TetrisPlayer } from "@/components/hud/TetrisPlayer";
-import { Game2048Player } from "@/components/hud/Game2048Player";
-import { MinAtarPlayer } from "@/components/hud/MinAtarPlayer";
 import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
 import type { TelemetryEvent } from "@/lib/api";
 import { canStartMission } from "@/lib/api";
@@ -131,6 +127,11 @@ export default function MissionHUD({
             <Link href="/" className="text-[#94a3b8] text-xs hover:text-[#14b8a6] transition-colors">
               ← missions
             </Link>
+            <span className="text-[9px] px-1 py-0.5 rounded-sm text-[#14b8a6] uppercase font-medium"
+              style={{ background: "rgba(20,184,166,0.1)" }}
+            >
+              Training
+            </span>
             <span className="text-[#64748b] text-xs">/ #{missionId}</span>
             {mission.task_type && (
               <span
@@ -233,39 +234,6 @@ export default function MissionHUD({
           <MetricChart events={events} targetMetric={mission.target_metric} />
         </div>
       </div>
-
-      {/* Live agent viewer — shown for custom env missions */}
-      {mission.goal.includes("Snake-v0") && (
-        <SnakePlayer missionId={missionId} envId="Snake-v0" />
-      )}
-      {mission.goal.includes("Tetris-v0") && (
-        <TetrisPlayer missionId={missionId} envId="Tetris-v0" />
-      )}
-      {(mission.goal.includes("2048") || mission.goal.toLowerCase().includes("game2048")) && (
-        <Game2048Player missionId={missionId} envId="Game2048-v0" />
-      )}
-      {(mission.goal.toLowerCase().includes("minatar") ||
-        mission.goal.toLowerCase().includes("breakout") ||
-        mission.goal.toLowerCase().includes("spaceinvaders") ||
-        mission.goal.toLowerCase().includes("space invaders") ||
-        mission.goal.toLowerCase().includes("asteroids") ||
-        mission.goal.toLowerCase().includes("freeway") ||
-        mission.goal.toLowerCase().includes("seaquest")) && (
-        <MinAtarPlayer
-          missionId={missionId}
-          envId={
-            mission.goal.toLowerCase().includes("freeway")
-              ? "MinAtar-Freeway-v0"
-              : mission.goal.toLowerCase().includes("seaquest")
-              ? "MinAtar-Seaquest-v0"
-              : mission.goal.toLowerCase().includes("space")
-              ? "MinAtar-SpaceInvaders-v0"
-              : mission.goal.toLowerCase().includes("asteroid")
-              ? "MinAtar-Asteroids-v0"
-              : "MinAtar-Breakout-v0"
-          }
-        />
-      )}
 
       {/* Log + Critic Trace + Pivots */}
       <SidebarLayout events={events} connected={connected} missionStatus={mission.status} />
