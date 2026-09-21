@@ -1187,7 +1187,9 @@ class LoopStateMachine:
                 # ── POST-PIVOT REGRESSION CHECK ───────────────────────────
                 # If an arch/algo pivot made things materially worse after
                 # PLATEAU_WINDOW iters, restore the pre-pivot checkpoint and
-                # de-escalate so HP tuning resumes from the good baseline.
+                # resume from the good baseline. The failed pivot still counts
+                # toward escalation/convergence; otherwise pivot→revert cycles
+                # can run forever without reaching the stop threshold.
                 _pivot_reverted = False
                 _was_pivot_applied = pivot_engine._pivot_applied
                 _undersized_arch = self._should_restore_undersized_arch(

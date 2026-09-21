@@ -384,16 +384,21 @@ def test_should_revert_pivot_clears_state_on_recovery():
     assert not e.should_revert_pivot()
 
 
-def test_revert_escalation_decrements_pivot_count():
+def test_revert_escalation_keeps_failed_pivot_count():
+    """A rejected architecture is an exhausted search attempt, not progress.
+
+    Real incident: Asterix mission 32a5cd58 made 120 pivots and reverted 112;
+    decrementing on each revert held the persisted count at zero and made the
+    convergence threshold unreachable for 200+ iterations.
+    """
     e = _regressing_engine()
     e.restore_pivot_count(3)
     e.revert_escalation()
-    assert e.pivot_count == 2
+    assert e.pivot_count == 3
 
 
-def test_revert_escalation_clamps_at_zero():
+def test_revert_escalation_keeps_zero_at_zero():
     e = _regressing_engine()
-    # pivot_count is 0 by default; revert should not go negative
     e.revert_escalation()
     assert e.pivot_count == 0
 
@@ -404,6 +409,20 @@ def test_revert_escalation_clears_regression_state():
     # After revert, should_revert_pivot must be False
     e.record(14, {"food_eaten": 1.0})
     assert not e.should_revert_pivot()
+
+
+def test_reverted_pivots_can_reach_convergence():
+    """Repeated failed architecture trials must eventually terminate the search."""
+    e = _engine()
+    e.record(0, {"mean_reward": 90.0})
+    e.restore_best_at_last_pivot(90.0)
+    for i in range(1, STALL_ITERS_WITHOUT_BEST + 1):
+        e.record(i, {"mean_reward": 50.0})
+    for _ in range(ESCALATION_FORCE_NOVEL):
+        e.record_pivot()
+        e.revert_escalation()
+    assert e.pivot_count == ESCALATION_FORCE_NOVEL
+    assert e.is_converged()
 
 
 def test_algo_switch_search_does_not_revert_against_old_peak():

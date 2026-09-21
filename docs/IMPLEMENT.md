@@ -604,7 +604,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
     - `backend/loop/pivots.py`: added `PIVOT_REGRESSION_THRESHOLD = 0.20` constant. New fields: `_pivot_applied: bool`, `_pre_pivot_best: Optional[float]`, `_post_pivot_best: Optional[float]`, `_iters_since_pivot: int`. `record()` now increments `_iters_since_pivot` and tracks `_post_pivot_best` whenever `_pivot_applied` is True. New methods:
         - `record_arch_pivot_baseline()`: arms the detector — saves current best as `_pre_pivot_best`, resets post-pivot tracking.
         - `should_revert_pivot()`: after `PLATEAU_WINDOW` post-pivot iters, returns True if `_post_pivot_best < _pre_pivot_best * (1 - PIVOT_REGRESSION_THRESHOLD)`. Clears tracking silently if the new config recovered adequately.
-        - `revert_escalation()`: decrements `_pivot_count` by 1 (clamped to 0) and clears all regression state.
+        - `revert_escalation()`: clears all regression state. Phase 82 corrected the original counter decrement: a reverted architecture is still a failed search attempt and must remain counted toward convergence.
 
 - [x] **Per-iteration checkpoint rolling window (Step 16.2)**
     - **Problem**: `best_model.zip` is a single file; an arch pivot immediately resets `best_score.txt` to `-inf`, causing the new arch's first training run to overwrite the previous best. A single pre-pivot backup (`best_model_pre_pivot.zip`) only captures whatever was best at the moment of the last pivot — not necessarily the true best-ever iteration.
@@ -628,7 +628,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
     - `import shutil` added for file copy operations.
 
 - [x] **Test coverage (Step 16.4)**
-    - `tests/unit/test_pivot_engine.py`: 8 new tests — `test_should_revert_pivot_detects_regression`, `test_should_revert_pivot_false_before_window`, `test_should_revert_pivot_false_when_not_armed`, `test_should_revert_pivot_false_when_recovering`, `test_should_revert_pivot_clears_state_on_recovery`, `test_revert_escalation_decrements_pivot_count`, `test_revert_escalation_clamps_at_zero`, `test_revert_escalation_clears_regression_state`.
+    - `tests/unit/test_pivot_engine.py`: regression tests cover detection, recovery, state clearing, and retained failed-pivot escalation; Phase 82 adds an end-to-end convergence assertion for repeated pivot/revert cycles.
     - `tests/unit/test_state_machine_helpers.py`: 4 new tests — `test_save_iteration_checkpoint_creates_iter_subdir`, `test_save_iteration_checkpoint_content_matches_best_model`, `test_save_iteration_checkpoint_prunes_beyond_window`, `test_save_iteration_checkpoint_noop_when_best_model_missing`.
     - Total: **476 tests** (467 unit + 9 integration).
 
@@ -2404,5 +2404,21 @@ Arcade coverage was Breakout / Space Invaders / Asteroids / Freeway / Seaquest. 
 - [x] **Wiring** — `envs/register.py` `register_for_env_id`; codegen `_MINATAR_SETUP` / `_GRIDPACMAN_SETUP` / `_ENV_RECIPE`; play WS viewer + action names; benchmark / eval register; lead-agent env list and reward guidance; clamp `_KNOWN`; `envIdFromDomain` matches `asterix` before `asteroid`.
 - [x] **HUD** — MinAtarPlayer draw + stats (Gold; Ghosts/Pellets). Tournament `ENV_OPTIONS`. Recipes MinAtar tab includes `pacman`.
 - [x] **Tests** — `test_minatar_asterix_env.py`, `test_grid_pacman_env.py`.
+
+---
+
+## Phase 82: Reverted Pivots Still Count Toward Convergence
+
+Asterix mission `32a5cd58` reached 10.5/12 at iteration 73, then ran past
+iteration 206. It made 120 pivots and reverted 112 of them. Every revert
+decremented the consecutive-failed-pivot counter, leaving the persisted count
+at zero and making the `pivot_count >= 15` convergence gate unreachable.
+
+- [x] **Preserve escalation on revert** — `PivotEngine.revert_escalation()`
+  clears only the architecture regression window. Restoring the previous
+  checkpoint no longer erases the failed search attempt.
+- [x] **Convergence regression test** — repeated pivot/revert cycles now reach
+  `ESCALATION_FORCE_NOVEL` and satisfy `is_converged()` once the best has been
+  unbeaten for the configured window.
 
 

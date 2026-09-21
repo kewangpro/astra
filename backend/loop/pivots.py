@@ -294,13 +294,23 @@ class PivotEngine:
         return False
 
     def revert_escalation(self) -> None:
-        """De-escalate after reverting a bad arch/algo pivot."""
-        self._pivot_count = max(0, self._pivot_count - 1)
+        """Clear regression tracking after reverting a bad architecture.
+
+        A reverted pivot is a failed search attempt, so it must still count
+        toward escalation and eventual convergence. Decrementing here trapped
+        missions in an endless arch-pivot/revert cycle: each failed pivot added
+        one and its revert immediately removed one, making the
+        ESCALATION_FORCE_NOVEL / convergence thresholds unreachable.
+        """
         self._pivot_applied = False
         self._pre_pivot_best = None
         self._post_pivot_best = None
         self._iters_since_pivot = 0
-        logger.info("PivotEngine: escalation reverted — pivot_count=%d", self._pivot_count)
+        logger.info(
+            "PivotEngine: regression state cleared after revert — failed pivot retained "
+            "for escalation (pivot_count=%d)",
+            self._pivot_count,
+        )
 
     def escalation_level(self) -> int:
         """0=tweak HPs, 1=change arch, 2=allow algorithm switch, 3=reshape rewards,

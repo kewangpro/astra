@@ -1,14 +1,10 @@
-"""Astra Custom Game Environments."""
-from envs.snake_env import SnakeEnv
-from envs.tetris_env import TetrisEnv
-from envs.game2048_env import Game2048Env
-from envs.minatar_env import MinAtarBreakoutEnv
-from envs.minatar_space_invaders_env import MinAtarSpaceInvadersEnv
-from envs.minatar_asteroids_env import MinAtarAsteroidsEnv
-from envs.minatar_freeway_env import MinAtarFreewayEnv
-from envs.minatar_seaquest_env import MinAtarSeaquestEnv
-from envs.minatar_asterix_env import MinAtarAsterixEnv
-from envs.grid_pacman_env import GridPacManEnv
+"""Astra custom game environments.
+
+Environment classes are loaded lazily so importing ``envs.register`` does not
+import and register every game. Besides reducing startup side effects, this
+keeps targeted env registration testable when a single env module is mocked.
+"""
+from importlib import import_module
 
 __all__ = [
     "SnakeEnv",
@@ -22,4 +18,26 @@ __all__ = [
     "MinAtarAsterixEnv",
     "GridPacManEnv",
 ]
+
+_ENV_CLASS_MODULES = {
+    "SnakeEnv": "envs.snake_env",
+    "TetrisEnv": "envs.tetris_env",
+    "Game2048Env": "envs.game2048_env",
+    "MinAtarBreakoutEnv": "envs.minatar_env",
+    "MinAtarSpaceInvadersEnv": "envs.minatar_space_invaders_env",
+    "MinAtarAsteroidsEnv": "envs.minatar_asteroids_env",
+    "MinAtarFreewayEnv": "envs.minatar_freeway_env",
+    "MinAtarSeaquestEnv": "envs.minatar_seaquest_env",
+    "MinAtarAsterixEnv": "envs.minatar_asterix_env",
+    "GridPacManEnv": "envs.grid_pacman_env",
+}
+
+
+def __getattr__(name: str):
+    module_name = _ENV_CLASS_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
 
