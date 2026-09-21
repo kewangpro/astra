@@ -263,7 +263,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `POST /registry/tournament` | Run head-to-head multi-model tournament across fixed seeds; returns leaderboard and crowns champion |
 | `GET /recipes` | List all recipes (disk + DB merged) |
 | `GET /recipes/db` | List DB-backed recipes (`domain`, `golden_only` filters) |
-| `GET /recipes/search?q=` | Semantic search over recipe library |
+| `GET /recipes/search?q=` | Semantic search over recipe library. Listing recipes prunes Chroma ids that no longer exist in `recipe_records`. |
 | `GET /recipes/{name}` | Fetch a single recipe (DB-first, disk fallback) |
 | `DELETE /recipes/{id}` | Delete an auto-crystallized (generation ≥ 1) recipe: DB row, YAML, semantic index. Hand-crafted YAML is rejected. |
 | `POST /recipes/crystallize/{mission_id}` | Distil a completed mission into a recipe |

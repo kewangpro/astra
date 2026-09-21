@@ -2391,4 +2391,6 @@ Hand-crafted YAML in `recipes/` should stay; auto-crystallized copies from compl
 - [x] **`DELETE /recipes/{id}`** — only `generation >= 1` (or description `Auto-crystallized…`); drops DB row, `{name}.yaml`, and the Chroma index entry.
 - [x] **Recipes page** — Delete on auto-crystallized cards and in the YAML modal.
 - [x] **Tests** — `test_delete_recipe_removes_yaml_and_db`, `test_delete_recipe_rejects_hand_crafted`.
+- [x] **`prune_orphan_index`** — `GET /recipes` drops Chroma ids not in `recipe_records` (leftover `train_rl_*` / `train_ml_*` from the old domain=Train crystallizations).
+
 

@@ -151,3 +151,28 @@ def get_warm_start_hint(goal: str, domain: Optional[str] = None) -> Optional[dic
 
 def remove_recipe(recipe_id: str) -> None:
     _get_collection().delete(ids=[recipe_id])
+
+
+def prune_orphan_index(live_ids: set[str]) -> int:
+    """Drop Chroma rows whose recipe_records id is gone.
+
+    Crystallize indexes every recipe; delete removes that id. Older
+    domain=Train crystallizations were wiped from SQLite without a matching
+    index delete, so search still returned train_rl_* ghosts.
+    """
+    collection = _get_collection()
+    try:
+        got = collection.get(include=[])
+    except Exception as exc:
+        logger.warning("RecipeLibrary: prune list failed: %s", exc)
+        return 0
+    stale = [i for i in (got.get("ids") or []) if i not in live_ids]
+    if not stale:
+        return 0
+    try:
+        collection.delete(ids=stale)
+    except Exception as exc:
+        logger.warning("RecipeLibrary: prune delete failed: %s", exc)
+        return 0
+    logger.info("RecipeLibrary: pruned %d orphan index entries", len(stale))
+    return len(stale)

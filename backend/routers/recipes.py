@@ -96,7 +96,12 @@ async def list_recipes(db: AsyncSession = Depends(get_db)):
 
     # DB records take priority on name collision
     result = await db.execute(select(RecipeRecord).order_by(RecipeRecord.created_at.desc()))
-    for record in result.scalars().all():
+    records = list(result.scalars().all())
+    try:
+        recipe_library.prune_orphan_index({r.id for r in records})
+    except Exception as e:
+        logger.warning("Failed to prune stale recipe search index: %s", e)
+    for record in records:
         disk_recipes[record.name] = RecipeRead(
             name=record.name,
             filename=f"{record.name}.yaml",
