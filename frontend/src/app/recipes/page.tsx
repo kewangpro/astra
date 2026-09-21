@@ -13,6 +13,12 @@ const DOMAIN_TABS = [
   { id: "llm", label: "LLM / Reasoning" },
 ];
 
+function isAutoCrystallized(rec?: RecipeRecord | null, description?: string | null) {
+  if (rec && rec.generation >= 1) return true;
+  const desc = rec?.description || description || "";
+  return desc.startsWith("Auto-crystallized");
+}
+
 export default function RecipesPage() {
   const router = useRouter();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -73,6 +79,17 @@ export default function RecipesPage() {
       setLineageChain([rec]);
     } finally {
       setLoadingLineage(false);
+    }
+  };
+
+  const handleDelete = async (rec: RecipeRecord) => {
+    if (!confirm(`Delete auto-crystallized recipe "${rec.name}"?`)) return;
+    try {
+      await api.deleteRecipe(rec.id);
+      if (selectedRecipe?.name === rec.name) setSelectedRecipe(null);
+      await fetchRecipes();
+    } catch (e: any) {
+      alert(`Failed to delete recipe: ${e.message || e}`);
     }
   };
 
@@ -181,6 +198,10 @@ export default function RecipesPage() {
                   .join(", ")
               : null;
             const isDispatchingThis = dispatching === r.name;
+            const autoCrystallized = isAutoCrystallized(
+              dbMatch,
+              r.description || ((r.content as any)?.description as string | undefined),
+            );
 
             return (
               <div
@@ -192,9 +213,16 @@ export default function RecipesPage() {
                     <h3 className="text-sm font-semibold text-[#e2e8f0] break-words">
                       {r.name}
                     </h3>
-                    <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#14b8a6] px-2 py-0.5 rounded font-mono">
-                      {r.domain || (r.content as any)?.domain || "RL"}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {autoCrystallized && (
+                        <span className="text-[10px] bg-[#0f172a] border border-[#64748b]/40 text-[#94a3b8] px-2 py-0.5 rounded">
+                          Auto-crystallized
+                        </span>
+                      )}
+                      <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#14b8a6] px-2 py-0.5 rounded font-mono">
+                        {r.domain || (r.content as any)?.domain || "RL"}
+                      </span>
+                    </div>
                   </div>
 
                   <p className="text-xs text-[#94a3b8] line-clamp-2 mb-4 leading-relaxed">
@@ -225,6 +253,14 @@ export default function RecipesPage() {
                         className="text-xs text-[#a855f7] hover:text-[#c084fc] transition-colors"
                       >
                         Lineage
+                      </button>
+                    )}
+                    {autoCrystallized && dbMatch && (
+                      <button
+                        onClick={() => handleDelete(dbMatch)}
+                        className="text-xs text-[#f87171] hover:text-[#fca5a5] transition-colors"
+                      >
+                        Delete
                       </button>
                     )}
                   </div>
@@ -284,12 +320,26 @@ export default function RecipesPage() {
             </div>
 
             <div className="p-4 border-t border-[#334155] flex items-center justify-between">
-              <button
-                onClick={() => setSelectedRecipe(null)}
-                className="text-xs text-[#94a3b8] hover:text-[#e2e8f0]"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSelectedRecipe(null)}
+                  className="text-xs text-[#94a3b8] hover:text-[#e2e8f0]"
+                >
+                  Close
+                </button>
+                {(() => {
+                  const rec = dbRecipes.find((d) => d.name === selectedRecipe.name);
+                  if (!rec || !isAutoCrystallized(rec, selectedRecipe.description)) return null;
+                  return (
+                    <button
+                      onClick={() => handleDelete(rec)}
+                      className="text-xs text-[#f87171] hover:text-[#fca5a5]"
+                    >
+                      Delete
+                    </button>
+                  );
+                })()}
+              </div>
               <button
                 onClick={() => {
                   const name = selectedRecipe.name;

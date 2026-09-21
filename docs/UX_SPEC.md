@@ -31,6 +31,7 @@
 - **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, domain badges, and quick YAML inspection modals.
 - **Lineage DAG Visualizer**: Interactive drawer tracing the evolutionary chain (Gen 0 → Gen 1 → Gen 2) for crystallized and mutated recipes, displaying score progressions and hyperparameter deltas.
 - **One-Click Dispatch**: Single-click "Dispatch" button on any recipe card or inspection modal to instantly spin up an autonomous mission loop without manual configuration.
+- **Delete**: Auto-crystallized recipes (not hand-crafted YAML) have a Delete control on the card and in the YAML modal.
 
 ### 2.4. Models (`/models`)
 - Missions train; models play / infer.

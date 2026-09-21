@@ -10,6 +10,7 @@ Phase 5 endpoints:
   POST /recipes/{recipe_id}/evolve        — spawn a mutated child recipe
   GET  /recipes/{recipe_id}/lineage       — parent chain for an evolved recipe
   GET  /recipes/db                        — list only DB-backed records
+  DELETE /recipes/{recipe_id}             — remove an auto-crystallized recipe
 """
 from __future__ import annotations
 
@@ -18,12 +19,13 @@ import os
 from typing import Optional, List
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
+from backend.logging_config import get_logger
 from backend.models.recipe import RecipeRecord
 from backend.schemas.recipe import (
     RecipeRead,
@@ -37,6 +39,7 @@ from backend.schemas.recipe import (
 from backend.services import crystallizer, recipe_library
 from backend.services.evolution import evolve_recipe
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
@@ -56,6 +59,24 @@ def _load_disk_recipe(filename: str) -> RecipeRead:
         created_at=data.get("created_at"),
         content=data,
     )
+
+
+def is_auto_crystallized(record: RecipeRecord) -> bool:
+    """Hand-crafted YAML is generation 0; crystallizer writes generation 1+."""
+    if (record.generation or 0) >= 1:
+        return True
+    desc = record.description or ""
+    return desc.startswith("Auto-crystallized")
+
+
+def _yaml_path_for_recipe(name: str) -> Optional[str]:
+    recipes_dir = os.path.abspath(settings.recipes_path)
+    for ext in (".yaml", ".yml"):
+        path = os.path.abspath(os.path.join(recipes_dir, f"{name}{ext}"))
+        if path.startswith(recipes_dir + os.sep) or path == recipes_dir:
+            if os.path.isfile(path):
+                return path
+    return None
 
 
 # ── Disk + DB list ────────────────────────────────────────────────────────────
@@ -207,6 +228,33 @@ async def get_lineage(recipe_id: str, db: AsyncSession = Depends(get_db)):
 
     chain.reverse()
     return chain
+
+
+@router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recipe(recipe_id: str, db: AsyncSession = Depends(get_db)):
+    """Remove an auto-crystallized (or evolved) recipe. Hand-crafted YAML stays."""
+    record = await db.get(RecipeRecord, recipe_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Recipe '{recipe_id}' not found")
+    if not is_auto_crystallized(record):
+        raise HTTPException(
+            status_code=403,
+            detail="Only auto-crystallized recipes can be deleted from the library.",
+        )
+    yaml_path = _yaml_path_for_recipe(record.name)
+    name = record.name
+    await db.delete(record)
+    await db.commit()
+    if yaml_path:
+        try:
+            os.remove(yaml_path)
+        except OSError:
+            pass
+    try:
+        recipe_library.remove_recipe(recipe_id)
+    except Exception:
+        pass
+    logger.info("Deleted auto-crystallized recipe %s (%s)", name, recipe_id)
 
 
 # ── One-Click Dispatch ─────────────────────────────────────────────────────────

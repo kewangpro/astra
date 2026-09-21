@@ -265,6 +265,7 @@ ASTRA's runtime is split between **Persistent Management** and **Transient Compu
 | `GET /recipes/db` | List DB-backed recipes (`domain`, `golden_only` filters) |
 | `GET /recipes/search?q=` | Semantic search over recipe library |
 | `GET /recipes/{name}` | Fetch a single recipe (DB-first, disk fallback) |
+| `DELETE /recipes/{id}` | Delete an auto-crystallized (generation ≥ 1) recipe: DB row, YAML, semantic index. Hand-crafted YAML is rejected. |
 | `POST /recipes/crystallize/{mission_id}` | Distil a completed mission into a recipe |
 | `POST /recipes/{id}/evolve` | Spawn a mutated child recipe |
 | `GET /recipes/{id}/lineage` | Ancestor chain for an evolved recipe |

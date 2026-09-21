@@ -259,5 +259,16 @@ export const api = {
     req<RecipeDispatchResponse>(`/recipes/${recipeName}/dispatch`, {
       method: "POST",
     }),
+  deleteRecipe: async (id: string) => {
+    const res = await fetch(`${BASE}/recipes/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const err = await res.json();
+        detail = err.detail || err.message || "";
+      } catch {}
+      throw new Error(detail || `${res.status} ${res.statusText}`);
+    }
+  },
 };
 

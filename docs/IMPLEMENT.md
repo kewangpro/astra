@@ -2382,3 +2382,13 @@ The canvas sat on the Mission HUD, so play was mixed with training. Registry row
 - [x] **`/models` cards → `/models/{id}`** — play / inference on the model page. Mission HUD is training only (no player).
 - [x] **Tests** — `test_checkpoint_dir_for_file_strips_iter_subdir`, `test_mission_best_checkpoint_prefers_pth`.
 
+---
+
+## Phase 80: Delete Auto-Crystallized Recipes
+
+Hand-crafted YAML in `recipes/` should stay; auto-crystallized copies from completed missions pile up and had no UI to remove them.
+
+- [x] **`DELETE /recipes/{id}`** — only `generation >= 1` (or description `Auto-crystallized…`); drops DB row, `{name}.yaml`, and the Chroma index entry.
+- [x] **Recipes page** — Delete on auto-crystallized cards and in the YAML modal.
+- [x] **Tests** — `test_delete_recipe_removes_yaml_and_db`, `test_delete_recipe_rejects_hand_crafted`.
+
