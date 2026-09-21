@@ -34,6 +34,9 @@ interface Frame {
   divers_saved?: number;
   enemies_killed?: number;
   oxygen?: number;
+  gold_collected?: number;
+  ghosts_eaten?: number;
+  pellets_left?: number;
   done?: boolean;
   message?: string;
   ship_dir?: number;
@@ -305,7 +308,9 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
   const isFreeway = lower.includes("freeway");
   const isSeaquest = lower.includes("seaquest");
   const isSpaceInvaders = lower.includes("space");
-  const isAsteroids = lower.includes("asteroid");
+  const isAsterix = lower.includes("asterix");
+  const isAsteroids = lower.includes("asteroid") && !isAsterix;
+  const isPacMan = lower.includes("pacman") || lower.includes("pac-man");
 
   if (isFreeway) {
     drawFreeway(ctx, grid);
@@ -316,6 +321,10 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
     ctx.fillStyle = "#091428";
   } else if (isSpaceInvaders) {
     ctx.fillStyle = "#080b18";
+  } else if (isAsterix) {
+    ctx.fillStyle = "#0c1210";
+  } else if (isPacMan) {
+    ctx.fillStyle = "#020617";
   } else if (isAsteroids) {
     ctx.fillStyle = "#050811";
   } else {
@@ -328,6 +337,10 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
     ctx.strokeStyle = "rgba(56, 189, 248, 0.08)";
   } else if (isSpaceInvaders) {
     ctx.strokeStyle = "rgba(192, 132, 252, 0.07)";
+  } else if (isAsterix) {
+    ctx.strokeStyle = "rgba(250, 204, 21, 0.06)";
+  } else if (isPacMan) {
+    ctx.strokeStyle = "rgba(20, 184, 166, 0.08)";
   } else if (isAsteroids) {
     ctx.strokeStyle = "rgba(56, 189, 248, 0.05)";
   } else {
@@ -456,6 +469,86 @@ function drawMinAtar(ctx: CanvasRenderingContext2D, grid: number[], envId: strin
           ctx.fill();
           ctx.stroke();
         }
+      } else if (isAsterix) {
+        if (cell === 1) {
+          ctx.fillStyle = "#2dd4bf";
+          ctx.shadowColor = "rgba(45, 212, 191, 0.8)";
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.moveTo(x + CELL / 2, y + 3);
+          ctx.lineTo(x + CELL - 4, y + CELL / 2);
+          ctx.lineTo(x + CELL / 2, y + CELL - 3);
+          ctx.lineTo(x + 4, y + CELL / 2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 2) {
+          ctx.fillStyle = "#f43f5e";
+          ctx.shadowColor = "rgba(244, 63, 94, 0.7)";
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 3.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 3) {
+          ctx.fillStyle = "#facc15";
+          ctx.shadowColor = "rgba(250, 204, 21, 0.85)";
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 4) {
+          ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
+          ctx.fillRect(x + 8, y + 8, CELL - 16, CELL - 16);
+        }
+      } else if (isPacMan) {
+        if (cell === 1) {
+          ctx.fillStyle = "#facc15";
+          ctx.shadowColor = "rgba(250, 204, 21, 0.7)";
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 2.4, 0.35, Math.PI * 2 - 0.35);
+          ctx.lineTo(x + CELL / 2, y + CELL / 2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 2) {
+          ctx.fillStyle = "#1e3a5f";
+          ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 2, y + 2, CELL - 4, CELL - 4);
+        } else if (cell === 3) {
+          ctx.fillStyle = "#e2e8f0";
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (cell === 4) {
+          ctx.fillStyle = "#f472b6";
+          ctx.shadowColor = "rgba(244, 114, 182, 0.7)";
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else if (cell === 5) {
+          ctx.fillStyle = "#f43f5e";
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2 - 2, CELL / 3, Math.PI, 0);
+          ctx.lineTo(x + CELL - 4, y + CELL - 4);
+          ctx.lineTo(x + 4, y + CELL - 4);
+          ctx.closePath();
+          ctx.fill();
+        } else if (cell === 6) {
+          ctx.fillStyle = "#38bdf8";
+          ctx.beginPath();
+          ctx.arc(x + CELL / 2, y + CELL / 2 - 2, CELL / 3, Math.PI, 0);
+          ctx.lineTo(x + CELL - 4, y + CELL - 4);
+          ctx.lineTo(x + 4, y + CELL - 4);
+          ctx.closePath();
+          ctx.fill();
+        }
       } else if (isAsteroids) {
         if (cell === 1) {
           // Spaceship (Cyan arrowhead wedge) rotated to heading (0: UP, 1: RIGHT, 2: DOWN, 3: LEFT)
@@ -534,7 +627,9 @@ function initialGrid(envId: string): number[] {
   const isFreeway = lower.includes("freeway");
   const isSeaquest = lower.includes("seaquest");
   const isSpaceInvaders = lower.includes("space");
-  const isAsteroids = lower.includes("asteroid");
+  const isAsterix = lower.includes("asterix");
+  const isAsteroids = lower.includes("asteroid") && !isAsterix;
+  const isPacMan = lower.includes("pacman") || lower.includes("pac-man");
 
   if (isFreeway) {
     // Goal & Start Sidewalks
@@ -593,6 +688,37 @@ function initialGrid(envId: string): number[] {
     return g;
   }
 
+  if (isAsterix) {
+    g[5 * 10 + 5] = 1;
+    g[2 * 10 + 0] = 2;
+    g[2 * 10 + 1] = 4;
+    g[6 * 10 + 9] = 3;
+    g[6 * 10 + 8] = 4;
+    g[4 * 10 + 2] = 2;
+    return g;
+  }
+
+  if (isPacMan) {
+    for (let c = 0; c < 10; c++) {
+      g[c] = 2;
+      g[9 * 10 + c] = 2;
+      g[c * 10] = 2;
+      g[c * 10 + 9] = 2;
+    }
+    g[2 * 10 + 2] = 2;
+    g[2 * 10 + 3] = 2;
+    g[2 * 10 + 6] = 2;
+    g[2 * 10 + 7] = 2;
+    g[1 * 10 + 1] = 4;
+    g[1 * 10 + 8] = 4;
+    g[3 * 10 + 4] = 3;
+    g[3 * 10 + 5] = 3;
+    g[7 * 10 + 4] = 1;
+    g[1 * 10 + 4] = 5;
+    g[1 * 10 + 5] = 5;
+    return g;
+  }
+
   if (isAsteroids) {
     // Spaceship in center
     g[5 * 10 + 5] = 1;
@@ -623,6 +749,8 @@ function getGameTitle(envId: string): string {
   if (lower.includes("freeway")) return "MinAtar Freeway";
   if (lower.includes("seaquest")) return "MinAtar Seaquest";
   if (lower.includes("space")) return "MinAtar Space Invaders";
+  if (lower.includes("asterix")) return "MinAtar Asterix";
+  if (lower.includes("pacman") || lower.includes("pac-man")) return "Grid Pac-Man";
   if (lower.includes("asteroid")) return "MinAtar Asteroids";
   return "MinAtar Breakout";
 }
@@ -696,6 +824,11 @@ export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0
           setStatA({ label: "Aliens", value: frame.aliens_killed });
         } else if (frame.asteroids_hit !== undefined) {
           setStatA({ label: "Asteroids", value: frame.asteroids_hit });
+        } else if (frame.gold_collected !== undefined) {
+          setStatA({ label: "Gold", value: frame.gold_collected });
+        } else if (frame.ghosts_eaten !== undefined) {
+          setStatA({ label: "Ghosts", value: frame.ghosts_eaten });
+          setStatB({ label: "Pellets", value: frame.pellets_left ?? 0 });
         } else if (frame.bricks_cleared !== undefined) {
           setStatA({ label: "Bricks", value: frame.bricks_cleared });
         }
@@ -743,6 +876,12 @@ export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0
     } else if (lower.includes("space")) {
       setStatA({ label: "Aliens", value: 0 });
       setStatB(null);
+    } else if (lower.includes("asterix")) {
+      setStatA({ label: "Gold", value: 0 });
+      setStatB(null);
+    } else if (lower.includes("pacman") || lower.includes("pac-man")) {
+      setStatA({ label: "Ghosts", value: 0 });
+      setStatB({ label: "Pellets", value: 0 });
     } else if (lower.includes("asteroid")) {
       setStatA({ label: "Asteroids", value: 0 });
       setStatB(null);
@@ -760,8 +899,10 @@ export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0
   const isFreeway = lower.includes("freeway");
   const isSeaquest = lower.includes("seaquest");
   const isSpaceInvaders = lower.includes("space");
-  const isAsteroids = lower.includes("asteroid");
-  const isBreakout = !isFreeway && !isSeaquest && !isSpaceInvaders && !isAsteroids;
+  const isAsterix = lower.includes("asterix");
+  const isAsteroids = lower.includes("asteroid") && !isAsterix;
+  const isPacMan = lower.includes("pacman") || lower.includes("pac-man");
+  const isBreakout = !isFreeway && !isSeaquest && !isSpaceInvaders && !isAsteroids && !isAsterix && !isPacMan;
 
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5 space-y-4">
@@ -899,6 +1040,18 @@ export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0
                   <span className="font-mono text-teal-400">Grid Step</span>
                 </div>
               </>
+            )}
+            {isAsterix && (
+              <div className="flex justify-between">
+                <span>Spawn:</span>
+                <span className="font-mono text-amber-400">Sides</span>
+              </div>
+            )}
+            {isPacMan && (
+              <div className="flex justify-between">
+                <span>Ghosts:</span>
+                <span className="font-mono text-rose-400">4 chase</span>
+              </div>
             )}
             {isBreakout && (
               <div className="flex justify-between">
@@ -1072,6 +1225,64 @@ export function MinAtarPlayer({ missionId, modelId, envId = "MinAtar-Breakout-v0
                   <span className="text-[#cbd5e1]">Plasma</span>
                 </span>
                 <span className="text-yellow-400">Fire</span>
+              </div>
+            </div>
+          )}
+
+          {isAsterix && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-teal-400 rotate-45 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Hero</span>
+                </span>
+                <span className="text-teal-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Enemy</span>
+                </span>
+                <span className="text-rose-400">Fatal</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Gold</span>
+                </span>
+                <span className="text-yellow-400">+1</span>
+              </div>
+            </div>
+          )}
+
+          {isPacMan && (
+            <div className="text-[10px] bg-[#0f172a]/70 p-2 rounded border border-[rgba(255,255,255,0.05)] space-y-1 font-mono">
+              <div className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold border-b border-[rgba(255,255,255,0.05)] pb-0.5 mb-1">
+                Color Key
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Pac-Man</span>
+                </span>
+                <span className="text-yellow-400 font-semibold">Player</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Ghost</span>
+                </span>
+                <span className="text-rose-400">Chase</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span>
+                  <span className="text-[#cbd5e1]">Frightened</span>
+                </span>
+                <span className="text-sky-400">Edible</span>
               </div>
             </div>
           )}

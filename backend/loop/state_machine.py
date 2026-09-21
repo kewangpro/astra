@@ -2393,6 +2393,10 @@ class LoopStateMachine:
             "MinAtar-Freeway": {"max_steps", "cross_reward", "death_penalty", "terminate_on_collision"},
             "MinAtar-Seaquest-v0": {"max_steps", "enemy_kill_reward", "diver_pickup_reward", "diver_rescue_reward", "wave_clear_bonus", "death_penalty", "oxygen_max"},
             "MinAtar-Seaquest": {"max_steps", "enemy_kill_reward", "diver_pickup_reward", "diver_rescue_reward", "wave_clear_bonus", "death_penalty", "oxygen_max"},
+            "MinAtar-Asterix-v0": {"max_steps", "gold_reward", "death_penalty", "ramping"},
+            "MinAtar-Asterix": {"max_steps", "gold_reward", "death_penalty", "ramping"},
+            "GridPacMan-v0": {"max_steps", "pellet_reward", "power_reward", "ghost_eat_reward", "clear_bonus", "death_penalty"},
+            "PacMan-v0": {"max_steps", "pellet_reward", "power_reward", "ghost_eat_reward", "clear_bonus", "death_penalty"},
             "MultiTurnAgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
             "AgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
         }
@@ -2920,33 +2924,8 @@ class LoopStateMachine:
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
 
-            if env_id == "Tetris-v0":
-                from envs.tetris_env import register
-                register()
-            elif env_id == "Snake-v0":
-                from envs.snake_env import register
-                register()
-            elif env_id in ("Game2048-v0", "2048"):
-                from envs.game2048_env import register
-                register()
-            elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
-                from envs.minatar_env import register
-                register()
-            elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
-                from envs.minatar_space_invaders_env import register
-                register()
-            elif env_id in ("MinAtar-Asteroids-v0",):
-                from envs.minatar_asteroids_env import register
-                register()
-            elif env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
-                from envs.minatar_freeway_env import register
-                register()
-            elif env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
-                from envs.minatar_seaquest_env import register
-                register()
-            elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
-                from envs.agent_gym import register
-                register()
+            from envs.register import register_for_env_id
+            register_for_env_id(env_id)
 
             import gymnasium as gym
             import json as _json

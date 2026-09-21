@@ -1,13 +1,13 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 80 complete  
+**Status:** Phase 81 complete  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
 
 ## 1. Executive Summary
-ASTRA is an autonomous agent designed to manage the end-to-end lifecycle of Reinforcement Learning (RL) and Machine Learning (ML) training. It leverages lessons from high-performance Snake, Tetris, 2048, the complete 5-game MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest), and MultiTurnAgentGym AI implementations to automate curriculum shifts, reward shaping, tournament evaluation, and competitive benchmarking.
+ASTRA is an autonomous agent designed to manage the end-to-end lifecycle of Reinforcement Learning (RL) and Machine Learning (ML) training. It leverages lessons from high-performance Snake, Tetris, 2048, the MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, and MultiTurnAgentGym AI implementations to automate curriculum shifts, reward shaping, tournament evaluation, and competitive benchmarking.
 
 
 ## 2. Problem Statement
@@ -38,7 +38,8 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Supported game environments expose configurable reward shaping parameters:
   - **Snake-v0**: `food_reward`, `death_penalty`, `survival_bonus`, `distance_weight`.
   - **Game2048-v0**: `merge_multiplier`, `empty_tile_bonus`, `corner_bonus`.
-  - **MinAtar Suite** (`MinAtar-Breakout-v0`, `MinAtar-SpaceInvaders-v0`, `MinAtar-Asteroids-v0`, `MinAtar-Freeway-v0`, `MinAtar-Seaquest-v0`): `brick_reward`, `alien_kill_reward`, `asteroid_hit_reward`, `cross_reward`, `enemy_kill_reward`, `diver_rescue_reward`, `death_penalty`.
+  - **MinAtar Suite** (`MinAtar-Breakout-v0`, `MinAtar-SpaceInvaders-v0`, `MinAtar-Asteroids-v0`, `MinAtar-Asterix-v0`, `MinAtar-Freeway-v0`, `MinAtar-Seaquest-v0`): `brick_reward`, `alien_kill_reward`, `asteroid_hit_reward`, `gold_reward`, `cross_reward`, `enemy_kill_reward`, `diver_rescue_reward`, `death_penalty`.
+  - **GridPacMan-v0**: `pellet_reward`, `power_reward`, `ghost_eat_reward`, `clear_bonus`, `death_penalty`.
   At escalation level 3 the pivot agent proposes `env_kwargs` overrides from the **current** env's allowlist (`env_reward_guidance(env_id)` — Seaquest uses diver/oxygen keys, not Snake `food_reward`). These flow through pivot → plan → code generator → `gym.make()` automatically.
 - **Algorithm-locked escalation**: when a mission goal explicitly names an algorithm (e.g. "Train a Snake-v0 DQN agent", including Phase 68 canonical recipe-dispatch goals), ASTRA never switches away from that trainer. Escalation level 2 remaps to reward shaping instead. Aliases count as the same trainer (`SB3 PPO` is PPO), so a PPO-titled run cannot slip the lock by renaming.
   - **Unnamed RL missions**: a goal that only says "RL agent" (no PPO/DQN/A2C/…) is unlocked. The first plan is seeded from the env recipe's `algorithm` and matching hyperparameters when present (Seaquest → DQN at `lr=2.5e-4`, not the PPO prior). At escalation level 2, a pivot that does not actually change trainer (`SB3 PPO` → `PPO`) is rewritten to a different discrete SB3 algorithm **once**; at level 3+ the next untried canonical trainer is forced (PPO → A2C). A real switch resets leftover `env_kwargs`, seeds matching-recipe or SB3-default HPs, restarts the stall clock, and does **not** revert to the previous algorithm's best checkpoint. Custom Tetris/2048 trainers are left alone.

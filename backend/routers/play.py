@@ -264,6 +264,8 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         or hasattr(base_env, "_alien_dir")
         or hasattr(base_env, "_cars")
         or hasattr(base_env, "_oxygen")
+        or hasattr(base_env, "_gold_collected")
+        or hasattr(base_env, "_pellets")
     )
 
     # Action names for explainability
@@ -281,6 +283,10 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         action_names = ["NOOP", "UP", "DOWN"]
     elif hasattr(base_env, "_oxygen"):  # MinAtar Seaquest
         action_names = ["NOOP", "LEFT", "RIGHT", "UP", "DOWN", "FIRE"]
+    elif hasattr(base_env, "_gold_collected"):  # MinAtar Asterix
+        action_names = ["NOOP", "LEFT", "UP", "RIGHT", "DOWN", "FIRE"]
+    elif hasattr(base_env, "_pellets"):  # Grid Pac-Man
+        action_names = ["NOOP", "LEFT", "RIGHT", "UP", "DOWN"]
     elif hasattr(base_env, "_required_sequence"):  # MultiTurnAgentGym
         action_names = ["FINISH", "QUERY_DB", "SEND_EMAIL", "SEARCH_KB", "CALC", "ESCALATE", "RETRY", "CLARIFY"]
     else:
@@ -389,6 +395,11 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
                 frame["divers_saved"] = int(base_env._divers_saved)
                 frame["enemies_killed"] = int(base_env._enemies_killed)
                 frame["oxygen"] = int(base_env._oxygen)
+            elif hasattr(base_env, "_gold_collected"):
+                frame["gold_collected"] = int(base_env._gold_collected)
+            elif hasattr(base_env, "_pellets"):
+                frame["ghosts_eaten"] = int(base_env._ghosts_eaten)
+                frame["pellets_left"] = int(len(base_env._pellets) + len(base_env._power))
 
         frames.append(frame)
     return frames, round(episode_reward, 2)
@@ -418,33 +429,8 @@ async def _stream_play(
             env_kwargs = cfg.get("env_kwargs") or {}
             resolved_env_id = cfg.get("env_id") or env_id
 
-            if resolved_env_id == "Snake-v0":
-                from envs.snake_env import register as _reg
-                _reg()
-            elif resolved_env_id == "Tetris-v0":
-                from envs.tetris_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("Game2048-v0", "2048"):
-                from envs.game2048_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("MinAtar-Breakout-v0", "MinAtar-v0", "minatar"):
-                from envs.minatar_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
-                from envs.minatar_space_invaders_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("MinAtar-Asteroids-v0",):
-                from envs.minatar_asteroids_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
-                from envs.minatar_freeway_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
-                from envs.minatar_seaquest_env import register as _reg
-                _reg()
-            elif resolved_env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
-                from envs.agent_gym import register as _reg
-                _reg()
+            from envs.register import register_for_env_id
+            register_for_env_id(resolved_env_id)
 
             env = gym.make(resolved_env_id, **env_kwargs)
 

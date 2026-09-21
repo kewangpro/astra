@@ -16,6 +16,8 @@ const ENV_OPTIONS = [
   { id: "MinAtar-Asteroids-v0", label: "MinAtar Asteroids" },
   { id: "MinAtar-Freeway-v0", label: "MinAtar Freeway" },
   { id: "MinAtar-Seaquest-v0", label: "MinAtar Seaquest" },
+  { id: "MinAtar-Asterix-v0", label: "MinAtar Asterix" },
+  { id: "GridPacMan-v0", label: "Grid Pac-Man" },
 ];
 
 export default function ModelsPage() {
@@ -86,6 +88,10 @@ export default function ModelsPage() {
 
   const filteredModels = models.filter((m) => {
     if (filterDomain === "all") return true;
+    if (filterDomain === "MinAtar") {
+      const d = m.domain.toLowerCase();
+      return d.includes("minatar") || d.includes("pacman");
+    }
     return m.domain.toLowerCase().includes(filterDomain.toLowerCase());
   });
 

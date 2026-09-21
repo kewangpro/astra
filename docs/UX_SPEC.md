@@ -36,7 +36,7 @@
 ### 2.4. Models (`/models`)
 - Missions train; models play / infer.
 - **Checkpoint cards**: Click to open `/models/{id}` for live play (`WS /ws/models/{id}/play`).
-- **Model page**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path).
+- **Model page**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path). MinAtarPlayer covers Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man.
 - **Policy inspector**: confidence bars, Q-values, entropy, selected action.
 - **Tournament Arena**:
   - Environment and seed selector configuring fixed deterministic evaluation runs across 3 to 20 episodes.

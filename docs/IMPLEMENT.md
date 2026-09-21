@@ -9,7 +9,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
 | **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing code gen, 4-stage escalating pivots, regression rollback, vector memory | Phases 1–16 | ✅ Complete |
 | **Epoch 2: High-Throughput RL & Lookahead** | Pure Gym environments (Snake, Tetris), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space, curriculum | Phases 17–24, 31–32 | ✅ Complete |
 | **Epoch 3: Post-Training, Distillation & Cluster Scaling** | Remote SSH execution, DPO/GRPO/Distill/RFT/Prompt paradigms, Nodes cluster HUD, checkpoint chaining, convergence guards | Phases 25–30, 33–50 | ✅ Complete |
-| **Epoch 4: Arcade Simulation Suite & Live HUD** | Canonical 5-game MinAtar suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest), Game2048-v0, live policy auditor | Phases 51–54, 65 | ✅ Complete |
+| **Epoch 4: Arcade Simulation Suite & Live HUD** | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0, live policy auditor | Phases 51–54, 65, 81 | ✅ Complete |
 | **Epoch 5: Model Registry, Tournaments & Recipe Lineage** | Multi-environment Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with evolutionary Lineage DAG | Phases 55–56 | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
@@ -2392,5 +2392,17 @@ Hand-crafted YAML in `recipes/` should stay; auto-crystallized copies from compl
 - [x] **Recipes page** — Delete on auto-crystallized cards and in the YAML modal.
 - [x] **Tests** — `test_delete_recipe_removes_yaml_and_db`, `test_delete_recipe_rejects_hand_crafted`.
 - [x] **`prune_orphan_index`** — `GET /recipes` drops Chroma ids not in `recipe_records` (leftover `train_rl_*` / `train_ml_*` from the old domain=Train crystallizations).
+
+---
+
+## Phase 81: MinAtar Asterix & Grid Pac-Man
+
+Arcade coverage was Breakout / Space Invaders / Asteroids / Freeway / Seaquest. Asterix (original MinAtar gold-vs-enemies) and a small-grid Pac-Man were missing from train / play / tournament.
+
+- [x] **`MinAtar-Asterix-v0`** (`envs/minatar_asterix_env.py`) — kenjyoung `asterix.py`: 10×10, 4 planes player/enemy/trail/gold, actions `n,l,u,r,d,f`, spawn from col 0/9 into 8 row slots, gold 1/3, ramping spawn/move speed. Recipe `minatar_asterix_dqn_v1`.
+- [x] **`GridPacMan-v0`** (`envs/grid_pacman_env.py`) — 10×10 maze, pellets, power, four ghosts, frightened eat. Recipe `grid_pacman_dqn_v1`.
+- [x] **Wiring** — `envs/register.py` `register_for_env_id`; codegen `_MINATAR_SETUP` / `_GRIDPACMAN_SETUP` / `_ENV_RECIPE`; play WS viewer + action names; benchmark / eval register; lead-agent env list and reward guidance; clamp `_KNOWN`; `envIdFromDomain` matches `asterix` before `asteroid`.
+- [x] **HUD** — MinAtarPlayer draw + stats (Gold; Ghosts/Pellets). Tournament `ENV_OPTIONS`. Recipes MinAtar tab includes `pacman`.
+- [x] **Tests** — `test_minatar_asterix_env.py`, `test_grid_pacman_env.py`.
 
 

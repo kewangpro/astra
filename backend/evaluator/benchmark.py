@@ -174,33 +174,8 @@ def _rollout(checkpoint_path: str, env_id: str, n_episodes: int = 10, env_kwargs
         if model is None:
             return 0.0, {}
 
-        if env_id == "Tetris-v0":
-            from envs.tetris_env import register as _reg
-            _reg()
-        elif env_id == "Snake-v0":
-            from envs.snake_env import register as _reg
-            _reg()
-        elif env_id in ("Game2048-v0", "2048"):
-            from envs.game2048_env import register as _reg
-            _reg()
-        elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
-            from envs.minatar_env import register as _reg
-            _reg()
-        elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
-            from envs.minatar_space_invaders_env import register as _reg
-            _reg()
-        elif env_id in ("MinAtar-Asteroids-v0",):
-            from envs.minatar_asteroids_env import register as _reg
-            _reg()
-        elif env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
-            from envs.minatar_freeway_env import register as _reg
-            _reg()
-        elif env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
-            from envs.minatar_seaquest_env import register as _reg
-            _reg()
-        elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
-            from envs.agent_gym import register as _reg
-            _reg()
+        from envs.register import register_for_env_id
+        register_for_env_id(env_id)
 
         env = gym.make(env_id, **(env_kwargs or {}))
         base_env = env.unwrapped
@@ -521,24 +496,8 @@ def run_tournament_match(
             })
     else:
         # Register custom environments
-        if env_id == "Tetris-v0":
-            from envs.tetris_env import register as _reg; _reg()
-        elif env_id == "Snake-v0":
-            from envs.snake_env import register as _reg; _reg()
-        elif env_id in ("Game2048-v0", "2048"):
-            from envs.game2048_env import register as _reg; _reg()
-        elif env_id in ("MinAtar-Breakout-v0", "MinAtar-v0"):
-            from envs.minatar_env import register as _reg; _reg()
-        elif env_id in ("MinAtar-SpaceInvaders-v0", "MinAtar-Space-Invaders-v0"):
-            from envs.minatar_space_invaders_env import register as _reg; _reg()
-        elif env_id in ("MinAtar-Asteroids-v0",):
-            from envs.minatar_asteroids_env import register as _reg; _reg()
-        elif env_id in ("MinAtar-Freeway-v0", "MinAtar-Freeway", "freeway"):
-            from envs.minatar_freeway_env import register as _reg; _reg()
-        elif env_id in ("MinAtar-Seaquest-v0", "MinAtar-Seaquest", "seaquest"):
-            from envs.minatar_seaquest_env import register as _reg; _reg()
-        elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
-            from envs.agent_gym import register as _reg; _reg()
+        from envs.register import register_for_env_id
+        register_for_env_id(env_id)
 
         if env_kwargs is None:
             for entry in checkpoint_entries:

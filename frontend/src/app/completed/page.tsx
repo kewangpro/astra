@@ -101,6 +101,9 @@ export default function CompletedMissionsPage() {
           goalStr.includes("freeway") ||
           goalStr.includes("breakout") ||
           goalStr.includes("asterix") ||
+          goalStr.includes("asteroid") ||
+          goalStr.includes("pacman") ||
+          goalStr.includes("pac-man") ||
           goalStr.includes("space_invaders") ||
           goalStr.includes("space invaders")
         );

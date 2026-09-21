@@ -27,7 +27,9 @@ export function envIdFromDomain(domain: string): string {
   const d = domain.toLowerCase();
   if (d.includes("seaquest")) return "MinAtar-Seaquest-v0";
   if (d.includes("freeway")) return "MinAtar-Freeway-v0";
+  if (d.includes("asterix")) return "MinAtar-Asterix-v0";
   if (d.includes("asteroid")) return "MinAtar-Asteroids-v0";
+  if (d.includes("pacman") || d.includes("pac-man")) return "GridPacMan-v0";
   if (d.includes("space")) return "MinAtar-SpaceInvaders-v0";
   if (d.includes("breakout") || d.includes("minatar")) return "MinAtar-Breakout-v0";
   if (d.includes("tetris")) return "Tetris-v0";
@@ -46,7 +48,10 @@ export function isPlayableEnv(envId: string): boolean {
     d.includes("breakout") ||
     d.includes("seaquest") ||
     d.includes("freeway") ||
+    d.includes("asterix") ||
     d.includes("asteroid") ||
+    d.includes("pacman") ||
+    d.includes("pac-man") ||
     d.includes("space")
   );
 }

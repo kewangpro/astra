@@ -71,11 +71,23 @@ from envs.minatar_space_invaders_env import register as _register_space_invaders
 from envs.minatar_asteroids_env import register as _register_asteroids
 from envs.minatar_freeway_env import register as _register_freeway
 from envs.minatar_seaquest_env import register as _register_seaquest
+from envs.minatar_asterix_env import register as _register_asterix
+from envs.grid_pacman_env import register as _register_pacman
 _register_minatar()
 _register_space_invaders()
 _register_asteroids()
 _register_freeway()
 _register_seaquest()
+_register_asterix()
+_register_pacman()
+"""
+
+_GRIDPACMAN_SETUP = """\
+import sys as _sys
+_sys.path.insert(0, "{project_root}")
+import gymnasium as gym
+from envs.grid_pacman_env import register as _register_pacman
+_register_pacman()
 """
 
 _AGENT_GYM_SETUP = """\
@@ -1617,6 +1629,9 @@ _ENV_RECIPE: dict = {
     "MinAtar-Asteroids-v0": "minatar_asteroids_dqn_v1.yaml",
     "MinAtar-Freeway-v0": "minatar_freeway_dqn_v1.yaml",
     "MinAtar-Seaquest-v0": "minatar_seaquest_dqn_v1.yaml",
+    "MinAtar-Asterix-v0": "minatar_asterix_dqn_v1.yaml",
+    "GridPacMan-v0": "grid_pacman_dqn_v1.yaml",
+    "PacMan-v0": "grid_pacman_dqn_v1.yaml",
     "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
     "AgentGym-v0": "agent_gym_ppo_v1.yaml",
     "agent-gym": "agent_gym_ppo_v1.yaml",
@@ -1994,6 +2009,8 @@ class CodeGenerator:
                     "MinAtar-Asteroids-v0", "minatar-asteroids",
                     "MinAtar-Freeway-v0", "minatar-freeway", "freeway",
                     "MinAtar-Seaquest-v0", "minatar-seaquest", "seaquest",
+                    "MinAtar-Asterix-v0", "minatar-asterix", "asterix",
+                    "GridPacMan-v0", "grid-pacman", "pacman",
                 ) and "register" not in code:
                     code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected MinAtar registration preamble")
@@ -2183,8 +2200,10 @@ class CodeGenerator:
                 env_setup = _TETRIS_SETUP.format(project_root=_project_root)
             elif env_id in ("Game2048-v0", "2048"):
                 env_setup = _GAME2048_SETUP.format(project_root=_project_root)
-            elif "minatar" in env_id.lower():
+            elif "minatar" in env_id.lower() or env_id.lower() in ("asterix", "freeway", "seaquest"):
                 env_setup = _MINATAR_SETUP.format(project_root=_project_root)
+            elif env_id in ("GridPacMan-v0", "PacMan-v0") or "pacman" in env_id.lower() or "pac-man" in env_id.lower():
+                env_setup = _GRIDPACMAN_SETUP.format(project_root=_project_root)
             elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
                 env_setup = _AGENT_GYM_SETUP.format(project_root=_project_root)
             else:

@@ -108,7 +108,10 @@ export default function RecipesPage() {
     if (activeTab === "snake") return r.name.toLowerCase().includes("snake");
     if (activeTab === "tetris") return r.name.toLowerCase().includes("tetris");
     if (activeTab === "2048") return r.name.toLowerCase().includes("2048");
-    if (activeTab === "minatar") return r.name.toLowerCase().includes("minatar");
+    if (activeTab === "minatar") {
+      const n = r.name.toLowerCase();
+      return n.includes("minatar") || n.includes("pacman");
+    }
     if (activeTab === "llm")
       return (
         r.name.toLowerCase().includes("distill") ||

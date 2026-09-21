@@ -7,6 +7,8 @@ from envs.minatar_space_invaders_env import MinAtarSpaceInvadersEnv
 from envs.minatar_asteroids_env import MinAtarAsteroidsEnv
 from envs.minatar_freeway_env import MinAtarFreewayEnv
 from envs.minatar_seaquest_env import MinAtarSeaquestEnv
+from envs.minatar_asterix_env import MinAtarAsterixEnv
+from envs.grid_pacman_env import GridPacManEnv
 
 __all__ = [
     "SnakeEnv",
@@ -17,5 +19,7 @@ __all__ = [
     "MinAtarAsteroidsEnv",
     "MinAtarFreewayEnv",
     "MinAtarSeaquestEnv",
+    "MinAtarAsterixEnv",
+    "GridPacManEnv",
 ]
 

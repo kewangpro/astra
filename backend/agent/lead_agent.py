@@ -74,6 +74,10 @@ Available environments:
     Use "MinAtar-Freeway-v0" when the goal mentions Freeway.
   - Custom ASTRA env: "MinAtar-Seaquest-v0" (10×10 grid, discrete 6-action NOOP/LEFT/RIGHT/UP/DOWN/FIRE, oxygen & diver rescue)
     Use "MinAtar-Seaquest-v0" when the goal mentions Seaquest.
+  - Custom ASTRA env: "MinAtar-Asterix-v0" (10×10 grid, discrete 6-action NOOP/LEFT/UP/RIGHT/DOWN/FIRE, gold vs side-spawning enemies)
+    Use "MinAtar-Asterix-v0" when the goal mentions Asterix. Do not confuse with Asteroids.
+  - Custom ASTRA env: "GridPacMan-v0" (10×10 maze, discrete 5-action NOOP/LEFT/RIGHT/UP/DOWN, pellets and ghosts)
+    Use "GridPacMan-v0" when the goal mentions Pac-Man or Grid Pac-Man.
 Valid SB3 PPO hyperparameter keys: learning_rate, n_steps, batch_size, n_epochs, gamma,
 gae_lambda, clip_range, clip_range_vf, ent_coef, vf_coef, max_grad_norm, target_kl.
 Set "algorithm" to a canonical name (PPO, DQN, A2C, SAC, TD3) — never "SB3 PPO".
@@ -188,6 +192,21 @@ _ENV_REWARD_GUIDANCE: dict[str, str] = {
     ),
     "MinAtar-Freeway": (
         "Valid env_kwargs ONLY: max_steps, cross_reward, death_penalty, terminate_on_collision."
+    ),
+    "MinAtar-Asterix-v0": (
+        "Valid env_kwargs ONLY: max_steps, gold_reward, death_penalty, ramping. "
+        "Do not use Asteroids thrust/fire keys or Snake food_reward."
+    ),
+    "MinAtar-Asterix": (
+        "Valid env_kwargs ONLY: max_steps, gold_reward, death_penalty, ramping."
+    ),
+    "GridPacMan-v0": (
+        "Valid env_kwargs ONLY: max_steps, pellet_reward, power_reward, ghost_eat_reward, "
+        "clear_bonus, death_penalty. Do not use Snake food_reward."
+    ),
+    "PacMan-v0": (
+        "Valid env_kwargs ONLY: max_steps, pellet_reward, power_reward, ghost_eat_reward, "
+        "clear_bonus, death_penalty."
     ),
     "MultiTurnAgentGym-v0": (
         "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, invalid_penalty."

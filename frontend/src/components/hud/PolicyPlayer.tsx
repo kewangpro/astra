@@ -33,7 +33,10 @@ export function PolicyPlayer({ modelId, missionId, envId }: Props) {
     lower.includes("breakout") ||
     lower.includes("seaquest") ||
     lower.includes("freeway") ||
+    lower.includes("asterix") ||
     lower.includes("asteroid") ||
+    lower.includes("pacman") ||
+    lower.includes("pac-man") ||
     lower.includes("space")
   ) {
     return <MinAtarPlayer modelId={modelId} missionId={missionId} envId={resolved} />;
