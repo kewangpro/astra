@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 85 complete
+**Status:** Phase 86 complete
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -101,12 +101,13 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 ### 4.15. MinAtar Arcade Benchmark Suite
 - Six MinAtar games plus Grid Pac-Man, all 10×10 pure Python/NumPy (>50k steps/sec): **Breakout**, **Space Invaders**, **Asteroids**, **Asterix**, **Freeway**, **Seaquest**, and **GridPacMan-v0**.
 - High-fidelity symbolic arcade physics, projectile/ghost collision, ramping spawn (Asterix), and dedicated HUD palettes. Grid Pac-Man's mouth rotates with `_player_dir` (0 right, 1 down, 2 left, 3 up) so the live player faces the direction he is walking. Leftover-pellet ghosts do not reverse when another tile is open, break Manhattan ties UP/LEFT/DOWN/RIGHT, and step every other tick so the endgame is a chase instead of a corridor slide.
-- Grid Pac-Man is a discrete 5-action Gym env (PPO/DQN/A2C). The shipped recipe `grid_pacman_dqn_v1` still seeds unnamed goals as DQN; a named-PPO run (`ea4abb36`) eval'd 270 against a 50 target.
+- Grid Pac-Man is a discrete 5-action Gym env (PPO/DQN/A2C). The shipped recipe `grid_pacman_dqn_v1` still seeds unnamed goals as DQN. Named PPO: `ea4abb36` eval'd 270 against a 50 target; the 400-score follow-up `9b49aa78` (shaped `pellet_reward=10`) completed at 529 and plays ~530.
 
 ### 4.16. Model Registry & Tournament Leaderboard
 - Head-to-head multi-model tournaments across fixed deterministic seeds (`2000 + ep`).
-- Computes mean, std, min, max, per-seed score arrays, and tie-split win rates.
-- Automatic champion detection and crown 👑 promotion in the Model Registry.
+- Each checkpoint is scored in its own `train_config` env — the same table the model player loads — not a shared env from the first zip. Reward-shaped Pac-Man (`pellet_reward=10`) therefore ranks near play (~530), not on default 1-point dots.
+- Computes mean, std, min, max, per-seed score arrays, and tie-split win rates. Leaderboard rows show `env_kwargs` when they differ from defaults.
+- Registry `best_metric_value` tracks `checkpoints/best_score.txt` after the first insert. Crowning a model is exclusive per environment.
 
 ### 4.17. Recipe Library, Lineage DAG Visualizer & Unified Mission Dispatch
 - Searchable gallery of canonical training blueprints across RL, Fine-tuning, and ML paradigms.

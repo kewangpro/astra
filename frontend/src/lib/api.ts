@@ -119,6 +119,7 @@ export interface TournamentEntry {
   win_rate: number;
   scores: number[];
   rank: number;
+  env_kwargs?: Record<string, unknown>;
 }
 
 export interface TournamentResponse {

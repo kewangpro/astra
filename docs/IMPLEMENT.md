@@ -2482,4 +2482,31 @@ the MinAtar preamble registers that game too.
   `test_ensure_rl_gym_make_rewrites_healer_space_invaders`,
   `test_fix_script_forces_planned_env_id`.
 
+---
+
+## Phase 86: Tournament and Registry Match Play
+
+Play on `/models/{id}` loads that checkpoint's `train_config.json` env. The
+arena used one shared `gym.make` from the first zip, so a reward-shaped
+Pac-Man lost on default 1-point dots. `9b49aa78` (Level-3
+`pellet_reward=10`, `power_reward=20`) showed **530** in the player and
+completed the 400-score mission at **529**; the last shared-env tournament
+had it at 209 behind `ea4abb36` (285). The registry card also stayed at the
+first-insert `best_score.txt` (246.67) and Crown champ did not take the
+crown off the other Grid Pac-Man row.
+
+- [x] **Per-checkpoint tournament env** —
+  `_tournament_env_kwargs` loads each zip's `train_config` (Snake features /
+  Tetris `max_steps` overlay still apply). `run_tournament_match` makes one
+  env per model. Registry no longer copies the first zip's kwargs onto
+  everyone. Leaderboard includes `env_kwargs`.
+- [x] **Registry score refresh** — `_refresh_model_scores_from_disk` bumps
+  `best_metric_value` when `checkpoints/best_score.txt` is higher. Runs on
+  list and get so the models page tracks play.
+- [x] **Exclusive crown** — `PATCH is_champion=true` clears other champions
+  in the same domain.
+- [x] **Tests** — `test_tournament_env_kwargs_uses_each_checkpoint_table`,
+  `test_refresh_model_scores_from_best_score_txt`, exclusive-crown
+  `test_update_model_champion`.
+
 

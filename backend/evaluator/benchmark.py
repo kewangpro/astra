@@ -49,6 +49,27 @@ def _load_env_kwargs(checkpoint_path: str) -> dict:
     return {}
 
 
+def _tournament_env_kwargs(
+    checkpoint_path: str,
+    env_id: str,
+    overlay: Optional[dict] = None,
+) -> dict:
+    """Per-checkpoint env, matching the model player.
+
+    A shared tournament env used the first checkpoint's table for everyone.
+    Pac-Man `9b49aa78` (pellet_reward=10) then lost to `ea4abb36` on the
+    default 1-point dots while play — which loads this file — showed ~500.
+    """
+    kw = dict(_load_env_kwargs(checkpoint_path))
+    if not kw and env_id == "Snake-v0":
+        kw = {"obs_type": "features", "max_steps": 2000}
+    if overlay:
+        kw = {**kw, **overlay}
+    if env_id == "Tetris-v0":
+        kw["max_steps"] = min(int(kw.get("max_steps", 500)), 500)
+    return kw
+
+
 _LOOKAHEAD_TRAINER_TYPES = {"actor_critic", "lookahead_dqn", "lookahead_ppo", "lookahead_a2c"}
 
 
@@ -499,14 +520,7 @@ def run_tournament_match(
         from envs.register import register_for_env_id
         register_for_env_id(env_id)
 
-        if env_kwargs is None:
-            for entry in checkpoint_entries:
-                kw = _load_env_kwargs(entry["path"])
-                if kw:
-                    env_kwargs = kw
-                    break
-        if not env_kwargs and env_id == "Snake-v0":
-            env_kwargs = {"obs_type": "features", "max_steps": 2000}
+        overlay = dict(env_kwargs) if env_kwargs else {}
 
         loaded_models = []
         for entry in checkpoint_entries:
@@ -543,17 +557,18 @@ def run_tournament_match(
                 "path": path,
                 "is_ac": path.endswith(".pth"),
                 "model": m_obj,
+                "env_kwargs": _tournament_env_kwargs(path, env_id, overlay),
                 "scores": [],
             })
 
-        env = gym.make(env_id, **(env_kwargs or {}))
-        base_env = env.unwrapped
         for ep in range(n_episodes):
             seed = 2000 + ep
             for m in loaded_models:
                 if m["model"] is None:
                     m["scores"].append(0.0)
                     continue
+                env = gym.make(env_id, **m["env_kwargs"])
+                base_env = env.unwrapped
                 obs, _ = env.reset(seed=seed)
                 done, truncated = False, False
                 ep_score = 0.0
@@ -592,7 +607,7 @@ def run_tournament_match(
                             ep_score = float(ep_reward)
 
                 m["scores"].append(ep_score)
-        env.close()
+                env.close()
 
     # Calculate win rates & rankings
     wins = {m["id"]: 0.0 for m in loaded_models}
@@ -623,6 +638,7 @@ def run_tournament_match(
             "max_score": round(max_s, 2),
             "win_rate": win_rate,
             "scores": scores,
+            "env_kwargs": m.get("env_kwargs") or {},
         })
 
     leaderboard.sort(key=lambda x: (x["mean_score"], x["win_rate"]), reverse=True)

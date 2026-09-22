@@ -268,6 +268,11 @@ export default function ModelsPage() {
                           <span className="text-[11px] text-[#64748b] font-mono">
                             {entry.checkpoint_path}
                           </span>
+                          {entry.env_kwargs && Object.keys(entry.env_kwargs).length > 0 && (
+                            <span className="block text-[10px] text-[#64748b]">
+                              env: {Object.entries(entry.env_kwargs).map(([k, v]) => `${k}=${v}`).join(" · ")}
+                            </span>
+                          )}
                         </div>
                       </div>
 

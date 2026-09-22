@@ -28,14 +28,14 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes, **specia
                     +-----------------------+     +-----------+-----------+
                                                                     |
                                                                     v
-                                                          +-----------------------+
-                                                          |    Secure Sandbox     |
-                                                          +-----------+-----------+
+                                                        +-----------------------+
+                                                        |    Secure Sandbox     |
+                                                        +-----------+-----------+
                                                                     |
                                                                     v
-                                                          +-----------------------+
-                                                          |      Environment      |
-                                                          +-----------------------+
+                                                        +-----------------------+
+                                                        |      Environment      |
+                                                        +-----------------------+
 ```
 
 ---
@@ -106,7 +106,7 @@ Where training runs.
 
 ### 2.6. Evaluator and introspection
 
-A **benchmark suite** (golden challenges) and **stress** cases sit outside the training loop. **Saliency** and a **policy auditor** (action distribution, entropy) explain play on `/models/{id}`.
+A **benchmark suite** (golden challenges) and **stress** cases sit outside the training loop. Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
 
 ### 2.7. Resilience
 
@@ -125,7 +125,7 @@ A **benchmark suite** (golden challenges) and **stress** cases sit outside the t
 5. Sandbox trains; telemetry streams to the HUD.
 6. Evaluator scores the checkpoint against the goal metric.
 7. Loop pivots, completes, or stalls. Successful **RL** (and similar) runs may crystallize a recipe; fine-tune-remote types do not.
-8. Registry and model page pick up the checkpoint for play and tournaments.
+8. Registry and model page pick up the checkpoint for play and tournaments (same env table).
 
 ---
 

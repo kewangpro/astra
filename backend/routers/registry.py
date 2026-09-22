@@ -22,7 +22,7 @@ from backend.schemas.model_registry import (
     TournamentRequest,
     TournamentResponse,
 )
-from backend.evaluator.benchmark import run_tournament_match, _load_env_kwargs
+from backend.evaluator.benchmark import run_tournament_match
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/registry", tags=["registry"])
@@ -278,6 +278,42 @@ async def _auto_sync_disk_checkpoints(db: AsyncSession) -> None:
         except Exception as e:
             logger.warning("Failed to commit auto-synced checkpoints: %s", e)
 
+    await _refresh_model_scores_from_disk(db)
+
+
+async def _refresh_model_scores_from_disk(db: AsyncSession) -> None:
+    """Bump registry scores when checkpoints/best_score.txt is higher.
+
+    Auto-sync only wrote the score on first insert. Pac-Man 9b49aa78 stayed
+    at 246.67 on the models page after play and the mission both reached ~530.
+    """
+    try:
+        res = await db.execute(select(ModelRecord).where(ModelRecord.checkpoint_path.is_not(None)))
+        records = res.scalars().all()
+    except Exception:
+        return
+    changed = False
+    for rec in records:
+        path = rec.checkpoint_path or rec.weights_path
+        if not path:
+            continue
+        score_file = os.path.join(os.path.dirname(path), "best_score.txt")
+        if not os.path.exists(score_file):
+            continue
+        try:
+            score = float(open(score_file).read().strip())
+        except Exception:
+            continue
+        current = rec.best_metric_value
+        if current is None or score > float(current) + 1e-6:
+            rec.best_metric_value = score
+            changed = True
+    if changed:
+        try:
+            await db.commit()
+        except Exception as e:
+            logger.warning("Failed to refresh model scores from disk: %s", e)
+
 
 @router.get("/models", response_model=List[ModelRecordRead])
 async def list_model_records(
@@ -302,6 +338,8 @@ async def get_model_record(model_id: str, db: AsyncSession = Depends(get_db)):
     record = await db.get(ModelRecord, model_id)
     if not record:
         raise HTTPException(status_code=404, detail="Model record not found")
+    await _refresh_model_scores_from_disk(db)
+    await db.refresh(record)
     return record
 
 
@@ -310,8 +348,18 @@ async def update_model_record(model_id: str, payload: ModelRecordUpdate, db: Asy
     record = await db.get(ModelRecord, model_id)
     if not record:
         raise HTTPException(status_code=404, detail="Model record not found")
-    for k, v in payload.model_dump(exclude_none=True).items():
+    fields = payload.model_dump(exclude_none=True)
+    for k, v in fields.items():
         setattr(record, k, v)
+    if fields.get("is_champion"):
+        q = select(ModelRecord).where(
+            ModelRecord.domain == record.domain,
+            ModelRecord.id != record.id,
+            ModelRecord.is_champion == True,  # noqa: E712
+        )
+        others = (await db.execute(q)).scalars().all()
+        for other in others:
+            other.is_champion = False
     await db.commit()
     await db.refresh(record)
     return record
@@ -451,25 +499,19 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
             detail=f"At least 2 valid model checkpoints are required to run a tournament for '{payload.env_id}'. Found {len(entries)}."
         )
 
-    # Resolve env_kwargs from candidates (e.g. obs_type='features' for Snake)
-    env_kwargs = None
-    for e in entries:
-        kw = _load_env_kwargs(e["path"])
-        if kw:
-            env_kwargs = kw
-            break
-    if not env_kwargs and payload.env_id == "Snake-v0":
-        env_kwargs = {"obs_type": "features", "max_steps": 2000}
+    # Overlay only — each checkpoint loads its own train_config env_kwargs
+    # so a reward-shaped Pac-Man is scored like the model player, not on
+    # whichever table the first zip happened to carry.
+    overlay = {}
     if payload.env_id == "Tetris-v0":
-        env_kwargs = dict(env_kwargs or {})
-        env_kwargs["max_steps"] = min(env_kwargs.get("max_steps", 500), 500)
+        overlay["max_steps"] = 500
 
     result = await asyncio.to_thread(
         run_tournament_match,
         checkpoint_entries=entries,
         env_id=payload.env_id,
         n_episodes=payload.n_episodes,
-        env_kwargs=env_kwargs,
+        env_kwargs=overlay or None,
     )
 
     if payload.update_champion and result.get("champion_id"):

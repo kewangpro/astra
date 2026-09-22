@@ -58,6 +58,7 @@ class TournamentEntry(BaseModel):
     win_rate: float
     scores: list[float]
     rank: int
+    env_kwargs: dict = Field(default_factory=dict)
 
 
 class TournamentRequest(BaseModel):

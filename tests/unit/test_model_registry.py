@@ -28,7 +28,7 @@ from backend.routers.registry import (
     delete_model_record,
     run_tournament,
 )
-from backend.evaluator.benchmark import run_tournament_match
+from backend.evaluator.benchmark import run_tournament_match, _tournament_env_kwargs
 
 
 # ── Fixtures & Helpers ─────────────────────────────────────────────────────────
@@ -110,13 +110,36 @@ async def test_create_model_record():
 async def test_update_model_champion():
     mock_rec = MagicMock()
     mock_rec.id = "rec-1"
+    mock_rec.domain = "GridPacMan-v0"
     mock_rec.is_champion = False
-    db = _make_db(item=mock_rec)
+    other = MagicMock()
+    other.id = "rec-2"
+    other.domain = "GridPacMan-v0"
+    other.is_champion = True
+    db = _make_db(item=mock_rec, items=[other])
 
     payload = ModelRecordUpdate(is_champion=True)
     res = await update_model_record("rec-1", payload, db=db)
     assert res.is_champion is True
+    assert other.is_champion is False
     db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_refresh_model_scores_from_best_score_txt(tmp_path):
+    from backend.routers.registry import _refresh_model_scores_from_disk
+
+    ckpt = tmp_path / "best_model.zip"
+    ckpt.write_bytes(b"x")
+    (tmp_path / "best_score.txt").write_text("532.45")
+    rec = MagicMock()
+    rec.checkpoint_path = str(ckpt)
+    rec.weights_path = str(ckpt)
+    rec.best_metric_value = 246.67
+    db = _make_db(items=[rec])
+    await _refresh_model_scores_from_disk(db)
+    assert rec.best_metric_value == 532.45
+    db.commit.assert_awaited()
 
 
 # ── Tournament Arena Tests ────────────────────────────────────────────────────
@@ -213,6 +236,26 @@ async def test_tournament_runs_match_and_updates_champion(tmp_path):
         assert len(resp["leaderboard"]) == 2
         assert resp["leaderboard"][0]["rank"] == 1
         assert resp["leaderboard"][0]["mean_score"] == 52.0
+
+
+def test_tournament_env_kwargs_uses_each_checkpoint_table(tmp_path):
+    """Play loads train_config per model; the tournament must do the same."""
+    import json
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    (a / "best_model.zip").write_bytes(b"x")
+    (b / "best_model.zip").write_bytes(b"x")
+    (a / "train_config.json").write_text(json.dumps({"env_kwargs": {}}))
+    (b / "train_config.json").write_text(
+        json.dumps({"env_kwargs": {"pellet_reward": 10, "power_reward": 20}})
+    )
+    assert _tournament_env_kwargs(str(a / "best_model.zip"), "GridPacMan-v0") == {}
+    assert _tournament_env_kwargs(str(b / "best_model.zip"), "GridPacMan-v0") == {
+        "pellet_reward": 10,
+        "power_reward": 20,
+    }
 
 
 def test_run_tournament_match_ranking_logic():
