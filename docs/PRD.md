@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 82 complete
+**Status:** Phase 83 complete
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -21,7 +21,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Autonomy**: Reduce human intervention in the training loop by 80%.
 - **Optimization**: Discover better hyperparameter and reward configurations through automated experimentation.
 - **Observability**: Provide high-fidelity insights into *why* a model is performing via feature map analysis.
-- **Portability**: Create a system that can be easily plugged into different environments (Snake, Tetris, 2048, MinAtar Breakout, Finance, etc.).
+- **Portability**: Create a system that can be easily plugged into different environments (Snake, Tetris, 2048, MinAtar arcade suite, Grid Pac-Man, MultiTurnAgentGym, Finance, etc.).
 
 ## 4. Key Features
 
@@ -53,7 +53,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 ### 4.5. Smart Visualizer
 - Automatically captures video of "Breakthrough Moments."
 - Generates CNN activation maps and feature plots.
-- **Play / inference**: Live canvas on `/models/{id}`. Missions train; models run the checkpoint. Snake, Tetris, 2048, MinAtar suite.
+- **Play / inference**: Live canvas on `/models/{id}`. Missions train; models run the checkpoint. Snake, Tetris, 2048, MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man.
 
 ### 4.6. Autonomous Iteration Loop
 - Continuous "Plan-Train-Evaluate-Refine" cycle.
@@ -77,7 +77,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Recipe Evolution**: ASTRA can treat a recipe as a "DNA" strand, mutating and improving it across different training runs to discover universal "Golden Recipes" for specific domains (e.g., "The Golden Snake Recipe").
 
 ### 4.10. Predefined "Golden" Recipes
-- ASTRA ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., the workspace's existing Snake, Tetris, 2048, and MinAtar Breakout models).
+- ASTRA ships with a set of **Predefined Base Recipes** derived from proven, high-performance training runs (e.g., Snake, Tetris, 2048, MinAtar arcade, and Grid Pac-Man).
 - These recipes serve as the "Initial Knowledge" of the system, allowing users to achieve expert-level results on day one for common tasks.
 
 ### 4.11. Crash-Safe Mission Persistence
@@ -95,12 +95,12 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Employs a specialized `Game2048ValueNet` architecture with target network stabilization.
 
 ### 4.14. Live Policy Audit & Explainability Inspector
-- Streams real-time action probabilities, Q-values, and Shannon policy entropy over WebSockets to the Mission HUD.
+- Streams real-time action probabilities, Q-values, and Shannon policy entropy over WebSockets to the model play page (`/models/{id}`).
 - Features confidence indicators and high certainty vs. high exploration categorization, providing immediate visibility into model decision dynamics.
 
 ### 4.15. MinAtar Arcade Benchmark Suite
-- Expands beyond Breakout to include **Space Invaders** (`MinAtar-SpaceInvaders-v0`) and **Asteroids** (`MinAtar-Asteroids-v0`) with 10x10 pure Python/NumPy execution (>50k steps/sec).
-- High-fidelity symbolic arcade physics, projectile collision simulations, and dedicated HUD palettes.
+- Six MinAtar games plus Grid Pac-Man, all 10×10 pure Python/NumPy (>50k steps/sec): **Breakout**, **Space Invaders**, **Asteroids**, **Asterix**, **Freeway**, **Seaquest**, and **GridPacMan-v0**.
+- High-fidelity symbolic arcade physics, projectile/ghost collision, ramping spawn (Asterix), and dedicated HUD palettes. Grid Pac-Man's mouth rotates with `_player_dir` (0 right, 1 down, 2 left, 3 up) so the live player faces the direction he is walking.
 
 ### 4.16. Model Registry & Tournament Leaderboard
 - Head-to-head multi-model tournaments across fixed deterministic seeds (`2000 + ep`).

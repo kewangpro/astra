@@ -28,7 +28,7 @@
 - **Live Game Viewers**: Not on this page. Missions are training (metrics, logs, pivots). Play / inference is `/models/{id}`.
 
 ### 2.3. The Recipe Library (`/recipes`)
-- **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, domain badges, and quick YAML inspection modals.
+- **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, domain badges, and quick YAML inspection modals. Domain tabs include MinAtar (Asterix, Grid Pac-Man, and the rest of the arcade suite).
 - **Lineage DAG Visualizer**: Interactive drawer tracing the evolutionary chain (Gen 0 → Gen 1 → Gen 2) for crystallized and mutated recipes, displaying score progressions and hyperparameter deltas.
 - **One-Click Dispatch**: Single-click "Dispatch" button on any recipe card or inspection modal to instantly spin up an autonomous mission loop without manual configuration.
 - **Delete**: Auto-crystallized recipes (not hand-crafted YAML) have a Delete control on the card and in the YAML modal.
@@ -36,7 +36,7 @@
 ### 2.4. Models (`/models`)
 - Missions train; models play / infer.
 - **Checkpoint cards**: Click to open `/models/{id}` for live play (`WS /ws/models/{id}/play`).
-- **Model page**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path). MinAtarPlayer covers Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man.
+- **Model page**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path). MinAtarPlayer covers Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man (mouth rotates with movement).
 - **Policy inspector**: confidence bars, Q-values, entropy, selected action.
 - **Tournament Arena**:
   - Environment and seed selector configuring fixed deterministic evaluation runs across 3 to 20 episodes.
@@ -46,7 +46,7 @@
 
 ### 2.5. The Completed Missions Archive (`/completed`)
 - **Gallery Layout**: Modeled after the Recipe Library (`/recipes`) with dark glass UI, KPI overview cards, and responsive 3-column card grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`).
-- **Domain Filter Tabs**: 8 category tabs (`All Completed`, `MinAtar`, `Snake`, `Tetris`, `2048`, `LLM & Reasoning`, `AgentGym`, `Classic Control & ML`).
+- **Domain Filter Tabs**: 8 category tabs (`All Completed`, `MinAtar`, `Snake`, `Tetris`, `2048`, `LLM & Reasoning`, `AgentGym`, `Classic Control & ML`). The MinAtar tab includes Grid Pac-Man.
 - **Interactive Search & Sorting**: Real-time filtering across goals, IDs, environments, hosts, and task types; sortable by newest, highest metric score, or fastest duration.
 - **KPI Summary Cards**: Displays Total Completed Runs, Target Pass Rate (% meeting or exceeding target), and Total Iterations Executed across historical runs.
 - **Convergence Cards**: Shows short ID, task type tag, remote/local node host, relative/exact timestamp, goal text, target metric vs achieved best score, progress bar, iterations, and duration. Clicking a card opens the Mission HUD.

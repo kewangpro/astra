@@ -11,8 +11,8 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), tracking score distributions and tie-split win rates to automatically crown champion policies.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
 - **Dedicated Completed Missions Archive & Proof Verification** — Dedicated historical repository (`/completed`) with multi-domain category tabs, instant search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`).
-- **Live Mission HUD & Explainability** — Real-time telemetry, memory gauges, and interactive canvas players streaming frame-by-frame Q-values, action probabilities, and Shannon policy entropy across all environments.
-- **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), and the complete 5-game MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest).
+- **Live Mission HUD & Model Play** — Missions stay on training (telemetry, memory gauges, pivots). Play / inference is `/models/{id}`: canvas players stream frame-by-frame Q-values, action probabilities, and Shannon policy entropy.
+- **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), the MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, and MultiTurnAgentGym.
 - **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
 
 
@@ -20,7 +20,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 | Command Center | Mission HUD |
 |---|---|
-| ![Command Center — operational board with priority status rows, active execution tracking, and cluster health](docs/screenshots/command_center.png) | ![Mission HUD — metric chart, log stream, pivot timeline, Snake live viewer](docs/screenshots/mission_hud.png) |
+| ![Command Center — operational board with priority status rows, active execution tracking, and cluster health](docs/screenshots/command_center.png) | ![Mission HUD — metric chart, log stream, pivot timeline](docs/screenshots/mission_hud.png) |
 
 | Metric History (current vs. prior run) | Auto-Approve & Approval Panel |
 |---|---|
@@ -28,11 +28,11 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 | Snake-v0 Live Viewer | Tetris-v0 Live Viewer |
 |---|---|
-| ![Snake-v0 agent playing live in the mission HUD — grid canvas with head, body, and food rendered in real time](docs/screenshots/snake_viewer.png) | ![Tetris-v0 agent playing live in the mission HUD — board canvas with piece colors and line-clear highlights](docs/screenshots/tetris_viewer.png) |
+| ![Snake-v0 agent playing live on the model page — grid canvas with head, body, and food rendered in real time](docs/screenshots/snake_viewer.png) | ![Tetris-v0 agent playing live on the model page — board canvas with piece colors and line-clear highlights](docs/screenshots/tetris_viewer.png) |
 
 | Game2048-v0 Live Viewer | MinAtar-Breakout-v0 Live Viewer |
 |---|---|
-| ![Game2048-v0 agent playing live in the mission HUD — 4x4 tile canvas with score and max tile tracking](docs/screenshots/game2048_viewer.png) | ![MinAtar-Breakout-v0 agent playing live in the mission HUD — 10x10 symbolic arcade canvas with paddle, ball, and bricks](docs/screenshots/minatar_viewer.png) |
+| ![Game2048-v0 agent playing live on the model page — 4x4 tile canvas with score and max tile tracking](docs/screenshots/game2048_viewer.png) | ![MinAtar Breakout on the model page — 10x10 arcade canvas; the same player also covers Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man](docs/screenshots/minatar_viewer.png) |
 
 | Model Registry & Tournament Leaderboard | Recipe Library & Lineage Visualizer |
 |---|---|
@@ -94,10 +94,10 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1116 unit tests across all core modules
+│   ├── unit/           # 1204 unit tests across all core modules
 │   └── integration/    # 20 integration tests for the loop state machine and stress test suites
 ├── alembic/            # Database migrations
-├── envs/               # Custom Gymnasium environments (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite, AgentGym)
+├── envs/               # Custom Gymnasium environments (Snake, Tetris, 2048, MinAtar suite, Grid Pac-Man, AgentGym)
 ├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
@@ -117,8 +117,6 @@ make stop   # stop both
 make ports  # show port status for all services
 ```
 
-## Development Milestones
-
 ## Strategic Development Milestones
 
 ASTRA's architecture and capabilities are structured into seven core development epochs:
@@ -128,7 +126,7 @@ ASTRA's architecture and capabilities are structured into seven core development
 | **Epoch 1: Autonomous Execution Engine** (Phases 1–16) | Autonomous Plan-Critique-Implement-Train-Eval loop, GAN-style plan critique, self-healing code generation, 4-stage escalating pivots, regression rollback, and vector memory. | `LoopStateMachine`, `LeadAgent`, `CriticAgent`, `CodeGenerator`, `PivotEngine`, `VectorMemory` | ✅ Complete |
 | **Epoch 2: Reinforcement Learning & Lookahead** (Phases 17–24, 31–32) | High-throughput pure Gymnasium environments (Snake-v0, Tetris-v0), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space features, and curriculum learning. | `SnakeEnv`, `TetrisEnv`, lookahead DQN, custom reward shaping | ✅ Complete |
 | **Epoch 3: Post-Training, Distillation & Compute Cluster** (Phases 25–30, 33–50) | Remote SSH compute sandboxes, DPO, GRPO, Distillation, RFT, and Prompt optimization; cluster visibility (Nodes panel), checkpoint chaining, and convergence guards. | `SSHSandbox`, `SandboxManager`, DPO/GRPO/Distill trainers, Nodes panel, Kanban board | ✅ Complete |
-| **Epoch 4: Arcade Simulation Suite & Live HUD Explainability** (Phases 51–54, 65) | Complete 5-game MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Freeway, Seaquest) & Game2048-v0 (>100k steps/sec); WebSocket play HUD with live Q-values, action distributions, and Shannon entropy. | MinAtar Suite (5 games), `Game2048Env`, `MinAtarPlayer`, `PolicyAuditor` | ✅ Complete |
+| **Epoch 4: Arcade Simulation Suite & Live HUD Explainability** (Phases 51–54, 65, 79, 81–83) | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0; play / inference on `/models/{id}` with live Q-values, action distributions, and Shannon entropy. | MinAtar suite, `GridPacManEnv`, `Game2048Env`, `MinAtarPlayer`, `PolicyAuditor` | ✅ Complete |
 | **Epoch 5: Model Registry, Tournaments & Recipe Evolution** (Phases 55–56) | Multi-environment Model Registry, deterministic fixed-seed Tournament Arena, automatic champion crowning, and Recipe Library with evolutionary Lineage DAG. | `ModelRegistry`, `BenchmarkSuite` tournaments, `RecipeLibrary`, Lineage DAG | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels** (Phases 57–63, 66) | Unified 3-stage post-training pipeline (SFT → DPO → GRPO), `<think>...</think>` CoT reasoning preservation, MLX Apple Silicon remote offload, adapter auto-detection, and Self-Taught Reasoner (STaR) closed-loop data bootstrapping with backward rationalization. | Conductor pipeline, SFTTrainer, STaR flywheel (`star_train.py`), unbuffered streaming | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments** (Phase 64) | `MultiTurnAgentGym-v0` 32D environment, 8 multi-turn scenarios (customer support, data triage, billing), dense milestone & task completion rewards, and PPO agent policy optimization. | `AgentToolGym`, `recipes/agent_gym_ppo_v1.yaml`, multi-turn scenario engine | ✅ Complete |

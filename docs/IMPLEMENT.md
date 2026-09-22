@@ -1,6 +1,6 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA`, structured into **seven strategic epochs** encompassing 66 phases of development:
+This document outlines the architectural implementation roadmap for `ASTRA`, structured into **seven strategic epochs** encompassing 83 phases of development:
 
 ## Strategic Epoch Roadmap
 
@@ -9,7 +9,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
 | **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing code gen, 4-stage escalating pivots, regression rollback, vector memory | Phases 1–16 | ✅ Complete |
 | **Epoch 2: High-Throughput RL & Lookahead** | Pure Gym environments (Snake, Tetris), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space, curriculum | Phases 17–24, 31–32 | ✅ Complete |
 | **Epoch 3: Post-Training, Distillation & Cluster Scaling** | Remote SSH execution, DPO/GRPO/Distill/RFT/Prompt paradigms, Nodes cluster HUD, checkpoint chaining, convergence guards | Phases 25–30, 33–50 | ✅ Complete |
-| **Epoch 4: Arcade Simulation Suite & Live HUD** | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0, live policy auditor | Phases 51–54, 65, 81 | ✅ Complete |
+| **Epoch 4: Arcade Simulation Suite & Live HUD** | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0, live policy auditor on `/models/{id}` | Phases 51–54, 65, 79, 81–83 | ✅ Complete |
 | **Epoch 5: Model Registry, Tournaments & Recipe Lineage** | Multi-environment Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with evolutionary Lineage DAG | Phases 55–56 | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
@@ -2420,5 +2420,20 @@ at zero and making the `pivot_count >= 15` convergence gate unreachable.
 - [x] **Convergence regression test** — repeated pivot/revert cycles now reach
   `ESCALATION_FORCE_NOVEL` and satisfy `is_converged()` once the best has been
   unbeaten for the configured window.
+
+---
+
+## Phase 83: Grid Pac-Man Mouth Follows Movement
+
+The live player drew Pac-Man with a fixed right-facing mouth, so UP/LEFT/DOWN
+walks looked sideways.
+
+- [x] **`_player_dir`** — 0 right, 1 down, 2 left, 3 up. Updates only on a
+  successful walk; NOOP and wall bumps keep the last heading. Included in
+  `_info()` and play frames.
+- [x] **`MinAtarPlayer`** — rotates the mouth wedge; falls back to
+  `selected_action` if `player_dir` is missing.
+- [x] **Tests** — `test_pacman_faces_move_direction`,
+  `test_run_episode_pacman_includes_player_dir`.
 
 
