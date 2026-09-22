@@ -20,6 +20,11 @@ _MAZE = [
     "##########",
 ]
 
+# Original Pac-Man tie-break: UP, LEFT, DOWN, RIGHT.
+_DIR_PRIORITY = ((-1, 0), (0, -1), (1, 0), (0, 1))
+_DIR_RANK = {d: i for i, d in enumerate(_DIR_PRIORITY)}
+_SCATTER = ((1, 1), (1, 8), (8, 1), (8, 8))
+
 
 class GridPacManEnv(gym.Env):
     """
@@ -118,7 +123,10 @@ class GridPacManEnv(gym.Env):
         self._power_timer = 0
         self._pellets = set(self._home_pellets)
         self._power = set(self._home_power)
-        self._ghosts = [{"r": r, "c": c, "home": (r, c)} for r, c in self._ghost_homes()]
+        self._ghosts = [
+            {"r": r, "c": c, "home": (r, c), "last": None}
+            for r, c in self._ghost_homes()
+        ]
         self._score = 0.0
         self._ghosts_eaten = 0
         self._pellets_eaten = 0
@@ -146,24 +154,49 @@ class GridPacManEnv(gym.Env):
             if facing is not None:
                 self._player_dir = facing
 
+    def _adjacent(self, r: int, c: int) -> List[Tuple[int, int]]:
+        cells: List[Tuple[int, int]] = []
+        for dr, dc in _DIR_PRIORITY:
+            nr, nc = r + dr, c + dc
+            if self._walkable(nr, nc):
+                cells.append((nr, nc))
+        return cells
+
+    def _ghost_target(self, index: int, frightened: bool) -> Tuple[int, int]:
+        if frightened:
+            return _SCATTER[index % len(_SCATTER)]
+        return (self._player_r, self._player_c)
+
+    def _choose_ghost_step(
+        self,
+        current: Tuple[int, int],
+        options: List[Tuple[int, int]],
+        target: Tuple[int, int],
+    ) -> Tuple[int, int]:
+        cr, cc = current
+
+        def key(p: Tuple[int, int]) -> Tuple[int, int]:
+            dist = abs(p[0] - target[0]) + abs(p[1] - target[1])
+            pri = _DIR_RANK[(p[0] - cr, p[1] - cc)]
+            return (dist, pri)
+
+        return min(options, key=key)
+
     def _move_ghosts(self) -> None:
-        pr, pc = self._player_r, self._player_c
         frightened = self._power_timer > 0
-        for g in self._ghosts:
-            options: List[Tuple[int, int]] = []
-            for dr, dc in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-                nr, nc = g["r"] + dr, g["c"] + dc
-                if self._walkable(nr, nc):
-                    options.append((nr, nc))
+        for i, g in enumerate(self._ghosts):
+            options = self._adjacent(g["r"], g["c"])
+            last = g.get("last")
+            if last is not None:
+                forward = [p for p in options if p != last]
+                if forward:
+                    options = forward
             if not options:
                 continue
-            if self._rng.random() < 0.2:
-                g["r"], g["c"] = options[int(self._rng.integers(len(options)))]
-                continue
-            def dist(p: Tuple[int, int]) -> int:
-                return abs(p[0] - pr) + abs(p[1] - pc)
-            ranked = max(options, key=dist) if frightened else min(options, key=dist)
-            g["r"], g["c"] = ranked
+            target = self._ghost_target(i, frightened)
+            nxt = self._choose_ghost_step((g["r"], g["c"]), options, target)
+            g["last"] = (g["r"], g["c"])
+            g["r"], g["c"] = nxt
 
     def _resolve_ghost_collisions(self) -> Tuple[float, bool]:
         reward = 0.0
@@ -176,6 +209,7 @@ class GridPacManEnv(gym.Env):
                 self._ghosts_eaten += 1
                 hr, hc = g["home"]
                 g["r"], g["c"] = hr, hc
+                g["last"] = None
             else:
                 return self.death_penalty, True
         return reward, False
@@ -196,7 +230,10 @@ class GridPacManEnv(gym.Env):
         r_hit, dead = self._resolve_ghost_collisions()
         reward += r_hit
         if not dead:
-            self._move_ghosts()
+            # Pac-Man is faster: ghosts step every other tick so leftover
+            # pellets become a chase, not a four-ghost lock or a corridor dance.
+            if self._step_count % 2 == 1:
+                self._move_ghosts()
             r_hit, dead = self._resolve_ghost_collisions()
             reward += r_hit
 

@@ -109,6 +109,57 @@ def test_pacman_eat_frightened_ghost():
     assert env._ghosts[0]["r"] == 1
 
 
+def test_ghost_prefers_up_on_manhattan_tie():
+    """Leftover-pellet dance: ghost at (7,4), Pac-Man in the (2,5) alcove.
+    LEFT/RIGHT and UP can tie on Manhattan; UP must win so the ghost climbs
+    instead of sliding sideways forever."""
+    env = GridPacManEnv()
+    env.reset(seed=0)
+    env._power_timer = 0
+    env._player_r, env._player_c = 2, 5
+    env._ghosts = [{"r": 7, "c": 4, "home": (1, 4), "last": None}]
+    env._move_ghosts()
+    assert (env._ghosts[0]["r"], env._ghosts[0]["c"]) == (6, 4)
+
+
+def test_ghost_does_not_reverse_when_other_options_exist():
+    env = GridPacManEnv()
+    env.reset(seed=0)
+    env._power_timer = 0
+    env._player_r, env._player_c = 7, 8
+    env._ghosts = [{"r": 7, "c": 4, "home": (1, 4), "last": (7, 5)}]
+    env._move_ghosts()
+    assert (env._ghosts[0]["r"], env._ghosts[0]["c"]) != (7, 5)
+
+
+def test_ghost_chase_does_not_oscillate_in_corridor():
+    env = GridPacManEnv()
+    env.reset(seed=0)
+    env._power_timer = 0
+    env._player_r, env._player_c = 2, 4
+    env._ghosts = [{"r": 7, "c": 4, "home": (1, 4), "last": None}]
+    path = []
+    for _ in range(5):
+        env._move_ghosts()
+        path.append((env._ghosts[0]["r"], env._ghosts[0]["c"]))
+    # Climbs the center shaft toward row 2; no left-right bounce.
+    assert path == [(6, 4), (5, 4), (4, 4), (3, 4), (2, 4)]
+    cols = {c for _, c in path}
+    assert cols == {4}
+
+
+def test_ghosts_step_every_other_tick():
+    env = GridPacManEnv()
+    env.reset(seed=0)
+    env._power_timer = 0
+    env._player_r, env._player_c = 2, 4
+    env._ghosts = [{"r": 7, "c": 4, "home": (1, 4), "last": None}]
+    env.step(0)
+    assert (env._ghosts[0]["r"], env._ghosts[0]["c"]) == (7, 4)
+    env.step(0)
+    assert (env._ghosts[0]["r"], env._ghosts[0]["c"]) == (6, 4)
+
+
 def test_pacman_gym_make():
     env = gym.make("GridPacMan-v0")
     obs, _ = env.reset(seed=2)
