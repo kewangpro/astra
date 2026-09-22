@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.agent.error_analyzer import (
     ErrorAnalyzer,
+    _ensure_rl_gym_make,
     _extract_error_type,
     _extract_traceback,
     _patch_callback_init,
@@ -262,6 +263,40 @@ def test_patch_missing_imports_injects_basecallback():
     analyzer = ErrorAnalyzer(AsyncMock())
     result = analyzer._patch_missing_imports(code)
     assert "from stable_baselines3.common.callbacks import BaseCallback" in result
+
+
+def test_ensure_rl_gym_make_rewrites_healer_space_invaders():
+    code = (
+        'from stable_baselines3 import PPO\n'
+        'env = gym.make("Minatar-SpaceInvaders-v0")\n'
+        "model = PPO('MlpPolicy', env)\n"
+    )
+    result = _ensure_rl_gym_make(code, "GridPacMan-v0")
+    assert 'env = gym.make("GridPacMan-v0")' in result
+    assert "SpaceInvaders" not in result
+
+
+def test_fix_script_forces_planned_env_id(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text("from stable_baselines3 import PPO\nmodel = PPO('MlpPolicy', env)\n")
+    provider = _make_provider(
+        'from stable_baselines3 import PPO\n'
+        'env = gym.make("Minatar-SpaceInvaders-v0")\n'
+        "model = PPO('MlpPolicy', env)\n"
+    )
+    analyzer = ErrorAnalyzer(provider)
+    with patch.object(analyzer, "_store_lesson"):
+        asyncio.get_event_loop().run_until_complete(
+            analyzer.fix_script(
+                str(script),
+                "NameError: name 'env' is not defined",
+                iteration=0,
+                env_id="GridPacMan-v0",
+            )
+        )
+    text = script.read_text()
+    assert 'env = gym.make("GridPacMan-v0")' in text
+    assert "SpaceInvaders" not in text
 
 
 def test_patch_missing_imports_noop_when_already_present():

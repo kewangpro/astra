@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 83 complete
+**Status:** Phase 85 complete
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -100,7 +100,8 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.15. MinAtar Arcade Benchmark Suite
 - Six MinAtar games plus Grid Pac-Man, all 10×10 pure Python/NumPy (>50k steps/sec): **Breakout**, **Space Invaders**, **Asteroids**, **Asterix**, **Freeway**, **Seaquest**, and **GridPacMan-v0**.
-- High-fidelity symbolic arcade physics, projectile/ghost collision, ramping spawn (Asterix), and dedicated HUD palettes. Grid Pac-Man's mouth rotates with `_player_dir` (0 right, 1 down, 2 left, 3 up) so the live player faces the direction he is walking.
+- High-fidelity symbolic arcade physics, projectile/ghost collision, ramping spawn (Asterix), and dedicated HUD palettes. Grid Pac-Man's mouth rotates with `_player_dir` (0 right, 1 down, 2 left, 3 up) so the live player faces the direction he is walking. Leftover-pellet ghosts do not reverse when another tile is open, break Manhattan ties UP/LEFT/DOWN/RIGHT, and step every other tick so the endgame is a chase instead of a corridor slide.
+- Grid Pac-Man is a discrete 5-action Gym env (PPO/DQN/A2C). The shipped recipe `grid_pacman_dqn_v1` still seeds unnamed goals as DQN; a named-PPO run (`ea4abb36`) eval'd 270 against a 50 target.
 
 ### 4.16. Model Registry & Tournament Leaderboard
 - Head-to-head multi-model tournaments across fixed deterministic seeds (`2000 + ep`).
@@ -117,7 +118,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Strict Held-Out Validation**: Enforces deterministic held-out dataset splitting (`val_split`, fixed seed 42) to eliminate in-sample evaluation overfitting and data leakage.
 - **Chain-of-Thought (CoT) Preservation**: Automatically extracts, preserves, and formats `<think>...</think>` internal reasoning traces in multi-turn dialogues and completion records.
 - **Comprehensive Telemetry & Checkpointing**: Emits live `train_loss`, `eval_loss`, and `perplexity` (`exp(eval_loss)`) metrics to the dashboard, with peak checkpoint tracking in `checkpoints/best`.
-- **AST-Guarded Code Generation & Self-Healing**: Resilient code generation and error analyzer self-healing that validate script syntax via Python's `ast` parser and fall back to canonical execution scripts against autoregressive coder degeneration.
+- **AST-Guarded Code Generation & Self-Healing**: Resilient code generation and error analyzer self-healing that validate script syntax via Python's `ast` parser and fall back to canonical execution scripts against autoregressive coder degeneration. RL scripts are post-patched so `env = gym.make(<planned env_id>)` cannot be omitted or swapped (Pac-Man `9b49aa78` healed into Space Invaders after `NameError: env`).
 
 ### 4.19. Remote SFT Training via MLX on Apple Silicon Cluster
 - Apple Silicon Mac Mini compute offload utilizing standalone MLX training runner (`sft_train.py`) without requiring git checkout on remote worker nodes.

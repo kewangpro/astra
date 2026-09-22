@@ -2026,6 +2026,11 @@ class CodeGenerator:
                     _metric_name = next(iter(plan.get("target_metric") or {}), "food_eaten")
                     code = self._inject_curriculum(code, _curriculum_phases, env_id, _env_kw, _metric_name)
                     logger.info("CodeGenerator: injected curriculum (%d phases) for %s/%s", len(_curriculum_phases), env_id, _algo)
+                _env_kw = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
+                _env_kw_str = ""
+                if _env_kw:
+                    _env_kw_str = ", " + ", ".join(f"{k}={v!r}" for k, v in _env_kw.items())
+                code = self._ensure_rl_gym_make(code, env_id, _env_kw_str)
             # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
             code = self._fix_checkpoint_paths(code, checkpoint_dir)
             # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
@@ -2506,6 +2511,25 @@ class CodeGenerator:
             code,
         )
 
+        return code
+
+    @staticmethod
+    def _ensure_rl_gym_make(code: str, env_id: str, env_kwargs_str: str = "") -> str:
+        """Force `env = gym.make(<planned env>)` so the LLM cannot omit it or swap games.
+
+        Real incident: GridPacMan-v0 mission 9b49aa78 crashed `NameError: env`,
+        then the healer inserted `gym.make("Minatar-SpaceInvaders-v0")`.
+        """
+        import re
+        if not env_id or not isinstance(code, str):
+            return code
+        make_line = f'env = gym.make("{env_id}"{env_kwargs_str})'
+        pattern = re.compile(r"env\s*=\s*gym\.make\s*\([^)]*\)")
+        if pattern.search(code):
+            return pattern.sub(make_line, code, count=1)
+        ctor = re.search(r"\n(?=model\s*=\s*(?:PPO|DQN|A2C|SAC|TD3)\s*\()", code)
+        if ctor:
+            return code[: ctor.start()] + f"\n{make_line}\n" + code[ctor.start() :]
         return code
 
     @staticmethod

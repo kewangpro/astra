@@ -202,6 +202,24 @@ def test_patch_rl_imports_replaces_sb3_alias():
     assert "sb3.PPO" not in result
 
 
+def test_ensure_rl_gym_make_inserts_missing_env():
+    code = "from stable_baselines3 import PPO\nmodel = PPO('MlpPolicy', env)\n"
+    result = CodeGenerator._ensure_rl_gym_make(code, "GridPacMan-v0")
+    assert 'env = gym.make("GridPacMan-v0")' in result
+    assert result.index("env = gym.make") < result.index("model = PPO")
+
+
+def test_ensure_rl_gym_make_rewrites_wrong_env():
+    code = (
+        'from stable_baselines3 import PPO\n'
+        'env = gym.make("Minatar-SpaceInvaders-v0")  # Replace with the appropriate environment\n'
+        "model = PPO('MlpPolicy', env)\n"
+    )
+    result = CodeGenerator._ensure_rl_gym_make(code, "GridPacMan-v0")
+    assert 'env = gym.make("GridPacMan-v0")' in result
+    assert "SpaceInvaders" not in result
+
+
 def test_build_user_prompt_rl_includes_policy_kwargs(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

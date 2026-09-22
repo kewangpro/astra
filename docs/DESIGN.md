@@ -1,284 +1,154 @@
 # ASTRA: Design Document
 
 **Architecture Version:** 1.0.0  
-**Core Stack:** Python, PyTorch, SQLAlchemy (Registry), FastAPI (Backend API), Next.js 15 (Frontend Dashboard)
+**Core Stack:** Python, PyTorch, SQLAlchemy, FastAPI, Next.js 15
+
+Phase-level incidents and code contracts live in [IMPLEMENT.md](IMPLEMENT.md).
 
 ---
 
 ## 1. System Overview
-ASTRA is designed as a modular system where a **Lead Agent** orchestrates several **Specialist Agents**, served via a high-performance **FastAPI** backend and a **Next.js** professional dashboard.
+
+ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
 
 ```
                     +-----------------------+
                     |    Next.js Web UI     |
                     +-----------+-----------+
                                 |
-                                | (HTTP/REST)
+                                | HTTP / WebSocket
                                 v
 +-------------------+       +-----------+-----------+       +-----------------------+
-| Live Training HUD |<-WS-->|  FastAPI Orchestrator | <---> |    Memory/Registry    |
+| Live Training HUD |<----->|  FastAPI Orchestrator | <---> |    Memory / Registry  |
 +-------------------+       +-----------+-----------+       +-----------------------+
                                 |           |
-                                |           +-----------------------+
-                                v                                   |
-                    +-----------------------+                       v
-                    |  Lead Agent / Planner |           +-----------------------+
-                    |       (LLM)           |           |  Specialist Trainer   |
-                    +-----------------------+           +-----------+-----------+
+                                v           v
+                    +-----------------------+     +-----------------------+
+                    |  Lead Agent / Planner |     |  Specialist Trainer   |
+                    +-----------------------+     +-----------+-----------+
                                                                     |
                                                                     v
-                                                        +-----------------------+
-                                                        |    Secure Sandbox     |
-                                                        +-----------+-----------+
+                                                          +-----------------------+
+                                                          |    Secure Sandbox     |
+                                                          +-----------+-----------+
                                                                     |
                                                                     v
-                                                        +-----------------------+
-                                                        |      Environment      |
-                                                        +-----------------------+
+                                                          +-----------------------+
+                                                          |      Environment      |
+                                                          +-----------------------+
 ```
+
+---
 
 ## 2. Components
 
-### 2.1. LLM-Driven Orchestrator (Lead Agent)
-The "Brain" of ASTRA. While it supports cloud APIs (OpenAI, Gemini), it is optimized for **Local Execution** on Apple Silicon via **MLX**. 
+### 2.1. Lead Agent
 
-#### 2.1.1. Inference Optimization Strategy
-On a 24GB M4 Mac Mini, the landscape is unique. We leverage Apple's **Unified Memory Architecture** and the **Metal** framework to bypass standard bottlenecks.
+The planner. Cloud APIs are supported; production is **local MLX** on Apple Silicon (plan model + coder model). Inference shares unified memory with training, so the orchestrator must be able to evict models before a sandbox launch.
 
-**What is NOT Worth Optimizing (Already Mastered):**
-We do not optimize core math or tensor operations (Matrix Multiplication, Quantization/Dequantization) as these are already perfectly tuned by Apple's **Accelerate** framework and **Metal Performance Shaders (MPS)** in the MLX/llama.cpp engines.
+Worth optimizing: context/KV discipline, structured (schema-constrained) generation, and not loading Metal at import time on hosts without a GPU. Core matmul and quantization are left to MLX/MPS.
 
-**What IS Worth Optimizing (ASTRA's Value-Add):**
-ASTRA builds custom optimization layers on top of MLX to maximize the 24GB footprint:
-- **Smart KV Caching**: Standard setups waste RAM with fixed context blocks. ASTRA implements a dynamic cache eviction policy to drop irrelevant conversation history while preserving core system instructions and code context.
-- **Speculative Decoding** *(sandbox-idle only)*: Blazing-fast generation by loading a tiny "drafter" model (e.g., 1B/3B) alongside the main model. The tiny model guesses tokens, and the large model validates them in a single mathematical step. On 24GB, the drafter is only loaded when the training sandbox is inactive; the `ModelManager` is responsible for evicting it before launching a training run.
-- **Structured Output Parsing**: Uses **Grammar-Based Sampling** to force the model to choose tokens that fit a specific JSON or code schema, eliminating wasted tokens and ensuring valid tool calls.
-
-#### 2.1.2. Memory & Engine Tiers
-The choice of inference engine depends on available **Unified Memory**:
-- **Standard (24GB RAM)**: **Native MLX (`mlx-lm`)** for local models; **Ollama** for offloading to a second 24GB machine. Provides the lowest memory footprint by dynamically allocating VRAM and allowing for manual garbage collection to prioritize training sandboxes. **`mlx.core` must not load at import time** — a Darwin process without Metal devices (`MTLCopyAllDevices` empty, Cursor/pytest sandbox) aborts with an uncaught `NSRangeException`. `MLXProvider.is_metal_available()` probes first; real MLX imports happen on first use (Phase 73). Concurrent Metal ops still take `get_metal_lock()` (Phase 28).
-- **Advanced (64GB+ RAM)**: **vLLM (Metal)**. Recommended for high-concurrency multi-agent setups. Leverages **PagedAttention** for massive log contexts and **Continuous Batching** for simultaneous specialist reasoning.
-
-Deployed configuration (both machines: Apple M4, 24 GB unified memory):
-- **MacBook M4** — MLX inference for both agents. Runs `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit` (~4.5 GB) for planning and `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` (~4 GB) for codegen/error-fix. Total inference footprint ~8.5 GB, leaving ~15 GB for the OS and orchestration layer.
-- **mac-mini.local** — Dedicated training host. Receives training scripts via `SSHSandbox` (scp + nohup), executes with full 24 GB available, and streams checkpoints + logs back via rsync on completion.
-
-*Hardware Note:* Native MLX is preferred on 24GB to avoid the pre-allocation overhead of serving engines. The 24GB unified memory must be shared between the LLM and the active training runs; quantization (Q4/Q8) is mandatory.
+**Deployed split (both machines 24 GB unified memory):**
+- **MacBook** — planning and codegen inference.
+- **mac-mini.local** — training host (scripts over SSH, checkpoints and logs back on completion).
 
 ### 2.2. Autonomous Training Loop
-The execution engine that manages the state machine of training:
-- **Phase Management**: Handles transitions between curriculum steps.
-- **Retry Logic**: Automatically restarts failed runs with adjusted noise or exploration parameters.
-- **Goal Tracking**: Continuous comparison between current performance and target metrics.
-- **Pivot Engine** (`backend/loop/pivots.py`): Detects plateaus and drives escalating pivot strategy.
-  - `needs_pivot()` triggers when the last `PLATEAU_WINDOW=3` iterations show < 1% relative improvement.
-  - `record_pivot()` increments `_pivot_count` unless the all-time best improved by ≥ 5% (`ESCALATION_RESET_THRESHOLD`) since the previous pivot — preventing small oscillations from resetting escalation.
-  - `escalation_level()` returns the current aggression tier based on `_pivot_count`:
-    - **Level 0** (`count < 2`): tune hyperparameters only.
-    - **Level 1** (`count ≥ 2`): change policy network architecture in addition to HP tuning.
-    - **Level 2** (`count ≥ 4`): allow algorithm switch (e.g. PPO → DQN). A rename of the same trainer (`SB3 PPO` → `PPO`) is not a switch — see algorithm canonicalization below.
-    - **Level 3** (`count ≥ 6`): reshape reward function via `env_kwargs` (e.g. disable distance shaping, increase food reward).
-    - **Level 4** (`count ≥ 15`, `ESCALATION_FORCE_NOVEL`): deep plateau — force a never-before-tried architecture, rejecting any proposal from the full mission history. Unnamed missions with an untried canonical trainer also get a forced switch at level 3+ (not only if level 2 wasted the window on an alias).
-  - `_pivot_count` is persisted to the `missions.pivot_escalation_count` DB column after every pivot and restored on server restart, so escalation survives process crashes and restarts. Reverting a regressed architecture clears the regression window and restores the checkpoint, but does **not** decrement this counter: the attempted architecture is still a failed search move and must count toward deep escalation/convergence (Phase 82; Asterix `32a5cd58` otherwise made 120 pivots / 112 reverts while its persisted count stayed at zero).
-  - **Convergence stop** (`is_converged()`, Phase 36 / 71): once escalation is already maxed (`_pivot_count ≥ ESCALATION_FORCE_NOVEL`) **and** the all-time best has not improved for `STALL_ITERS_WITHOUT_BEST=30` distinct *evaluated* iterations (`iters_since_best()` — loops that produced no goal metric don't count), the search has run out of moves. The state machine saves the best metric, crystallizes the lessons (skipped for `dpo`/`grpo` — see below), and transitions the mission to the terminal `MissionStatus.STALLED` with `error_log` `converged_below_target:…`. Resume is not offered in the UI and `POST /run`/`/resume` returns 409 — start a new mission. User Stop, gate reject, max retries, and `PATCH stalled` without that prefix are `FAILED` with a reason — they must not mint `STALLED`. uvicorn/`CancelledError` without `request_user_cancel()` still resets to `PENDING` so a restart can resume. Minimum ~75 iterations before `is_converged()` can fire. Real incident: DPO mission `ce2828f4` ran 600+ iterations / 20 days stuck at best 0.833 vs target 0.85, every `dpo` pivot a structural no-op, with nothing to stop it.
-  - No-op pivot detection: if the LLM proposes HP values identical to current values (including string vs. float type mismatches), the change is filtered and `record_pivot()` is called twice (faster escalation) without regenerating code.
-  - **Algorithm-locked missions**: `_is_algorithm_locked(goal, algorithm)` is true when `_named_algorithm_in_goal(goal)` equals the *canonical* current trainer (`canonicalize_algorithm` maps `SB3 PPO` → `PPO`, `SB3 DQN` → `DQN`, lookahead/actor-critic labels likewise). When locked: (1) `_resolve_pivot_algorithm()` refuses any other trainer even if the LLM proposes one; (2) `propose_pivot()` is called with `algorithm_locked=True`, remapping level 2 from "switch algorithm" to "reshape reward function via env_kwargs". Recipe-dispatch goals from Phase 68 (`Train a <env_id> DQN agent to achieve …`) are locked on purpose. Free-text goals that only say "RL agent" are **not** locked.
-  - **Unnamed RL missions seed the env recipe algorithm** (`_seed_plan_algorithm`): on a fresh plan (iter 0 / critic replan only — not resume), if the goal names no trainer, the plan's `algorithm` is overwritten from `_load_recipe_for_env(env_id)["algorithm"]` when that field exists, and `_apply_recipe_hyperparameters` copies that recipe's HPs when `recipe.algorithm` matches. Resume strips leftover other-algo keys only (does not re-apply the recipe, so HP pivots survive). Real incident: untitled Seaquest missions (`Train a MinAtar-Seaquest-v0 RL agent…`) let the Lead Agent default to `SB3 PPO` even though `minatar_seaquest_dqn_v1` is DQN; they then burned 50+ iterations of PPO and stalled (missions `bef66c1e`, `7c567090` before the switch). A later locked DQN Seaquest mission still trained at PPO `lr=0.001` because only the name was seeded. A goal that names PPO still wins over that recipe and does not take DQN HPs.
-  - **Forced real algorithm switch** (`_resolve_pivot_algorithm` / `_pick_switch_algorithm`): on vanilla SB3 RL (no `trainer_type`), if the LLM proposed the same trainer under an alias or omitted `algorithm`, the loop picks a different discrete SB3 algo (recipe algorithm first, then DQN / PPO / A2C) — **once at escalation ≥ 2** while `all_algos_tried` is still empty, and **again at escalation ≥ 3** for the next untried name so PPO is not a terminal trainer. Custom trainers (`actor_critic`, `lookahead_*`) are not rewritten. Applied trainer names are persisted in `plan["all_algos_tried"]`. On a real switch, `_reset_search_after_algorithm_switch` wipes `env_kwargs` to the matching recipe (Seaquest DQN → `{}`), replaces HPs with that recipe **or** `default_sb3_hyperparameters` when the env yaml's `algorithm` does not match (Seaquest PPO/A2C → `n_steps=2048`, no `buffer_size`), resets `pivot_count` to 0, calls `begin_algorithm_search()`, and drops same-pivot `env_kwargs`. Codegen `_resolve_hyperparams` also `setdefault`s those defaults so a dirty plan still emits valid constructor kwargs. Live-verified switch line on `7c567090` iter 54: `algo: PPO→DQN` with Seaquest recipe HPs. Live incident `8bb85cc5` iter 29: `algo: DQN→PPO` then Phase 72 revert/HP/warm-start bugs (PPO vs DQN 53.5@11).
-  - **LLM schema normalization**: `_normalize_pivot()` corrects common LLM deviations where adjustments are nested as `{hyperparameters: {...}, env_kwargs: {...}, policy_kwargs: {...}}` instead of the expected flat scalar dict + top-level keys. The normalizer: (1) flattens `adjustments.hyperparameters` into the flat adjustments dict; (2) promotes `adjustments.env_kwargs` to top-level `pivot["env_kwargs"]`; (3) promotes `adjustments.policy_kwargs` to top-level `pivot["policy_kwargs"]` — critical so that arch-change proposals reach the `_proposed_pky` extraction path and can be vetoed by the best-arch guard. Without this promotion, the stray key was merged into `plan["hyperparameters"]` via the adjustments path, bypassing the guard and corrupting `best_model.zip` with a mismatched architecture.
-  - **Post-pivot regression detection & checkpoint recovery**: **architecture** pivots reset `best_score.txt`. The state machine keeps a rolling window of per-iteration checkpoints (`checkpoints/iter/checkpoint_iter_{N}.zip`, last `ITER_CHECKPOINT_WINDOW=10`). Before an **arch** pivot it: (1) saves `_pre_pivot_hps` / `_pre_pivot_algorithm` / `_pre_pivot_best_score` (the **current trainer's** `search_best_value()`, not the all-time peak); (2) calls `record_arch_pivot_baseline()`. **Algorithm switches do not arm this detector** — comparing a new trainer to the previous algo's peak always looks like a >20% regression (`8bb85cc5`: PPO vs DQN 53.5, eight reverts to iter 11 while the plan stayed PPO). `begin_algorithm_search()` sets `_search_origin_iteration` so later arch reverts restore `checkpoint_iter_{search_best}` and `best_score.txt` for this trainer only. HUD all-time best is still `best_metric_value()`. If a revert fires and `_pre_pivot_algorithm` differs from the plan, the trainer is rolled back with the HPs. Warm-start loads the checkpoint only when `best_model_algo.txt` matches **and every policy tensor name and shape matches**; a `net_arch` change skips the load (fresh init) instead of copying 2/12 leftover tensors (`601c2404` `[400,300]`→`[128]` eval 3). After `PLATEAU_WINDOW=3` iters, `should_revert_pivot()` reverts if the post-pivot best is still > 20% (`PIVOT_REGRESSION_THRESHOLD`) below that search baseline; recovery clears tracking without reverting. Command Center "pivots" is the persisted consecutive-failed-pivot count; a revert retains the failed attempt while HUD Pivot History continues to show every `type=pivot` event and omit revert `warn` rows.
-  - **Architecture ladder (`_gate_arch_proposal`, Phase 75 / 76)**: Level 0 drops `policy_kwargs` even if the LLM proposes `net_arch`. Levels 1–3 refuse a strictly smaller list-style net than `best_policy_kwargs` (else current). Level 4 (force novel) may shrink. If the live plan is already strictly smaller than `best_policy_kwargs` below level 4, the loop restores `checkpoint_iter_{search_best}` and writes `best_policy_kwargs` onto the plan (so the zip and `train.py` match), including on **resume before the next `train.py`**. Real incident: locked DQN-70 `601c2404` applied `[128]` at `esc=1` over a 43-score `[256,256]` zip; a later `[400,300]` snapshot in `_pre_pivot_hps` would have warm-started the wrong shapes. The revert window (`_iters_since_pivot`, `_post_pivot_best`, `_arch_pivot_iteration`) is stored on the plan and recounted from history on restart — zeroing it used to skip revert after uvicorn recycle.
-  - **Best-architecture memory**: `PivotEngine.record()` accepts an optional `policy_kwargs` argument (passed by the state machine from `plan["hyperparameters"]["policy_kwargs"]` after each iteration). Whenever the recorded goal metric equals or exceeds the current all-time best, the associated `policy_kwargs` is saved as `_best_policy_kwargs`. `best_policy_kwargs()` exposes it. The state machine passes `best_policy_kwargs`, `best_metric_value`, and `best_metric_iteration` to `LeadAgent.propose_pivot()`, which injects them into the LLM query as: `"Best performing architecture so far: {"net_arch": [...]} (best <metric>=<value> at iteration <N>) — prefer this at Level 1"`. The Level 1 escalation description in `_PIVOT_SYSTEM` also explicitly instructs the LLM to reuse the best architecture unless it is identical to the current one. This prevents the common failure mode where the LLM randomly cycles between `[256, 256]`, `[400, 300]`, and `[256, 256, 128]` on each Level 1 escalation, breaking warm-starting and erasing training progress each time the architecture changes. `_best_policy_kwargs` is persisted to `missions.best_policy_kwargs` (JSON column, migration `c3d4e5f6a7b8`) after every iteration via `_save_best_policy_kwargs()`, and restored into the engine on server restart via `restore_best_policy_kwargs(mission.best_policy_kwargs)` alongside `pivot_escalation_count` and history replay — so the best-arch hint is available immediately on resume, before any new pivot fires.
 
-### 2.3. Multi-Tier Memory System
-- **Structured Registry (SQL)**: Tracks every experiment's DNA—hyperparameters, weights, and results.
-- **Vector Memory (Semantic)**: Stores "lessons learned" and semantic patterns. Each lesson must carry structured metadata (hyperparameter name, value, environment config, run ID) to enable reliable regime-specific retrieval — e.g., distinguishing lessons valid for small grids from those valid for large grids.
-- **Recipe Library**: A versioned collection of "Crystallized Strategies." Each recipe is a JSON/YAML manifest (with `version` and `created_at` fields) that can be instantly re-injected into the Orchestrator to reproduce or adapt a successful run. Stored in the SQL Registry (metadata + YAML body) and indexed in ChromaDB for semantic warm-start retrieval.
-- **Working Memory**: Real-time buffer for current logs and telemetry, actively injected into the Lead Agent's LLM context window to enable real-time pivot decisions.
+Plan → generate script → sandbox → evaluate → pivot or stop.
 
-#### 2.4. Specialist Trainer (Execution)
-The worker agents that interface with diverse training paradigms. `task_type` (`rl` / `sft` / `ml` / `mlx_lora` / `dpo` / `grpo` / `distill` / `rft` / `prompt` / `star`) selects which one a mission uses; LoRA is a *mechanism* (efficient low-rank weight updates), not a task type of its own — it underlies `sft`, `mlx_lora`, and the five fine-tune types below. `prompt` is the outlier: it changes no weights at all.
+- **Curriculum** advances when metrics justify it.
+- **Pivots** escalate when a plateau holds: hyperparameters, then architecture, then algorithm (unless the goal named one), then reward shape. Deep plateau plus a long stretch without a new best is **converged below target** (terminal `stalled`). Reverting a bad architecture restores the checkpoint but still counts as a failed search.
+- **Unnamed RL goals** take the env recipe’s algorithm; a named trainer stays locked.
+- **Warm-start** loads a prior checkpoint only when algorithm and policy tensor shapes match. A smaller net than the best-known architecture is refused until deep plateau.
+- **Fine-tune-remote** missions (`dpo` / `grpo` / `distill` / `rft` / `sft` / `prompt`) keep the recipe authoritative. Pivots may only touch a small per-type sampling or duration safelist so a LoRA warm-start cannot be broken by a hallucinated learning rate or layer count.
 
-| Task type | Objective | How it trains |
-| `rl` | Classical reinforcement learning — an agent learns a policy from trial-and-error reward signal in an environment (Snake-v0, Tetris-v0, Game2048-v0, MinAtar Suite [Breakout, Freeway, Seaquest, Asteroids, Asterix, Space Invaders], GridPacMan-v0, MultiTurnAgentGym-v0, or standard Gymnasium envs). | SB3 (PPO/DQN/A2C/SAC/TD3) via `RLTrainer`, or a custom Actor-Critic / lookahead-augmented trainer for Tetris-v0 and Game2048-v0 (Phase 17, Phase 29/31, Phase 51, Phase 64, Phase 65, Phase 81). |
-| `sft` | Supervised fine-tuning — adjust a model's outputs toward labeled examples, the standard first fine-tuning step before any preference-based method. Supports deterministic held-out train/val splitting (`val_split`, seed=42) to eliminate in-sample overfit, reasoning CoT (`<think>...</think>`) preservation, and lower-is-better metric tracking (`eval_loss`, `perplexity`). | Local HuggingFace Transformers + PEFT (LoRA/QLoRA) + TRL via `SFTTrainer` (with safe simulation fallback); or remote Apple Silicon Metal GPU offload via MLX (`ensemble/finetune/sft_train.py` wrapping `mlx_lm.lora`, with zero-orphan `os.execv` execution, dynamic batch size clamping, and remote loss tailing) when `ASTRA_SANDBOX_HOST` is configured. |
-| `ml` | Classical (non-neural or lightly-neural) machine learning on tabular data. | Scikit-learn / PyTorch Lightning via `MLTrainer`. |
-| `mlx_lora` | LoRA fine-tuning on Apple Silicon via MLX, for local/offline workloads. | `mlx_lm.lora` subprocess wrapper (Phase 20). |
-| `dpo` | Direct Preference Optimization — given pairs of (chosen, rejected) responses to the same prompt, directly shift probability mass toward the chosen one, without a separate reward model or RL rollout loop. | Wraps `ensemble/finetune/dpo_train.py`: samples `k_collect` candidate completions per prompt at `temp`, ranks them, trains a LoRA adapter on the resulting pairs against a frozen reference policy (Phase 25/26). |
-| `grpo` | Group Relative Policy Optimization — on-policy RL without a learned critic: sample a *group* of `num_generations` completions per prompt, score each, and use the group's own mean as the baseline for the policy-gradient update. | Wraps `ensemble/finetune/grpo_train.py`. Used to produce the `grpo_v9_min` checkpoint that `dpo` warm-starts from in this project. |
-| `distill` | Knowledge distillation — a strong teacher (`conductor_gemma.md` + `gemma3:12b` via Ollama) generates correct routing completions; the weak student (`conductor_min.md` + `gemma-3-12b-it-4bit`) is SFT'd to imitate them, then scored by the same routing oracle. The lever `dpo`/`grpo` couldn't move: unlike preference/RL fine-tuning, SFT from a teacher isn't bounded by the converged model's overfitting dynamic (Phase 42). | Wraps `ensemble/finetune/distill_train.py` (teacher-gen → `mlx_lm.lora` → routing eval). Warm-starts from `retrain_best` (the SFT lineage), pivot varies only `iters`. The wrapper script is an ensemble-side precondition — a `distill` mission fails at launch until it exists. |
-| `rft` | Rejection-sampling fine-tuning (STaR-style) — sample `k_samples` completions per case from the model *itself* at `temp`, keep only those whose routed skill matches `expected_skill`, and SFT on the survivors. **No teacher.** This is the lever `distill` can't reach: distillation is capped by the teacher, and `gemma3:12b` mis-routes 14 of the 78 routing cases, which `generate_teacher_completions` skips rather than caches — so they have no label and can never be taught, however capable the student. RFT's ceiling is instead *what the model can produce at least once in K samples*. It also turns borderline cases into an asset: a case that passes only sometimes is a coin toss for any single-sample method, but one correct completion out of K is exactly the supervised example RFT wants (Phase 44). | Wraps `ensemble/finetune/rft_train.py` (sample → reward-filter → `mlx_lm.lora` → routing eval) — a recombination of code that already exists: `grpo_train.py` samples K and scores with the same reward function, `distill_train.py` does the SFT/split/eval loop. Cold-starts a 4B against `conductor_gemma.md`; pivot varies `k_samples`/`temp`. The wrapper script is an ensemble-side precondition — preflight now fails a mission by name before dispatch if it is absent. |
-| `prompt` | Prompt optimization — propose a block of additional routing rules, append it to the production conductor prompt, and score the variant with `bare_eval` on the model-routed metric. Changes **no weights**. This is the only lever measured to move the number: `conductor_gemma.md` beats `conductor_min.md`, while four fine-tuned checkpoints scored 46–48/54 against production's 48/54. It is also the cheapest loop astra has (~25 min/iteration vs ~2h) and directly deployable, since production serves a prompt rather than an adapter (Phase 45). | Generated script reads the base prompt, appends an LLM-authored `EXTRA_RULES` block, writes the result to the mission's own `checkpoints/conductor_variant.md`, and `os.execv`s `bare_eval.py` against it with `ENSEMBLE_FROZEN_NOW` set. **astra never edits ensemble's committed prompt** — read-then-append onto a copy only, so a winning variant is a proposal a human promotes. Append-only by design: the base prompt is ~5,144 tokens and asking a codegen model to restate it would silently drop content. |
-| `star` | Self-Taught Reasoner fine-tuning flywheel — bootstraps reasoning without human supervision. Generates direct completions with `<think>...</think>` CoT reasoning at temperature T. For cases failing all direct rollouts, triggers hint-guided backward rationalization (providing ground truth destination) to induce verified reasoning chains, then trains LoRA adapters on the synthesized dataset using unhinted prompts (Phase 66). | Wraps `ensemble/finetune/star_train.py` (sample K rollouts → rationalization fallback → `mlx_lm.lora` → routing eval). Forward-chains LoRA checkpoints (`adapters/astra_<id>_iter<N>/best`) across iterations and evaluates against authoritative 78-case benchmarks. |
+### 2.3. Memory
 
-**MinAtar Seaquest fidelity (Phase 74):** `MinAtarSeaquestEnv` follows kenjyoung/MinAtar `seaquest.py` oxygen and surface rules — drain only while submerged, terminate on transition to row 0 with zero divers, spawn at row 0 col 5, max depth 8. Astra keeps `NOOP/LEFT/RIGHT/UP/DOWN/FIRE` action order so existing Seaquest checkpoints stay valid. A Live Player sub parked on the surface was this env gap (empty surfacing was a safe camp), not a HUD drawing bug.
+- **SQL registry** — experiments, models, mission state, recipes.
+- **Vector memory** — lessons with enough metadata to retrieve by regime (env, HP, run).
+- **Recipe library** — versioned YAML strategies, indexed for warm-start. Fine-tune dispatch uses canonical recipes only (no per-mission crystallization).
+- **Working memory** — live logs and telemetry in the planner context.
 
-**MinAtar Asterix & Grid Pac-Man (Phase 81 / 83):** `MinAtarAsterixEnv` follows kenjyoung `asterix.py` (player rows 1–8, original `n/l/u/r/d/f` action order, gold vs enemies, trail heading, ramping spawn/move). `GridPacManEnv` is an ASTRA 10×10 maze (pellets, power, four ghosts). Play frames include `player_dir` (0 right, 1 down, 2 left, 3 up); `MinAtarPlayer` rotates the mouth to match, falling back to `selected_action` if the field is absent. Domain matching uses `asterix` before `asteroid` so play/tournament do not load Asteroids for Asterix models. Environment classes load lazily from `envs/__init__.py` so `envs.register` does not import every game.
+Targets that exceed a recipe’s declared empirical ceiling are rejected at create time.
 
-**SFT Post-Training & Reasoning Trace Protocol (Phase 57):**
-ASTRA's SFT subsystem incorporates key takeaways from modern post-training methodology (`ai.rs/ai-developer/llm-post-training-explained`):
-1. **Strict Held-Out Validation**: `load_and_split_dataset()` deterministically splits datasets into train and eval subsets using a fixed seed (42) and ratio (`val_split`, default 0.1). This prevents in-sample evaluation overfitting and data leakage, ensuring `eval_loss` and `perplexity` measure true generalization.
-2. **Reasoning / CoT Preservation**: When `preserve_reasoning=True`, `<think>...</think>` traces inside assistant completions are preserved and formatted consistently during tokenization and prompt collation. If `preserve_reasoning=False`, traces are cleanly stripped to support direct answer extraction.
-3. **AST-Guarded Code Generation & Self-Healing**: Open-ended code generation prompts for complex ML libraries (Hugging Face, BitsAndBytes, PEFT) risk autoregressive parameter degeneration with small local coder models (e.g. 7B). `CodeGenerator` and `ErrorAnalyzer` provide a concrete canonical template (`_CANONICAL_SFT_RUNNER`) and validate the script using Python's `ast.parse()`, automatically injecting the canonical runner if the generated code has syntax errors or missing trainer components.
-4. **Lower-Is-Better Metric Tracking**: In `LoopStateMachine._read_telemetry_metrics()`, metric aggregation detects loss keys (`eval_loss`, `train_loss`) and tracks the minimum observed value (`val < metrics[name]`) rather than maximum, correctly triggering convergence when `eval_loss` drops below the target threshold. Checkpoint metadata is preserved in `checkpoints/best/checkpoint_metadata.json` and read by `BenchmarkSuite`'s NLP golden challenges.
+### 2.4. Specialist trainers
 
-**Remote SFT via MLX on Apple Silicon Cluster (Phase 58):**
-When `ASTRA_SANDBOX_HOST` is configured, SFT compute is offloaded to the remote Mac Mini (`mac-mini.local`) following the exact architectural pattern established for DPO, GRPO, and Distillation:
-1. **Zero Git on Remote Compute Node**: The standalone trainer `sft_train.py` lives in `ensemble/finetune/sft_train.py` and is deployed directly to `/Users/kewang/finetune/sft_train.py`. The Mac Mini requires no git checkout or repo synchronization.
-2. **Zero-Orphan Process Execution**: `CodeGenerator` emits an `os.execv` wrapper script scp'd to `/tmp/astra/missions/<id>/train.py` that replaces the Python process with `/Users/kewang/finetune-env/bin/python`, ensuring immediate termination upon signal and zero orphaned processes.
-3. **Dynamic Validation Batch-Clamping**: `prepare_dataset_dir()` in `sft_train.py` guarantees that small datasets or small validation splits satisfy `effective_batch_size <= min(train_size, val_size)`, preventing MLX LM evaluation batch underflow exceptions (`ValueError: Dataset must have at least batch_size=4`).
-4. **Real-Time Remote Telemetry**: `LoopStateMachine` tails the remote log over SSH, parsing `Iter N: Val loss ...` and `Iter N: Train loss ...` and publishing `train_loss` and `eval_loss` metrics into the local WebSocket HUD and database.
-5. **Node Attribution**: Missions offloaded to the Mac Mini are automatically displayed on the dashboard's Nodes panel with their remote PID and live memory status.
+`task_type` selects the worker. LoRA is a mechanism, not a task type. `prompt` changes no weights.
 
-**Multi-Stage Pipeline Chaining & LoRA Auto-Detection (Phase 59):**
-When chaining adapters across post-training paradigms (e.g. SFT base instruction tuning → DPO preference alignment):
-1. **LoRA Auto-Detection**: Standalone trainers (`dpo_train.py`) inspect `adapter_config.json` inside the `--adapter` warm-start path to automatically configure `num_layers`, `lora_rank`, `lora_scale`, and `lora_dropout`, preventing dimensional mismatch crashes when warm-starting from arbitrary SFT or RL checkpoints.
-2. **Strict Recipe Hyperparameter Locking**: In `backend/agent/code_generator.py`, `_resolve_hyperparams()` locks recipe hyperparameters for non-RL task types (`sft`, `dpo`, `grpo`, `distill`, `rft`, `prompt`) based on `recipe.get("task_type")`, ensuring custom recipe filenames (e.g. `ensemble_sft_dpo_v1.yaml`) strictly enforce base models and adapter paths against LLM hallucination.
-3. **Curated Pair Loading**: `CodeGenerator` formats `--load-pairs` when declared in recipe hyperparameters, allowing DPO to bypass redundant on-policy pair generation and directly optimize against verified contrastive datasets.
-4. **Guaranteed Metadata & Best Adapters**: Training scripts export `checkpoint_metadata.json` to both `save_dir/` and `save_dir/best/`, ensuring downstream evaluators (`BenchmarkSuite`) and manifests verify checkpoints reliably without falling back to un-evaluated defaults.
-5. **NLP Model Registry Tournament Arena**: `run_tournament_match` natively supports language model evaluation (`env_id="nlp"`), evaluating side-by-side candidates via `BenchmarkSuite("nlp")` loss and perplexity, computing win rates and leaderboard rankings, and updating the domain champion in the Model Registry.
-
-**End-to-End SFT → DPO Routing Pipeline Architecture (Phase 60):**
-1. **Two-Stage Multi-Paradigm Separation**: Because each Astra mission is single-paradigm (`task_type: sft` vs `task_type: dpo`), complete post-training requires chaining two distinct missions. Stage 1 (SFT) learns the strict JSON schema (`{"thought": "...", "tasks": [{"skill": ..., "agent_id": ...}]}`) under `conductor_min.md` to achieve `eval_loss <= 0.8`. Stage 2 (DPO) optimizes preference margins between chosen/rejected routing decisions to push `pass_rate >= 0.70`. Attempting DPO without a valid SFT routing base collapses pass rate to 0.0% because missing top-level `tasks` triggers an immediate -0.5 score penalty in `score_completion()`.
-2. **Dataset Segregation (`data_routing` vs `data_ft`)**: SFT training runs on `/Users/kewang/finetune/data_routing/` (278 train, 16 valid rows), featuring compact ~175-token prompts that completely prevent sequence truncation on 2048 max sequence lengths. Multi-turn evaluator datasets (`data_ft`), containing up to 5,374 tokens per prompt, are isolated from SFT training to prevent token overflow and Apple Silicon GPU memory starvation.
-3. **Recipe Hyperparameter Authoritativeness for `ensemble_sft_v1`**: In `backend/agent/code_generator.py`, `_resolve_hyperparams()` locks `batch_size: 2`, `dataset_path: data_routing`, `base_model: mlx-community/gemma-3-12b-it-4bit`, and LoRA architecture (4 layers, rank 8) to the recipe whenever `recipe: ensemble_sft_v1` is declared. On 24 GB Apple Silicon, `batch_size > 2` for a 12B model triggers `kIOGPUCommandBufferCallbackErrorOutOfMemory`; locking prevents unconstrained planner proposals from destabilizing training.
-4. **Checkpoint Lineage & Chaining**: When SFT achieves a new best `eval_loss`, `LoopStateMachine` stores `last_checkpoint_path = f"adapters/astra_{mission_id[:8]}_iter{iteration}/best"`. Downstream DPO recipes (`ensemble_sft_dpo_v1.yaml`) warm-start from this exact checkpoint path, guaranteeing that preference tuning starts with full comprehension of the routing schema.
-5. **Lower-is-Better Metric Telemetry & HUD**: `LoopStateMachine`, `PivotEngine`, and frontend components (`MetricGap`, `MissionsGrid`) evaluate loss-based metrics (`eval_loss`, `train_loss`, `perplexity`) with lower-is-better comparison semantics, showing positive percentage progress and gap reduction toward target loss.
-
-**Why `dpo`/`grpo`/`distill`/`rft`/`sft` pivots are more constrained than `rl` pivots** (`prompt` has no numeric lever at all — each iteration's script *is* the proposal, regenerated on pivot)**:** an RL pivot can safely retune hyperparameters, swap architecture, or reshape rewards — the training script builds everything from scratch each time. A fine-tune-remote mission trains a LoRA adapter warm-started from a *specific* checkpoint (`num_layers`/`lora_rank` must match it exactly, or loading crashes) with hyperparameters (`learning_rate`, `beta`, etc.) already tuned against that checkpoint — a generic pivot-proposed learning rate destroyed a run once (Phase 26). So the recipe stays authoritative for everything except a tiny per-task-type safelist: `temp`/`k_collect` (dpo), `temp`/`num_generations` (grpo) — preference-pair sampling diversity — `iters` (distill — train longer/shorter; **pinned empty as of 2026-09-08** so the pre-RL warm-start experiment has one variable), or `k_samples`/`temp` (rft — how many candidates to draw before rejection filtering, which is the mechanism itself; `temp` must stay above 0 or every candidate is identical and there is nothing to reject). All are clamped to their prompt-declared ranges; anything else the LLM proposes is dropped before it reaches the stored plan or the pivot telemetry (Phase 33, Phase 39, Phase 42).
-
-**Recipe `metric_ceiling` and result flooring (Phase 36):** because a `dpo`/`grpo` mission can only vary those three sampling knobs, once the underlying model is converged there is no lever left to close the gap to an over-ambitious target. Two guardrails: (1) the fine-tune recipes declare a `metric_ceiling` (the empirically-observed best for that recipe + model + eval set — `dpo` 0.93, `grpo` 0.91, `distill` 0.96, `rft` 0.96, `prompt` 1.0 as of 2026-09-10, on the **model-routed 54-case** scale; see the eval-oracle-split and "What `pass_rate` measures" notes below), and `POST /missions` rejects (422) any target that exceeds it beyond a small noise margin. (2) Each iteration, `_dpo_run_diagnostics()` parses the training log for the warm-start adapter's own pre-training `Baseline:` score and the `total_steps` count; if the run trained for fewer steps than `steps_per_eval` (so `dpo_train.py`'s in-training best-checkpoint tracker never fired and only the overfit final adapter exists to score), or the scored `pass_rate` lands more than `DPO_BASELINE_FLOOR_MARGIN=0.03` below that baseline, the value fed to `PivotEngine` / the DB is floored to the baseline (the true value still goes to telemetry). The warm-start adapter file is never modified by training, so the mission genuinely still has that score — flooring stops the loop recording false regressions and chasing noise below its own starting point, while plateau-at-peak still drives escalation toward the convergence stop.
-
-**Static-skill vs dynamic-MCP routing in the eval oracle (Phase 39 follow-up, `ensemble` repo `3ab5667`):** the `pass_rate` telemetry astra parses comes from `dpo_train.py`/`grpo_train.py` scoring `ensemble/backend/core/eval_cases.yaml`. That oracle mixes two populations: **static-skill routing** (71 cases — `expected_skill` is a registry skill the training/serve prompt lists) and **dynamic-MCP routing** (7 cases — `expected_skill` is a runtime `mcp:Server:tool` string deliberately absent from the prompt). The model is never shown the MCP strings, so those cases fail every rollout, produce no preference pairs, and previously dragged the reported rate down ~0.10 (7/66) — the direct cause of DPO missions plateauing ~0.02 below a 0.84 target forever. `grpo_train.is_dynamic_mcp_case()` now excludes them from the training pool and pass-rate by default (`--include-dynamic-mcp` overrides); telemetry `Pass rate:` lines are over the 71-case static set (12 teacher-verified cases were also added for previously starved skill classes). On that corrected set the warm-start adapter `grpo_v9_min/best` already scores **0.859 (61/71) before any DPO** — the old 0.833 "ceiling" was largely the MCP artifact — so the `dpo` recipe's `metric_ceiling` was moved to 0.87 — just above the 0.859 warm-start, leaving room for the newly-added starved-class cases (`grpo` held at 0.84). It is not higher because DPO had regressed this converged checkpoint on every evaluated iteration across four missions. The mechanical cause — `dpo_train.py`'s `dpo_loss` using **mean**-token log-prob, which shrank the chosen−rejected margin by completion length and left a near-zero gradient at β≈0.1 — is now fixed and deployed `ensemble`-side (`7b9f45a`, summed sequence log-likelihood; the recipe `learning_rate` was dropped 2e-6 → 3e-7 to match the ~length× larger gradient, pending an offline re-tune). The remaining gap is **no held-out split**: pairs and `best/`-checkpoint selection both run over the same 71 cases, so a DPO `best/` is overfit-to-metric. Making the mission metric a genuine test-set pass-rate is a coordinated `ensemble` + astra change (still open); until it lands, 0.87 is a placeholder and a DPO `best/` checkpoint should not be trusted. This does not change any astra code — `_PASS_RATE_RE` already reads the reported `%` directly, denominator-agnostic. Closing the MCP gap needs the tools surfaced in the routing prompt, a separate project.
-
-**What `pass_rate` measures (Phase 43, 2026-09-05):** the goal metric is the **blended all-78-case** number, and a recipe's `metric_ceiling` is on that blended scale. This reverses the Phase 39 decision recorded above, which made the 71-case static split the selector. Excluding the MCP cases from the *metric* silently excluded them from the *objective*: a run could destroy a capability the base model had and the metric would record a clean win. Measured 2026-09-05 across the three production-relevant configs:
-
-| config | static (71) | MCP (7) | blended (78) |
-|---|---|---|---|
-| raw 4B + `conductor_gemma.md` (**shipped**) | 59 (83.1%) | 3 | **62 (79.5%)** |
-| `grpo_v9_min/best` 12B + `conductor_min.md` | **61 (85.9%)** | 0 | 61 (78.2%) |
-| `distill` iter2 12B + `conductor_min.md` | 58 (81.7%) | 3 | 61 (78.2%) |
-
-Static-only ranks `grpo_v9_min/best` top and rejects `distill` iter2 as a 3-case regression; blended shows iter2 traded 3 static cases for 3 MCP against its own warm-start — a wash. Static-only cannot see that trade because it excludes exactly the cases that moved, and it cannot see that the fine-tuned 12B loses to the raw 4B already in production once all 78 count. `_run_bare_eval` therefore reads `"Blended (all cases):"` (`_BARE_EVAL_BLENDED_RE`); static and MCP are recorded as `pass_rate_static` / `pass_rate_mcp` telemetry diagnostics that no decision reads back, so an MCP-for-static trade is visible in the HUD instead of hiding inside a flat blended line. A split report missing its blended line returns `None` rather than falling back to the static line — that fallback would reinstate the old scale against a blended-scale target. Ceilings were rebased, **not re-tuned**: `dpo` 0.87 → 0.85, `grpo` 0.84 → 0.83, `distill` 0.95 → 0.92; the old static-scale values would have become near-unreachable targets. `bare_eval.py`'s own labels still call the static line "fine-tune target metric" and blended "not the selector" — those labels are backwards and are what taught this project to read static as authoritative.
-
-A floored iteration is a *non-result*: it never sets a new all-time best and never chains its checkpoint forward (Phase 39). The floored value belongs to the warm-start, not to that iteration's overfit adapter — chaining it anyway once anchored a mission to a regressed checkpoint while the DB showed a best it could not reproduce (mission `15a1d093` iter 0). When the very first evaluated iteration regresses (no prior best to protect) the *raw* value is recorded rather than the baseline, so no unreproducible best is fabricated; checkpoint chaining is gated on this iteration's genuine (pre-floor) `pass_rate` matching or beating the prior best. The pivot proposer is also hard-restricted for every fine-tune-remote type to its per-task-type safelist (above); any `env_kwargs` / `policy_kwargs` / `algorithm` the LLM proposes is dropped before it can reach the stored plan or the pivot telemetry. `distill` (Phase 42) inherits all of this — the baseline floor, floored-iteration-is-a-non-result, checkpoint chaining, and no crystallization — plus a `metric_ceiling` of 0.92 (generous: SFT from a teacher is not bounded by the converged-model overfitting dynamic that caps `dpo`/`grpo`, and distillation is the one method observed to *recover* MCP cases). One difference: `distill_train.py` trains on a train split and reports `pass_rate` against a **held-out** split, so a `distill` mission's goal metric is read from the training log's `"Best pass rate during training:"` line (`_distill_held_out_metric`) — the same population the floor's `"Baseline:"` line uses — rather than a full-set `bare_eval.py` run, which would leak training cases and report a different number (that mismatch doom-looped mission `b790c69d` for ~9h before the fix).
-
-- **Universal Code Generator**: LLM-driven generation of the actual training script for each task type above, from a recipe + plan/pivot.
-- **Framework Wrappers**: Standardized interfaces for common libraries (Transformers, SB3, PyTorch, MLX).
-- **Telemetry Producer** (also referred to as the Telemetry Streamer in IMPLEMENT): Streams paradigm-specific metrics via WebSocket (e.g., Reward for RL, Perplexity for SFT, Accuracy/F1 for ML, pass_rate/loss for DPO/GRPO). On recovery, back-fills missed logs from the `data/` volume to the HUD.
-
-### 2.5. Secure Execution Sandbox
-The isolation layer where training actually occurs:
-- **Runtime Strategy**: Depends on hardware target. On **Apple Silicon (M4)**, Docker/Podman does not support Metal GPU passthrough so training runs in a `SubprocessSandbox` (restricted host subprocess with memory cap via `resource` module). On **cloud/CUDA** targets, a Docker/Podman container with `nvidia-container-toolkit` is used. See §5.2 for full detail.
-- **Resource Guard**: Enforces memory and compute limits to ensure system stability.
-- **Filesystem Isolation**: Restricts training code access to specific project directories and the Model Registry.
-
-### 2.6. Specialist Evaluator (Validation)
-Independent agent that ensures the training isn't just "overfitting" to the environment:
-- **Benchmark Suite**: Runs the model against a "Golden Set" of challenges.
-- **Stress Tester**: Introduces noise and edge cases to verify robustness.
-
-### 2.7. Analysis & Introspection Suite
-Deep-dive tools for "Explainable AI":
-- **Spatial Analyzer**: For CNNs, generates saliency maps to see what the agent is "looking at."
-- **Policy Auditor**: Visualizes the action distribution to detect mode collapse or bias.
-
-### 2.8. Resilience & Rigor Layer (Harness Principles)
-Enhancements for long-running stability:
-- **Safety Critic (Skeptical Peer Review)**: A specialized agent that audits the Lead Agent's plans. It uses a "GAN Pattern" to challenge assumptions and force defensive coding/planning.
-- **Mission Manifest**: A structured JSON handoff artifact that stores the "Current Source of Truth." It replaces long conversation history as the primary context for each new iteration, preventing "Context Anxiety" and performance drift.
-- **Validation Contract**: A multi-dimensional rubric generated during planning that defines "success" across primary metrics (e.g., reward) and secondary health signals (e.g., action entropy, loss stability).
-
-## 3. Data Flow
-1. **Initiation**: User sends goal.
-2. **Recipe Retrieval**: Lead Agent queries the **Recipe Library** for similar past successes to create a "Warm-Start" plan.
-3. **Planning**: Lead Agent refines the retrieved recipe or designs a new DAG from scratch.
-4. **Implementation**: Specialist Trainer generates code based on the plan/recipe.
-5. **Sandboxing & Execution**: Training runs in the secure environment.
-6. **Promotion & Evaluation**: Standard progress tracking.
-7. **Crystallization**: If the goal is met (or the mission stalls), the system distills the final, optimized strategy into a new **Recipe** and saves it to the Library — **except for `dpo`/`grpo` missions**, whose training dispatch is hardcoded to a canonical recipe (`_ENV_RECIPE` in `code_generator.py`: `dpo → ensemble_dpo_v1.yaml`, `grpo → ensemble_grpo_v1.yaml`). A crystallized recipe for those task types can never be loaded for dispatch, so `LoopStateMachine._crystallize()` skips them (`_NO_CRYSTALLIZE_TASK_TYPES`) rather than accumulating orphan recipe files, DB rows, and vector-index entries.
-8. **Finalization**: Registry update and report generation.
-
-## 4. Security & Autonomy Gates
-
-### 4.1. The Approval Controller
-`GateType` (`backend/models/approval.py`) models three gate types (`EXECUTE_CODE`, `RESOURCE_ALLOCATION`, `DEPLOY_MODEL`), but only one is actually wired into the loop today:
-- **Gate: `EXECUTE_CODE`**: Pauses the loop and presents the generated script to the user for a "Safety Check." The `CodeSafetyClassifier` runs a two-stage pre-screen: (1) a static regex pass that immediately approves scripts whose only network calls target `localhost`/`127.0.0.1` (telemetry), and immediately blocks known-dangerous patterns (subprocess shell injection, broad file deletion, external pip installs); (2) an LLM classification pass for ambiguous cases. Only genuinely risky scripts reach the human approval queue.
-- **Gate: `RESOURCE_ALLOCATION`** / **`DEPLOY_MODEL`**: modeled in the schema, but no code path currently creates either — not implemented yet, despite being defined as gate types.
-
-### 4.2. Autonomy Tiers
-`Mission.autonomy_mode` supports three values (`backend/config.py`'s `Literal["guided", "supervised", "full_autonomy"]`), differing only in how the single implemented gate (`EXECUTE_CODE`) is handled — there is no "Silent Mode"/trust-score bypass mechanism implemented anywhere; the description below reflects actual `LoopStateMachine._request_approval()` behavior, not an aspirational design:
-1. **Guided**: an `EXECUTE_CODE` gate is created, but the backend's inline classifier auto-approve is deliberately skipped (`allow_inline_auto_approve=False`) — every gate requires an explicit decision: a human resolving it in the UI, or a human deliberately clicking the frontend's own "Auto-Approve" action (a real decision in the moment, not a silent backend shortcut).
-2. **Supervised (Default)**: an `EXECUTE_CODE` gate is created, and the backend immediately attempts the `CodeSafetyClassifier` auto-approve inline; only falls back to waiting for an explicit decision if the classifier can't resolve it (`allow_inline_auto_approve=True`).
-3. **Full Autonomy**: no gate is created at all — `_request_approval()` is never called, the script runs immediately.
-
-### 4.3. Monitoring Dashboard (The "HUD")
-A real-time interface showing:
-- **Loop Status**: Current iteration count and strategic pivot history.
-- **Metric Delta**: Visual gap between "Current Best" and "Target Goal."
-- **Approval Queue**: Pending security requests with "Diff" views for code changes.
-
-## 5. Runtime Architecture
-
-ASTRA's runtime is split between **Persistent Management** and **Transient Compute**.
-
-### 5.1. Persistent Orchestration Layer
-- **Host**: Local Server, Mac Mini, or Cloud Instance (AWS/GCP).
-- **Process Manager**: The FastAPI server runs as a persistent service (e.g., via `pm2` or `systemd`).
-- **Autonomous Loop**: Handled by background worker processes (e.g., `asyncio` tasks or `Celery/Redis`) to ensure the training logic survives Web UI disconnections.
-
-### 5.2. Transient Compute Layer (The Sandbox)
-- **Isolation**: Sandbox strategy depends on the hardware target:
-  - **Apple Silicon (M4)**: Docker/Podman does **not** support Metal GPU passthrough. Training that requires the GPU runs in a **restricted host subprocess** with enforced resource limits (memory cap via `resource` module, CPU affinity via `taskset`/`psutil`). Docker is reserved for CPU-only or dependency-isolation tasks.
-  - **Cloud / CUDA**: Every training iteration runs inside a **Docker** or **Podman** container with `nvidia-container-toolkit` for GPU access.
-- **Lifecycle**: Sandboxes (container or subprocess) are provisioned by the Lead Agent, execute the training code, and are decommissioned once evaluation is complete.
-- **GPU Passthrough**: CUDA environments use `nvidia-container-toolkit`. Apple Silicon GPU access is host-native; the `ModelManager` coordinates memory between the LLM and the training subprocess.
-
-### 5.3. State & Persistence
-- **Database**: SQLite (local) or PostgreSQL (cloud) for experiment metadata and the Model Registry.
-- **Mission Store**: A specialized table tracking the active DAG state, current iteration number, and sandbox PID/ContainerID for recovery.
-- **File Store**: A dedicated `data/` volume mounted to sandboxes for weights and logs.
-- **Memory**: ChromaDB running as a sidecar process for vector-based semantic retrieval.
-
-### 5.4. API Reference
-
-| Endpoint | Description |
+| Type | Intent |
 |---|---|
-| `GET /health` | System status + memory stats |
-| `GET /health/ready` | Readiness probe |
-| `GET/POST/PATCH/DELETE /registry/experiments` | Experiment CRUD |
-| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter). List auto-syncs checkpoints only for **live** missions, prunes rows whose mission was deleted, and collapses duplicate rows for the same zip (`data/…` vs `./data/…`). |
-| `GET/POST/PATCH/DELETE /missions` | Mission CRUD (supports explicit goal or first-class recipe seeding, target overrides, auto_start, and canonical goal formatting) |
-| `GET /missions/{id}/manifest` | Live requirement manifest state |
-| `POST /agent/missions/{id}/run` | Launch the autonomous loop for a mission |
-| `POST /agent/missions/{id}/cancel` | Cancel a running mission loop; terminates sandbox and resets to pending |
-| `GET/POST /approvals` | Approval gate CRUD |
-| `POST /approvals/{id}/approve\|reject` | Approve or reject a pending gate |
-| `POST /approvals/{id}/auto-approve` | LLM-classify gate script; auto-approve if safe |
-| `POST /telemetry/missions/{id}/metrics` | Sandbox pushes metrics |
-| `WS /ws/missions/{id}/telemetry` | Live telemetry WebSocket (back-fills history on connect) |
-| `WS /ws/models/{id}/play?env_id=&fps=` | Live agent viewer for a registry checkpoint (canvas on `/models/{id}`) |
-| `WS /ws/missions/{id}/play?env_id=&fps=` | Same stream using that mission's `best_model` (kept for compatibility; HUD no longer embeds a player) |
-| `POST /analysis/missions/{id}/saliency` | Grad-CAM saliency map |
-| `POST /analysis/missions/{id}/audit` | Policy audit (action histogram + entropy) |
-| `GET/POST/PATCH/DELETE /registry/models` | Model record CRUD (`champion_only` filter). List auto-syncs checkpoints only for **live** missions, prunes rows whose mission was deleted, and collapses duplicate rows for the same zip (`data/…` vs `./data/…`). |
-| `POST /registry/tournament` | Run head-to-head multi-model tournament across fixed seeds; returns leaderboard and crowns champion |
-| `GET /recipes` | List all recipes (disk + DB merged) |
-| `GET /recipes/db` | List DB-backed recipes (`domain`, `golden_only` filters) |
-| `GET /recipes/search?q=` | Semantic search over recipe library. Listing recipes prunes Chroma ids that no longer exist in `recipe_records`. |
-| `GET /recipes/{name}` | Fetch a single recipe (DB-first, disk fallback) |
-| `DELETE /recipes/{id}` | Delete an auto-crystallized (generation ≥ 1) recipe: DB row, YAML, semantic index. Hand-crafted YAML is rejected. |
-| `POST /recipes/crystallize/{mission_id}` | Distil a completed mission into a recipe |
-| `POST /recipes/{id}/evolve` | Spawn a mutated child recipe |
-| `GET /recipes/{id}/lineage` | Ancestor chain for an evolved recipe |
-| `POST /recipes/{name}/dispatch` | One-click dispatch of a training recipe (delegates to unified POST /missions pipeline with auto_start=True) |
+| `rl` | Policy from reward in a Gym env (Snake, Tetris, 2048, MinAtar suite, Grid Pac-Man, AgentGym, or a standard Gymnasium id). SB3, or a custom lookahead / actor-critic trainer where the env needs it. |
+| `sft` | Supervised fine-tune on labeled completions (held-out split, optional CoT traces). Local HF/PEFT or remote MLX. |
+| `ml` | Tabular / classical ML. |
+| `mlx_lora` | Local Apple-Silicon LoRA. |
+| `dpo` | Preference pairs; no separate reward model. |
+| `grpo` | On-policy group-relative policy gradient. |
+| `distill` | Teacher completions → student SFT. Not bounded by the student’s own plateau the way DPO/GRPO are. |
+| `rft` | Rejection-sample the student itself; SFT on survivors. No teacher. |
+| `prompt` | Append routing rules to a **copy** of the conductor prompt and score. Production prompt is never edited. |
+| `star` | Self-taught reasoner: rollouts, then hint-guided rationalization, then LoRA. |
 
+**Environments.** Arcade envs are 10×10 NumPy Gym wrappers. Seaquest, Asterix, and Grid Pac-Man follow their source rules closely enough that play and checkpoints stay honest (oxygen/surface, spawn/ramp, leftover ghosts chase, mouth faces movement). Env classes load lazily so importing the package does not load every game.
 
-Interactive docs available at `http://localhost:8200/docs` when the backend is running.
+**Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or `gym.make`, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. RL scripts pin `gym.make` to the planned env id.
 
-### 5.5. Recovery & Resumption Logic
-1. **Startup Check**: On boot, `recover_interrupted_missions()` queries the **Mission Store** for any tasks in the `RUNNING`, `PAUSED`, `PLANNING`, or `EVALUATING` state. Each query and subsequent state transition executes inside a database transaction (PRD §4.11): read current state, validate, and write new state atomically to prevent duplicate execution on concurrent restarts.
-2. **Sandbox Handling**: The Mission Store tracks a `ContainerID` (cloud/CPU), a `SubprocessPID` (Apple Silicon GPU, local), or a `remote_pid` (SSH-dispatched, e.g. dpo/grpo on the Mac Mini). `SandboxManager.recover()` checks whether the sandbox is still alive, uniformly across all three backends. **If alive ("reattached")**: the sandbox is left running and reattached in place — a lightweight sandbox object is reconstructed (with `_reattach_pid`/`_remote_pid`/`_container_id` set as appropriate) and registered so subsequent `is_alive()`/`tail_new_output()` polling works, but nothing is killed. The mission keeps its current status and pid/remote_pid untouched. **If gone ("dead")**: the mission is reset to `PENDING` with `container_id`/`subprocess_pid`/`remote_pid` cleared, so it can be relaunched fresh from the last checkpoint. `SandboxManager.launch()` additionally evicts and terminates any sandbox already registered for the same mission before starting a new one, guarding against leaks during mid-loop error retries — this is the one place a live sandbox can still be killed, since launching a genuinely new one for the same mission means the old one is being deliberately superseded.
-3. **Loop Auto-Restart / Resume**: `recover_interrupted_missions()` returns `{"restart": [...], "resume": [...]}`. For `restart` IDs (sandbox was gone), the lifespan handler builds a fresh `LoopStateMachine` and creates a task for `loop.run(mission_id)` — resumes from `current_iteration` and the saved pivot plan, replanning nothing, but launching a brand-new sandbox process. For `resume` IDs (sandbox still alive), it instead calls `loop.run(mission_id, resume_existing_sandbox=True)`, which skips planning, the approval gate, and `sandbox.launch()` entirely for that first iteration — it reattaches to the already-running sandbox (registered by `recover()` above) and goes straight to polling it via `_wait_for_sandbox()`. Code generation is also skipped up front and only produced lazily if that resumed sandbox later errors and the healer needs a script to patch — resuming is meant to do essentially nothing besides start polling, not redo per-iteration setup work whose output won't even be used. A still-alive, hours-long remote training run is never interrupted by a backend restart.
-   **Shutdown safety**: when `asyncio.CancelledError` is raised (graceful process shutdown, e.g. `make stop`/SIGTERM), the loop calls `SandboxManager.terminate(mission_id)` before resetting the mission to `PENDING`. This prevents the sandbox subprocess from running orphaned after shutdown, which would otherwise cause interleaved telemetry writes if the loop is restarted by a new process before the old one's sandbox is confirmed dead. (Historical note: this was originally motivated by uvicorn's `--reload`/WatchFiles hot-reload triggering frequent `CancelledError`s during development; `--reload` is no longer used by `make run` — see `Makefile` — precisely because hot-reload could interrupt in-flight async work like a mission loop or a DB commit mid-transaction. The `CancelledError` handler itself remains necessary for ordinary shutdown.)
-4. **Telemetry Catch-up**: The **Telemetry Producer** back-fills any missed log entries from the `data/` volume to the HUD when the client reconnects, covering the outage window so operators can assess model behaviour during downtime.
+**Remote fine-tune.** The training host has no git checkout of ASTRA. A thin `os.execv` wrapper replaces itself with the standalone trainer. Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
+
+**Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
+
+### 2.5. Sandbox
+
+Where training runs.
+
+- **Apple Silicon** — no Metal passthrough in Docker. GPU work is a restricted host subprocess (or SSH to the Mini). Docker is for CPU/isolation only.
+- **CUDA** — container with GPU toolkit.
+- **Isolation** — memory/compute caps; writes limited to mission data and the registry.
+
+### 2.6. Evaluator and introspection
+
+A **benchmark suite** (golden challenges) and **stress** cases sit outside the training loop. **Saliency** and a **policy auditor** (action distribution, entropy) explain play on `/models/{id}`.
+
+### 2.7. Resilience
+
+- **Safety critic** — GAN-style review of the plan before execute.
+- **Mission manifest** — structured source of truth for the next iteration, not a growing chat log.
+- **Validation contract** — primary metric plus health signals (entropy, loss stability).
+
+---
+
+## 3. Data flow
+
+1. User (or recipe dispatch) states a goal and target.
+2. Lead Agent warm-starts from the recipe library when a close match exists.
+3. Critic approves or sends the plan back.
+4. Codegen writes a sandbox script; autonomy gates may pause for execute-code approval.
+5. Sandbox trains; telemetry streams to the HUD.
+6. Evaluator scores the checkpoint against the goal metric.
+7. Loop pivots, completes, or stalls. Successful **RL** (and similar) runs may crystallize a recipe; fine-tune-remote types do not.
+8. Registry and model page pick up the checkpoint for play and tournaments.
+
+---
+
+## 4. Security and autonomy
+
+One gate is live: **execute code**. A static pass auto-approves localhost telemetry and blocks obvious danger; ambiguous scripts go to an LLM classifier, then a human if needed. Resource and deploy gates are modeled, not wired.
+
+| Mode | Execute-code gate |
+|---|---|
+| **Guided** | Always a human decision (UI approve or explicit auto-approve click). |
+| **Supervised** (default) | Classifier may auto-approve; otherwise wait. |
+| **Full autonomy** | No gate; script runs. |
+
+The HUD shows loop status, metric gap, pivot history, and the approval queue.
+
+---
+
+## 5. Runtime
+
+**Persistent.** FastAPI process, asyncio mission loops, SQLite (or Postgres), Chroma sidecar, `data/` volume for weights and logs.
+
+**Transient.** One sandbox per training iteration (subprocess, SSH, or container). The model manager keeps LLM and trainer from fighting over unified memory.
+
+**Recovery.** On boot, running/planning/evaluating missions are inspected. A live sandbox is reattached and only polled. A dead sandbox resets the mission to pending so the loop can relaunch from the last checkpoint. Shutdown terminates the sandbox so the next process does not inherit an orphan. Telemetry back-fills the HUD after a reconnect.
+
+Interactive API: `http://localhost:8200/docs`.

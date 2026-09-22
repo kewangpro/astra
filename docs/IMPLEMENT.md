@@ -1,15 +1,15 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA`, structured into **seven strategic epochs** encompassing 83 phases of development:
+This document outlines the architectural implementation roadmap for `ASTRA`, structured into **seven strategic epochs** encompassing 85 phases of development:
 
 ## Strategic Epoch Roadmap
 
 | Epoch | Focus & Strategic Capabilities | Encompassed Phases | Status |
 |---|---|---|---|
-| **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing code gen, 4-stage escalating pivots, regression rollback, vector memory | Phases 1–16 | ✅ Complete |
+| **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing code gen, 4-stage escalating pivots, regression rollback, vector memory | Phases 1–16, 85 | ✅ Complete |
 | **Epoch 2: High-Throughput RL & Lookahead** | Pure Gym environments (Snake, Tetris), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space, curriculum | Phases 17–24, 31–32 | ✅ Complete |
 | **Epoch 3: Post-Training, Distillation & Cluster Scaling** | Remote SSH execution, DPO/GRPO/Distill/RFT/Prompt paradigms, Nodes cluster HUD, checkpoint chaining, convergence guards | Phases 25–30, 33–50 | ✅ Complete |
-| **Epoch 4: Arcade Simulation Suite & Live HUD** | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0, live policy auditor on `/models/{id}` | Phases 51–54, 65, 79, 81–83 | ✅ Complete |
+| **Epoch 4: Arcade Simulation Suite & Live HUD** | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0, live policy auditor on `/models/{id}` | Phases 51–54, 65, 79, 81–84 | ✅ Complete |
 | **Epoch 5: Model Registry, Tournaments & Recipe Lineage** | Multi-environment Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with evolutionary Lineage DAG | Phases 55–56 | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
@@ -2435,5 +2435,51 @@ walks looked sideways.
   `selected_action` if `player_dir` is missing.
 - [x] **Tests** — `test_pacman_faces_move_direction`,
   `test_run_episode_pacman_includes_player_dir`.
+
+---
+
+## Phase 84: Leftover-Pellet Ghosts Chase Instead of Sliding
+
+With a few pellets left, Pac-Man camps in the `(2,4)`/`(2,5)` gap and the old
+ghost AI treated LEFT/RIGHT as equal to UP. Combined with 20% random reverse,
+the pack slid sideways in the corridor under him. The live player looked like
+a left-right dance, not a chase.
+
+- [x] **No reverse** — ghosts keep `last` and drop the tile they came from
+  unless it is the only walkable option.
+- [x] **Arcade tie-break** — UP, LEFT, DOWN, RIGHT. A Manhattan tie in the
+  leftover alcove climbs the center shaft.
+- [x] **Half-speed** — ghosts step every other tick so leftover play is a
+  hunt, not a four-ghost lock.
+- [x] **Frightened scatter** — power-pellet ghosts minimize to corner
+  targets instead of maximizing Manhattan (which ran them off home).
+- [x] **Tests** — `test_ghost_prefers_up_on_manhattan_tie`,
+  `test_ghost_does_not_reverse_when_other_options_exist`,
+  `test_ghost_chase_does_not_oscillate_in_corridor`,
+  `test_ghosts_step_every_other_tick`.
+- [x] **PPO note** — named-PPO mission `ea4abb36` eval'd **270** against a
+  50 target on this env. Unnamed goals still seed recipe
+  `grid_pacman_dqn_v1` (DQN).
+
+---
+
+## Phase 85: Pin `gym.make` to the Planned Env
+
+RL `train.py` is LLM-written. The prompt says copy `env = gym.make("{env_id}")`
+verbatim; codegen only patched imports and `register()`. Pac-Man PPO
+`ea4abb36` included the line and trained. The 400-score follow-up
+`9b49aa78` omitted it (`NameError: env`), then the healer treated NameError
+as a missing import and wrote `gym.make("Minatar-SpaceInvaders-v0")` because
+the MinAtar preamble registers that game too.
+
+- [x] **`CodeGenerator._ensure_rl_gym_make`** — after RL post-patches, insert
+  or rewrite `env = gym.make(<planned env_id>)` before the SB3 constructor.
+- [x] **`ErrorAnalyzer`** — `fix_script` takes `env_id` from the plan;
+  NameError for `env` is not an import; never substitute CartPole /
+  SpaceInvaders. Loop passes `plan["env_id"]`.
+- [x] **Tests** — `test_ensure_rl_gym_make_inserts_missing_env`,
+  `test_ensure_rl_gym_make_rewrites_wrong_env`,
+  `test_ensure_rl_gym_make_rewrites_healer_space_invaders`,
+  `test_fix_script_forces_planned_env_id`.
 
 

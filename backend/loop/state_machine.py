@@ -870,6 +870,7 @@ class LoopStateMachine:
                         prior_errors=error_history[:-1],
                         mission_id=mission_id,
                         domain=plan.get("domain"),
+                        env_id=plan.get("env_id"),
                     )
                     continue   # retry from sandboxing
 
