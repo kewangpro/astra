@@ -2509,4 +2509,10 @@ crown off the other Grid Pac-Man row.
   `test_refresh_model_scores_from_best_score_txt`, exclusive-crown
   `test_update_model_champion`.
 
+### Phase 87 — On-Policy Distillation (`opd`) as a fourth post-training paradigm (2026-10-05)
+
+- [x] **`task_type: opd`** wired through LeadAgent schema/prompts, `_ENV_RECIPE` → `ensemble_opd_v1.yaml`, SSH force-remote set, pivot safelist (`num_generations`, `temp`), crystallizer skip, safety classifier, checkpoint patterns, held-out metric path (distill/rft semantics), GoalInput + completed/recipes LLM filters.
+- [x] **`ensemble/finetune/opd_train.py`** — student rollouts → MLX teacher reverse-KL advantages → PPO-clipped PG update; distill/rft stdout contract + `[i/total] n rollouts (Ts)`. Deployed to Mini `~/finetune/opd_train.py`.
+- [x] **Docs** — DESIGN/UX_SPEC/README; ensemble `FINETUNE.md` Method E.
+- **Still open:** first full astra `opd` mission smoke on Mini (4B student + 12B MLX teacher memory fit).
 

@@ -65,10 +65,11 @@ hyperparameters:
 metric_ceiling:
   pass_rate: 0.96
 
-# NOT YET RUNNABLE. ensemble/finetune/opd_train.py does not exist. astra's opd
-# task type is fully wired and dispatches a {finetune_dir}/opd_train.py os.execv
-# wrapper with the args above, but a mission fails at preflight (which checks
-# for the remote script) until it is authored. Intended shape:
+# RUNNABLE once deployed to the Mini's finetune_dir. Source of truth:
+#   ensemble/finetune/opd_train.py  (implemented 2026-10-05)
+# Astra dispatches {finetune_dir}/opd_train.py via os.execv; preflight warns until
+# that path exists on the remote host (rsync/scp from the ensemble checkout).
+# Shape:
 #   - Sample K=num_generations completions per case from the student (GRPO-like).
 #   - Teacher compute_logprobs on those trajectories → per-token reverse KL.
 #   - advantage_t = -kl_coef * (log π_student - log π_teacher) [+ outcome_bonus].

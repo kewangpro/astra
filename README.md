@@ -51,7 +51,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task Types
 
-ASTRA supports ten training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `rft`, `prompt`, `star` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
+ASTRA supports eleven training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `prompt`, `star` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
 
 ## Quick Start
 
@@ -125,7 +125,7 @@ ASTRA's architecture and capabilities are structured into seven core development
 |---|---|---|---|
 | **Epoch 1: Autonomous Execution Engine** (Phases 1–16, 85) | Autonomous Plan-Critique-Implement-Train-Eval loop, GAN-style plan critique, self-healing code generation, 4-stage escalating pivots, regression rollback, and vector memory. | `LoopStateMachine`, `LeadAgent`, `CriticAgent`, `CodeGenerator`, `PivotEngine`, `VectorMemory` | ✅ Complete |
 | **Epoch 2: Reinforcement Learning & Lookahead** (Phases 17–24, 31–32) | High-throughput pure Gymnasium environments (Snake-v0, Tetris-v0), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space features, and curriculum learning. | `SnakeEnv`, `TetrisEnv`, lookahead DQN, custom reward shaping | ✅ Complete |
-| **Epoch 3: Post-Training, Distillation & Compute Cluster** (Phases 25–30, 33–50) | Remote SSH compute sandboxes, DPO, GRPO, Distillation, RFT, and Prompt optimization; cluster visibility (Nodes panel), checkpoint chaining, and convergence guards. | `SSHSandbox`, `SandboxManager`, DPO/GRPO/Distill trainers, Nodes panel, Kanban board | ✅ Complete |
+| **Epoch 3: Post-Training, Distillation & Compute Cluster** (Phases 25–30, 33–50) | Remote SSH compute sandboxes, DPO, GRPO, Distillation, On-Policy Distillation (OPD), RFT, and Prompt optimization; cluster visibility (Nodes panel), checkpoint chaining, and convergence guards. | `SSHSandbox`, `SandboxManager`, DPO/GRPO/Distill/OPD trainers, Nodes panel, Kanban board | ✅ Complete |
 | **Epoch 4: Arcade Simulation Suite & Live HUD Explainability** (Phases 51–54, 65, 79, 81–84) | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0; play / inference on `/models/{id}` with live Q-values, action distributions, and Shannon entropy. | MinAtar suite, `GridPacManEnv`, `Game2048Env`, `MinAtarPlayer`, `PolicyAuditor` | ✅ Complete |
 | **Epoch 5: Model Registry, Tournaments & Recipe Evolution** (Phases 55–56, 86) | Multi-environment Model Registry, deterministic fixed-seed Tournament Arena scored in each checkpoint's training env (same as play), exclusive champion crowning, and Recipe Library with evolutionary Lineage DAG. | `ModelRegistry`, `BenchmarkSuite` tournaments, `RecipeLibrary`, Lineage DAG | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels** (Phases 57–63, 66) | Unified 3-stage post-training pipeline (SFT → DPO → GRPO), `<think>...</think>` CoT reasoning preservation, MLX Apple Silicon remote offload, adapter auto-detection, and Self-Taught Reasoner (STaR) closed-loop data bootstrapping with backward rationalization. | Conductor pipeline, SFTTrainer, STaR flywheel (`star_train.py`), unbuffered streaming | ✅ Complete |
@@ -140,11 +140,11 @@ ASTRA's architecture and capabilities are structured into seven core development
 
 Optimized for **Apple Silicon M4, 24 GB unified memory**.
 
-Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `distill`, `rft`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
+Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
 
 | Machine | Role | Models / Load |
 |---|---|---|
 | MacBook M4 24 GB | MLX inference (Lead + Critic agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) ≈ 8.5 GB |
-| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `distill`, `rft`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
+| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.
