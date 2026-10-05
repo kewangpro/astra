@@ -1861,6 +1861,7 @@ def test_manifest_checkpoint_pattern_dpo_grpo():
     assert _CHECKPOINT_PATTERNS["dpo"] == "checkpoints/best/"
     assert _CHECKPOINT_PATTERNS["grpo"] == "checkpoints/best/"
     assert _CHECKPOINT_PATTERNS["distill"] == "checkpoints/best/"
+    assert _CHECKPOINT_PATTERNS["opd"] == "checkpoints/best/"
 
 
 # ── sandbox_host scoping regression (must not leak to non-finetune task types) ─
@@ -2303,6 +2304,56 @@ def test_rft_pivot_lever_is_k_samples_and_temp():
     assert _clamp_finetune_pivot_hp("rft", {"k_samples": 1}) == {"k_samples": 4}
     # iters is distill's lever, not rft's — and distill's is pinned empty.
     assert _clamp_finetune_pivot_hp("rft", {"iters": 700}) == {}
+
+
+# ── opd (on-policy distillation) ─────────────────────────────────────────────
+
+def _opd_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "opd", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    return gen._build_user_prompt("opd", "test-id", plan, str(tmp_path / "ckpt"))
+
+
+def test_opd_template_wraps_the_existing_script(tmp_path, monkeypatch):
+    """Same os.execv discipline as distill/rft: astra tracks the wrapper's pid."""
+    p = _opd_prompt(tmp_path, monkeypatch)
+    assert "opd_train.py" in p
+    assert "os.execv(" in p
+    assert "subprocess.run(" not in p
+    assert 'os.chdir("/Users/kewang/finetune")' in p
+
+
+def test_opd_passes_teacher_and_sampling_args(tmp_path, monkeypatch):
+    p = _opd_prompt(tmp_path, monkeypatch)
+    assert "--teacher-model" in p
+    assert "gemma-3-12b-it-4bit" in p
+    m = re.search(r'"--temp", "([\d.]+)"', p)
+    assert m and float(m.group(1)) > 0.0
+    assert re.search(r'"--num-generations", "(\d+)"', p)
+    assert re.search(r'"--kl-coef", "([\d.]+)"', p)
+    assert "--no-adapter" in p
+    assert "conductor_gemma.md" in p
+    assert "6144" in p
+
+
+def test_opd_pivot_lever_is_num_generations_and_temp():
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp
+    assert _clamp_finetune_pivot_hp("opd", {"num_generations": 99, "temp": 9.0}) == {
+        "num_generations": 4, "temp": 1.5}
+    assert _clamp_finetune_pivot_hp("opd", {"num_generations": 1}) == {"num_generations": 2}
+    assert _clamp_finetune_pivot_hp("opd", {"iters": 700, "k_samples": 8}) == {}
+
+
+def test_opd_resolve_hyperparams_recipe_authoritative():
+    from backend.agent.code_generator import _resolve_hyperparams
+    hp = _resolve_hyperparams("opd", {"learning_rate": 0.9, "num_layers": 99, "kl_coef": 9.0})
+    assert hp["learning_rate"] == 0.00001
+    assert hp["num_layers"] == 8
+    assert hp["kl_coef"] == 1.0
+    assert hp["teacher_model"] == "mlx-community/gemma-3-12b-it-4bit"
 
 
 def test_prompt_pivot_lever_is_empty():

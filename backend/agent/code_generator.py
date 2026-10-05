@@ -1304,6 +1304,76 @@ The script must:
    element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
    omitted entirely if empty. Do not insert an empty string element in the list.)"""
 
+_OPD_TEMPLATE = """\
+Generate a script that runs on-policy distillation by invoking the
+EXISTING opd_train.py script — do NOT reimplement student sampling, teacher
+logprob scoring, reverse-KL advantages, LoRA updates, or the routing eval
+yourself. This script is a thin orchestration wrapper only — it does NOT report
+telemetry itself. Astra tails this process's own log remotely and parses
+"Pass rate" lines on its own; do not add any network calls (no requests, no HTTP)
+to this script.
+
+Mission ID: {mission_id}
+Finetune dir (remote host, opd_train.py lives here): {finetune_dir}
+Python interpreter (has mlx_lm installed): {python_bin}
+Base model (student): {base_model}
+Warm-start: {warm_start_desc}
+Prompt template: {prompt_template}
+Teacher (logprob-capable, same family): {teacher_model}
+Sampling: num_generations={num_generations}, temp={temp}, max_tokens={max_tokens}
+KL: kl_coef={kl_coef}, outcome_bonus={outcome_bonus}
+LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
+Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
+save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
+Adapter output: {checkpoint_dir}
+
+The script must:
+1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
+   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
+   sandbox tracks this wrapper process's own pid as "the training process." If
+   this script fork+execs opd_train.py as a child (subprocess.run/Popen), the
+   child gets a DIFFERENT pid that astra never learns and can never clean up. os.execv
+   REPLACES this process's image in place (no fork, same pid) so the wrapper's
+   tracked pid and the actual training process's pid are always identical.
+2. First os.chdir("{finetune_dir}") — opd_train.py resolves --prompt-template AND
+   its own eval-cases path relative to the process's working directory. Without
+   this chdir, both relative-path loads fail.
+3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path, C-style
+   exec convention) — this call does not return; the process image becomes
+   opd_train.py and its exit code becomes this process's exit code:
+       os.execv(
+           "{python_bin}",
+           [
+               "{python_bin}", "{finetune_dir}/opd_train.py",
+               "--model", "{base_model}",
+               {adapter_arg}
+               "--save-dir", "{checkpoint_dir}",
+               "--prompt-template", "{prompt_template}",
+               "--teacher-model", "{teacher_model}",
+               "--num-generations", "{num_generations}",
+               "--temp", "{temp}",
+               "--max-tokens", "{max_tokens}",
+               "--kl-coef", "{kl_coef}",
+               "--outcome-bonus", "{outcome_bonus}",
+               "--num-layers", "{num_layers}",
+               "--lora-rank", "{lora_rank}",
+               "--lora-scale", "{lora_scale}",
+               "--lora-dropout", "{lora_dropout}",
+               "--iters", "{iters}",
+               "--batch-size", "{batch_size}",
+               "--learning-rate", "{learning_rate}",
+               "--steps-per-eval", "{steps_per_eval}",
+               "--save-every", "{save_every}",
+               "--max-seq-len", "{max_seq_len}",
+               "--eval-max-tokens", "{eval_max_tokens}",
+               {mask_prompt_flag}
+               {routing_only_flag}
+           ],
+       )
+   ({mask_prompt_flag} and {routing_only_flag} are each either a single string list
+   element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
+   omitted entirely if empty. Do not insert an empty string element in the list.)"""
+
 _STAR_REMOTE_WRAPPER = """\
 import sys
 import os
@@ -1662,6 +1732,7 @@ _ENV_RECIPE: dict = {
     # kept and both declare pass_rate 0.92.
     "distill": "ensemble_distill_gemma4b_v1.yaml",
     "rft": "ensemble_rft_v1.yaml",
+    "opd": "ensemble_opd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
     "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
@@ -1776,6 +1847,9 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # on, which is the whole mechanism. temp must stay > 0 or every sample is
     # identical and rejection sampling has nothing to reject.
     "rft":     {"k_samples": (4, 16), "temp": (0.7, 1.5)},
+    # OPD samples student rollouts then grades them with teacher reverse KL —
+    # num_generations and temp are the diversity levers (same shape as GRPO).
+    "opd":     {"num_generations": (2, 4), "temp": (0.7, 1.5)},
     # prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
@@ -1807,7 +1881,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "prompt", "ensemble_sft_v1", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "prompt", "star"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2394,6 +2468,22 @@ class CodeGenerator:
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)
+        if effective_task_type == "opd":
+            # Same cold-start fork as distill/rft: opd_train.py takes exactly one
+            # of --adapter / --no-adapter.
+            _cold = bool(hp.get("no_adapter", False))
+            ctx = {
+                **hp,
+                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
+                "warm_start_desc": (
+                    "NONE — cold start (--no-adapter); this run establishes a baseline"
+                    if _cold else hp.get("adapter", "")
+                ),
+                "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
+                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                **base,
+            }
+            return _OPD_TEMPLATE.format(**ctx)
         if effective_task_type == "star":
             _cold = bool(hp.get("no_adapter", False))
             ctx = {

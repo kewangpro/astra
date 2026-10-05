@@ -2023,6 +2023,7 @@ def test_finetune_pivot_safelist_is_task_scoped():
     from backend.loop.state_machine import _FINETUNE_PIVOT_KEYS_BY_TASK
     assert _FINETUNE_PIVOT_KEYS_BY_TASK["dpo"] == {"temp", "k_collect"}
     assert _FINETUNE_PIVOT_KEYS_BY_TASK["distill"] == {"iters"}
+    assert _FINETUNE_PIVOT_KEYS_BY_TASK["opd"] == {"num_generations", "temp"}
     assert _FINETUNE_PIVOT_KEYS_BY_TASK["prompt"] == set()
     # iters is not a dpo knob; temp is not a distill knob
     assert "iters" not in _FINETUNE_PIVOT_KEYS_BY_TASK["dpo"]
@@ -2031,10 +2032,10 @@ def test_finetune_pivot_safelist_is_task_scoped():
 
 # ── _crystallize task-type guard ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("task_type", ["dpo", "grpo", "distill", "DPO", "GRPO", "Distill"])
+@pytest.mark.parametrize("task_type", ["dpo", "grpo", "distill", "rft", "opd", "DPO", "GRPO", "Distill", "OPD"])
 async def test_crystallize_skipped_for_fixed_recipe_task_types(task_type, monkeypatch):
-    """dpo/grpo dispatch from a hardcoded recipe (_ENV_RECIPE), so crystallizing
-    them only produces orphaned library entries — see dpo_dpo_v1/v2."""
+    """dpo/grpo/distill/rft/opd dispatch from a hardcoded recipe (_ENV_RECIPE), so
+    crystallizing them only produces orphaned library entries — see dpo_dpo_v1/v2."""
     called = []
 
     async def _fake_crystallize(*args, **kwargs):

@@ -172,6 +172,8 @@ def test_infer_task_type_from_goal():
     assert _infer_task_type_from_goal("Train a scikit-learn classifier on iris to 95% accuracy") == "ml"
     assert _infer_task_type_from_goal("Fine-tune the Ensemble routing model with DPO") == "dpo"
     assert _infer_task_type_from_goal("Distill conductor_gemma to 82% pass rate") == "distill"
+    assert _infer_task_type_from_goal("On-policy distillation for Ensemble routing to 90% pass rate") == "opd"
+    assert _infer_task_type_from_goal("OPD student rollouts with teacher reverse KL") == "opd"
     assert _infer_task_type_from_goal("Prompt optimization for conductor prompt") == "prompt"
     assert _infer_task_type_from_goal("Train a Snake-v0 PPO agent to achieve 100 food eaten") == "rl"
 
@@ -207,7 +209,7 @@ def test_rl_with_an_rl_metric_is_accepted():
 def test_finetune_types_may_target_pass_rate():
     """The guard is rl-only — pass_rate is exactly what these types produce."""
     from backend.routers.missions import _reject_incoherent_task_type
-    for tt in ("rft", "distill", "dpo", "grpo", "prompt"):
+    for tt in ("rft", "distill", "opd", "dpo", "grpo", "prompt"):
         _reject_incoherent_task_type(tt, {"pass_rate": 0.9})   # must not raise
 
 

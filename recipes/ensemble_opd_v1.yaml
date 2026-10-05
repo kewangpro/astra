@@ -1,0 +1,89 @@
+name: ensemble_opd_v1
+version: "1.0.0"
+created_at: "2026-10-05"
+task_type: opd
+domain: NLP
+description: >
+  On-policy distillation (OPD) for the Ensemble routing model. Sample rollouts
+  from the STUDENT, then grade every token with reverse KL against a stronger
+  TEACHER that can return log-probabilities on those student tokens. Dense
+  process-style credit on the student's own states — the gap between off-policy
+  distill (teacher completions → SFT) and sparse on-policy GRPO.
+
+  Prefer OPD over distill when exposure bias / recovery from early mistakes
+  matters (longer trajectories). Prefer GRPO/RFT when outcome correctness on
+  teacher-wrong cases matters more than imitating π_teacher. OPD inherits the
+  teacher ceiling: reverse KL pulls toward the teacher's mistakes too.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  # Cold start — same 4B lineage constraint as ensemble_distill_gemma4b_v1 /
+  # ensemble_rft_v1. opd_train.py requires exactly one of --adapter / --no-adapter.
+  no_adapter: true
+
+  prompt_template: backend/prompts/conductor_gemma.md
+  # Teacher MUST expose token logprobs on student trajectories (MLX forward),
+  # not Ollama chat completions. Same-family as the student so token IDs align.
+  teacher_model: mlx-community/gemma-3-12b-it-4bit
+  routing_only: true
+
+  # ── On-policy sampling ─────────────────────────────────────────────────────
+  # num_generations = rollouts per prompt (group size). temp must stay > 0 so
+  # the student visits diverse states for the teacher to grade.
+  num_generations: 4
+  temp: 0.8
+  max_tokens: 256
+  # Scale on the reverse-KL advantage. Optional outcome_bonus mixes in routing
+  # correctness so fluent wrongness cannot dominate pure KL.
+  kl_coef: 1.0
+  outcome_bonus: 0.0
+
+  # ── LoRA ───────────────────────────────────────────────────────────────────
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # ── Training ───────────────────────────────────────────────────────────────
+  # conductor_gemma.md is ~5,144 tokens; opd_train.py must not drop examples
+  # under a short max_seq_len (same trap as distill/rft).
+  max_seq_len: 6144
+  iters: 200
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 20
+  save_every: 20
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# MODEL-ROUTED 54-case scale (same as distill/rft since 2026-09-08).
+# Ceiling matches siblings at 0.96 (admits up to 52/54). The number to BEAT is
+# the raw 4B production config's 48/54 — this recipe cold-starts.
+metric_ceiling:
+  pass_rate: 0.96
+
+# NOT YET RUNNABLE. ensemble/finetune/opd_train.py does not exist. astra's opd
+# task type is fully wired and dispatches a {finetune_dir}/opd_train.py os.execv
+# wrapper with the args above, but a mission fails at preflight (which checks
+# for the remote script) until it is authored. Intended shape:
+#   - Sample K=num_generations completions per case from the student (GRPO-like).
+#   - Teacher compute_logprobs on those trajectories → per-token reverse KL.
+#   - advantage_t = -kl_coef * (log π_student - log π_teacher) [+ outcome_bonus].
+#   - Importance-sampling / policy-gradient update on the LoRA student.
+#   - Held-out routing eval + best/ checkpointing like distill_train.py.
+# Expected CLI: --model --adapter|--no-adapter --save-dir --prompt-template
+#   --teacher-model --num-generations --temp --max-tokens --kl-coef
+#   --outcome-bonus --num-layers --lora-rank --lora-scale --lora-dropout
+#   --iters --batch-size --learning-rate --steps-per-eval --save-every
+#   --max-seq-len --eval-max-tokens [--mask-prompt] [--routing-only]
+# Expected stdout (parsed by astra, same contract as distill_train.py):
+#   "Baseline: X% (n/total)" + indented static/dynamic-MCP/blended breakdown;
+#   "N examples ready for training"; "Case split: A train / B held-out valid";
+#   "Step N/M loss=X.XXXX"; "Pass rate: X% (n/total)" + breakdown per eval;
+#   "Best static pass rate during training: X%" and
+#   "Best blended pass rate during training: X% (n/total)".
+# OPD-specific progress line (optional, tailed like RFT survivors):
+#   "[i/total] n rollouts (Ts)" during the on-policy sampling phase.

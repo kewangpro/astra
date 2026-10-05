@@ -66,6 +66,9 @@ def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
         return "star"
     if "rejection-sampling" in g or "rejection sampling" in g or re.search(r"\brft\b", g):
         return "rft"
+    # OPD before plain "distill" — "on-policy distillation" contains "distillation".
+    if re.search(r"\bopd\b", g) or "on-policy distill" in g or "on policy distill" in g:
+        return "opd"
     if "distill" in g or "distillation" in g:
         return "distill"
     if re.search(r"\bdpo\b", g):
@@ -168,7 +171,7 @@ def _reject_incoherent_task_type(task_type: str, target_metric: dict) -> None:
             f"task_type 'rl' cannot produce '{name}' — RL missions are scored by "
             f"rollout in a Gym environment and have no routing eval. The goal text "
             f"did not name a method, so task_type fell back to the 'rl' default. "
-            f"Set task_type explicitly (rft / distill / dpo / grpo / prompt / sft / "
+            f"Set task_type explicitly (rft / distill / opd / dpo / grpo / prompt / sft / "
             f"mlx_lora / ml), or name the method in the goal."
         ),
     )

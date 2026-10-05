@@ -125,6 +125,20 @@ class TestDpoGrpoEscalation:
         assert "food_reward" not in query and "net_arch" not in query
 
     @pytest.mark.asyncio
+    async def test_opd_escalation_mentions_num_generations_and_temp(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"pass_rate": 0.75}, [], escalation_level=4,
+            current_algorithm="OPD", algorithm_locked=True,
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "num_generations" in query
+        assert "temp" in query
+        assert "k_collect" not in query
+        assert "k_samples" not in query
+        assert "food_reward" not in query and "net_arch" not in query
+
+    @pytest.mark.asyncio
     async def test_dpo_escalation_case_insensitive_algorithm(self):
         agent = _agent()
         await agent.propose_pivot(

@@ -271,6 +271,52 @@ class TestCollectProgressStatus:
         assert "20/66" in mock_status.await_args.args[1]
 
 
+class TestOpdProgressStatus:
+    """opd_train.py's optional sampling-phase progress line — same HUD role as
+    DPO's pair-collection and RFT's survivor lines: status only, not a metric."""
+
+    def test_rollouts_line_emits_status_not_metric(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = "  [12/54]  48 rollouts  (920s)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_metric, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "opd", 0)
+            )
+
+        mock_metric.assert_not_awaited()
+        mock_status.assert_awaited_once()
+        args, kwargs = mock_status.await_args
+        assert "12/54" in args[1]
+        assert "48 rollouts" in args[1]
+        assert "15m" in args[1]
+        assert "On-policy sampling" in args[1]
+        assert kwargs["event_type"] == "info"
+
+    def test_multiple_rollout_lines_only_emit_latest(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = (
+            "  [4/54]  16 rollouts  (210s)\n"
+            "  [8/54]  32 rollouts  (455s)\n"
+        )
+
+        with patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "opd", 0)
+            )
+
+        mock_status.assert_awaited_once()
+        assert "8/54" in mock_status.await_args.args[1]
+        assert "32 rollouts" in mock_status.await_args.args[1]
+
+    def test_opd_progress_regex_matches_contract_line(self):
+        from backend.loop.state_machine import _OPD_PROGRESS_RE
+        m = _OPD_PROGRESS_RE.search("  [12/54]  48 rollouts  (920s)")
+        assert m is not None
+        assert m.groups() == ("12", "54", "48", "920")
+
+
 # ── Metric Gap fallback: only used at iteration-completion, via .pop() ─────────
 
 class TestLivePassRateFallbackConsumption:
@@ -359,9 +405,24 @@ class TestDistillLiveTailScale:
             "mission-1", "pass_rate_static_live", 0.818, step=0, iteration=0
         )
 
+    def test_opd_live_pass_rate_emitted_under_static_name(self):
+        """OPD follows distill/rft: training-log Pass rate is held-out, not the
+        model-routed goal metric from bare_eval."""
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "opd", 0)
+            )
+
+        mock_emit.assert_awaited_once_with(
+            "mission-1", "pass_rate_static_live", 0.818, step=0, iteration=0
+        )
+
     def test_dpo_live_pass_rate_keeps_the_plain_name(self):
         """dpo/grpo score the full case set, so their headline IS the goal
-        population — this rename must stay distill-only."""
+        population — this rename must stay distill/rft/opd-only."""
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
 

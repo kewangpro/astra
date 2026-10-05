@@ -118,6 +118,7 @@ export default function CompletedMissionsPage() {
           taskTypeStr === "grpo" ||
           taskTypeStr === "star" ||
           taskTypeStr === "rft" ||
+          taskTypeStr === "opd" ||
           taskTypeStr === "distill" ||
           taskTypeStr === "prompt" ||
           taskTypeStr === "mlx_lora" ||
@@ -127,7 +128,8 @@ export default function CompletedMissionsPage() {
           goalStr.includes("ensemble") ||
           goalStr.includes("reasoner") ||
           goalStr.includes("prompt") ||
-          goalStr.includes("distill")
+          goalStr.includes("distill") ||
+          goalStr.includes("on-policy")
         );
       }
       if (activeTab === "agentgym") {

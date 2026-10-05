@@ -306,6 +306,8 @@ _FINETUNE_PIVOT_KEYS_BY_TASK = {
     # RFT's lever is how many candidates it draws before rejection filtering —
     # or every sample is identical and there is nothing to reject.
     "rft":     frozenset({"k_samples", "temp"}),
+    # OPD: student rollouts graded by teacher reverse KL — diversity levers.
+    "opd":     frozenset({"num_generations", "temp"}),
     # Prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  frozenset(),
@@ -327,6 +329,7 @@ _FINETUNE_PIVOT_RANGES = {
 # and would distort those chart axes if mixed in).
 _COLLECT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+pairs\s+\((\d+)s\)")
 _RFT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+survivors\s+\((\d+)s\)")
+_OPD_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+rollouts\s+\((\d+)s\)")
 
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
@@ -959,8 +962,8 @@ class LoopStateMachine:
                                 # a different population AND a different scale
                                 # from the blended 78-case goal.
                                 _live = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
-                                goal_val = None if _mission_task_type_for_eval in ("distill", "rft", "star") else _live
-                            if _mission_task_type_for_eval in ("distill", "rft"):
+                                goal_val = None if _mission_task_type_for_eval in ("distill", "rft", "opd", "star") else _live
+                            if _mission_task_type_for_eval in ("distill", "rft", "opd"):
                                 # Held-out is now a PROGRESS SIGNAL ONLY. Recorded
                                 # so a run's within-training trajectory stays
                                 # visible, never read back to gate chaining or set
@@ -1008,7 +1011,7 @@ class LoopStateMachine:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
                     _active_t_for_floor = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
-                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "distill", "rft"):
+                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "distill", "rft", "opd"):
                         # Record the true observed value to telemetry so the
                         # Metric History chart stays honest…
                         await self._append_telemetry_metric(
@@ -1025,7 +1028,9 @@ class LoopStateMachine:
                         _baseline, _reliable = self._dpo_run_diagnostics(
                             mission_id, _spe, task_type=plan.get("task_type", "dpo"),
                         )
-                        if plan.get("task_type") in ("distill", "rft"):
+                        if plan.get("task_type") in ("distill", "rft", "opd"):
+                            # Same warm-start bare_eval path as distill/rft —
+                            # OPD's goal metric is also model-routed bare_eval.
                             # Baseline from the warm-start's OWN bare_eval, same
                             # tool and same 78 cases as the goal metric. Measured
                             # once per mission and cached; None (floor disabled)
@@ -1035,7 +1040,7 @@ class LoopStateMachine:
                                 self._warm_start_bare_eval, mission_id, plan
                             )
                         _raw_goal_val = goal_val
-                        if plan.get("task_type") in ("distill", "rft"):
+                        if plan.get("task_type") in ("distill", "rft", "opd"):
                             _margin = self._distill_floor_margin(
                                 getattr(self, "_distill_blended_total", {}).get(mission_id)
                             )
@@ -1115,7 +1120,7 @@ class LoopStateMachine:
                 # history can't block it.
                 active_t = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
                 if (
-                    active_t in ("dpo", "grpo", "distill", "rft", "star")
+                    active_t in ("dpo", "grpo", "distill", "rft", "opd", "star")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
@@ -1475,7 +1480,7 @@ class LoopStateMachine:
                     # and the pivot telemetry don't advertise changes that never
                     # actually happen (real incident: mission 15a1d093 iter 4 pivot
                     # logged Snake reward-shaping env_kwargs on a DPO mission).
-                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "prompt"):
+                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "opd", "prompt"):
                         _safelist = _FINETUNE_PIVOT_KEYS_BY_TASK.get(plan.get("task_type"), frozenset())
                         _dropped = {k for k in adjustments if k not in _safelist}
                         if _dropped:
@@ -3051,9 +3056,9 @@ class LoopStateMachine:
                 baseline = float(m.group(1)) / 100.0
             except ValueError:
                 baseline = None
-        if task_type in ("distill", "rft"):
+        if task_type in ("distill", "rft", "opd"):
             # DEAD PATH as of 2026-09-06, kept only to serve the reliability
-            # gate below. distill's goal metric is now bare_eval over all 78
+            # gate below. distill/rft/opd goal metric is now bare_eval over all
             # cases, so its floor baseline comes from _warm_start_bare_eval —
             # the same tool on the same population — not from this log at all.
             # The blended figure under the "Baseline:" anchor is the ~12-case
@@ -3075,7 +3080,7 @@ class LoopStateMachine:
             # Never used as the baseline any more — see above.
             baseline = None
         reliable = True
-        if task_type in ("distill", "rft"):
+        if task_type in ("distill", "rft", "opd"):
             # Suppress the baseline comparison if the underlying case list moved
             # since the last iteration — the held-out split reshuffles with it,
             # so this iteration's score and the stored baseline are no longer the
@@ -3598,7 +3603,7 @@ class LoopStateMachine:
         # full-suite goal metric evaluated by bare_eval.py. Emitting it as "pass_rate"
         # would put a smaller-population sample series on the same HUD axis as the
         # full-suite target and best. Name it for what it is.
-        _live_name = "pass_rate_static_live" if task_type in ("distill", "rft", "star") else "pass_rate"
+        _live_name = "pass_rate_static_live" if task_type in ("distill", "rft", "opd", "star") else "pass_rate"
         for match in _PASS_RATE_RE.finditer(new_output):
             pct = float(match.group(1))
             await emit_metric(mission_id, _live_name, pct / 100.0, step=pass_rate_step, iteration=current_iteration)
@@ -3638,6 +3643,8 @@ class LoopStateMachine:
                 # rft_train.py's SFT half reuses distill_train.py's step-logging
                 # format, so the same regex applies.
                 "rft": _DISTILL_LOSS_RE,
+                # opd_train.py uses the same Step N/M loss=… contract.
+                "opd": _DISTILL_LOSS_RE,
             }.get(active_t, _DPO_LOSS_RE)
             for match in loss_re.finditer(new_output):
                 step_num = int(match.group(1))
@@ -3662,6 +3669,15 @@ class LoopStateMachine:
                 event_type="info",
             )
 
+        opd_matches = list(_OPD_PROGRESS_RE.finditer(new_output))
+        if opd_matches:
+            i, total, n_rollouts, elapsed_s = opd_matches[-1].groups()
+            await emit_status(
+                mission_id,
+                f"On-policy sampling: {i}/{total} cases ({n_rollouts} rollouts, {int(elapsed_s) // 60}m elapsed)",
+                event_type="info",
+            )
+
         return pass_rate_step
 
     # ── Crystallization ────────────────────────────────────────────────────────
@@ -3670,7 +3686,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "prompt", "sft", "post-training", "star"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "opd", "prompt", "sft", "post-training", "star"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

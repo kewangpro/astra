@@ -12,7 +12,7 @@
 ## 2. Core Views
 
 ### 2.1. The "Command Center" (Home)
-- **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200") paired with a task type selector (`auto (detect)`, `rft`, `distill`, `dpo`, `grpo`, `prompt`, `rl`, `sft`, `ml`, `mlx_lora`). In `auto` mode, the task type is semantically inferred from keywords in the goal text, and backend reconciliation ensures that submitted defaults never misdirect fine-tuning or distillation missions into RL.
+- **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200") paired with a task type selector (`auto (detect)`, `rft`, `opd`, `distill`, `dpo`, `grpo`, `prompt`, `rl`, `sft`, `ml`, `mlx_lora`). In `auto` mode, the task type is semantically inferred from keywords in the goal text, and backend reconciliation ensures that submitted defaults never misdirect fine-tuning or distillation missions into RL.
 - **Operational Board**: A row-based layout of active training-loop cards organized into full-width horizontal sections in workflow priority order:
   - **Running / Active** (teal indicator with live pulse animation when runs are active; displays a subtle compact indicator when 0 runs are in-flight).
   - **Stalled / Paused** (orange indicator; rendered dynamically when stalled runs exist, hidden when 0). Stalled cards show `error_log` and **do not** offer Resume — the search is finished; start a new mission. Paused cards still offer Resume.
