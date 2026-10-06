@@ -2335,7 +2335,9 @@ def test_opd_passes_teacher_and_sampling_args(tmp_path, monkeypatch):
     assert re.search(r'"--num-generations", "(\d+)"', p)
     assert re.search(r'"--kl-coef", "([\d.]+)"', p)
     assert "--no-adapter" in p
-    assert "conductor_gemma.md" in p
+    # FT serve prompt — must NOT be conductor_gemma.md (c02028e1 regression).
+    assert "conductor_min.md" in p
+    assert "conductor_gemma.md" not in p
     assert "6144" in p
 
 
@@ -2354,6 +2356,7 @@ def test_opd_resolve_hyperparams_recipe_authoritative():
     assert hp["num_layers"] == 8
     assert hp["kl_coef"] == 1.0
     assert hp["teacher_model"] == "mlx-community/gemma-3-12b-it-4bit"
+    assert hp["prompt_template"] == "backend/prompts/conductor_min.md"
 
 
 def test_prompt_pivot_lever_is_empty():

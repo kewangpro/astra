@@ -2514,5 +2514,6 @@ crown off the other Grid Pac-Man row.
 - [x] **`task_type: opd`** wired through LeadAgent schema/prompts, `_ENV_RECIPE` → `ensemble_opd_v1.yaml`, SSH force-remote set, pivot safelist (`num_generations`, `temp`), crystallizer skip, safety classifier, checkpoint patterns, held-out metric path (distill/rft semantics), GoalInput + completed/recipes LLM filters.
 - [x] **`ensemble/finetune/opd_train.py`** — student rollouts → MLX teacher reverse-KL advantages → PPO-clipped PG update; distill/rft stdout contract + `[i/total] n rollouts (Ts)`. Deployed to Mini `~/finetune/opd_train.py`.
 - [x] **Docs** — DESIGN/UX_SPEC/README; ensemble `FINETUNE.md` Method E.
-- **Still open:** first full astra `opd` mission smoke on Mini (4B student + 12B MLX teacher memory fit).
+- [x] **First Mini smoke:** astra `c02028e1` (4B + MLX 12B teacher) completed; train-matched `_gemma` bare_eval 0.981.
+- [x] **Prompt bug fix (2026-10-05):** `ensemble_opd_v1.yaml` had `prompt_template: conductor_gemma.md` (copied from the raw-4B RFT experiment). That is **not** the FT serve prompt — adapted MLX uses `conductor_min.md`. Same adapter scored **0/54 under `_min`**. Recipe + codegen regression test now require `conductor_min.md` (train + astra bare_eval + `run_eval` aligned). Re-run OPD under the fixed recipe; do not promote `c02028e1`.
 

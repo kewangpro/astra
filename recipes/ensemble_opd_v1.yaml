@@ -15,16 +15,24 @@ description: >
   teacher-wrong cases matters more than imitating π_teacher. OPD inherits the
   teacher ceiling: reverse KL pulls toward the teacher's mistakes too.
 
+  Train/serve/eval prompt is conductor_min.md — the sole fine-tuning target
+  (same contract as distill_v1 / grpo / dpo). Do NOT use conductor_gemma.md here:
+  that is the raw/un-adapted Gemma prompt. Mission c02028e1 trained under _gemma
+  by mistake and scored 0.981 train-matched / 0.0 under _min.
+
 hyperparameters:
   base_model: mlx-community/gemma-3-4b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
 
-  # Cold start — same 4B lineage constraint as ensemble_distill_gemma4b_v1 /
-  # ensemble_rft_v1. opd_train.py requires exactly one of --adapter / --no-adapter.
+  # Cold start — no 4B adapter lineage (same constraint as rft). opd_train.py
+  # requires exactly one of --adapter / --no-adapter.
   no_adapter: true
 
-  prompt_template: backend/prompts/conductor_gemma.md
+  # Sole FT target prompt — must match serve_adapter / run_eval / bare_eval for
+  # adapted MLX. Fixed 2026-10-05 (was wrongly conductor_gemma.md, copying the
+  # raw-4B RFT experiment instead of the distill_v1/_min contract).
+  prompt_template: backend/prompts/conductor_min.md
   # Teacher MUST expose token logprobs on student trajectories (MLX forward),
   # not Ollama chat completions. Same-family as the student so token IDs align.
   teacher_model: mlx-community/gemma-3-12b-it-4bit
@@ -48,8 +56,8 @@ hyperparameters:
   lora_dropout: 0.0
 
   # ── Training ───────────────────────────────────────────────────────────────
-  # conductor_gemma.md is ~5,144 tokens; opd_train.py must not drop examples
-  # under a short max_seq_len (same trap as distill/rft).
+  # conductor_min.md is short (~111 tokens), but keep headroom for long
+  # completions + any future prompt growth (same ceiling as sibling recipes).
   max_seq_len: 6144
   iters: 200
   batch_size: 1
@@ -60,8 +68,8 @@ hyperparameters:
   eval_max_tokens: 256
 
 # MODEL-ROUTED 54-case scale (same as distill/rft since 2026-09-08).
-# Ceiling matches siblings at 0.96 (admits up to 52/54). The number to BEAT is
-# the raw 4B production config's 48/54 — this recipe cold-starts.
+# Ceiling matches siblings at 0.96. Score under conductor_min.md (FT serve
+# prompt) — not the raw-4B+conductor_gemma.md 48/54 floor from the RFT experiment.
 metric_ceiling:
   pass_rate: 0.96
 
