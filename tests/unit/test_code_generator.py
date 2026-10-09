@@ -2355,6 +2355,7 @@ def test_opd_resolve_hyperparams_recipe_authoritative():
     assert hp["learning_rate"] == 0.00001
     assert hp["num_layers"] == 8
     assert hp["kl_coef"] == 1.0
+    assert hp["outcome_bonus"] == 1.0
     assert hp["teacher_model"] == "mlx-community/gemma-3-12b-it-4bit"
     assert hp["prompt_template"] == "backend/prompts/conductor_min.md"
 

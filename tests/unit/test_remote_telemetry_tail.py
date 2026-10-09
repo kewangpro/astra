@@ -61,6 +61,15 @@ def test_distill_loss_regex_matches_step_line():
     assert match.group(2) == "0.4210"
 
 
+def test_distill_loss_regex_matches_opd_negative_and_rkl():
+    """OPD prints `loss=… rkl=…`; reverse KL can be negative."""
+    line = "Step 12/200 loss=-0.3125 rkl=-0.3125  88s"
+    match = _DISTILL_LOSS_RE.search(line)
+    assert match is not None
+    assert match.group(1) == "12"
+    assert match.group(2) == "-0.3125"
+
+
 # ── _tail_remote_metrics ───────────────────────────────────────────────────────
 
 class TestTailRemoteMetrics:

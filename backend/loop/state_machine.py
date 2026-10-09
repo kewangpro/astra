@@ -258,7 +258,9 @@ _DISTILL_CASE_SPLIT_RE = re.compile(r"Case split:\s*(\d+)\s+train\s*/\s*(\d+)\s+
 # --save-steps allows).
 _GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
-_DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=([\d.]+)")
+# Optional leading minus — OPD reverse-KL loss can be negative when the student
+# is sharper than the teacher on its own tokens. Distill/RFT stay non-negative.
+_DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=(-?[\d.]+)")
 _MLX_TRAIN_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Train loss\s+([\d.]+)")
 _MLX_VAL_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
 

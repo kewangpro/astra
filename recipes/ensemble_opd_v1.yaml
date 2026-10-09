@@ -44,10 +44,13 @@ hyperparameters:
   num_generations: 4
   temp: 0.8
   max_tokens: 256
-  # Scale on the reverse-KL advantage. Optional outcome_bonus mixes in routing
-  # correctness so fluent wrongness cannot dominate pure KL.
+  # Reverse-KL distill scale. outcome_bonus mixes routing correctness in as a
+  # centered PPO term so fluent wrongness cannot dominate pure KL.
+  # Fixed 2026-10-09: was 0.0 + group-centered KL advantages → loss≡0 on
+  # mission 7b6c78a6. Trainer now backprops reverse KL directly; default
+  # outcome_bonus=1.0 restores an on-policy correctness signal.
   kl_coef: 1.0
-  outcome_bonus: 0.0
+  outcome_bonus: 1.0
 
   # ── LoRA ───────────────────────────────────────────────────────────────────
   num_layers: 8
@@ -80,8 +83,10 @@ metric_ceiling:
 # Shape:
 #   - Sample K=num_generations completions per case from the student (GRPO-like).
 #   - Teacher compute_logprobs on those trajectories → per-token reverse KL.
-#   - advantage_t = -kl_coef * (log π_student - log π_teacher) [+ outcome_bonus].
-#   - Importance-sampling / policy-gradient update on the LoRA student.
+#   - L_KL = kl_coef * mean(log π_student − log π_teacher)  (direct reverse KL;
+#     do NOT center this — centering zeroed the 7b6c78a6 run).
+#   - Optional centered PPO term: outcome_bonus * routing_reward.
+#   - Adam update on the LoRA student.
 #   - Held-out routing eval + best/ checkpointing like distill_train.py.
 # Expected CLI: --model --adapter|--no-adapter --save-dir --prompt-template
 #   --teacher-model --num-generations --temp --max-tokens --kl-coef
