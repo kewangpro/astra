@@ -2356,8 +2356,16 @@ def test_opd_resolve_hyperparams_recipe_authoritative():
     assert hp["num_layers"] == 8
     assert hp["kl_coef"] == 1.0
     assert hp["outcome_bonus"] == 1.0
+    assert hp["adv_clip"] == 5.0
+    assert hp["clip_epsilon"] == 0.2
     assert hp["teacher_model"] == "mlx-community/gemma-3-12b-it-4bit"
     assert hp["prompt_template"] == "backend/prompts/conductor_min.md"
+
+
+def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
+    p = _opd_prompt(tmp_path, monkeypatch)
+    assert '"--adv-clip", "5.0"' in p or '"--adv-clip", "5"' in p
+    assert '"--clip-epsilon", "0.2"' in p
 
 
 def test_prompt_pivot_lever_is_empty():

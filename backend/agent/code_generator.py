@@ -1321,7 +1321,7 @@ Warm-start: {warm_start_desc}
 Prompt template: {prompt_template}
 Teacher (logprob-capable, same family): {teacher_model}
 Sampling: num_generations={num_generations}, temp={temp}, max_tokens={max_tokens}
-KL: kl_coef={kl_coef}, outcome_bonus={outcome_bonus}
+KL: kl_coef={kl_coef}, outcome_bonus={outcome_bonus}, clip_epsilon={clip_epsilon}, adv_clip={adv_clip}
 LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
 Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
 save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
@@ -1355,6 +1355,8 @@ The script must:
                "--max-tokens", "{max_tokens}",
                "--kl-coef", "{kl_coef}",
                "--outcome-bonus", "{outcome_bonus}",
+               "--clip-epsilon", "{clip_epsilon}",
+               "--adv-clip", "{adv_clip}",
                "--num-layers", "{num_layers}",
                "--lora-rank", "{lora_rank}",
                "--lora-scale", "{lora_scale}",
