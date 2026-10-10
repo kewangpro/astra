@@ -2517,3 +2517,25 @@ crown off the other Grid Pac-Man row.
 - [x] **First Mini smoke:** astra `c02028e1` (4B + MLX 12B teacher) completed; train-matched `_gemma` bare_eval 0.981.
 - [x] **Prompt bug fix (2026-10-05):** `ensemble_opd_v1.yaml` had `prompt_template: conductor_gemma.md` (copied from the raw-4B RFT experiment). That is **not** the FT serve prompt — adapted MLX uses `conductor_min.md`. Same adapter scored **0/54 under `_min`**. Recipe + codegen regression test now require `conductor_min.md` (train + astra bare_eval + `run_eval` aligned). Re-run OPD under the fixed recipe; do not promote `c02028e1`.
 
+### Phase 88 — OPD trainer objective fixes on mission `7b6c78a6` (2026-10-09..10)
+
+Live `_min`-track OPD mission `7b6c78a6` exposed two successive trainer bugs after the
+prompt fix. Best pass_rate stalled at **0.50** vs target 0.90.
+
+- [x] **Bug 1 — centered KL advantages → `loss≡0` (2026-10-06..09).** Group-centering
+  reverse-KL advantages into GRPO's PPO shell forced `mean(A)=0`, so at `ratio≈1`
+  every step printed `loss=0.0000` (2554/2554) and the absolute "match the teacher"
+  direction vanished. **Fix:** do not center the KL term; center only the optional
+  outcome bonus. Recipe `outcome_bonus` default **0 → 1.0**.
+- [x] **Bug 2 — pathwise `L = mean(log π_S − log π_T)` collapses the student
+  (2026-10-09..10).** With stop-grad teacher token logprobs, `∇L = ∇ mean(log π_S)`;
+  minimising it drove student log-probs → −∞ (`loss` −600..−1160 on iters 25–28)
+  while warm-start bare_eval still reported ~0.5. **Fix:** PPO/PG with uncentered
+  `A = −rkl + centered(outcome)`, plus `adv_clip: 5.0` / `clip_epsilon: 0.2` in
+  `ensemble_opd_v1.yaml` and the OPD wrapper argv. Live iter 29 first showed stable
+  losses in ≈[−0.3, 0.9].
+- [x] **Astra telemetry** — `_DISTILL_LOSS_RE` accepts an optional leading minus so
+  signed OPD `loss=` / `rkl=` lines reach the HUD.
+- [x] **Docs** — ensemble `FINETUNE.md` Method E (both failure modes + flag table);
+  recipe comments. Deployed `opd_train.py` to Mini (`md5` matched).
+

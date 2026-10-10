@@ -84,7 +84,7 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | `dpo` | Preference pairs; no separate reward model. |
 | `grpo` | On-policy group-relative policy gradient. |
 | `distill` | Teacher completions → student SFT. Not bounded by the student’s own plateau the way DPO/GRPO are. |
-| `opd` | On-policy distillation: student rollouts graded by teacher reverse KL (dense credit on student states). Still teacher-capped. |
+| `opd` | On-policy distillation: student rollouts graded by teacher reverse KL via uncentered PPO advantages (dense credit on student states; optional centered outcome bonus). Still teacher-capped. |
 | `rft` | Rejection-sample the student itself; SFT on survivors. No teacher. |
 | `prompt` | Append routing rules to a **copy** of the conductor prompt and score. Production prompt is never edited. |
 | `star` | Self-taught reasoner: rollouts, then hint-guided rationalization, then LoRA. |
