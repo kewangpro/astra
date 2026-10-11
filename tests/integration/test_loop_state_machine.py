@@ -728,7 +728,11 @@ async def test_fresh_plan_clamped_before_codegen_and_persisted_immediately(seede
     clamps only ever ran on pivot proposals. Also confirms the clamped plan is
     persisted to missions.current_plan immediately (not just at the end-of-iteration
     catch-all) — otherwise the DB/API view shows stale unclamped hyperparameters for
-    the whole iteration even though training itself uses the clamped values."""
+    the whole iteration even though training itself uses the clamped values.
+
+    Uses an env with no crystallized recipe so `_apply_recipe_hyperparameters` does
+    not replace the LLM HPs before `_clamp_fresh_plan` runs (Snake-v0 would
+    overwrite with recipe n_steps=2048 / n_epochs=10)."""
     monkeypatch.setattr("backend.loop.state_machine.EVAL_POLL_INTERVAL", 0)
 
     class _UnsafeHpAgent(_MockLeadAgent):
@@ -736,7 +740,7 @@ async def test_fresh_plan_clamped_before_codegen_and_persisted_immediately(seede
             return {
                 "task_type": "rl",
                 "algorithm": "PPO",
-                "env_id": "Snake-v0",
+                "env_id": "CartPole-v1",
                 "hyperparameters": {"learning_rate": 3e-4, "n_steps": 128, "n_epochs": 100},
                 "sandbox_memory_gb": 4.0,
             }

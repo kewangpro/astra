@@ -197,7 +197,11 @@ class TestGcMetalLockUsage:
 
         mm = ModelManager(total_memory_gb=24.0)
         lock = get_metal_lock()
+        # is_metal_available() probes real Metal devices and returns False under
+        # sandboxed / restricted runners — without stubbing it True, _gc() exits
+        # before the lock and this assertion races as a false pass/fail.
         with patch("backend.agent.model_manager.platform.system", return_value="Darwin"), \
+             patch("backend.agent.inference.mlx_provider.is_metal_available", return_value=True), \
              patch.dict("sys.modules", {"mlx.core": MagicMock()}):
             async with lock:
                 task = asyncio.ensure_future(mm._gc())
