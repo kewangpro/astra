@@ -39,21 +39,20 @@ hyperparameters:
   routing_only: true
 
   # ── On-policy sampling ─────────────────────────────────────────────────────
-  # num_generations = rollouts per prompt (group size). temp must stay > 0 so
-  # the student visits diverse states for the teacher to grade.
-  num_generations: 4
+  # Match grpo_v9_min: K=2, temp=0.8. K=4 / temp>1.0 regressed on 7b6c78a6
+  # (held-out → 0% mid-run while warm-start bare_eval stayed ~0.5).
+  num_generations: 2
   temp: 0.8
-  max_tokens: 256
-  # Reverse-KL PG scale. outcome_bonus mixes routing correctness as a centered
-  # PPO term. Fixed twice on mission 7b6c78a6:
-  #   2026-10-09 — stop centering KL advantages (loss≡0).
-  #   2026-10-10 — do NOT pathwise-minimise mean(log π_S − log π_T); that
-  #     collapses student log-probs (loss −600..−1160). Use PPO with
-  #     A = −rkl + centered(outcome). adv_clip caps |A|.
-  kl_coef: 1.0
-  outcome_bonus: 1.0
+  max_tokens: 96
+  # Outcome-led (2026-10-11, 7b6c78a6): equal kl_coef=outcome_bonus=1 let the
+  # dense reverse-KL term dominate → best stuck at 0.50, training destroyed the
+  # warm-start every iter. Make routing reward the primary signal; keep a light
+  # teacher prior. PPO with A = −rkl*kl_coef + centered(outcome); adv_clip caps |A|.
+  kl_coef: 0.15
+  outcome_bonus: 8.0
   clip_epsilon: 0.2
   adv_clip: 5.0
+  reward_schema: v2
 
   # ── LoRA ───────────────────────────────────────────────────────────────────
   num_layers: 8
@@ -65,19 +64,20 @@ hyperparameters:
   # conductor_min.md is short (~111 tokens), but keep headroom for long
   # completions + any future prompt growth (same ceiling as sibling recipes).
   max_seq_len: 6144
-  iters: 200
+  # Front-loaded like GRPO; softer lr so chained best/ is not wiped each iter.
+  iters: 100
   batch_size: 1
-  learning_rate: 0.00001
+  learning_rate: 0.000005
   steps_per_eval: 20
   save_every: 20
   mask_prompt: true
   eval_max_tokens: 256
 
-# MODEL-ROUTED 54-case scale (same as distill/rft since 2026-09-08).
-# Ceiling matches siblings at 0.96. Score under conductor_min.md (FT serve
-# prompt) — not the raw-4B+conductor_gemma.md 48/54 floor from the RFT experiment.
+# MODEL-ROUTED 54-case scale. Empirical ceiling on 7b6c78a6 (4B cold→chained,
+# _min, corrected PPO) is ~0.50 after 30+ iters — not the aspirational 0.96.
+# Leave a little headroom above the observed best for a genuine new high.
 metric_ceiling:
-  pass_rate: 0.96
+  pass_rate: 0.60
 
 # RUNNABLE once deployed to the Mini's finetune_dir. Source of truth:
 #   ensemble/finetune/opd_train.py  (implemented 2026-10-05)

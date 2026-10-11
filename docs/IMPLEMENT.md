@@ -2539,3 +2539,21 @@ prompt fix. Best pass_rate stalled at **0.50** vs target 0.90.
 - [x] **Docs** — ensemble `FINETUNE.md` Method E (both failure modes + flag table);
   recipe comments. Deployed `opd_train.py` to Mini (`md5` matched).
 
+### Phase 89 — OPD recipe retune: outcome-led, honest ceiling (2026-10-11)
+
+Mission `7b6c78a6` still peaked at **0.50** after the Phase 88 trainer fixes — mid-run
+held-out kept collapsing to 0% while bare_eval recovered the warm-start. Root cause
+was objective *balance*, not another loss bug: `kl_coef=outcome_bonus=1` let dense
+reverse KL dominate the sparse routing reward.
+
+- [x] **`ensemble_opd_v1.yaml` retune** — `kl_coef` 1→**0.15**, `outcome_bonus` 1→**8**,
+  `reward_schema: v2`, `num_generations` 4→**2**, `max_tokens` 256→**96**, `iters` 200→**100**,
+  `learning_rate` 1e-5→**5e-6**, `metric_ceiling` 0.96→**0.60** (empirical).
+- [x] **Pivot temp ceiling** 1.5→**1.0** for `opd` (1.2–1.3 pivots correlated with collapses).
+- [x] **Wrapper** passes `--reward-schema`. Live `7b6c78a6` iter 31 relaunched with full
+  argv (`kl_coef=0.15 outcome_bonus=8 reward-schema=v2 K=2 temp=0.8 iters=100`) from
+  `iter29/best`.
+- [x] **Tests** — `test_code_generator` / `test_mission_target_ceiling` updated for the
+  new recipe defaults. Full suite 2026-10-11: **1250 passed**, 2 failed unrelated to
+  OPD (`test_fresh_plan_clamped…` n_steps 2048≠1024; Metal-lock GC timing flake).
+

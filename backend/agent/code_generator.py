@@ -1322,6 +1322,7 @@ Prompt template: {prompt_template}
 Teacher (logprob-capable, same family): {teacher_model}
 Sampling: num_generations={num_generations}, temp={temp}, max_tokens={max_tokens}
 KL: kl_coef={kl_coef}, outcome_bonus={outcome_bonus}, clip_epsilon={clip_epsilon}, adv_clip={adv_clip}
+Reward schema: {reward_schema}
 LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
 Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
 save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
@@ -1357,6 +1358,7 @@ The script must:
                "--outcome-bonus", "{outcome_bonus}",
                "--clip-epsilon", "{clip_epsilon}",
                "--adv-clip", "{adv_clip}",
+               "--reward-schema", "{reward_schema}",
                "--num-layers", "{num_layers}",
                "--lora-rank", "{lora_rank}",
                "--lora-scale", "{lora_scale}",
@@ -1850,8 +1852,9 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # identical and rejection sampling has nothing to reject.
     "rft":     {"k_samples": (4, 16), "temp": (0.7, 1.5)},
     # OPD samples student rollouts then grades them with teacher reverse KL —
-    # num_generations and temp are the diversity levers (same shape as GRPO).
-    "opd":     {"num_generations": (2, 4), "temp": (0.7, 1.5)},
+    # num_generations and temp are the diversity levers. Temp ceiling 1.0:
+    # 7b6c78a6 pivots to 1.2–1.3 repeatedly collapsed mid-run held-out to 0%.
+    "opd":     {"num_generations": (2, 4), "temp": (0.7, 1.0)},
     # prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},

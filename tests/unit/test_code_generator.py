@@ -2344,7 +2344,7 @@ def test_opd_passes_teacher_and_sampling_args(tmp_path, monkeypatch):
 def test_opd_pivot_lever_is_num_generations_and_temp():
     from backend.agent.code_generator import _clamp_finetune_pivot_hp
     assert _clamp_finetune_pivot_hp("opd", {"num_generations": 99, "temp": 9.0}) == {
-        "num_generations": 4, "temp": 1.5}
+        "num_generations": 4, "temp": 1.0}
     assert _clamp_finetune_pivot_hp("opd", {"num_generations": 1}) == {"num_generations": 2}
     assert _clamp_finetune_pivot_hp("opd", {"iters": 700, "k_samples": 8}) == {}
 
@@ -2352,12 +2352,14 @@ def test_opd_pivot_lever_is_num_generations_and_temp():
 def test_opd_resolve_hyperparams_recipe_authoritative():
     from backend.agent.code_generator import _resolve_hyperparams
     hp = _resolve_hyperparams("opd", {"learning_rate": 0.9, "num_layers": 99, "kl_coef": 9.0})
-    assert hp["learning_rate"] == 0.00001
+    assert hp["learning_rate"] == 0.000005
     assert hp["num_layers"] == 8
-    assert hp["kl_coef"] == 1.0
-    assert hp["outcome_bonus"] == 1.0
+    assert hp["kl_coef"] == 0.15
+    assert hp["outcome_bonus"] == 8.0
     assert hp["adv_clip"] == 5.0
     assert hp["clip_epsilon"] == 0.2
+    assert hp["num_generations"] == 2
+    assert hp["reward_schema"] == "v2"
     assert hp["teacher_model"] == "mlx-community/gemma-3-12b-it-4bit"
     assert hp["prompt_template"] == "backend/prompts/conductor_min.md"
 
@@ -2366,6 +2368,9 @@ def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
     p = _opd_prompt(tmp_path, monkeypatch)
     assert '"--adv-clip", "5.0"' in p or '"--adv-clip", "5"' in p
     assert '"--clip-epsilon", "0.2"' in p
+    assert '"--reward-schema", "v2"' in p
+    assert '"--kl-coef", "0.15"' in p
+    assert '"--outcome-bonus", "8.0"' in p or '"--outcome-bonus", "8"' in p
 
 
 def test_prompt_pivot_lever_is_empty():
