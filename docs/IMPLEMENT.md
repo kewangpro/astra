@@ -2548,12 +2548,29 @@ reverse KL dominate the sparse routing reward.
 
 - [x] **`ensemble_opd_v1.yaml` retune** — `kl_coef` 1→**0.15**, `outcome_bonus` 1→**8**,
   `reward_schema: v2`, `num_generations` 4→**2**, `max_tokens` 256→**96**, `iters` 200→**100**,
-  `learning_rate` 1e-5→**5e-6**, `metric_ceiling` 0.96→**0.60** (empirical).
+  `learning_rate` 1e-5→**5e-6**, `metric_ceiling` 0.96→**0.60** (then **0.80** after
+  verified lift — see trust check below).
 - [x] **Pivot temp ceiling** 1.5→**1.0** for `opd` (1.2–1.3 pivots correlated with collapses).
 - [x] **Wrapper** passes `--reward-schema`. Live `7b6c78a6` iter 31 relaunched with full
   argv (`kl_coef=0.15 outcome_bonus=8 reward-schema=v2 K=2 temp=0.8 iters=100`) from
   `iter29/best`.
 - [x] **Tests** — `test_code_generator` / `test_mission_target_ceiling` updated for the
-  new recipe defaults. Full suite 2026-10-11: **1250 passed**, 2 failed unrelated to
-  OPD (`test_fresh_plan_clamped…` n_steps 2048≠1024; Metal-lock GC timing flake).
+  new recipe defaults. Full suite 2026-10-11: **1250 passed**, 2 failed (then fixed:
+  CartPole clamp path; Metal `is_metal_available` stub) and pushed as `3b5c94a`.
+- [x] **Trust check (2026-10-11)** — best **0.741** @ iter 42 is trustworthy under the
+  mission contract:
+  - Goal metric is post-iter `bare_eval.py` **MODEL-ROUTED** (54-case), prompt
+    `conductor_min.md`, adapter `adapters/astra_7b6c78a6_iter42` → `/best`
+    (same population/ceiling as distill/grpo). Mid-train held-out is
+    `pass_rate_heldout` / `pass_rate_static_live` only — never sets best.
+  - Telemetry @ iter 42: `pass_rate=0.741`, `pass_rate_static=0.704`,
+    `pass_rate_mcp=0.0`, `pass_rate_prellm=0.588`, `pass_rate_blended=0.641`
+    (= **40/54** model-routed).
+  - Backend log: `raw=0.741 recorded=0.741 baseline=None reliable=True` and
+    chained warm-start to `adapters/astra_7b6c78a6_iter42/best` (weights on Mini
+    mtime matches the eval window).
+  - Caveats: still below sibling floors (raw4b/distill **48/54**, grpo_v9 **46/54**);
+    mid-iter held-out still hits 0% often — ignore for goal; independent Mini
+    re-score deferred while iter 45 occupies Metal. Raised `metric_ceiling` →
+    **0.80**.
 

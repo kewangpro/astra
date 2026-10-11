@@ -73,11 +73,14 @@ hyperparameters:
   mask_prompt: true
   eval_max_tokens: 256
 
-# MODEL-ROUTED 54-case scale. Empirical ceiling on 7b6c78a6 (4B cold→chained,
-# _min, corrected PPO) is ~0.50 after 30+ iters — not the aspirational 0.96.
-# Leave a little headroom above the observed best for a genuine new high.
+# MODEL-ROUTED 54-case scale (same as distill/grpo). Verified on 7b6c78a6
+# outcome-led retune: iter42 bare_eval model-routed **40/54 = 0.741** under
+# conductor_min.md (static 0.704 / blended 0.641 / prellm 0.588; loop logged
+# reliable=True and chained adapters/…/iter42/best). Mid-train held-out is
+# progress-only and still collapses mid-iter — do not use it as the goal.
+# Headroom above 0.741 toward sibling floors (~46–48/54); not the old 0.96 hope.
 metric_ceiling:
-  pass_rate: 0.60
+  pass_rate: 0.80
 
 # RUNNABLE once deployed to the Mini's finetune_dir. Source of truth:
 #   ensemble/finetune/opd_train.py  (implemented 2026-10-05)

@@ -25,7 +25,7 @@ from backend.routers.missions import _CEILING_TARGET_MARGIN, _reject_unreachable
 _DPO_CEILING = 0.93        # admits up to 50/54
 _GRPO_CEILING = 0.91       # admits up to 49/54
 _DISTILL_CEILING = 0.96    # admits up to 52/54
-_OPD_CEILING = 0.60        # empirical 7b6c78a6 ~0.50; was aspirational 0.96
+_OPD_CEILING = 0.80        # verified 7b6c78a6 bare_eval 40/54=0.741; headroom to ~43/54
 _PROMPT_CEILING = 1.0      # admits up to 54/54 (100%), verified achievable
 
 
