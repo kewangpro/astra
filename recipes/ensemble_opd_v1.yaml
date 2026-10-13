@@ -74,13 +74,12 @@ hyperparameters:
   eval_max_tokens: 256
 
 # MODEL-ROUTED 54-case scale (same as distill/grpo). Verified on 7b6c78a6
-# outcome-led retune: iter42 bare_eval model-routed **40/54 = 0.741** under
-# conductor_min.md (static 0.704 / blended 0.641 / prellm 0.588; loop logged
-# reliable=True and chained adapters/…/iter42/best). Mid-train held-out is
-# progress-only and still collapses mid-iter — do not use it as the goal.
-# Headroom above 0.741 toward sibling floors (~46–48/54); not the old 0.96 hope.
+# outcome-led retune under conductor_min.md: iter42 **40/54=0.741**, later
+# best **45/54=0.833** @ iter57 (matched again @ iter60/64/67/70). Mid-train
+# held-out is progress-only and still collapses mid-iter — not the goal.
+# Headroom above 0.833 toward sibling floors (~46–48/54).
 metric_ceiling:
-  pass_rate: 0.80
+  pass_rate: 0.87
 
 # RUNNABLE once deployed to the Mini's finetune_dir. Source of truth:
 #   ensemble/finetune/opd_train.py  (implemented 2026-10-05)

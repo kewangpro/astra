@@ -2572,5 +2572,10 @@ reverse KL dominate the sparse routing reward.
   - Caveats: still below sibling floors (raw4b/distill **48/54**, grpo_v9 **46/54**);
     mid-iter held-out still hits 0% often — ignore for goal; independent Mini
     re-score deferred while iter 45 occupies Metal. Raised `metric_ceiling` →
-    **0.80**.
+    **0.80**, then **0.87** after best reached **0.833 (45/54)** @ iter 57.
+- [x] **Pivot temp clamp hole (2026-10-12)** — Phase 89 set OPD temp ≤1.0 in
+  `code_generator._FINETUNE_PIVOT_RANGES_BY_TASK`, but `LoopStateMachine` still
+  clamped via the flat `_FINETUNE_PIVOT_RANGES` (`temp` ≤1.5), so live pivots on
+  `7b6c78a6` kept applying `temp=1.2`. Pivot path now uses `_clamp_finetune_pivot_hp`;
+  lead-agent OPD bounds updated to 0.7–1.0. Restart astra to pick up.
 

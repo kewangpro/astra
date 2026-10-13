@@ -2345,6 +2345,8 @@ def test_opd_pivot_lever_is_num_generations_and_temp():
     from backend.agent.code_generator import _clamp_finetune_pivot_hp
     assert _clamp_finetune_pivot_hp("opd", {"num_generations": 99, "temp": 9.0}) == {
         "num_generations": 4, "temp": 1.0}
+    # Live 7b6c78a6 pivots proposed 1.2 — must not pass the state_machine path either.
+    assert _clamp_finetune_pivot_hp("opd", {"temp": 1.2}) == {"temp": 1.0}
     assert _clamp_finetune_pivot_hp("opd", {"num_generations": 1}) == {"num_generations": 2}
     assert _clamp_finetune_pivot_hp("opd", {"iters": 700, "k_samples": 8}) == {}
 

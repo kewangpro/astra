@@ -1490,11 +1490,15 @@ class LoopStateMachine:
                                 "LoopStateMachine: dropping non-safelist pivot keys for %s: %s",
                                 plan.get("task_type"), sorted(_dropped),
                             )
-                        adjustments = {
-                            k: self._clamp_finetune_sampling(k, v)
-                            for k, v in adjustments.items()
-                            if k in _safelist
-                        }
+                        # Per-task ranges (code_generator._FINETUNE_PIVOT_RANGES_BY_TASK)
+                        # — not the flat _FINETUNE_PIVOT_RANGES table, which still has
+                        # temp≤1.5 and let OPD pivots on 7b6c78a6 push past the 1.0
+                        # ceiling Phase 89 set in the recipe clamp.
+                        from backend.agent.code_generator import _clamp_finetune_pivot_hp
+                        adjustments = _clamp_finetune_pivot_hp(
+                            plan.get("task_type"),
+                            {k: v for k, v in adjustments.items() if k in _safelist},
+                        )
                         for _stray in ("env_kwargs", "policy_kwargs", "algorithm"):
                             pivot.pop(_stray, None)
                     # Drop keys that aren't valid for the current algorithm so
