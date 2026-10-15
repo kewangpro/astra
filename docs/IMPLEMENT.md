@@ -2578,4 +2578,14 @@ reverse KL dominate the sparse routing reward.
   clamped via the flat `_FINETUNE_PIVOT_RANGES` (`temp` ≤1.5), so live pivots on
   `7b6c78a6` kept applying `temp=1.2`. Pivot path now uses `_clamp_finetune_pivot_hp`;
   lead-agent OPD bounds updated to 0.7–1.0. Restart astra to pick up.
+- [x] **Stall + harvest (2026-10-14)** — mission `stalled` at iter 104:
+  `converged_below_target: best=0.852 unbeaten for 30 iters pivot_count=17`.
+  Final best **0.852 (~46/54)** @ iter **74** under `conductor_min.md` bare_eval
+  MODEL-ROUTED (static 0.887 / blended 0.808 @ that iter). Checkpoint to keep:
+  `adapters/astra_7b6c78a6_iter74/best`. Outcome-led OPD matched the old
+  `grpo_v9_min` floor; further temp pivots (0.95→0.85→0.8) did not beat it.
+  **Do not** grind another same-recipe OPD run from this adapter toward target
+  0.90 — next gains need a different lever (failing-case SFT/RFT or prompt work)
+  or a realistic follow-up target ≤ ceiling **0.87**. Mid-train held-out remains
+  progress-only.
 

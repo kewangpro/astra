@@ -73,11 +73,12 @@ hyperparameters:
   mask_prompt: true
   eval_max_tokens: 256
 
-# MODEL-ROUTED 54-case scale (same as distill/grpo). Verified on 7b6c78a6
-# outcome-led retune under conductor_min.md: iter42 **40/54=0.741**, later
-# best **45/54=0.833** @ iter57 (matched again @ iter60/64/67/70). Mid-train
-# held-out is progress-only and still collapses mid-iter — not the goal.
-# Headroom above 0.833 toward sibling floors (~46–48/54).
+# MODEL-ROUTED 54-case scale (same as distill/grpo). Mission 7b6c78a6
+# (outcome-led, conductor_min.md) peaked at **46/54 = 0.852** @ iter74
+# (`adapters/astra_7b6c78a6_iter74/best`), then stalled (best unbeaten 30
+# iters, pivot_count=17) — matched grpo_v9 floor; temp pivots did not lift
+# further. Mid-train held-out is progress-only. Ceiling sits just above that
+# empirical best; do not set mission targets above it without a new method.
 metric_ceiling:
   pass_rate: 0.87
 
