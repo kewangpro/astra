@@ -39,7 +39,7 @@ ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.
 as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
 finetune_dir/python_bin paths, LoRA config, and all training/eval hyperparameters are supplied
 entirely by the recipe (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml
-/ ensemble_rft_v1.yaml / ensemble_opd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
+/ ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
 mismatched num_layers will crash the run. The only fields you should set are "task_type"
 ("sft", "dpo", "grpo", "distill", "rft", "opd", or "prompt"), "algorithm" (a short label, e.g. "MLX SFT", "DPO", "GRPO",
 "Distill", "RFT", "OPD", "Prompt Optimization"), and "reasoning".
@@ -98,7 +98,7 @@ For sft/dpo/grpo/distill/rft/opd/prompt tasks (Ensemble routing model fine-tunin
 recipe-locked and CANNOT be changed by a pivot — the warm-start adapter path, LoRA config,
 learning_rate, beta, epochs, and everything else are known-good values tuned against a specific
 adapter (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml /
-ensemble_rft_v1.yaml / ensemble_opd_v1.yaml / ensemble_prompt_v1.yaml); any other
+ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_prompt_v1.yaml); any other
 value you propose for them is silently ignored, and so is any algorithm switch (task type is
 locked). The PPO/DQN ranges and escalation-level guidance below do NOT apply to these. The ONLY
 hyperparameters one of these pivots can actually affect, within these bounds:

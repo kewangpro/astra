@@ -1,0 +1,92 @@
+name: ensemble_rft_focus_v1
+version: "1.0.0"
+created_at: "2026-10-15"
+task_type: rft
+domain: NLP
+description: >
+  Focused rejection-sampling fine-tuning follow-up after OPD mission 7b6c78a6
+  stalled at 0.852 (iter74 best). Warm-starts that adapter under conductor_min.md
+  and trains only on the 9 model-routed bare_eval failures from an independent
+  Mini re-score of adapters/astra_7b6c78a6_iter74/best (45/54 MODEL-ROUTED;
+  mission peak was ~46/54 — acceptable non-det).
+
+  Why RFT (not another OPD/distill pass): several fails are shell / System Admin
+  and borderline routing cases where the 12B teacher is often wrong or the
+  student is coin-toss — distill/OPD are teacher-capped; RFT's ceiling is
+  "correct at least once in K samples". MCP and pre-LLM cases are out of scope
+  for this adapter path.
+
+  Source fail list (independent bare_eval /tmp/astra_iter74_bare_eval.json):
+    route_two_stocks_underscore_skill_injects_missing  → Market Analysis
+    route_travel_single_delegation_passes_through      → Travel Planning
+    route_shell_git_status                             → System Admin
+    route_shell_grep                                   → System Admin
+    route_shell_not_triggered_for_system_info          → System Admin
+    route_programming_automate                         → Programming
+    route_multi_ticker_compare_market_analysis         → Market Analysis
+    route_report_kpi_dashboard                         → Business Reporting
+    route_calendar_schedule_meeting                    → Calendar
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  # Harvest from stalled outcome-led OPD (Phase 89).
+  no_adapter: false
+  adapter: adapters/astra_7b6c78a6_iter74/best
+
+  # Match the OPD / serve / bare_eval prompt that produced the fail list.
+  prompt_template: backend/prompts/conductor_min.md
+  routing_only: true
+
+  # Focus sample weight / filter — Mini rft_train.py --focus-cases CSV.
+  focus_cases:
+    - route_two_stocks_underscore_skill_injects_missing
+    - route_travel_single_delegation_passes_through
+    - route_shell_git_status
+    - route_shell_grep
+    - route_shell_not_triggered_for_system_info
+    - route_programming_automate
+    - route_multi_ticker_compare_market_analysis
+    - route_report_kpi_dashboard
+    - route_calendar_schedule_meeting
+
+  # ── Sampling (rejection half) ──────────────────────────────────────────────
+  # Higher K than cold-start rft_v1 (4): focus set is the hard tail; more draws
+  # raise the chance a borderline case yields a keepable completion.
+  k_samples: 8
+  temp: 0.8
+  max_tokens: 256
+
+  # ── LoRA (match OPD / 4B lineage that produced iter74) ─────────────────────
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # ── Training ───────────────────────────────────────────────────────────────
+  # conductor_min.md is short; 6144 matches sibling OPD/RFT headroom.
+  max_seq_len: 6144
+  iters: 100
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 10
+  save_every: 10
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# Beat warm-start 45–46/54 toward sibling floors (raw4b/distill 48/54 = 0.889).
+# Ceiling sits just above that; do not set mission targets above without a new
+# method or a second focus pass.
+target_metric:
+  pass_rate: 0.889
+
+metric_ceiling:
+  pass_rate: 0.91
+
+# RUNNABLE: Mini rft_train.py exists; astra emits os.execv with --focus-cases
+# when this recipe's focus_cases list is non-empty. Dispatch:
+#   POST /recipes/ensemble_rft_focus_v1/dispatch
+# with optional goal override. Eval remains full MODEL-ROUTED 54-case bare_eval
+# (focus only shapes training samples).

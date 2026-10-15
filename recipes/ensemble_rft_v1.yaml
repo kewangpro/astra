@@ -77,22 +77,14 @@ hyperparameters:
 metric_ceiling:
   pass_rate: 0.96
 
-# NOT YET RUNNABLE. ensemble/finetune/rft_train.py does not exist. astra's rft
-# task type is fully wired and dispatches a {finetune_dir}/rft_train.py os.execv
-# wrapper with the args above, but a mission fails at preflight (which now checks
-# for the remote script) until it is authored. It is a recombination of scripts
-# that already exist:
-#   - grpo_train.py already samples K completions per case and scores them with
-#     the same reward function (expected_skill in [t["skill"] for t in tasks]) —
-#     RFT is that sampling+scoring loop, keeping the winners instead of computing
-#     advantages.
-#   - distill_train.py already does the SFT step, the held-out split, and the
-#     eval/checkpoint loop — RFT feeds it self-generated examples instead of
-#     teacher-generated ones.
+# RUNNABLE: Mini rft_train.py exists. Cold-start production-prompt experiment
+# (conductor_gemma.md). For the post-OPD focused follow-up (warm-start
+# 7b6c78a6 iter74/best + conductor_min + 9 MR fails), use ensemble_rft_focus_v1.
 # Expected CLI: --model --adapter|--no-adapter --save-dir --prompt-template
 #   --k-samples --temp --max-tokens --num-layers --lora-rank --lora-scale
 #   --lora-dropout --iters --batch-size --learning-rate --steps-per-eval
 #   --save-every --max-seq-len --eval-max-tokens [--mask-prompt] [--routing-only]
+#   [--focus-cases id,id,...]
 # Expected stdout (parsed by astra, same contract as distill_train.py):
 #   "Baseline: X% (n/total)" + indented static/dynamic-MCP/blended breakdown;
 #   "N examples ready for training"; "Case split: A train / B held-out valid";

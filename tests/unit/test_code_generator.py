@@ -2306,6 +2306,36 @@ def test_rft_pivot_lever_is_k_samples_and_temp():
     assert _clamp_finetune_pivot_hp("rft", {"iters": 700}) == {}
 
 
+def test_focus_cases_flag_csv_and_list():
+    from backend.agent.code_generator import _focus_cases_flag
+    assert _focus_cases_flag({}) == ""
+    assert _focus_cases_flag({"focus_cases": ""}) == ""
+    assert _focus_cases_flag({"focus_cases": "a,b"}) == '"--focus-cases", "a,b",'
+    assert _focus_cases_flag({"focus_cases": ["a", "b"]}) == '"--focus-cases", "a,b",'
+
+
+def test_rft_focus_recipe_emits_focus_cases_and_warm_start(tmp_path, monkeypatch):
+    """ensemble_rft_focus_v1: warm-start iter74/best + 9 MR fails from bare_eval."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "rft",
+        "recipe": "ensemble_rft_focus_v1",
+        "hyperparameters": {},
+        "target_metric": {"pass_rate": 0.889},
+    }
+    p = gen._build_user_prompt("rft", "test-id", plan, str(tmp_path / "ckpt"))
+    assert '"--adapter", "adapters/astra_7b6c78a6_iter74/best",' in p
+    assert '"--no-adapter"' not in p
+    assert "conductor_min.md" in p
+    assert '"--focus-cases", "' in p
+    assert "route_shell_git_status" in p
+    assert "route_report_kpi_dashboard" in p
+    assert '"--k-samples", "8"' in p
+
+
 # ── opd (on-policy distillation) ─────────────────────────────────────────────
 
 def _opd_prompt(tmp_path, monkeypatch):

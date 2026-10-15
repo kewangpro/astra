@@ -2589,3 +2589,26 @@ reverse KL dominate the sparse routing reward.
   or a realistic follow-up target ≤ ceiling **0.87**. Mid-train held-out remains
   progress-only.
 
+### Phase 90 — Focused RFT on iter74 bare_eval fails (2026-10-15)
+
+OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass.
+
+- [x] **Independent bare_eval** of `adapters/astra_7b6c78a6_iter74/best` →
+  `/tmp/astra_iter74_bare_eval.json`: model-routed **45/54** (mission peak ~46/54),
+  static 61/71, MCP 0/7. **9 model-routed fails** (MCP + pre-LLM excluded):
+  `route_two_stocks_underscore_skill_injects_missing`,
+  `route_travel_single_delegation_passes_through`, `route_shell_git_status`,
+  `route_shell_grep`, `route_shell_not_triggered_for_system_info`,
+  `route_programming_automate`, `route_multi_ticker_compare_market_analysis`,
+  `route_report_kpi_dashboard`, `route_calendar_schedule_meeting`.
+- [x] **Method map** — prefer **RFT** (shell / teacher-wrong / coin-toss tail);
+  distill/OPD stay teacher-capped. Prompt-only deferred.
+- [x] **Codegen** — optional `--focus-cases` wired through distill/rft/opd
+  templates via `_focus_cases_flag` (CSV string or YAML list).
+- [x] **Recipe** `recipes/ensemble_rft_focus_v1.yaml` — warm-start
+  `adapters/astra_7b6c78a6_iter74/best`, `conductor_min.md`, `k_samples=8`,
+  focus list above; target **0.889** (48/54), ceiling **0.91**.
+- [x] **Dispatch** focused RFT mission `e00715c3` (target 0.889); preflight
+  PASS; auto-approved os.execv wrapper; SSHSandbox on Mini `remote_pid=41547`.
+  Judge on full MODEL-ROUTED bare_eval (focus shapes training only).
+

@@ -1234,11 +1234,13 @@ The script must:
                "--eval-max-tokens", "{eval_max_tokens}",
                {mask_prompt_flag}
                {routing_only_flag}
+               {focus_cases_flag}
            ],
        )
-   ({mask_prompt_flag} and {routing_only_flag} are each either a single string list
-   element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
-   omitted entirely if empty. Do not insert an empty string element in the list.)"""
+   ({mask_prompt_flag}, {routing_only_flag}, and {focus_cases_flag} are each either
+   a single string list element ending in a comma — e.g. "--mask-prompt", /
+   "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
+   Do not insert an empty string element in the list.)"""
 
 _RFT_TEMPLATE = """\
 Generate a script that runs rejection-sampling fine-tuning by invoking the
@@ -1298,11 +1300,13 @@ The script must:
                "--eval-max-tokens", "{eval_max_tokens}",
                {mask_prompt_flag}
                {routing_only_flag}
+               {focus_cases_flag}
            ],
        )
-   ({mask_prompt_flag} and {routing_only_flag} are each either a single string list
-   element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
-   omitted entirely if empty. Do not insert an empty string element in the list.)"""
+   ({mask_prompt_flag}, {routing_only_flag}, and {focus_cases_flag} are each either
+   a single string list element ending in a comma — e.g. "--mask-prompt", /
+   "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
+   Do not insert an empty string element in the list.)"""
 
 _OPD_TEMPLATE = """\
 Generate a script that runs on-policy distillation by invoking the
@@ -1372,11 +1376,13 @@ The script must:
                "--eval-max-tokens", "{eval_max_tokens}",
                {mask_prompt_flag}
                {routing_only_flag}
+               {focus_cases_flag}
            ],
        )
-   ({mask_prompt_flag} and {routing_only_flag} are each either a single string list
-   element ending in a comma, e.g. "--mask-prompt", / "--routing-only", — or
-   omitted entirely if empty. Do not insert an empty string element in the list.)"""
+   ({mask_prompt_flag}, {routing_only_flag}, and {focus_cases_flag} are each either
+   a single string list element ending in a comma — e.g. "--mask-prompt", /
+   "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
+   Do not insert an empty string element in the list.)"""
 
 _STAR_REMOTE_WRAPPER = """\
 import sys
@@ -1736,6 +1742,9 @@ _ENV_RECIPE: dict = {
     # kept and both declare pass_rate 0.92.
     "distill": "ensemble_distill_gemma4b_v1.yaml",
     "rft": "ensemble_rft_v1.yaml",
+    # Focused RFT follow-up after OPD 7b6c78a6 stall — warm-start iter74/best
+    # on the 9 model-routed bare_eval fails. Prefer dispatch by recipe name.
+    "ensemble_rft_focus_v1": "ensemble_rft_focus_v1.yaml",
     "opd": "ensemble_opd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
@@ -1877,6 +1886,24 @@ def _clamp_finetune_pivot_hp(task_type: str, plan_hp: dict) -> dict:
             continue
         clamped[k] = max(lo, min(hi, v))
     return clamped
+
+
+def _focus_cases_flag(hp: dict) -> str:
+    """Optional ``--focus-cases id,id,...`` argv fragment for Mini finetune CLIs.
+
+    Recipe may set ``focus_cases`` as a CSV string or a list of case ids. Empty /
+    missing → omit the flag entirely (do not emit an empty string list element).
+    """
+    raw = hp.get("focus_cases")
+    if not raw:
+        return ""
+    if isinstance(raw, (list, tuple)):
+        csv = ",".join(str(x).strip() for x in raw if str(x).strip())
+    else:
+        csv = str(raw).strip()
+    if not csv:
+        return ""
+    return f'"--focus-cases", "{csv}",'
 
 
 def _resolve_hyperparams(
@@ -2454,6 +2481,7 @@ class CodeGenerator:
                 ),
                 "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                "focus_cases_flag": _focus_cases_flag(hp),
                 **base,
             }
             return _DISTILL_TEMPLATE.format(**ctx)
@@ -2470,6 +2498,7 @@ class CodeGenerator:
                 ),
                 "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                "focus_cases_flag": _focus_cases_flag(hp),
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)
@@ -2486,6 +2515,7 @@ class CodeGenerator:
                 ),
                 "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                "focus_cases_flag": _focus_cases_flag(hp),
                 **base,
             }
             return _OPD_TEMPLATE.format(**ctx)
