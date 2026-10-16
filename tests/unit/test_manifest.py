@@ -143,6 +143,20 @@ class TestManifestEvaluator:
         perf = next(r for r in m2.requirements if r.check_type == "metric_threshold")
         assert not perf.passed
 
+    def test_pass_rate_rounds_to_three_decimals(self):
+        """50/54 = 0.925925… must meet a target written as 0.926.
+        49/54 = 0.907 must not."""
+        m = generate_manifest("m1", "goal", "rft", {"pass_rate": 0.926})
+        with tempfile.TemporaryDirectory() as d:
+            hit = self._ev().evaluate(m, {"pass_rate": 50 / 54}, d, sandbox_ok=True)
+            miss = self._ev().evaluate(
+                generate_manifest("m2", "goal", "rft", {"pass_rate": 0.926}),
+                {"pass_rate": 49 / 54}, d, sandbox_ok=True,
+            )
+        assert next(r for r in hit.requirements if r.check_type == "metric_threshold").passed
+        assert not next(r for r in miss.requirements if r.check_type == "metric_threshold").passed
+
+
     def test_metric_suffix_match(self):
         """'accuracy' target should match 'validation_accuracy' in metrics."""
         m = generate_manifest("m1", "goal", "ml", {"accuracy": 0.9})

@@ -2633,4 +2633,11 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Second focus pass** — recipe `ensemble_rft_focus_v2.yaml` warm-starts
   `adapters/astra_94117302_iter0/best` on those 5 MR fails (`k_samples=12`,
   target **0.926** = 50/54). Dispatched after service restart.
+- [x] **Target rounding + RFT temp cap (2026-10-16)** — `6f4204c7` hit
+  **0.926 (50/54)** at iters 1–2 (`adapters/astra_6f4204c7_iter2/best`) but
+  `50/54 = 0.925925… < 0.926` so the loop never completed. A temp=1.2 pivot
+  then dropped raw to 0.852. `pass_rate` thresholds now compare at 3 decimals,
+  and a later iter completes once **best** already meets the target. RFT pivot
+  temp ceiling lowered to **1.0**. Stopped the grind; harvest is iter2/best.
+  Full test suite passing: **1,258 / 1,258** (1,238 unit + 20 integration, 573s).
 

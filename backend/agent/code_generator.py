@@ -1861,7 +1861,9 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # means more chances a borderline case yields a correct completion to train
     # on, which is the whole mechanism. temp must stay > 0 or every sample is
     # identical and rejection sampling has nothing to reject.
-    "rft":     {"k_samples": (4, 16), "temp": (0.7, 1.5)},
+    # Temp ceiling 1.0: mission 6f4204c7's pivot to 1.2 dropped a 0.926 best
+    # to 0.852 — same collapse class as OPD above 1.0.
+    "rft":     {"k_samples": (4, 16), "temp": (0.7, 1.0)},
     # OPD samples student rollouts then grades them with teacher reverse KL —
     # num_generations and temp are the diversity levers. Temp ceiling 1.0:
     # 7b6c78a6 pivots to 1.2–1.3 repeatedly collapsed mid-run held-out to 0%.

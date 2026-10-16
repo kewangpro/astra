@@ -104,8 +104,8 @@ locked). The PPO/DQN ranges and escalation-level guidance below do NOT apply to 
 hyperparameters one of these pivots can actually affect, within these bounds:
   - "learning_rate": 1e-5 – 5e-4       (sft only)
   - "iters": 50 – 300                 (sft only)
-  - "temp" (sampling temperature): 0.7 – 1.5           (dpo/grpo/rft)
-  - "temp" (OPD only): 0.7 – 1.0   (7b6c78a6: pivots above 1.0 collapsed mid-run held-out)
+  - "temp" (sampling temperature): 0.7 – 1.5           (dpo/grpo)
+  - "temp" (RFT/OPD): 0.7 – 1.0   (pivots above 1.0 collapsed 7b6c78a6 and 6f4204c7)
   - "k_collect" (DPO only — candidates sampled per case): 4 – 16
   - "num_generations" (GRPO/OPD — rollouts per prompt): 2 – 4
   - "iters" (distill only — mlx_lm.lora training steps): 200 – 800

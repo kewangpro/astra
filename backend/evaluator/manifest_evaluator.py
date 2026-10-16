@@ -17,6 +17,30 @@ from backend.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def metric_meets_threshold(
+    value: float,
+    threshold: float,
+    *,
+    lower_is_better: bool = False,
+    metric_name: str = "",
+) -> bool:
+    """Whether ``value`` satisfies ``threshold``.
+
+    ``pass_rate`` is a discrete fraction (n/54 on the model-routed set) that
+    the loop displays to 3 decimals. ``50/54 = 0.925925…`` must meet a target
+    written as ``0.926`` — otherwise a real hit never completes and later
+    pivots regress (mission ``6f4204c7``).
+    """
+    v = float(value)
+    t = float(threshold)
+    if metric_name == "pass_rate":
+        v = round(v, 3)
+        t = round(t, 3)
+    if lower_is_better:
+        return v <= t
+    return v >= t
+
+
 class ManifestEvaluator:
 
     def evaluate(
@@ -105,13 +129,21 @@ class ManifestEvaluator:
         if value is None:
             return False, None
 
-        ops = {
-            ">=": value >= req.threshold,
-            "<=": value <= req.threshold,
-            ">":  value >  req.threshold,
-            "<":  value <  req.threshold,
-        }
-        passed = ops.get(req.operator, False)
+        name = req.metric_name or ""
+        if req.operator == ">=":
+            passed = metric_meets_threshold(
+                value, req.threshold, lower_is_better=False, metric_name=name,
+            )
+        elif req.operator == "<=":
+            passed = metric_meets_threshold(
+                value, req.threshold, lower_is_better=True, metric_name=name,
+            )
+        elif req.operator == ">":
+            passed = value > req.threshold
+        elif req.operator == "<":
+            passed = value < req.threshold
+        else:
+            passed = False
         evidence = f"{req.metric_name}={value:.4f} (threshold {req.operator} {req.threshold})"
         return passed, evidence if passed else None
 

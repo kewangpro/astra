@@ -1931,6 +1931,27 @@ def test_focus_case_count_and_min_examples_scale():
     assert _min_train_examples_for_run(9) <= 8  # 8 survivors from a 9-case focus OK
 
 
+def test_threshold_met_uses_best_and_rounds_pass_rate():
+    """6f4204c7: best 50/54 must meet target 0.926 even after a later 0.852."""
+    from backend.loop.state_machine import _threshold_met
+
+    class _Pivot:
+        _metric_name = "pass_rate"
+
+        def best_metric_value(self):
+            return 50 / 54
+
+    assert _threshold_met("pass_rate", 0.926, {"pass_rate": 0.852}, _Pivot())
+
+    class _Short:
+        _metric_name = "pass_rate"
+
+        def best_metric_value(self):
+            return 49 / 54
+
+    assert not _threshold_met("pass_rate", 0.926, {"pass_rate": 49 / 54}, _Short())
+
+
 def test_rft_focus_eight_examples_is_reliable(tmp_path):
     """Real incident e00715c3: 9 focus cases → 8 examples → absolute floor of
     10 marked every iter unreliable and floored raw 0.870 back to 0.815."""

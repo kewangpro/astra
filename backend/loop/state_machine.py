@@ -373,6 +373,46 @@ EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
 ITER_CHECKPOINT_WINDOW = 10  # per-iteration checkpoints to keep (rolling)
 
 
+def _threshold_met(name: str, thresh, current_metrics: dict, pivot_engine) -> bool:
+    """True when current or (for the tracked metric) best already meets thresh.
+
+    Best counts so a later regression does not keep a mission training after
+    the goal was hit. ``pass_rate`` is compared at 3 decimals — see
+    ``metric_meets_threshold``.
+    """
+    from backend.evaluator.manifest_evaluator import ManifestEvaluator, metric_meets_threshold
+
+    cur = ManifestEvaluator._resolve(name, current_metrics or {})
+    best = (
+        pivot_engine.best_metric_value()
+        if name == getattr(pivot_engine, "_metric_name", None)
+        else None
+    )
+    vals = [float(x) for x in (cur, best) if x is not None]
+    if not vals:
+        return False
+    lower = name in _LOWER_IS_BETTER
+    effective = min(vals) if lower else max(vals)
+    return metric_meets_threshold(
+        effective, float(thresh), lower_is_better=lower, metric_name=name,
+    )
+
+
+def _metrics_for_manifest(current_metrics: dict, pivot_engine) -> dict:
+    """Copy of current metrics with the tracked goal replaced by the better of
+    current and best, so the manifest agrees with ``_threshold_met``."""
+    metrics = dict(current_metrics or {})
+    name = getattr(pivot_engine, "_metric_name", "")
+    best = pivot_engine.best_metric_value()
+    if not name or best is None:
+        return metrics
+    cur = metrics.get(name)
+    vals = [float(x) for x in (cur, best) if x is not None]
+    if vals:
+        metrics[name] = min(vals) if name in _LOWER_IS_BETTER else max(vals)
+    return metrics
+
+
 class LoopState(str, Enum):
     PLANNING = "planning"
     IMPLEMENTING = "implementing"
@@ -1272,7 +1312,8 @@ class LoopStateMachine:
                 # ── MANIFEST CHECK ────────────────────────────────────────
                 manifest = self._load_or_create_manifest(mission_id, mission, plan=plan)
                 manifest = self._manifest_evaluator.evaluate(
-                    manifest, current_metrics, mission_dir, sandbox_ok=True,
+                    manifest, _metrics_for_manifest(current_metrics, pivot_engine),
+                    mission_dir, sandbox_ok=True,
                 )
                 self._save_manifest(mission_id, manifest)
                 summary = manifest.summary()
@@ -1292,20 +1333,9 @@ class LoopStateMachine:
                     stage_target_met = True
                     if stage_target_metric:
                         for tm_name, tm_thresh in stage_target_metric.items():
-                            cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
-                            best_val = pivot_engine.best_metric_value()
-                            effective_val = cur_val if cur_val is not None else best_val
-                            if effective_val is None:
+                            if not _threshold_met(tm_name, tm_thresh, current_metrics, pivot_engine):
                                 stage_target_met = False
                                 break
-                            if tm_name in _LOWER_IS_BETTER:
-                                if float(effective_val) > float(tm_thresh):
-                                    stage_target_met = False
-                                    break
-                            else:
-                                if float(effective_val) < float(tm_thresh):
-                                    stage_target_met = False
-                                    break
 
                     if stage_target_met and manifest.is_complete():
                         if stage_index < len(stages) - 1:
@@ -1362,20 +1392,9 @@ class LoopStateMachine:
                             terminal_target_met = True
                             if mission.target_metric:
                                 for tm_name, tm_thresh in mission.target_metric.items():
-                                    cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
-                                    best_val = pivot_engine.best_metric_value()
-                                    effective_val = cur_val if cur_val is not None else best_val
-                                    if effective_val is None:
+                                    if not _threshold_met(tm_name, tm_thresh, current_metrics, pivot_engine):
                                         terminal_target_met = False
                                         break
-                                    if tm_name in _LOWER_IS_BETTER:
-                                        if float(effective_val) > float(tm_thresh):
-                                            terminal_target_met = False
-                                            break
-                                    else:
-                                        if float(effective_val) < float(tm_thresh):
-                                            terminal_target_met = False
-                                            break
                             if terminal_target_met:
                                 stage_checkpoints = plan.setdefault("stage_checkpoints", {})
                                 stage_checkpoints[f"stage_{stage_index+1}"] = _last_checkpoint_path
@@ -1399,20 +1418,9 @@ class LoopStateMachine:
                     target_met = True
                     if mission.target_metric:
                         for tm_name, tm_thresh in mission.target_metric.items():
-                            cur_val = self._manifest_evaluator._resolve(tm_name, current_metrics)
-                            best_val = pivot_engine.best_metric_value()
-                            effective_val = cur_val if cur_val is not None else best_val
-                            if effective_val is None:
+                            if not _threshold_met(tm_name, tm_thresh, current_metrics, pivot_engine):
                                 target_met = False
                                 break
-                            if tm_name in _LOWER_IS_BETTER:
-                                if float(effective_val) > float(tm_thresh):
-                                    target_met = False
-                                    break
-                            else:
-                                if float(effective_val) < float(tm_thresh):
-                                    target_met = False
-                                    break
 
                     if manifest.is_complete() and target_met:
                         best = pivot_engine.best_metric_value()

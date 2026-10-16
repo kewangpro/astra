@@ -2300,7 +2300,7 @@ def test_rft_uses_production_prompt_and_long_context(tmp_path, monkeypatch):
 def test_rft_pivot_lever_is_k_samples_and_temp():
     from backend.agent.code_generator import _clamp_finetune_pivot_hp
     assert _clamp_finetune_pivot_hp("rft", {"k_samples": 99, "temp": 9.0}) == {
-        "k_samples": 16, "temp": 1.5}
+        "k_samples": 16, "temp": 1.0}
     assert _clamp_finetune_pivot_hp("rft", {"k_samples": 1}) == {"k_samples": 4}
     # iters is distill's lever, not rft's — and distill's is pinned empty.
     assert _clamp_finetune_pivot_hp("rft", {"iters": 700}) == {}
