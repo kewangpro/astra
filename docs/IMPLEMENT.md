@@ -2617,4 +2617,17 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   recorded 0.815), never chained checkpoints. Fix: `_min_train_examples_for_run`
   scales to `max(3, n_focus//2)` when recipe sets `focus_cases`. Stopped poisoned
   mission; relaunch focused RFT after restart.
+- [x] **Win + harvest (2026-10-15)** — mission `94117302` completed iter 0:
+  MODEL-ROUTED **0.907**, `reliable=True`, chained
+  `adapters/astra_94117302_iter0/best`. Independent Mini bare_eval
+  (`/tmp/astra_94117302_bare_eval.json`, 12.2 min) **confirms 49/54 (90.7%)**
+  under `conductor_min.md` — matches mission; static 63/71, MCP 0/7, blended
+  63/78. Beats OPD harvest 0.852, raw4b/distill floors 48/54, and target 0.889.
+  Registered NLP champion `astra-gemma-3-4b-rft-focus-94117302-iter0`.
+  Remaining **5 MR fails**: `route_aws_cost_visualize_regression`,
+  `route_shell_git_status`, `cap_programming_write_script`,
+  `route_report_kpi_dashboard`, `route_shell_find_large_files` (plus 7 MCP /
+  3 pre-LLM out of scope). Focus set largely fixed; new shell/report/programming
+  misses — next gains: prompt rules or a second focus pass on this 5, not
+  another OPD grind.
 

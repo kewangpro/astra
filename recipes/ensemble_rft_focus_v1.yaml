@@ -76,14 +76,15 @@ hyperparameters:
   mask_prompt: true
   eval_max_tokens: 256
 
-# Beat warm-start 45–46/54 toward sibling floors (raw4b/distill 48/54 = 0.889).
-# Ceiling sits just above that; do not set mission targets above without a new
-# method or a second focus pass.
+# Mission 94117302 hit 0.907 (49/54) warm-starting iter74/best — confirmed by
+# independent bare_eval. Default target stays at sibling floor for replays;
+# raise only with a new focus list / method. Champion checkpoint:
+#   adapters/astra_94117302_iter0/best
 target_metric:
   pass_rate: 0.889
 
 metric_ceiling:
-  pass_rate: 0.91
+  pass_rate: 0.93
 
 # RUNNABLE: Mini rft_train.py exists; astra emits os.execv with --focus-cases
 # when this recipe's focus_cases list is non-empty. Dispatch:

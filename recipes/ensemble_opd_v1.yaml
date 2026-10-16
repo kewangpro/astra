@@ -75,10 +75,10 @@ hyperparameters:
 
 # MODEL-ROUTED 54-case scale (same as distill/grpo). Mission 7b6c78a6
 # (outcome-led, conductor_min.md) peaked at **46/54 = 0.852** @ iter74
-# (`adapters/astra_7b6c78a6_iter74/best`), then stalled (best unbeaten 30
-# iters, pivot_count=17) — matched grpo_v9 floor; temp pivots did not lift
-# further. Mid-train held-out is progress-only. Ceiling sits just above that
-# empirical best; do not set mission targets above it without a new method.
+# (`adapters/astra_7b6c78a6_iter74/best`), then stalled — matched grpo_v9
+# floor. Focused RFT follow-up `94117302` (warm-start that adapter) reached
+# **49/54 = 0.907** (`adapters/astra_94117302_iter0/best`). Prefer that
+# champion for serve/eval; do not grind same-recipe OPD toward 0.90.
 metric_ceiling:
   pass_rate: 0.87
 
