@@ -2630,4 +2630,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   3 pre-LLM out of scope). Focus set largely fixed; new shell/report/programming
   misses — next gains: prompt rules or a second focus pass on this 5, not
   another OPD grind.
+- [x] **Second focus pass** — recipe `ensemble_rft_focus_v2.yaml` warm-starts
+  `adapters/astra_94117302_iter0/best` on those 5 MR fails (`k_samples=12`,
+  target **0.926** = 50/54). Dispatched after service restart.
 

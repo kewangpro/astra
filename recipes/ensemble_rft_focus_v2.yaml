@@ -1,0 +1,64 @@
+name: ensemble_rft_focus_v2
+version: "1.0.0"
+created_at: "2026-10-15"
+task_type: rft
+domain: NLP
+description: >
+  Second focused RFT pass after mission 94117302 crowned at 0.907 (49/54).
+  Warm-starts adapters/astra_94117302_iter0/best under conductor_min.md and
+  trains on the 5 remaining model-routed bare_eval failures from the independent
+  Mini re-score (/tmp/astra_94117302_bare_eval.json). MCP and pre-LLM still out
+  of scope.
+
+  Source fail list (5 MR):
+    route_aws_cost_visualize_regression  → Business Reporting
+    route_shell_git_status               → System Admin
+    cap_programming_write_script         → Programming
+    route_report_kpi_dashboard           → Business Reporting
+    route_shell_find_large_files         → System Admin
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  no_adapter: false
+  adapter: adapters/astra_94117302_iter0/best
+
+  prompt_template: backend/prompts/conductor_min.md
+  routing_only: true
+
+  focus_cases:
+    - route_aws_cost_visualize_regression
+    - route_shell_git_status
+    - cap_programming_write_script
+    - route_report_kpi_dashboard
+    - route_shell_find_large_files
+
+  # Slightly higher K — smaller hard tail; more draws help shell/report cases.
+  k_samples: 12
+  temp: 0.8
+  max_tokens: 256
+
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  max_seq_len: 6144
+  iters: 100
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 10
+  save_every: 10
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# Beat 49/54 toward 50–51/54. Reliability floor scales to max(3, 5//2)=3.
+target_metric:
+  pass_rate: 0.926
+
+metric_ceiling:
+  pass_rate: 0.96
+
+# Dispatch: POST /recipes/ensemble_rft_focus_v2/dispatch

@@ -1745,6 +1745,8 @@ _ENV_RECIPE: dict = {
     # Focused RFT follow-up after OPD 7b6c78a6 stall — warm-start iter74/best
     # on the 9 model-routed bare_eval fails. Prefer dispatch by recipe name.
     "ensemble_rft_focus_v1": "ensemble_rft_focus_v1.yaml",
+    # Second focus pass on the 5 remaining MR fails after 94117302 @ 0.907.
+    "ensemble_rft_focus_v2": "ensemble_rft_focus_v2.yaml",
     "opd": "ensemble_opd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
