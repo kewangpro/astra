@@ -1915,6 +1915,41 @@ def test_distill_diagnostics_too_few_examples_is_unreliable(tmp_path):
     assert reliable is False
 
 
+def test_focus_case_count_and_min_examples_scale():
+    """Focused RFT with 9 cases must not inherit the absolute floor of 10 —
+    e00715c3 trained on 8 examples every iter and every win was discarded."""
+    from backend.loop.state_machine import (
+        DISTILL_MIN_TRAIN_EXAMPLES,
+        _focus_case_count,
+        _min_train_examples_for_run,
+    )
+    assert _focus_case_count({}) is None
+    assert _focus_case_count({"focus_cases": "a,b,c"}) == 3
+    assert _focus_case_count({"focus_cases": ["a", "b", "c"]}) == 3
+    assert _min_train_examples_for_run(None) == DISTILL_MIN_TRAIN_EXAMPLES
+    assert _min_train_examples_for_run(9) == 4  # max(3, 9//2)
+    assert _min_train_examples_for_run(9) <= 8  # 8 survivors from a 9-case focus OK
+
+
+def test_rft_focus_eight_examples_is_reliable(tmp_path):
+    """Real incident e00715c3: 9 focus cases → 8 examples → absolute floor of
+    10 marked every iter unreliable and floored raw 0.870 back to 0.815."""
+    sm = _sm_with_log(
+        tmp_path,
+        "Case split: 8 train / 1 held-out valid\n"
+        "8 examples ready for training\n"
+        "Baseline: 83.3% (45/54)\n",
+    )
+    _, unreliable = sm._dpo_run_diagnostics(
+        "m", steps_per_eval=10, task_type="rft", focus_case_count=None,
+    )
+    assert unreliable is False  # full-suite floor still applies without focus
+    _, reliable = sm._dpo_run_diagnostics(
+        "m", steps_per_eval=10, task_type="rft", focus_case_count=9,
+    )
+    assert reliable is True
+
+
 def test_distill_diagnostics_suppresses_baseline_when_case_list_changed(tmp_path):
     """The held-out split is a function of the input case list, not just the seed:
     editing eval_cases.yaml mid-mission reshuffles it, so iteration N's score and

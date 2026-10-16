@@ -2611,4 +2611,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Dispatch** focused RFT mission `e00715c3` (target 0.889); preflight
   PASS; auto-approved os.execv wrapper; SSHSandbox on Mini `remote_pid=41547`.
   Judge on full MODEL-ROUTED bare_eval (focus shapes training only).
+- [x] **Reliability floor bug (2026-10-15)** — `e00715c3` trained on **8**
+  examples every iter (9 focus cases). Absolute `DISTILL_MIN_TRAIN_EXAMPLES=10`
+  marked every score `reliable=False`, floored wins (raw **0.870** @ iter2 →
+  recorded 0.815), never chained checkpoints. Fix: `_min_train_examples_for_run`
+  scales to `max(3, n_focus//2)` when recipe sets `focus_cases`. Stopped poisoned
+  mission; relaunch focused RFT after restart.
 

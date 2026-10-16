@@ -232,8 +232,43 @@ _EVAL_CASE_FAILURE_RE = re.compile(r"^\s*\[\d+/\d+\]\s+\S+:\s+FAILED\s*\(")
 # with a handful of usable teacher labels memorises them and reports a fake-high
 # held-out score. Heuristic floor — below this the run is definitely degenerate;
 # above it, the held-out set size (ensemble-side) is what governs trust.
+#
+# Focused runs (`focus_cases` in the recipe) are an exception: a deliberate
+# 9-case focus legitimately yields ≤9 examples. Applying the absolute floor of
+# 10 there marks every iter unreliable, floors wins (real incident: e00715c3
+# iter2 raw 0.870 discarded), and never chains checkpoints. See
+# `_min_train_examples_for_run`.
 _DISTILL_EXAMPLES_RE = re.compile(r"(\d+)\s+examples ready for training")
 DISTILL_MIN_TRAIN_EXAMPLES = 10
+# Focused-run floor: at least half the focus set must survive filtering, and
+# never less than this absolute minimum (still catches 1–2-example memorisation).
+FOCUS_MIN_TRAIN_EXAMPLES_ABS = 3
+
+
+def _focus_case_count(hp: Optional[dict]) -> Optional[int]:
+    """Number of ids in recipe ``focus_cases`` (CSV string or list), or None."""
+    if not hp:
+        return None
+    raw = hp.get("focus_cases")
+    if not raw:
+        return None
+    if isinstance(raw, (list, tuple)):
+        n = sum(1 for x in raw if str(x).strip())
+    else:
+        n = sum(1 for p in str(raw).split(",") if p.strip())
+    return n if n > 0 else None
+
+
+def _min_train_examples_for_run(focus_case_count: Optional[int] = None) -> int:
+    """Reliability floor for distill/rft/opd ``N examples ready for training``.
+
+    Full-suite runs use ``DISTILL_MIN_TRAIN_EXAMPLES`` (10). Focused runs scale
+    to ``max(FOCUS_MIN_TRAIN_EXAMPLES_ABS, focus_n // 2)`` so a 9-case focus
+    that yields 8 keepable examples is reliable, not silently discarded.
+    """
+    if focus_case_count and focus_case_count > 0:
+        return max(FOCUS_MIN_TRAIN_EXAMPLES_ABS, focus_case_count // 2)
+    return DISTILL_MIN_TRAIN_EXAMPLES
 
 # distill's held-out split is a function of the input case list, not just the
 # per-mission seed: removing or adding a single case in eval_cases.yaml reshuffles
@@ -1028,7 +1063,9 @@ class LoopStateMachine:
                         except (TypeError, ValueError):
                             _spe = 0
                         _baseline, _reliable = self._dpo_run_diagnostics(
-                            mission_id, _spe, task_type=plan.get("task_type", "dpo"),
+                            mission_id, _spe,
+                            task_type=plan.get("task_type", "dpo"),
+                            focus_case_count=_focus_case_count(_eval_hp),
                         )
                         if plan.get("task_type") in ("distill", "rft", "opd"):
                             # Same warm-start bare_eval path as distill/rft —
@@ -1053,13 +1090,26 @@ class LoopStateMachine:
                             or goal_val < _baseline - _margin
                         ):
                             _was_floored = True
-                            _why = (
-                                "best-checkpoint tracker never ran "
-                                f"(<{_spe} training steps) — scored the overfit final adapter"
-                                if not _reliable
-                                else f"raw {goal_val:.3f} < warm-start baseline {_baseline:.3f} "
-                                     f"(margin {_margin:.3f})"
-                            )
+                            if not _reliable:
+                                if plan.get("task_type") in ("distill", "rft", "opd"):
+                                    _min_ex = _min_train_examples_for_run(
+                                        _focus_case_count(_eval_hp)
+                                    )
+                                    _why = (
+                                        f"training example count below reliability floor "
+                                        f"(<{_min_ex}) — held-out score treated as unreliable"
+                                    )
+                                else:
+                                    _why = (
+                                        "best-checkpoint tracker never ran "
+                                        f"(<{_spe} training steps) — scored the overfit "
+                                        "final adapter"
+                                    )
+                            else:
+                                _why = (
+                                    f"raw {goal_val:.3f} < warm-start baseline "
+                                    f"{_baseline:.3f} (margin {_margin:.3f})"
+                                )
                             if _prev_best is None:
                                 # First evaluated iteration regressed. There is no
                                 # chained checkpoint whose score the mission "still
@@ -3014,7 +3064,11 @@ class LoopStateMachine:
             return None
 
     def _dpo_run_diagnostics(
-        self, mission_id: str, steps_per_eval: int, task_type: str = "dpo",
+        self,
+        mission_id: str,
+        steps_per_eval: int,
+        task_type: str = "dpo",
+        focus_case_count: Optional[int] = None,
     ) -> tuple[Optional[float], bool]:
         """Parse this iteration's fine-tune training log for
         (warm_start_baseline, eval_is_reliable).
@@ -3039,9 +3093,10 @@ class LoopStateMachine:
           reports total_steps=500 no matter how few teacher labels actually
           succeeded — a run with 2 usable training examples looks identical to a
           healthy one, overfits them, and reports a fake-high held-out score.
-          For distill the gate is the training-example count instead
-          ("N examples ready for training"), floored at
-          DISTILL_MIN_TRAIN_EXAMPLES.
+          For distill/rft/opd the gate is the training-example count instead
+          ("N examples ready for training"), floored via
+          ``_min_train_examples_for_run(focus_case_count)`` — absolute 10 for
+          full-suite runs, scaled down when the recipe sets ``focus_cases``.
         """
         log_path = self._sandbox.get_log_path(mission_id)
         if not os.path.isfile(log_path):
@@ -3116,12 +3171,19 @@ class LoopStateMachine:
                     _n_examples = int(m.group(1))
                 except ValueError:
                     return baseline, True
-                reliable = _n_examples >= DISTILL_MIN_TRAIN_EXAMPLES
+                _min_examples = _min_train_examples_for_run(focus_case_count)
+                reliable = _n_examples >= _min_examples
                 if not reliable:
                     logger.warning(
-                        "LoopStateMachine: distill run trained on only %d example(s) "
-                        "(< %d) mission=%s — held-out score treated as unreliable",
-                        _n_examples, DISTILL_MIN_TRAIN_EXAMPLES, mission_id,
+                        "LoopStateMachine: distill/rft/opd run trained on only %d "
+                        "example(s) (< %d%s) mission=%s — held-out score treated "
+                        "as unreliable",
+                        _n_examples, _min_examples,
+                        (
+                            f", focus_cases={focus_case_count}"
+                            if focus_case_count else ""
+                        ),
+                        mission_id,
                     )
             return baseline, reliable
         m = _DPO_TOTAL_STEPS_RE.search(text)

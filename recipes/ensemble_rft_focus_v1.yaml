@@ -90,3 +90,7 @@ metric_ceiling:
 #   POST /recipes/ensemble_rft_focus_v1/dispatch
 # with optional goal override. Eval remains full MODEL-ROUTED 54-case bare_eval
 # (focus only shapes training samples).
+#
+# Reliability: astra scales DISTILL_MIN_TRAIN_EXAMPLES down for focus_cases
+# (max(3, n_focus//2)). A 9-case focus that yields 8 keepable examples is
+# reliable — the absolute floor of 10 would discard every win (e00715c3).
