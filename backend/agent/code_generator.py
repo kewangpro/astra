@@ -1747,6 +1747,8 @@ _ENV_RECIPE: dict = {
     "ensemble_rft_focus_v1": "ensemble_rft_focus_v1.yaml",
     # Second focus pass on the 5 remaining MR fails after 94117302 @ 0.907.
     "ensemble_rft_focus_v2": "ensemble_rft_focus_v2.yaml",
+    # Third focus pass: warm-start 6f4204c7 iter1/best on the 3 remaining MR fails.
+    "ensemble_rft_focus_v3": "ensemble_rft_focus_v3.yaml",
     "opd": "ensemble_opd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
