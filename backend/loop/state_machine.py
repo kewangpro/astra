@@ -1199,7 +1199,7 @@ class LoopStateMachine:
                 await self._save_best_policy_kwargs(mission_id, pivot_engine.best_policy_kwargs())
                 self._sync_regression_plan_fields(plan, pivot_engine)
                 # Chain dpo/grpo warm-start adapter forward only when this iteration's
-                # own training genuinely matched or beat the prior best — not every
+                # own training genuinely beat the prior best — not every
                 # raw output (training within one iteration has repeatedly been
                 # observed to degrade pass_rate from its own starting point, see
                 # mission 7fd88324), and never when the result was floored (the
@@ -1207,16 +1207,19 @@ class LoopStateMachine:
                 # checkpoint — chaining it anyway anchors the mission to a regressed
                 # adapter while the DB shows a best it can't reproduce; real
                 # incident: mission 15a1d093). Gated on the raw value vs the prior
-                # best rather than best_metric_iteration() so a genuine tie (fresher
-                # weights, same score) still chains and a floored phantom in the
-                # history can't block it.
+                # best rather than best_metric_iteration() so a floored phantom in
+                # the history can't block a real improvement. A tie does NOT chain:
+                # 6f4204c7 iter1 and iter2 both scored 0.926 in-loop, the tie
+                # forwarded the warm-start to iter2, and independent bare_eval
+                # then showed iter1 at 51/54 and iter2 at 48/54. Keep the
+                # checkpoint that first set the best.
                 active_t = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
                 if (
                     active_t in ("dpo", "grpo", "distill", "rft", "opd", "star")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
-                    and (_prev_best is None or _raw_goal_val >= _prev_best)
+                    and (_prev_best is None or _raw_goal_val > _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
                     _hp_for_chain = _resolve_hyperparams(plan.get("recipe") or active_t, plan.get("hyperparameters", {}))

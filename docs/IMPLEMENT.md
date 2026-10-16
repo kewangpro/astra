@@ -2650,8 +2650,17 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `route_travel_single_delegation_passes_through`,
   `validate_rule8b_lone_schedule_mission_ticker`. Still failing
   `route_aws_cost_visualize_regression`, `route_shell_git_status`. **Do not
-  crown** this adapter. NLP champion stays
-  `astra-gemma-3-4b-rft-focus-94117302-iter0` at **49/54**. Another same-recipe
-  focus pass is not justified until the in-loop 0.926 and this greedy re-score
-  agree.
+  crown** iter2. The in-loop tie had chained past iter1.
+- [x] **iter1 is the real best (2026-10-16)** — independent bare_eval of
+  `adapters/astra_6f4204c7_iter1/best` is **51/54 (94.4%)**, static 64/71,
+  blended 64/78 (`/tmp/astra_6f4204c7_iter1_bare_eval.json`, 10.6 min). Versus
+  the old champion: fixed `cap_programming_write_script`,
+  `route_aws_cost_visualize_regression`, `route_report_kpi_dashboard`,
+  `route_shell_find_large_files`; regressed
+  `route_travel_round_trip_two_tasks`,
+  `route_travel_single_delegation_passes_through`; still failing
+  `route_shell_git_status`. Harvest to keep is iter1/best. Tie-chaining now
+  requires a strict improvement so an equal in-loop score cannot replace the
+  checkpoint that first set the best. Registry champion is still
+  `astra-gemma-3-4b-rft-focus-94117302-iter0` (49/54) until iter1 is crowned.
 
