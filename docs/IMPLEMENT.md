@@ -2640,4 +2640,18 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   and a later iter completes once **best** already meets the target. RFT pivot
   temp ceiling lowered to **1.0**. Stopped the grind; harvest is iter2/best.
   Full test suite passing: **1,258 / 1,258** (1,238 unit + 20 integration, 573s).
+- [x] **Independent re-score of the harvest (2026-10-16)** — Mini bare_eval of
+  `adapters/astra_6f4204c7_iter2/best` (`/tmp/astra_6f4204c7_bare_eval.json`,
+  11.4 min) is **48/54 (88.9%)**, not the mission's 50/54. Static 60/71, MCP 0/7,
+  blended 60/78. Versus the `94117302` champion (49/54): fixed
+  `cap_programming_write_script`, `route_report_kpi_dashboard`,
+  `route_shell_find_large_files`; regressed
+  `route_data_calculate_stats`, `route_stock_generic_market_index_kept`,
+  `route_travel_single_delegation_passes_through`,
+  `validate_rule8b_lone_schedule_mission_ticker`. Still failing
+  `route_aws_cost_visualize_regression`, `route_shell_git_status`. **Do not
+  crown** this adapter. NLP champion stays
+  `astra-gemma-3-4b-rft-focus-94117302-iter0` at **49/54**. Another same-recipe
+  focus pass is not justified until the in-loop 0.926 and this greedy re-score
+  agree.
 
