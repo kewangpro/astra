@@ -119,6 +119,32 @@ class ErrorAnalyzer:
 
         logger.warning("ErrorAnalyzer: fixing %s after %s (iteration %d)", script_path, error_type, iteration)
 
+        # A finetune os.execv wrapper's ModuleNotFoundError is the wrong interpreter
+        # (mlx missing under python3), not a missing import. Never ask the healer to
+        # add gym/PPO — that rewrite is what exhausted retries on bdd6e532.
+        if error_type == "ModuleNotFoundError":
+            from backend.agent.code_generator import CodeGenerator
+            pinned = CodeGenerator._pin_finetune_exec_python(original_code)
+            if pinned != original_code:
+                logger.warning(
+                    "ErrorAnalyzer: finetune wrapper used sys.executable; pinning interpreter instead of rewriting imports"
+                )
+                fixed_path = f"{script_path}.fixed_{iteration}.py"
+                with open(fixed_path, "w") as f:
+                    f.write(pinned)
+                with open(script_path, "w") as f:
+                    f.write(pinned)
+                return fixed_path
+            trainers = (
+                "rft_train.py", "distill_train.py", "opd_train.py", "grpo_train.py",
+                "dpo_train.py", "sft_train.py", "star_train.py",
+            )
+            if any(name in original_code for name in trainers) and "os.execv" in original_code:
+                raise RuntimeError(
+                    "finetune wrapper ModuleNotFoundError is an interpreter problem; "
+                    "refusing to rewrite the os.execv script"
+                )
+
         prior_context = ""
         if prior_errors:
             summaries = "\n".join(

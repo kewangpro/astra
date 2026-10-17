@@ -504,6 +504,31 @@ def test_fix_execv_unpacking_leaves_unrelated_code_alone():
     assert result == code
 
 
+def test_pin_finetune_exec_python_replaces_sys_executable():
+    """bdd6e532: os.execv(sys.executable) ran rft_train.py under python3, which
+    has no mlx. argv already names the finetune interpreter."""
+    code = (
+        'argv = ["/Users/kewang/finetune-env/bin/python", "/Users/kewang/finetune/rft_train.py"]\n'
+        "os.execv(sys.executable, argv)\n"
+    )
+    result = CodeGenerator._pin_finetune_exec_python(code)
+    assert 'os.execv("/Users/kewang/finetune-env/bin/python", argv)' in result
+    assert "sys.executable" not in result.split("os.execv", 1)[1]
+
+
+def test_pin_finetune_exec_python_leaves_absolute_exec_alone():
+    code = (
+        'argv = ["/Users/kewang/finetune-env/bin/python", "/Users/kewang/finetune/rft_train.py"]\n'
+        'os.execv("/Users/kewang/finetune-env/bin/python", argv)\n'
+    )
+    assert CodeGenerator._pin_finetune_exec_python(code) == code
+
+
+def test_pin_finetune_exec_python_leaves_rl_scripts_alone():
+    code = "import gym\nos.execv(sys.executable, argv)\n"
+    assert CodeGenerator._pin_finetune_exec_python(code) == code
+
+
 def test_generate_training_script_writes_train_config(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

@@ -135,6 +135,44 @@ def test_fix_script_strips_markdown_fences(tmp_path):
     assert "import gymnasium" in content
 
 
+def test_fix_script_pins_finetune_interpreter_instead_of_rewriting(tmp_path):
+    """ModuleNotFoundError: mlx on an os.execv wrapper must not become a gym script."""
+    script = tmp_path / "train.py"
+    script.write_text(
+        'argv = ["/Users/kewang/finetune-env/bin/python", "/Users/kewang/finetune/rft_train.py"]\n'
+        "os.execv(sys.executable, argv)\n"
+    )
+    mlx_error = (
+        "Traceback (most recent call last):\n"
+        '  File "/Users/kewang/finetune/rft_train.py", line 29, in <module>\n'
+        "    import mlx.core as mx\n"
+        "ModuleNotFoundError: No module named 'mlx'\n"
+    )
+    provider = _make_provider("import gym\nfrom stable_baselines3 import PPO\n")
+    analyzer = ErrorAnalyzer(provider)
+    path = asyncio.run(analyzer.fix_script(str(script), mlx_error, iteration=1))
+    text = (tmp_path / "train.py").read_text()
+    assert "gym" not in text
+    assert 'os.execv("/Users/kewang/finetune-env/bin/python", argv)' in text
+    assert path.endswith(".fixed_1.py")
+    provider.generate.assert_not_called()
+
+
+def test_fix_script_refuses_to_rewrite_already_pinned_wrapper(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        'argv = ["/Users/kewang/finetune-env/bin/python", "/Users/kewang/finetune/rft_train.py"]\n'
+        'os.execv("/Users/kewang/finetune-env/bin/python", argv)\n'
+    )
+    mlx_error = "ModuleNotFoundError: No module named 'mlx'\n"
+    provider = _make_provider("import gym\n")
+    analyzer = ErrorAnalyzer(provider)
+    with pytest.raises(RuntimeError, match="interpreter"):
+        asyncio.run(analyzer.fix_script(str(script), mlx_error, iteration=1))
+    provider.generate.assert_not_called()
+    assert "gym" not in script.read_text()
+
+
 def test_fix_script_raises_if_script_missing(tmp_path):
     provider = _make_provider()
     analyzer = ErrorAnalyzer(provider)

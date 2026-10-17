@@ -2147,6 +2147,9 @@ class CodeGenerator:
             code = self._fix_checkpoint_paths(code, checkpoint_dir)
             # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
             code = self._fix_execv_unpacking(code)
+            # os.execv(sys.executable) runs rft_train.py under the sandbox launcher
+            # (often plain python3), which has no mlx. Pin the finetune interpreter.
+            code = self._pin_finetune_exec_python(code)
 
         script_path = os.path.abspath(os.path.join(settings.data_path, "missions", mission_id, "train.py"))
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -2763,6 +2766,38 @@ class CodeGenerator:
         fixed = re.sub(pattern, r'os.execv(\1[0], \1)', code)
         if fixed != code:
             logger.info("CodeGenerator: fixed os.execv(*argv) star-unpacking to os.execv(argv[0], argv)")
+        return fixed
+
+    @staticmethod
+    def _pin_finetune_exec_python(code: str) -> str:
+        """Force os.execv onto the absolute finetune interpreter named in the script.
+
+        Real incident (bdd6e532): the code model emitted os.execv(sys.executable, argv)
+        for an RFT wrapper. The SSH sandbox launches train.py with plain python3, so
+        sys.executable has no mlx and rft_train.py dies with ModuleNotFoundError. The
+        error healer then treated that as a missing import and rewrote the wrapper into
+        a gym/PPO script, exhausting sandbox retries. argv[0] already names
+        finetune-env/bin/python; exec that path, not the launcher.
+        """
+        import re
+        trainers = (
+            "rft_train.py", "distill_train.py", "opd_train.py", "grpo_train.py",
+            "dpo_train.py", "sft_train.py", "star_train.py",
+        )
+        if not code or not any(name in code for name in trainers):
+            return code
+        match = re.search(r'["\'](/[^"\']+/python(?:\d+(?:\.\d+)*)?)["\']', code)
+        if not match:
+            return code
+        py = match.group(1)
+        fixed = re.sub(
+            r'os\.execv\(\s*sys\.executable\s*,',
+            f'os.execv("{py}",',
+            code,
+            count=1,
+        )
+        if fixed != code:
+            logger.info("CodeGenerator: pinned os.execv to %s (was sys.executable)", py)
         return fixed
 
     @staticmethod
