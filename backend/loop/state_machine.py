@@ -241,7 +241,9 @@ _EVAL_CASE_FAILURE_RE = re.compile(r"^\s*\[\d+/\d+\]\s+\S+:\s+FAILED\s*\(")
 _DISTILL_EXAMPLES_RE = re.compile(r"(\d+)\s+examples ready for training")
 DISTILL_MIN_TRAIN_EXAMPLES = 10
 # Focused-run floor: at least half the focus set must survive filtering, and
-# never less than this absolute minimum (still catches 1–2-example memorisation).
+# never less than this absolute minimum (still catches 1–2-example memorisation
+# on a larger focus). Capped at the focus size so a 2-case run, which can only
+# keep 2 examples, is not marked unreliable and refused a chain.
 FOCUS_MIN_TRAIN_EXAMPLES_ABS = 3
 
 
@@ -263,11 +265,14 @@ def _min_train_examples_for_run(focus_case_count: Optional[int] = None) -> int:
     """Reliability floor for distill/rft/opd ``N examples ready for training``.
 
     Full-suite runs use ``DISTILL_MIN_TRAIN_EXAMPLES`` (10). Focused runs scale
-    to ``max(FOCUS_MIN_TRAIN_EXAMPLES_ABS, focus_n // 2)`` so a 9-case focus
-    that yields 8 keepable examples is reliable, not silently discarded.
+    to ``max(FOCUS_MIN_TRAIN_EXAMPLES_ABS, focus_n // 2)``, then cap at the
+    focus size. A 9-case focus that yields 8 keepable examples stays reliable.
+    A 2-case focus can only emit 2 examples; an uncapped floor of 3 would
+    discard every gain.
     """
     if focus_case_count and focus_case_count > 0:
-        return max(FOCUS_MIN_TRAIN_EXAMPLES_ABS, focus_case_count // 2)
+        scaled = max(FOCUS_MIN_TRAIN_EXAMPLES_ABS, focus_case_count // 2)
+        return min(focus_case_count, scaled)
     return DISTILL_MIN_TRAIN_EXAMPLES
 
 # distill's held-out split is a function of the input case list, not just the

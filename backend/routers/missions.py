@@ -28,17 +28,27 @@ router = APIRouter(prefix="/missions", tags=["missions"])
 _CEILING_TARGET_MARGIN = 0.005
 
 
-def _reject_unreachable_target(task_type: str, target_metric: dict) -> None:
+def _reject_unreachable_target(
+    task_type: str, target_metric: dict, recipe: str = "",
+) -> None:
     """Reject a mission whose target exceeds the recipe's empirically-observed
     ceiling. Real incident: mission ce2828f4 (DPO, target pass_rate=0.85) ran
     700+ iterations / 20 days stuck at 0.833 — the model was already converged
     and no in-loop lever could close the last 0.017. Sister mission 43517dd5,
-    same recipe with target 0.80, completed at 0.833 immediately."""
-    if not task_type or not target_metric:
+    same recipe with target 0.80, completed at 0.833 immediately.
+
+    A named recipe's own ``metric_ceiling`` wins over the task-type default.
+    Focused RFT dispatches are task_type ``rft`` but their ceiling lives on
+    the focus yaml; using only the cold-start file rejects a 54/54 follow-up
+    after the cold-start ceiling (0.96) has already been beaten.
+    """
+    if not target_metric or not (task_type or recipe):
         return
     from backend.agent.code_generator import recipe_metric_ceiling
 
-    ceiling = recipe_metric_ceiling(task_type)
+    ceiling = recipe_metric_ceiling(recipe) if recipe else {}
+    if not ceiling:
+        ceiling = recipe_metric_ceiling(task_type)
     for name, tgt in target_metric.items():
         cap = ceiling.get(name)
         if cap is None:
@@ -202,8 +212,12 @@ async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_
     _reject_incoherent_task_type(
         mission_dict.get("task_type", ""), mission_dict.get("target_metric") or {}
     )
+    _plan = mission_dict.get("current_plan") or {}
+    _recipe_name = _plan.get("recipe") if isinstance(_plan, dict) else ""
     _reject_unreachable_target(
-        mission_dict.get("task_type", ""), mission_dict.get("target_metric") or {}
+        mission_dict.get("task_type", ""),
+        mission_dict.get("target_metric") or {},
+        recipe=_recipe_name or "",
     )
 
     import uuid

@@ -50,6 +50,15 @@ def test_prompt_recipe_declares_pass_rate_ceiling():
     assert recipe_metric_ceiling("prompt").get("pass_rate") == pytest.approx(_PROMPT_CEILING)
 
 
+def test_named_recipe_ceiling_overrides_task_type_default():
+    """Focus v4 may target 54/54 even though the rft task-type ceiling is 0.96."""
+    with pytest.raises(HTTPException):
+        _reject_unreachable_target("rft", {"pass_rate": 1.0})
+    _reject_unreachable_target(
+        "rft", {"pass_rate": 1.0}, recipe="ensemble_rft_focus_v4",
+    )
+
+
 def test_distill_target_above_ceiling_is_rejected():
     ceiling = recipe_metric_ceiling("distill")["pass_rate"]
     with pytest.raises(HTTPException) as exc:

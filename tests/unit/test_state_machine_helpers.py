@@ -1929,6 +1929,8 @@ def test_focus_case_count_and_min_examples_scale():
     assert _min_train_examples_for_run(None) == DISTILL_MIN_TRAIN_EXAMPLES
     assert _min_train_examples_for_run(9) == 4  # max(3, 9//2)
     assert _min_train_examples_for_run(9) <= 8  # 8 survivors from a 9-case focus OK
+    assert _min_train_examples_for_run(3) == 3
+    assert _min_train_examples_for_run(2) == 2  # cannot exceed the focus size
 
 
 def test_threshold_met_uses_best_and_rounds_pass_rate():
