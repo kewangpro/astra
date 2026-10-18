@@ -1,0 +1,67 @@
+name: ensemble_rft_focus_v6
+version: "1.0.0"
+created_at: "2026-10-18"
+task_type: rft
+domain: NLP
+description: >
+  Sixth focused RFT pass. Warm-starts the verified harvest
+  adapters/astra_2dab4f67_iter32/best (independent bare_eval 53/54) under
+  conductor_min.md. Targets the remaining model-routed miss
+  route_shell_git_status (model invents skill "Git") with curated gold
+  mocks + shell/programming contrast anchors so a 1-example memorization
+  pass cannot wipe the rest of the suite.
+
+  Requires ensemble-side fixes synced to Mini first:
+    - score_completion treats invented skill names as -0.5
+    - mock/augmented thoughts reject skill="Git"
+    - rft_train focus gold-overrides self-samples with mock_llm_response
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  no_adapter: false
+  adapter: adapters/astra_2dab4f67_iter32/best
+
+  prompt_template: backend/prompts/conductor_min.md
+  routing_only: true
+
+  # Target + shell neighbors + programming contrasts + two Business Reporting
+  # anchors (these regressed under prompt-hint experiments).
+  focus_cases:
+    - route_shell_git_status
+    - route_shell_ls_directory
+    - route_shell_grep
+    - route_shell_tail_log
+    - route_shell_find_large_files
+    - route_shell_disk_usage
+    - route_programming_python_script
+    - route_programming_write_function
+    - route_aws_cost_visualize_regression
+    - route_report_monthly_revenue
+
+  k_samples: 8
+  temp: 0.8
+  max_tokens: 256
+
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  max_seq_len: 6144
+  iters: 80
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 10
+  save_every: 10
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# 54/54 = 1.0. Reliability floor for 10 focus cases is min(10, max(3, 5)) = 5.
+target_metric:
+  pass_rate: 1.0
+
+metric_ceiling:
+  pass_rate: 1.0

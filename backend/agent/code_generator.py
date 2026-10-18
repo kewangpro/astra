@@ -1753,6 +1753,8 @@ _ENV_RECIPE: dict = {
     "ensemble_rft_focus_v4": "ensemble_rft_focus_v4.yaml",
     # Fifth focus pass: warm-start 2dab4f67 iter32/best on the 1 remaining MR miss.
     "ensemble_rft_focus_v5": "ensemble_rft_focus_v5.yaml",
+    # Sixth focus: gold-backed shell mix from 2dab4f67 iter32; invents skill "Git".
+    "ensemble_rft_focus_v6": "ensemble_rft_focus_v6.yaml",
     "opd": "ensemble_opd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
