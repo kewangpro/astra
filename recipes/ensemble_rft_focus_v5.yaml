@@ -1,0 +1,53 @@
+name: ensemble_rft_focus_v5
+version: "1.0.0"
+created_at: "2026-10-17"
+task_type: rft
+domain: NLP
+description: >
+  Fifth focused RFT pass. Warm-starts the verified harvest
+  adapters/astra_2dab4f67_iter32/best (independent bare_eval 53/54) under
+  conductor_min.md and trains on the one remaining model-routed miss.
+
+  Versus 8ef08e64 (52/54), iter32 fixed
+  validate_rule8b_lone_schedule_mission_ticker and
+  validate_rule11b_email_depends_on_ma, and regressed:
+    route_shell_git_status  → System Admin
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  no_adapter: false
+  adapter: adapters/astra_2dab4f67_iter32/best
+
+  prompt_template: backend/prompts/conductor_min.md
+  routing_only: true
+
+  focus_cases:
+    - route_shell_git_status
+
+  k_samples: 12
+  temp: 0.8
+  max_tokens: 256
+
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  max_seq_len: 6144
+  iters: 100
+  batch_size: 1
+  learning_rate: 0.00001
+  steps_per_eval: 10
+  save_every: 10
+  mask_prompt: true
+  eval_max_tokens: 256
+
+# 54/54 = 1.0. Reliability floor for 1 focus case is min(1, max(3, 0)) = 1.
+target_metric:
+  pass_rate: 1.0
+
+metric_ceiling:
+  pass_rate: 1.0
