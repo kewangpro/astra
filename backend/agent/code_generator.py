@@ -1301,12 +1301,14 @@ The script must:
                {mask_prompt_flag}
                {routing_only_flag}
                {focus_cases_flag}
+               {force_gold_cases_flag}
            ],
        )
-   ({mask_prompt_flag}, {routing_only_flag}, and {focus_cases_flag} are each either
-   a single string list element ending in a comma — e.g. "--mask-prompt", /
-   "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
-   Do not insert an empty string element in the list.)"""
+   ({mask_prompt_flag}, {routing_only_flag}, {focus_cases_flag}, and
+   {force_gold_cases_flag} are each either a single string list element ending in
+   a comma — e.g. "--mask-prompt", / "--routing-only", /
+   "--focus-cases", "id1,id2", / "--force-gold-cases", "id", — or omitted
+   entirely if empty. Do not insert an empty string element in the list.)"""
 
 _OPD_TEMPLATE = """\
 Generate a script that runs on-policy distillation by invoking the
@@ -1755,6 +1757,8 @@ _ENV_RECIPE: dict = {
     "ensemble_rft_focus_v5": "ensemble_rft_focus_v5.yaml",
     # Sixth focus: gold-backed shell mix from 2dab4f67 iter32; invents skill "Git".
     "ensemble_rft_focus_v6": "ensemble_rft_focus_v6.yaml",
+    # Seventh: full-suite RFT + surgical --force-gold-cases for git only (v6 stall).
+    "ensemble_rft_focus_v7": "ensemble_rft_focus_v7.yaml",
     "opd": "ensemble_opd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
@@ -1900,13 +1904,13 @@ def _clamp_finetune_pivot_hp(task_type: str, plan_hp: dict) -> dict:
     return clamped
 
 
-def _focus_cases_flag(hp: dict) -> str:
-    """Optional ``--focus-cases id,id,...`` argv fragment for Mini finetune CLIs.
+def _csv_cases_flag(hp: dict, key: str, cli_flag: str) -> str:
+    """Optional ``--{cli_flag} id,id,...`` argv fragment for Mini finetune CLIs.
 
-    Recipe may set ``focus_cases`` as a CSV string or a list of case ids. Empty /
+    Recipe may set ``key`` as a CSV string or a list of case ids. Empty /
     missing → omit the flag entirely (do not emit an empty string list element).
     """
-    raw = hp.get("focus_cases")
+    raw = hp.get(key)
     if not raw:
         return ""
     if isinstance(raw, (list, tuple)):
@@ -1915,7 +1919,21 @@ def _focus_cases_flag(hp: dict) -> str:
         csv = str(raw).strip()
     if not csv:
         return ""
-    return f'"--focus-cases", "{csv}",'
+    return f'"{cli_flag}", "{csv}",'
+
+
+def _focus_cases_flag(hp: dict) -> str:
+    """Optional ``--focus-cases id,id,...`` argv fragment for Mini finetune CLIs."""
+    return _csv_cases_flag(hp, "focus_cases", "--focus-cases")
+
+
+def _force_gold_cases_flag(hp: dict) -> str:
+    """Optional ``--force-gold-cases id,id,...`` argv fragment for RFT.
+
+    Surgical curated-mock injection — must NOT be the whole focus list
+    (astra 7cc3beb4: blanket focus-gold → 52/54 below warm-start 53/54).
+    """
+    return _csv_cases_flag(hp, "force_gold_cases", "--force-gold-cases")
 
 
 def _resolve_hyperparams(
@@ -2514,6 +2532,7 @@ class CodeGenerator:
                 "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
                 "focus_cases_flag": _focus_cases_flag(hp),
+                "force_gold_cases_flag": _force_gold_cases_flag(hp),
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)

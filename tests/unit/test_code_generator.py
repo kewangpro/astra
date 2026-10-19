@@ -2339,6 +2339,20 @@ def test_focus_cases_flag_csv_and_list():
     assert _focus_cases_flag({"focus_cases": ["a", "b"]}) == '"--focus-cases", "a,b",'
 
 
+def test_force_gold_cases_flag_csv_and_list():
+    from backend.agent.code_generator import _force_gold_cases_flag
+    assert _force_gold_cases_flag({}) == ""
+    assert _force_gold_cases_flag({"force_gold_cases": ""}) == ""
+    assert (
+        _force_gold_cases_flag({"force_gold_cases": "route_shell_git_status"})
+        == '"--force-gold-cases", "route_shell_git_status",'
+    )
+    assert (
+        _force_gold_cases_flag({"force_gold_cases": ["a", "b"]})
+        == '"--force-gold-cases", "a,b",'
+    )
+
+
 def test_rft_focus_recipe_emits_focus_cases_and_warm_start(tmp_path, monkeypatch):
     """ensemble_rft_focus_v1: warm-start iter74/best + 9 MR fails from bare_eval."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))

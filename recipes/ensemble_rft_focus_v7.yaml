@@ -1,0 +1,52 @@
+name: ensemble_rft_focus_v7
+version: "1.0.0"
+created_at: "2026-10-19"
+task_type: rft
+domain: NLP
+description: >
+  Seventh RFT pass after focus v6 (7cc3beb4) stalled at 52/54. Root cause:
+  blanket focus-gold overrode 7/8 train mocks and turned the run into tiny-set
+  SFT — it fixed route_shell_git_status (invented skill "Git") but forgot other
+  model-routed cases. This recipe trains the FULL learnable suite from the
+  verified harvest adapters/astra_2dab4f67_iter32/best and surgically injects
+  curated gold ONLY for route_shell_git_status via --force-gold-cases.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-4b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  no_adapter: false
+  adapter: adapters/astra_2dab4f67_iter32/best
+
+  prompt_template: backend/prompts/conductor_min.md
+  routing_only: true
+
+  # Full suite — do NOT set focus_cases (v6's narrow gold set caused forgetting).
+  force_gold_cases:
+    - route_shell_git_status
+
+  k_samples: 4
+  temp: 0.8
+  max_tokens: 256
+
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  max_seq_len: 6144
+  # Softer / shorter than v6 so gold injection cannot wipe the warm-start.
+  iters: 40
+  batch_size: 1
+  learning_rate: 0.000005
+  steps_per_eval: 10
+  save_every: 10
+  mask_prompt: true
+  eval_max_tokens: 256
+
+target_metric:
+  pass_rate: 1.0
+
+metric_ceiling:
+  pass_rate: 1.0
