@@ -1,0 +1,52 @@
+name: ensemble_grpo_1b_v1
+version: "1.0.0"
+created_at: "2026-10-21"
+task_type: grpo
+domain: NLP
+description: >
+  Phase 2b: GRPO on the 1B cascade planner after SFT v5 (15aa4462) hit 48/54 MR.
+  Warm-starts adapters/astra_15aa4462_iter0/best under conductor_min.md with the
+  same all-layers LoRA shape as the 1B SFT lineage. grpo_train auto-focuses
+  baseline failures (the 6 remaining model-routed misses). Target 50/54.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+
+  adapter: adapters/astra_15aa4462_iter0/best
+  prompt_template: backend/prompts/conductor_min.md
+
+  # Match 1B SFT LoRA shape (configs_1b_v4 / ensemble_sft_1b_v5)
+  num_layers: -1
+  lora_rank: 16
+  lora_scale: 20.0
+  lora_dropout: 0.0
+
+  # Short 1B GRPO (~20 min / 100 steps per FINETUNE.md Phase 2b)
+  iters: 100
+  num_generations: 2
+  temp: 1.0
+  max_tokens: 96
+  eval_max_tokens: 256
+  reward_schema: v1
+  email_weight: 0
+  focus_weight: 10
+  max_zero_steps: 3
+  max_one_steps: 3
+
+  learning_rate: 0.000001
+  clip_epsilon: 0.1
+  max_grad_norm: 1.0
+
+  steps_per_report: 1
+  steps_per_eval: 25
+  save_every: 25
+  routing_only: true
+
+# 50/54 = 0.926; ceiling admits up to 54/54 on this open 1B lineage.
+target_metric:
+  pass_rate: 0.926
+
+metric_ceiling:
+  pass_rate: 1.0
