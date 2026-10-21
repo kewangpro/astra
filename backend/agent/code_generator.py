@@ -947,6 +947,7 @@ argv = [
     "--steps-per-report", "{steps_per_report}",
     "--save-every", "{save_every}",
     "--max-seq-length", "{max_seq_length}",
+    {resume_adapter_arg}
 ]
 
 # Execute sft_train.py
@@ -1719,6 +1720,8 @@ _ENV_RECIPE: dict = {
     "agent-gym": "agent_gym_ppo_v1.yaml",
     "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
     "ensemble_sft_v1": "ensemble_sft_v1.yaml",
+    "ensemble_sft_1b_v5": "ensemble_sft_1b_v5.yaml",
+    "sft/1b_v5": "ensemble_sft_1b_v5.yaml",
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
@@ -1936,6 +1939,22 @@ def _force_gold_cases_flag(hp: dict) -> str:
     return _csv_cases_flag(hp, "force_gold_cases", "--force-gold-cases")
 
 
+def _sft_resume_adapter_arg(adapter_path: str) -> str:
+    """Optional ``--resume-adapter-file`` argv fragment for ``sft_train.py``.
+
+    Accepts a directory (``adapters/retrain_1b_v4`` or ``…/best``) or a direct
+    ``.safetensors`` path. Empty → omit the flag (cold start).
+    """
+    path = (adapter_path or "").strip().rstrip("/")
+    if not path:
+        return ""
+    if path.endswith(".safetensors"):
+        resume_file = path
+    else:
+        resume_file = f"{path}/adapters.safetensors"
+    return f'"--resume-adapter-file", "{resume_file}",'
+
+
 def _resolve_hyperparams(
     env_id: str, plan_hp: dict, algorithm: str = "", warm_start_adapter: Optional[str] = None,
 ) -> dict:
@@ -1943,7 +1962,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2222,6 +2241,13 @@ class CodeGenerator:
         }
         raw_model = str(hp.get("base_model", ""))
         base_model = raw_model if "/" in raw_model else "mlx-community/gemma-3-12b-it-4bit"
+        resume_path = (
+            warm_start_adapter
+            or hp.get("adapter")
+            or hp.get("resume_adapter_file")
+            or ""
+        )
+        resume_adapter_arg = _sft_resume_adapter_arg(str(resume_path))
         return {
             "base_model": base_model,
             "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
@@ -2248,6 +2274,8 @@ class CodeGenerator:
             "lora_alpha": hp.get("lora_scale", hp.get("lora_alpha", 32.0)),
             **hp,
             **base,
+            # Must win over **hp (recipe may carry adapter path strings).
+            "resume_adapter_arg": resume_adapter_arg,
         }
 
     def _build_star_context(

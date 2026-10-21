@@ -2623,6 +2623,33 @@ async def test_sft_generates_remote_wrapper_with_ensemble_sft_v1_recipe_locks_ba
     assert '"--data", "data_routing"' in content
     assert '"--batch-size", "2"' in content  # Locked to recipe's 2, ignoring 32
     assert '"--iters", "120"' in content    # Clamped within safe finetune pivot range
+    assert "--resume-adapter-file" not in content  # cold 12B SFT recipe
 
+
+@pytest.mark.asyncio
+async def test_sft_1b_v5_wrapper_resumes_retrain_1b_v4(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "sft",
+        "recipe": "ensemble_sft_1b_v5",
+        "target_metric": {"eval_loss": 0.45},
+        "hyperparameters": {},
+    }
+    script_path = await gen.generate_training_script("mission-sft-1b-v5", plan)
+    with open(script_path) as f:
+        content = f.read()
+
+    assert '"--model", "mlx-community/gemma-3-1b-it-4bit"' in content
+    assert '"--data", "data_ft"' in content
+    assert '"--num-layers", "-1"' in content
+    assert '"--lora-rank", "16"' in content
+    assert '"--lora-scale", "20.0"' in content
+    assert '"--batch-size", "1"' in content
+    assert '"--iters", "200"' in content
+    assert '"--resume-adapter-file", "adapters/retrain_1b_v4/adapters.safetensors"' in content
 
 
