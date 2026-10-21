@@ -2680,4 +2680,11 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   domain champion `astra-gemma-3-4b-rft-e72d2828-iter30` (`fd8ccc2f-…`,
   `model_routed_pass_rate=1.0`); prior `94117302` uncrowned. No further RFT on
   this 4B lineage unless asked.
+- [x] **1B cascade SFT v5 (2026-10-21)** — recipe `ensemble_sft_1b_v5`, mission
+  `15aa4462`: warm-start `retrain_1b_v4` via `--resume-adapter-file`, 200 iters,
+  eval_loss **0.387**. Independent bare_eval under `conductor_min.md`:
+  **48/54 MR (88.9%)** vs v4 same-suite **44/54 (81.5%)**; static 61/73,
+  overall 65/80. Harvest `adapters/astra_15aa4462_iter0/best`. Registered
+  **NLP-1B** champion `astra-gemma-3-1b-sft-15aa4462-iter0` (4B NLP champion
+  unchanged). Next: 1B GRPO or cascade routing code.
 
