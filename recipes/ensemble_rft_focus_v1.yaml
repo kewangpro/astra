@@ -77,9 +77,9 @@ hyperparameters:
   eval_max_tokens: 256
 
 # Mission 94117302 hit 0.907 (49/54) warm-starting iter74/best — confirmed by
-# independent bare_eval. Default target stays at sibling floor for replays;
-# raise only with a new focus list / method. Champion checkpoint:
-#   adapters/astra_94117302_iter0/best
+# independent bare_eval (historical first focus win). Default target stays at
+# sibling floor for replays. Current 4B `_min` NLP champion (54/54):
+#   adapters/astra_e72d2828_iter30/best
 target_metric:
   pass_rate: 0.889
 

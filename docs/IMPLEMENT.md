@@ -2661,6 +2661,23 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `route_travel_single_delegation_passes_through`; still failing
   `route_shell_git_status`. Harvest to keep is iter1/best. Tie-chaining now
   requires a strict improvement so an equal in-loop score cannot replace the
-  checkpoint that first set the best. Registry champion is still
-  `astra-gemma-3-4b-rft-focus-94117302-iter0` (49/54) until iter1 is crowned.
+  checkpoint that first set the best. Registry champion remained
+  `astra-gemma-3-4b-rft-focus-94117302-iter0` (49/54) through the next focus
+  passes (iter1 was not crowned; see Method F lineage below).
+- [x] **Focus lineage → 53/54 (2026-10-16..18)** — continued `_min` RFT focus
+  passes (see `ensemble/docs/FINETUNE.md` Method F table): `6f4204c7` iter1
+  **51/54** → `8ef08e64` **52/54** → `2dab4f67` iter32 **53/54** (remaining miss
+  `route_shell_git_status`). One-case focus `84e2c417` and blanket focus-gold
+  `7cc3beb4` / `ensemble_rft_focus_v6` (**52/54**) are not crownable.
+- [x] **Force-gold 54/54 + crown (2026-10-21)** — mission `e72d2828`
+  (`ensemble_rft_focus_v7`, warm-start `adapters/astra_2dab4f67_iter32/best`,
+  `--force-gold-cases route_shell_git_status` only) completed with MODEL-ROUTED
+  **1.0** at `best_metric_iteration=30`. Independent greedy bare_eval under
+  `conductor_min.md` confirms **54/54** on
+  `adapters/astra_e72d2828_iter30/best` and `…_iter6/best` (static 66/73,
+  overall 66/80). Ensemble: invented-skill −0.5 + Email↔Secretary
+  `_SKILL_ALIASES` closed the last oracle gap after git was fixed. Crowned NLP
+  domain champion `astra-gemma-3-4b-rft-e72d2828-iter30` (`fd8ccc2f-…`,
+  `model_routed_pass_rate=1.0`); prior `94117302` uncrowned. No further RFT on
+  this 4B lineage unless asked.
 
