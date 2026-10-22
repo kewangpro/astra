@@ -2696,4 +2696,23 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `FAST_MLX_BASE_URL` / `FAST_MLX_ADAPTERS`; multi-task / low-confidence /
   complex queries fall through to default. Tests:
   `ensemble/tests/test_planner_cascade.py`. Not more 1B grind unless asked.
+- [x] **Phase 3a/3b flywheel + curriculum (ensemble, 2026-10-21)** —
+  `prepare_finetune_data.py --cases` / `--curriculum`.
+- [x] **Phase 4 correction classifier (ensemble, 2026-10-21)** — sklearn
+  TF-IDF opt-in via `CORRECTION_CLASSIFIER_ENABLED`.
+- [x] **Phase 5 specialist trajectories (ensemble, 2026-10-21)** —
+  `specialist_trajectories.jsonl` + `prepare_specialist_data.py`. Secretary
+  waits on more Email/Calendar volume (no secretary JSONL on mini yet).
+- [x] **Data Scientist specialist SFT (2026-10-21)** — recipe
+  `ensemble_sft_specialist_ds_v1`, mission `5f4912b5` (replaced cancelled
+  `316d6a3c` which ignored recipe HPs). Locked HPs via `_ENV_RECIPE` /
+  `_resolve_hyperparams`: 4b-it-4bit, layers8 rank16 bs1 lr5e-5 iters150,
+  `data_ft/specialists/data_scientist` (30/6). Best **eval_loss 0.16**
+  (target ≤0.55); 3/3 requirements. Harvest
+  `adapters/astra_5f4912b5_iter0/best`; stable link
+  `adapters/specialist_ds_v1`. Secretary SFT when corpus healthy.
+- [x] **Phase 6a embedding scaffolding (ensemble, 2026-10-21)** —
+  `finetune/prepare_embedding_data.py` + `train_embedding.py`; Chroma
+  `ENSEMBLE_EMBEDDING_MODEL` override (MiniLM 384-d). Train/adapters next;
+  re-index after swap.
 
