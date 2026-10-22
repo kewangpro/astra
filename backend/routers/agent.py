@@ -127,7 +127,17 @@ async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/missions/{mission_id}/cancel", status_code=202)
 async def cancel_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     """Cancel a running mission loop. User Stop marks FAILED (`cancelled_by_user`);
-    process shutdown CancelledError without this flag still resets to pending."""
+    process shutdown CancelledError without this flag still resets to pending.
+
+    If the DB still says running/planning/evaluating but this process has no live
+    loop task (uvicorn died, in-memory maps empty), mark FAILED immediately —
+    otherwise the next boot's state recovery treats it as interrupted and
+    auto-restarts a zombie duplicate (f8af8029 after 3126f5e4 completed).
+    """
+    from datetime import datetime, timezone
+
+    from backend.models.mission import ERROR_CANCELLED_BY_USER, MissionStatus
+
     mission = await db.get(Mission, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
@@ -140,7 +150,22 @@ async def cancel_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     task = _running_tasks.get(mission_id)
     if task and not task.done():
         task.cancel()
-    return {"mission_id": mission_id, "status": "cancelling"}
+        return {"mission_id": mission_id, "status": "cancelling"}
+
+    # Orphan active row — no asyncio task to deliver CancelledError.
+    mission.status = MissionStatus.FAILED.value
+    mission.error_log = f"{ERROR_CANCELLED_BY_USER} stop requested (no live loop)"
+    mission.remote_pid = None
+    mission.subprocess_pid = None
+    mission.container_id = None
+    mission.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    try:
+        sandbox_manager.terminate(mission_id)
+    except Exception as exc:
+        logger.warning("Agent: orphan cancel terminate(%s) failed: %s", mission_id, exc)
+    logger.info("Agent: orphan cancel marked mission=%s FAILED (no live loop)", mission_id)
+    return {"mission_id": mission_id, "status": "failed"}
 
 
 @router.get("/missions/{mission_id}/plan")

@@ -53,16 +53,29 @@ async def test_cancel_skips_finished_task():
 
 
 @pytest.mark.asyncio
-async def test_cancel_no_running_task():
-    """Cancel succeeds even if there is no tracked task (idempotent)."""
+async def test_cancel_no_running_task_marks_failed():
+    """Orphan active row (DB running, no in-memory task) must become FAILED.
+
+    Otherwise boot recovery auto-restarts a zombie duplicate.
+    """
     from backend.routers.agent import cancel_mission
 
-    db = _make_db(mission=_make_mission("running"))
+    mission = _make_mission("running")
+    db = _make_db(mission=mission)
+    db.commit = AsyncMock()
 
-    with patch("backend.routers.agent._running_tasks", {}):
+    with patch("backend.routers.agent._running_tasks", {}), \
+         patch("backend.routers.agent._running_loops", {}), \
+         patch("backend.routers.agent.sandbox_manager") as sm:
         result = await cancel_mission("test-mission-id", db)
 
-    assert result["status"] == "cancelling"
+    assert result["status"] == "failed"
+    assert mission.status == "failed"
+    assert "cancelled_by_user" in (mission.error_log or "")
+    assert "no live loop" in (mission.error_log or "")
+    assert mission.remote_pid is None
+    db.commit.assert_awaited()
+    sm.terminate.assert_called_once_with("test-mission-id")
 
 
 @pytest.mark.asyncio
