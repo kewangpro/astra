@@ -2690,6 +2690,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   Independent bare_eval: **50/54 MR (92.6%)**, static 67/73, overall 71/80
   (vs SFT 48/54). Harvest `adapters/astra_3126f5e4_iter0/best`. Crowned NLP-1B
   `astra-gemma-3-1b-grpo-3126f5e4-iter0` (`dedcc8fc-…`); prior SFT uncrowned.
-  4B NLP champion unchanged. Duplicate `f8af8029` failed/cancelled. Next:
-  cascade routing code (Phase 2d), not more 1B grind unless asked.
+  4B NLP champion unchanged. Duplicate `f8af8029` failed/cancelled.
+- [x] **Phase 2d planner cascade (ensemble, 2026-10-21)** — §151 in ensemble
+  `conductor.py` / `llm_config.py`: 1B via `FAST_MODEL` + optional
+  `FAST_MLX_BASE_URL` / `FAST_MLX_ADAPTERS`; multi-task / low-confidence /
+  complex queries fall through to default. Tests:
+  `ensemble/tests/test_planner_cascade.py`. Not more 1B grind unless asked.
 
