@@ -2711,8 +2711,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   (target ≤0.55); 3/3 requirements. Harvest
   `adapters/astra_5f4912b5_iter0/best`; stable link
   `adapters/specialist_ds_v1`. Secretary SFT when corpus healthy.
-- [x] **Phase 6a embedding scaffolding (ensemble, 2026-10-21)** —
-  `finetune/prepare_embedding_data.py` + `train_embedding.py`; Chroma
-  `ENSEMBLE_EMBEDDING_MODEL` override (MiniLM 384-d). Train/adapters next;
-  re-index after swap.
+- [x] **Phase 6a domain embedding (ensemble, 2026-10-21)** —
+  `prepare_embedding_data.py` + `train_embedding.py` →
+  `finetune/adapters/ensemble_embed_v1` (MiniLM 384-d, 100/17 pairs,
+  valid triplet **17/17**). Wire with `ENSEMBLE_EMBEDDING_MODEL` and
+  re-index Chroma. Next: 6b reranker, or Secretary SFT when corpus grows.
 
