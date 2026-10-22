@@ -733,7 +733,9 @@ class LoopStateMachine:
                         )
                         plan = await self._agent.revise_plan(plan, critique.feedback)
                         plan = self._seed_plan_algorithm(plan, mission.goal)
-                        if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                        # Critic revise can drift task_type (e.g. rerank→ml); re-lock
+                        # any non-rl mission (remote finetune + local embed/rerank).
+                        if mission.task_type and mission.task_type != "rl":
                             plan["task_type"] = mission.task_type
                         if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
                             plan["recipe"] = mission.current_plan["recipe"]
@@ -753,8 +755,12 @@ class LoopStateMachine:
                 # Inject it from the mission before code generation so the callback template
                 # gets the correct target_metric_name (e.g. "lines_cleared", not "mean_reward").
                 plan["target_metric"] = mission.target_metric or {}
-                if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                # Re-lock before codegen — critic revise previously only locked remote
+                # finetune types, so local embed/rerank drifted to ml and got a
+                # sklearn wrapper instead of the ST train script.
+                if mission.task_type and mission.task_type != "rl":
                     plan["task_type"] = mission.task_type
+
                 if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
                     plan["recipe"] = mission.current_plan["recipe"]
                 if mission.task_type == "sft" and not plan.get("recipe"):

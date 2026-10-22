@@ -298,7 +298,7 @@ class LeadAgent:
             f"Task type hint: {task_type}\n"
             f"Target metric: {json.dumps(target_metric)}\n"
             + (f"Warm-start hint (best matching past recipe): {json.dumps(warm_hint)}\n" if warm_hint else "")
-            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/prompt) that best matches the Goal. Return JSON."
+            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/prompt/embed/rerank) that best matches the Goal. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PLAN_SCHEMA)
