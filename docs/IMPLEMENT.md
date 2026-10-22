@@ -2684,7 +2684,12 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `15aa4462`: warm-start `retrain_1b_v4` via `--resume-adapter-file`, 200 iters,
   eval_loss **0.387**. Independent bare_eval under `conductor_min.md`:
   **48/54 MR (88.9%)** vs v4 same-suite **44/54 (81.5%)**; static 61/73,
-  overall 65/80. Harvest `adapters/astra_15aa4462_iter0/best`. Registered
-  **NLP-1B** champion `astra-gemma-3-1b-sft-15aa4462-iter0` (4B NLP champion
-  unchanged). Next: 1B GRPO or cascade routing code.
+  overall 65/80. Harvest `adapters/astra_15aa4462_iter0/best`.
+- [x] **1B GRPO 50/54 + NLP-1B crown (2026-10-21)** — recipe `ensemble_grpo_1b_v1`,
+  mission `3126f5e4`: warm-start `astra_15aa4462_iter0/best`, in-loop **0.926**.
+  Independent bare_eval: **50/54 MR (92.6%)**, static 67/73, overall 71/80
+  (vs SFT 48/54). Harvest `adapters/astra_3126f5e4_iter0/best`. Crowned NLP-1B
+  `astra-gemma-3-1b-grpo-3126f5e4-iter0` (`dedcc8fc-…`); prior SFT uncrowned.
+  4B NLP champion unchanged. Duplicate `f8af8029` failed/cancelled. Next:
+  cascade routing code (Phase 2d), not more 1B grind unless asked.
 
