@@ -2715,5 +2715,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `prepare_embedding_data.py` + `train_embedding.py` →
   `finetune/adapters/ensemble_embed_v1` (MiniLM 384-d, 100/17 pairs,
   valid triplet **17/17**). Wire with `ENSEMBLE_EMBEDDING_MODEL` and
-  re-index Chroma. Next: 6b reranker, or Secretary SFT when corpus grows.
+  re-index Chroma.
+- [x] **Phase 6a on astra (2026-10-21/22)** — recipe `ensemble_embed_v1`,
+  task_type `embed` (local SubprocessSandbox, NOT Mini MLX). Mission
+  `02113cc8`: **triplet_acc 1.0** (3/3). Post-exit sandbox.log scrape for
+  local embed (no SSH live-tail). Harvest →
+  `ensemble/finetune/adapters/ensemble_embed_v1`.
 

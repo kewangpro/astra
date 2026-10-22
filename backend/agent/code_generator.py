@@ -954,6 +954,27 @@ argv = [
 os.execv("{python_bin}", argv)
 """
 
+# Phase 6a — local sentence-transformers train (NOT Mac Mini MLX).
+# Runs on the Astra host via SubprocessSandbox; ensemble_root + .venv required.
+_EMBED_LOCAL_WRAPPER = """\
+import os
+
+os.chdir("{ensemble_root}")
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+argv = [
+    "{python_bin}", "{train_script_abs}",
+    "--data", "{data_dir}",
+    "--model", "{base_model}",
+    "--out", "{checkpoint_dir}",
+    "--epochs", "{epochs}",
+    "--batch-size", "{batch_size}",
+    "--lr", "{learning_rate}",
+    "--warmup-ratio", "{warmup_ratio}",
+]
+os.execv("{python_bin}", argv)
+"""
+
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using Astra's SFTTrainer.
 Use Astra's SFTTrainer (from backend.trainers.sft_trainer import SFTTrainer) to orchestrate training with strict held-out train_dataset and eval_dataset splitting (fixed seed 42), <think>...</think> reasoning trace preservation, and comprehensive telemetry (train_loss, eval_loss, perplexity).
@@ -1724,6 +1745,9 @@ _ENV_RECIPE: dict = {
     "sft/1b_v5": "ensemble_sft_1b_v5.yaml",
     "ensemble_sft_specialist_ds_v1": "ensemble_sft_specialist_ds_v1.yaml",
     "sft/specialist_ds": "ensemble_sft_specialist_ds_v1.yaml",
+    "ensemble_embed_v1": "ensemble_embed_v1.yaml",
+    "embed": "ensemble_embed_v1.yaml",
+    "embed/v1": "ensemble_embed_v1.yaml",
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
@@ -1892,6 +1916,8 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
     "sft":     {"learning_rate": (1e-5, 5e-4), "iters": (50, 300)},
+    # embed: recipe-locked MiniLM HPs — no pivot levers (same rationale as distill iters).
+    "embed":   {},
     "post-training": {},
     "star":    {"k_samples": (4, 16), "temp": (0.7, 1.5), "rationalize_temp": (0.5, 1.2), "learning_rate": (1e-5, 5e-4)},
 }
@@ -1967,7 +1993,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_embed_v1", "embed", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star", "embed"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2097,7 +2123,10 @@ class CodeGenerator:
         if task_type in _FINETUNE_REMOTE_TASK_TYPES and settings.sandbox_host:
             checkpoint_dir = finetune_checkpoint_dir(task_type, plan, mission_id, current_iteration)
         else:
-            checkpoint_dir = os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+            # Absolute: embed (and other local) wrappers may chdir before exec.
+            checkpoint_dir = os.path.abspath(
+                os.path.join(settings.data_path, "missions", mission_id, "checkpoints")
+            )
             os.makedirs(checkpoint_dir, exist_ok=True)
 
         system_prompt = _BASE_SYSTEM.format(
@@ -2118,7 +2147,13 @@ class CodeGenerator:
         )
 
         active_task = plan.get("active_task_type", "sft") if task_type == "post-training" else task_type
-        if active_task == "sft":
+        if active_task == "embed":
+            # Local-only: sentence-transformers on the Astra host (ensemble .venv).
+            # Never SSH to the Mini — Mini finetune-env is MLX, not ST.
+            code = _EMBED_LOCAL_WRAPPER.format(
+                **self._build_embed_context(mission_id, plan, checkpoint_dir)
+            )
+        elif active_task == "sft":
             # For SFT on remote Mac Mini (settings.sandbox_host), generate the thin
             # os.execv wrapper invoking ~/finetune/sft_train.py (same pattern as DPO).
             # Fall back to canonical SFT runner only if running locally without sandbox_host.
@@ -2223,6 +2258,41 @@ class CodeGenerator:
 
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
+
+    def _build_embed_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+    ) -> dict:
+        recipe_key = plan.get("recipe") or "embed"
+        hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
+        ensemble_root = str(hp.get("ensemble_root", "/Users/kewang/PyProjects/ensemble"))
+        train_script = str(hp.get("train_script", "finetune/train_embedding.py"))
+        train_abs = train_script if os.path.isabs(train_script) else os.path.join(
+            ensemble_root, train_script
+        )
+        data_dir = str(hp.get("data_dir", "finetune/data_ft/embeddings"))
+        if not os.path.isabs(data_dir):
+            data_dir = os.path.join(ensemble_root, data_dir)
+        # Must be absolute: wrapper chdirs into ensemble_root before exec.
+        ckpt = os.path.abspath(checkpoint_dir)
+        return {
+            "mission_id": mission_id,
+            "checkpoint_dir": ckpt,
+            "ensemble_root": ensemble_root,
+            "python_bin": str(hp.get(
+                "python_bin",
+                os.path.join(ensemble_root, ".venv", "bin", "python"),
+            )),
+            "train_script_abs": train_abs,
+            "data_dir": data_dir,
+            "base_model": str(hp.get("base_model", "sentence-transformers/all-MiniLM-L6-v2")),
+            "epochs": int(hp.get("epochs", 3)),
+            "batch_size": int(hp.get("batch_size", 16)),
+            "learning_rate": float(hp.get("learning_rate", 2e-5)),
+            "warmup_ratio": float(hp.get("warmup_ratio", 0.1)),
+        }
 
     def _build_sft_context(
         self,

@@ -33,6 +33,8 @@ _CHECKPOINT_PATTERNS: dict = {
     "prompt": "checkpoints/conductor_variant.md",
     "post-training": "checkpoints/*/",
     "star": "checkpoints/best/",
+    # sentence-transformers save layout (modules.json at out root)
+    "embed": "checkpoints/modules.json",
 }
 
 # For metrics where lower is better, flip the operator

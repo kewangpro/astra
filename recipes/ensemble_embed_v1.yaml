@@ -1,0 +1,26 @@
+name: ensemble_embed_v1
+version: "1.0.0"
+created_at: "2026-10-21"
+task_type: embed
+domain: NLP
+description: >
+  Phase 6a domain embedding fine-tune: sentence-transformers all-MiniLM-L6-v2
+  on Ensemble skill/tool/eval triplets (finetune/prepare_embedding_data.py).
+  Runs LOCALLY via subprocess (not Mac Mini MLX) — needs ensemble .venv with
+  sentence-transformers + datasets + accelerate. Saves under the mission
+  checkpoints/ dir (384-d, Chroma-compatible). Promote to
+  ensemble/finetune/adapters/ensemble_embed_v1 and set ENSEMBLE_EMBEDDING_MODEL.
+
+hyperparameters:
+  ensemble_root: /Users/kewang/PyProjects/ensemble
+  python_bin: /Users/kewang/PyProjects/ensemble/.venv/bin/python
+  train_script: finetune/train_embedding.py
+  data_dir: finetune/data_ft/embeddings
+  base_model: sentence-transformers/all-MiniLM-L6-v2
+  epochs: 3
+  batch_size: 16
+  learning_rate: 0.00002
+  warmup_ratio: 0.1
+
+target_metric:
+  triplet_acc: 0.9
