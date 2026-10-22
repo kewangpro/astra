@@ -2721,4 +2721,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `02113cc8`: **triplet_acc 1.0** (3/3). Post-exit sandbox.log scrape for
   local embed (no SSH live-tail). Harvest →
   `ensemble/finetune/adapters/ensemble_embed_v1`.
+- [x] **Phase 6b reranker (ensemble + astra recipe, 2026-10-22)** —
+  `prepare_rerank_data.py` / `train_reranker.py` →
+  `adapters/ensemble_rerank_v1` (pairwise **1.0**). Memory post-RRF via
+  `ENSEMBLE_RERANKER_MODEL`. Astra recipe `ensemble_rerank_v1` / task_type
+  `rerank` (same local wrapper as embed).
 

@@ -1,0 +1,25 @@
+name: ensemble_rerank_v1
+version: "1.0.0"
+created_at: "2026-10-22"
+task_type: rerank
+domain: NLP
+description: >
+  Phase 6b domain CrossEncoder reranker: ms-marco-MiniLM-L-6-v2 on
+  skill/eval query–document pairs (finetune/prepare_rerank_data.py).
+  Runs LOCALLY via SubprocessSandbox (not Mini MLX). Promote to
+  ensemble/finetune/adapters/ensemble_rerank_v1 and set
+  ENSEMBLE_RERANKER_MODEL for post-RRF fact re-scoring.
+
+hyperparameters:
+  ensemble_root: /Users/kewang/PyProjects/ensemble
+  python_bin: /Users/kewang/PyProjects/ensemble/.venv/bin/python
+  train_script: finetune/train_reranker.py
+  data_dir: finetune/data_ft/rerank
+  base_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  epochs: 2
+  batch_size: 16
+  learning_rate: 0.00002
+  warmup_ratio: 0.1
+
+target_metric:
+  rerank_acc: 0.85

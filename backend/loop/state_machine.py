@@ -64,6 +64,8 @@ logger = get_logger(__name__)
 _PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
 # Phase 6a train_embedding.py: "Triplet accuracy: 1.000 (17/17)"
 _TRIPLET_ACC_RE = re.compile(r"Triplet accuracy:\s*([\d.]+)\s*\((\d+)/(\d+)\)")
+# Phase 6b train_reranker.py: "Rerank accuracy: 0.941 (16/17)"
+_RERANK_ACC_RE = re.compile(r"Rerank accuracy:\s*([\d.]+)\s*\((\d+)/(\d+)\)")
 
 # bare_eval.py switches to a static/dynamic-MCP split report whenever the case
 # pool includes MCP cases (true for every dpo/grpo/distill mission, since none
@@ -759,6 +761,8 @@ class LoopStateMachine:
                     plan["recipe"] = "ensemble_sft_v1"
                 if mission.task_type == "embed" and not plan.get("recipe"):
                     plan["recipe"] = "ensemble_embed_v1"
+                if mission.task_type == "rerank" and not plan.get("recipe"):
+                    plan["recipe"] = "ensemble_rerank_v1"
                 if mission.task_type == "grpo" and not plan.get("recipe"):
                     plan["recipe"] = "ensemble_grpo_v1"
                 if mission.task_type == "dpo" and not plan.get("recipe"):
@@ -986,6 +990,10 @@ class LoopStateMachine:
                     for emb_key in ("triplet_acc", "train_loss", "loss"):
                         if emb_key in sandbox_metrics:
                             current_metrics[emb_key] = sandbox_metrics[emb_key]
+                if plan.get("task_type") == "rerank":
+                    for rk in ("rerank_acc", "train_loss", "loss"):
+                        if rk in sandbox_metrics:
+                            current_metrics[rk] = sandbox_metrics[rk]
 
                 # For non-mean_reward goal metrics: run dedicated eval episodes if the
                 # benchmark didn't supply the value, then always write to telemetry so the
@@ -1013,6 +1021,10 @@ class LoopStateMachine:
                             goal_val = current_metrics.get("triplet_acc")
                             if goal_val is None:
                                 goal_val = self._embed_triplet_acc_from_log(mission_id)
+                        elif _mission_task_type_for_eval == "rerank":
+                            goal_val = current_metrics.get("rerank_acc")
+                            if goal_val is None:
+                                goal_val = self._rerank_acc_from_log(mission_id)
                         elif _mission_task_type_for_eval == "prompt":
                             # A prompt run IS the eval — the generated script
                             # writes a variant and execs bare_eval on it — so the
@@ -3588,8 +3600,8 @@ class LoopStateMachine:
 
     # ── Sandbox polling ────────────────────────────────────────────────────────
 
-    def _embed_triplet_acc_from_log(self, mission_id: str) -> Optional[float]:
-        """Best Triplet accuracy scraped from the local sandbox.log (Phase 6a)."""
+    def _local_acc_from_log(self, mission_id: str, pattern: re.Pattern) -> Optional[float]:
+        """Best accuracy scraped from the local sandbox.log (embed/rerank)."""
         log_path = self._sandbox.get_log_path(mission_id) if self._sandbox else ""
         if not log_path or not os.path.isfile(log_path):
             log_path = os.path.join(settings.data_path, "missions", mission_id, "sandbox.log")
@@ -3597,11 +3609,19 @@ class LoopStateMachine:
             return None
         best: Optional[float] = None
         with open(log_path, "r", errors="replace") as f:
-            for match in _TRIPLET_ACC_RE.finditer(f.read()):
+            for match in pattern.finditer(f.read()):
                 acc = float(match.group(1))
                 if best is None or acc > best:
                     best = acc
         return best
+
+    def _embed_triplet_acc_from_log(self, mission_id: str) -> Optional[float]:
+        """Best Triplet accuracy scraped from the local sandbox.log (Phase 6a)."""
+        return self._local_acc_from_log(mission_id, _TRIPLET_ACC_RE)
+
+    def _rerank_acc_from_log(self, mission_id: str) -> Optional[float]:
+        """Best Rerank accuracy scraped from the local sandbox.log (Phase 6b)."""
+        return self._local_acc_from_log(mission_id, _RERANK_ACC_RE)
 
     def _read_telemetry_metrics(self, mission_id: str, offset: int = 0) -> dict:
         """Return {metric_name: peak_value} for metric events written to telemetry.jsonl since offset.
@@ -3681,14 +3701,20 @@ class LoopStateMachine:
             if fatal_lines:
                 return content
 
-        # Local embed runs are NOT in _FINETUNE_REMOTE_TASK_TYPES (no SSH Mini),
-        # so live remote-tail never runs. Scrape Triplet accuracy from this
-        # run's sandbox.log after exit so triplet_acc reaches the goal check.
+        # Local embed/rerank runs are NOT in _FINETUNE_REMOTE_TASK_TYPES (no SSH
+        # Mini), so live remote-tail never runs. Scrape accuracy from this run's
+        # sandbox.log after exit so the goal metric reaches the check.
         if task_type == "embed" and content:
             for match in _TRIPLET_ACC_RE.finditer(content):
                 acc = float(match.group(1))
                 await emit_metric(
                     mission_id, "triplet_acc", acc, step=1, iteration=current_iteration
+                )
+        if task_type == "rerank" and content:
+            for match in _RERANK_ACC_RE.finditer(content):
+                acc = float(match.group(1))
+                await emit_metric(
+                    mission_id, "rerank_acc", acc, step=1, iteration=current_iteration
                 )
 
         return None
@@ -3755,6 +3781,10 @@ class LoopStateMachine:
             for match in _TRIPLET_ACC_RE.finditer(new_output):
                 acc = float(match.group(1))
                 await emit_metric(mission_id, "triplet_acc", acc, step=1, iteration=current_iteration)
+        elif active_t == "rerank":
+            for match in _RERANK_ACC_RE.finditer(new_output):
+                acc = float(match.group(1))
+                await emit_metric(mission_id, "rerank_acc", acc, step=1, iteration=current_iteration)
         elif active_t == "sft":
             for match in _MLX_TRAIN_LOSS_RE.finditer(new_output):
                 step_num = int(match.group(1))
@@ -3815,7 +3845,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "opd", "prompt", "sft", "post-training", "star", "embed"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "opd", "prompt", "sft", "post-training", "star", "embed", "rerank"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

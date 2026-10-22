@@ -35,6 +35,8 @@ _CHECKPOINT_PATTERNS: dict = {
     "star": "checkpoints/best/",
     # sentence-transformers save layout (modules.json at out root)
     "embed": "checkpoints/modules.json",
+    # CrossEncoder also writes config.json; modules.json may be absent — accept either
+    "rerank": "checkpoints/config.json",
 }
 
 # For metrics where lower is better, flip the operator

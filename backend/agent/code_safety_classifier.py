@@ -273,7 +273,7 @@ class CodeSafetyClassifier:
             and re.search(
                 r"dpo_train\.py|grpo_train\.py|distill_train\.py|rft_train\.py|"
                 r"opd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"
-                r"train_embedding\.py",
+                r"train_embedding\.py|train_reranker\.py",
                 script,
             )
         ):
@@ -281,7 +281,7 @@ class CodeSafetyClassifier:
                 safe=True,
                 reason="os.execv dispatch to a known finetune/eval script "
                 "(dpo/grpo/distill/rft/opd/sft/star_train.py, train_embedding.py, "
-                "bare_eval.py) with no network calls — auto-approved",
+                "train_reranker.py, bare_eval.py) with no network calls — auto-approved",
                 classifier="static",
             )
 

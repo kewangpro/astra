@@ -1748,6 +1748,9 @@ _ENV_RECIPE: dict = {
     "ensemble_embed_v1": "ensemble_embed_v1.yaml",
     "embed": "ensemble_embed_v1.yaml",
     "embed/v1": "ensemble_embed_v1.yaml",
+    "ensemble_rerank_v1": "ensemble_rerank_v1.yaml",
+    "rerank": "ensemble_rerank_v1.yaml",
+    "rerank/v1": "ensemble_rerank_v1.yaml",
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
@@ -1916,8 +1919,9 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
     "sft":     {"learning_rate": (1e-5, 5e-4), "iters": (50, 300)},
-    # embed: recipe-locked MiniLM HPs — no pivot levers (same rationale as distill iters).
+    # embed/rerank: recipe-locked ST HPs — no pivot levers (same rationale as distill iters).
     "embed":   {},
+    "rerank":  {},
     "post-training": {},
     "star":    {"k_samples": (4, 16), "temp": (0.7, 1.5), "rationalize_temp": (0.5, 1.2), "learning_rate": (1e-5, 5e-4)},
 }
@@ -1993,7 +1997,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_embed_v1", "embed", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star", "embed"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star", "embed", "rerank"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2147,7 +2151,7 @@ class CodeGenerator:
         )
 
         active_task = plan.get("active_task_type", "sft") if task_type == "post-training" else task_type
-        if active_task == "embed":
+        if active_task in ("embed", "rerank"):
             # Local-only: sentence-transformers on the Astra host (ensemble .venv).
             # Never SSH to the Mini — Mini finetune-env is MLX, not ST.
             code = _EMBED_LOCAL_WRAPPER.format(
@@ -2265,14 +2269,29 @@ class CodeGenerator:
         plan: dict,
         checkpoint_dir: str,
     ) -> dict:
-        recipe_key = plan.get("recipe") or "embed"
+        recipe_key = plan.get("recipe") or plan.get("task_type") or "embed"
         hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
         ensemble_root = str(hp.get("ensemble_root", "/Users/kewang/PyProjects/ensemble"))
-        train_script = str(hp.get("train_script", "finetune/train_embedding.py"))
+        default_script = (
+            "finetune/train_reranker.py"
+            if (plan.get("task_type") == "rerank" or "rerank" in str(recipe_key))
+            else "finetune/train_embedding.py"
+        )
+        default_data = (
+            "finetune/data_ft/rerank"
+            if default_script.endswith("train_reranker.py")
+            else "finetune/data_ft/embeddings"
+        )
+        default_model = (
+            "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            if default_script.endswith("train_reranker.py")
+            else "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        train_script = str(hp.get("train_script", default_script))
         train_abs = train_script if os.path.isabs(train_script) else os.path.join(
             ensemble_root, train_script
         )
-        data_dir = str(hp.get("data_dir", "finetune/data_ft/embeddings"))
+        data_dir = str(hp.get("data_dir", default_data))
         if not os.path.isabs(data_dir):
             data_dir = os.path.join(ensemble_root, data_dir)
         # Must be absolute: wrapper chdirs into ensemble_root before exec.
@@ -2287,8 +2306,8 @@ class CodeGenerator:
             )),
             "train_script_abs": train_abs,
             "data_dir": data_dir,
-            "base_model": str(hp.get("base_model", "sentence-transformers/all-MiniLM-L6-v2")),
-            "epochs": int(hp.get("epochs", 3)),
+            "base_model": str(hp.get("base_model", default_model)),
+            "epochs": int(hp.get("epochs", 2 if default_script.endswith("reranker") else 3)),
             "batch_size": int(hp.get("batch_size", 16)),
             "learning_rate": float(hp.get("learning_rate", 2e-5)),
             "warmup_ratio": float(hp.get("warmup_ratio", 0.1)),
