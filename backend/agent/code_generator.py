@@ -2885,8 +2885,15 @@ class CodeGenerator:
     def _fix_checkpoint_paths(code: str, checkpoint_dir: str) -> str:
         """Replace relative ./data/missions/.../checkpoints paths with the absolute checkpoint_dir."""
         import re
-        # Match patterns like ./data/missions/<uuid>/checkpoints or data/missions/<uuid>/checkpoints
-        pattern = r'\.?/?\bdata/missions/[0-9a-f-]{36}/checkpoints\b'
+        # Relative only. The prompt already asks for an absolute checkpoint_dir,
+        # and that absolute path ends in data/missions/<uuid>/checkpoints. A bare
+        # \bdata/missions match rewrites that tail and prefixes the repo root a
+        # second time, so weights land outside the gitignored data/ directory.
+        pattern = (
+            r'(?<![A-Za-z0-9_./])'
+            r'(?:\./)?'
+            r'data/missions/[0-9a-f-]{36}/checkpoints\b'
+        )
         fixed = re.sub(pattern, checkpoint_dir, code)
         if fixed != code:
             logger.info("CodeGenerator: replaced relative checkpoint paths with absolute: %s", checkpoint_dir)

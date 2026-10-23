@@ -475,6 +475,22 @@ def test_fix_checkpoint_paths_leaves_absolute_paths_alone():
     assert result == code
 
 
+def test_fix_checkpoint_paths_does_not_double_absolute_data_missions_path():
+    """The RL prompt embeds the absolute checkpoint dir. That path already ends
+    in data/missions/<uuid>/checkpoints, so the relative-path rewriter must not
+    match its tail and prefix the repo root again."""
+    mission = "6c1cab6b-25af-4d1d-9cbb-fd9435345053"
+    ckpt = f"/Users/kewang/PyProjects/astra/data/missions/{mission}/checkpoints"
+    code = (
+        f'model.save("{ckpt}/best_model")\n'
+        "open('./data/missions/2b395824-e128-453d-9d58-e1ba241a3522/checkpoints/best_score.txt')\n"
+    )
+    result = CodeGenerator._fix_checkpoint_paths(code, ckpt)
+    assert result.count(ckpt) == 2
+    assert "/astra/Users/" not in result
+    assert "./data/missions/" not in result
+
+
 def test_fix_execv_unpacking_rewrites_star_unpack():
     """Real incident: os.execv(*argv) star-unpacks a ~40-element argv list into
     that many positional arguments, but os.execv() only accepts 2 (path, args) —
