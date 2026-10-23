@@ -2742,4 +2742,5 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Catalog** — `backend/agent/task_catalog.py` is the worker list. A task is the objective; an algorithm is the update rule; `task_type` is the worker key. Environment RL is PPO, DQN, A2C, SAC, TD3 on `rl`. Reinforcement fine-tuning is GRPO and DPO. Supervised fine-tuning is SFT, local LoRA, distillation, rejection sampling (`rft`), and STaR. On-policy distillation, RLCD, prompt edit, classical ML, and retrieval each keep their own worker. Language-model PPO is not a reinforcement fine-tuning algorithm.
 - [x] **Planner and goal bar** — the plan schema enum comes from the catalog (adds `star`). The planning prompt states the pairs. The goal bar groups algorithms under those task labels. RLCD pivots use `num_generations` and `temp`, the same lock as the other fine-tune algorithms.
 - [x] **Docs** — DESIGN § 2.4, README, UX_SPEC.
+- [x] **In-app Docs** — `/docs` in the nav after Models. One section per task, one row per algorithm, with the worker key.
 

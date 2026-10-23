@@ -51,6 +51,10 @@
 - **KPI Summary Cards**: Displays Total Completed Runs, Target Pass Rate (% meeting or exceeding target), and Total Iterations Executed across historical runs.
 - **Convergence Cards**: Shows short ID, task type tag, remote/local node host, relative/exact timestamp, goal text, target metric vs achieved best score, progress bar, iterations, and duration. Clicking a card opens the Mission HUD.
 
+### 2.6. Docs (`/docs`)
+
+Nav item after Models. A task index on the left, one section per task. Each section states the objective, then one row per algorithm with its worker key (`task_type`) and what the update does. The eight tasks match the goal-bar groups: Environment RL, reinforcement fine-tuning, supervised fine-tuning, on-policy distillation, calibrated decision, prompt edit, classical ML, and retrieval.
+
 
 
 ## 3. Technology Stack Recommendation
