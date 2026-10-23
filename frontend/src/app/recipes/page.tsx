@@ -4,14 +4,57 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Recipe, RecipeRecord } from "@/lib/api";
 
-const DOMAIN_TABS = [
+const TASK_TABS: { id: string; label: string; types?: string[] }[] = [
   { id: "all", label: "All Recipes" },
-  { id: "snake", label: "Snake" },
-  { id: "tetris", label: "Tetris" },
-  { id: "2048", label: "2048" },
-  { id: "minatar", label: "MinAtar" },
-  { id: "llm", label: "LLM / Reasoning" },
+  { id: "environment-rl", label: "Environment RL", types: ["rl"] },
+  { id: "reinforcement-fine-tuning", label: "Reinforcement fine-tuning", types: ["grpo", "dpo"] },
+  {
+    id: "supervised-fine-tuning",
+    label: "Supervised fine-tuning",
+    types: ["sft", "mlx_lora", "distill", "rft", "star"],
+  },
+  { id: "on-policy-distillation", label: "On-policy distillation", types: ["opd"] },
+  { id: "calibrated-decision", label: "Calibrated decision", types: ["rlcd"] },
+  { id: "prompt-edit", label: "Prompt edit", types: ["prompt"] },
+  { id: "classical-ml", label: "Classical ML", types: ["ml"] },
+  { id: "retrieval", label: "Retrieval", types: ["embed", "rerank"] },
 ];
+
+function recipeAlgorithm(r: Recipe): string {
+  const content = (r.content || {}) as Record<string, unknown>;
+  const explicit = content.algorithm;
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  const trainer = content.trainer_type;
+  if (typeof trainer === "string" && trainer.trim()) {
+    return trainer.trim() === "actor_critic" ? "Actor-Critic" : trainer.trim();
+  }
+  const taskType = String(content.task_type ?? "").toLowerCase();
+  const byWorker: Record<string, string> = {
+    grpo: "GRPO",
+    dpo: "DPO",
+    sft: "SFT",
+    mlx_lora: "SFT",
+    distill: "distillation",
+    rft: "rejection sampling",
+    star: "STaR",
+    opd: "OPD",
+    rlcd: "RLCD",
+    prompt: "rule append",
+    ml: "random forest",
+    embed: "embedding",
+    rerank: "reranker",
+  };
+  if (byWorker[taskType]) return byWorker[taskType];
+  if (taskType === "rl") {
+    const name = r.name.toLowerCase();
+    if (name.includes("ppo")) return "PPO";
+    if (name.includes("a2c")) return "A2C";
+    if (name.includes("sac")) return "SAC";
+    if (name.includes("td3")) return "TD3";
+    if (name.includes("dqn")) return "DQN";
+  }
+  return taskType || "RL";
+}
 
 function isAutoCrystallized(rec?: RecipeRecord | null, description?: string | null) {
   if (rec && rec.generation >= 1) return true;
@@ -105,27 +148,9 @@ export default function RecipesPage() {
     if (!matchesSearch) return false;
 
     if (activeTab === "all") return true;
-    if (activeTab === "snake") return r.name.toLowerCase().includes("snake");
-    if (activeTab === "tetris") return r.name.toLowerCase().includes("tetris");
-    if (activeTab === "2048") return r.name.toLowerCase().includes("2048");
-    if (activeTab === "minatar") {
-      const n = r.name.toLowerCase();
-      return n.includes("minatar") || n.includes("pacman");
-    }
-    if (activeTab === "llm")
-      return (
-        r.name.toLowerCase().includes("distill") ||
-        r.name.toLowerCase().includes("opd") ||
-        r.name.toLowerCase().includes("rlcd") ||
-        r.name.toLowerCase().includes("dpo") ||
-        r.name.toLowerCase().includes("grpo") ||
-        r.name.toLowerCase().includes("prompt") ||
-        r.name.toLowerCase().includes("rft") ||
-        r.name.toLowerCase().includes("sft") ||
-        r.name.toLowerCase().includes("mlx")
-      );
-
-    return true;
+    const taskType = String(r.content?.task_type ?? "").toLowerCase();
+    const tab = TASK_TABS.find((t) => t.id === activeTab);
+    return !!tab?.types?.includes(taskType);
   });
 
   return (
@@ -147,7 +172,7 @@ export default function RecipesPage() {
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-[#1e293b]/70 border border-[#334155] rounded-lg p-4">
         {/* Domain Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-          {DOMAIN_TABS.map((tab) => (
+          {TASK_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -224,7 +249,7 @@ export default function RecipesPage() {
                       </span>
                     )}
                     <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#14b8a6] px-2 py-0.5 rounded font-mono break-all max-w-full">
-                      {r.domain || (r.content as any)?.domain || "RL"}
+                      {recipeAlgorithm(r)}
                     </span>
                   </div>
 

@@ -15,15 +15,20 @@ import { useMissions } from "@/lib/hooks/useMissions";
 import type { Mission } from "@/lib/api";
 import { parseTs, fmtTs, formatRelativeTime, formatDuration } from "@/lib/date";
 
-const DOMAIN_TABS = [
+const TASK_TABS: { id: string; label: string; types?: string[] }[] = [
   { id: "all", label: "All Completed" },
-  { id: "minatar", label: "MinAtar" },
-  { id: "snake", label: "Snake" },
-  { id: "tetris", label: "Tetris" },
-  { id: "2048", label: "2048" },
-  { id: "llm", label: "LLM & Reasoning" },
-  { id: "agentgym", label: "AgentGym" },
-  { id: "classic", label: "Classic Control & ML" },
+  { id: "environment-rl", label: "Environment RL", types: ["rl"] },
+  { id: "reinforcement-fine-tuning", label: "Reinforcement fine-tuning", types: ["grpo", "dpo"] },
+  {
+    id: "supervised-fine-tuning",
+    label: "Supervised fine-tuning",
+    types: ["sft", "mlx_lora", "distill", "rft", "star"],
+  },
+  { id: "on-policy-distillation", label: "On-policy distillation", types: ["opd"] },
+  { id: "calibrated-decision", label: "Calibrated decision", types: ["rlcd"] },
+  { id: "prompt-edit", label: "Prompt edit", types: ["prompt"] },
+  { id: "classical-ml", label: "Classical ML", types: ["ml"] },
+  { id: "retrieval", label: "Retrieval", types: ["embed", "rerank"] },
 ];
 
 function isLowerBetterMetric(key: string): boolean {
@@ -94,64 +99,8 @@ export default function CompletedMissionsPage() {
       if (!matchesSearch) return false;
 
       if (activeTab === "all") return true;
-      if (activeTab === "minatar") {
-        return (
-          goalStr.includes("minatar") ||
-          goalStr.includes("seaquest") ||
-          goalStr.includes("freeway") ||
-          goalStr.includes("breakout") ||
-          goalStr.includes("asterix") ||
-          goalStr.includes("asteroid") ||
-          goalStr.includes("pacman") ||
-          goalStr.includes("pac-man") ||
-          goalStr.includes("space_invaders") ||
-          goalStr.includes("space invaders")
-        );
-      }
-      if (activeTab === "snake") return goalStr.includes("snake");
-      if (activeTab === "tetris") return goalStr.includes("tetris");
-      if (activeTab === "2048") return goalStr.includes("2048");
-      if (activeTab === "llm") {
-        return (
-          taskTypeStr === "sft" ||
-          taskTypeStr === "dpo" ||
-          taskTypeStr === "grpo" ||
-          taskTypeStr === "star" ||
-          taskTypeStr === "rft" ||
-          taskTypeStr === "opd" ||
-          taskTypeStr === "rlcd" ||
-          taskTypeStr === "distill" ||
-          taskTypeStr === "prompt" ||
-          taskTypeStr === "mlx_lora" ||
-          taskTypeStr === "post-training" ||
-          goalStr.includes("fine-tuning") ||
-          goalStr.includes("fine tuning") ||
-          goalStr.includes("ensemble") ||
-          goalStr.includes("reasoner") ||
-          goalStr.includes("prompt") ||
-          goalStr.includes("distill") ||
-          goalStr.includes("on-policy")
-        );
-      }
-      if (activeTab === "agentgym") {
-        return (
-          goalStr.includes("agentgym") ||
-          goalStr.includes("multiturn") ||
-          goalStr.includes("webarena") ||
-          goalStr.includes("alfworld")
-        );
-      }
-      if (activeTab === "classic") {
-        return (
-          goalStr.includes("cartpole") ||
-          goalStr.includes("lunarlander") ||
-          goalStr.includes("scikit") ||
-          goalStr.includes("classifier") ||
-          taskTypeStr === "ml"
-        );
-      }
-
-      return true;
+      const tab = TASK_TABS.find((t) => t.id === activeTab);
+      return !!tab?.types?.includes(taskTypeStr);
     });
   }, [completedMissions, searchQuery, activeTab]);
 
@@ -267,7 +216,7 @@ export default function CompletedMissionsPage() {
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-[#1e293b]/70 border border-[#334155] rounded-lg p-4">
         {/* Domain Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-          {DOMAIN_TABS.map((tab) => (
+          {TASK_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}

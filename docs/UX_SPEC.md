@@ -28,7 +28,7 @@
 - **Live Game Viewers**: Not on this page. Missions are training (metrics, logs, pivots). Play / inference is `/models/{id}`.
 
 ### 2.3. The Recipe Library (`/recipes`)
-- **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, domain badges, and quick YAML inspection modals. Domain tabs include MinAtar (Asterix, Grid Pac-Man, and the rest of the arcade suite).
+- **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, an algorithm tag (embedding, GRPO, DQN, PPO, …), and quick YAML inspection modals. Tabs are `All Recipes` plus the eight tasks. A recipe stays on a tab when its YAML `task_type` is one of that task’s workers, so Snake, MinAtar, 2048, and AgentGym share Environment RL.
 - **Lineage DAG Visualizer**: Interactive drawer tracing the evolutionary chain (Gen 0 → Gen 1 → Gen 2) for crystallized and mutated recipes, displaying score progressions and hyperparameter deltas.
 - **One-Click Dispatch**: Single-click "Dispatch" button on any recipe card or inspection modal to instantly spin up an autonomous mission loop without manual configuration.
 - **Delete**: Auto-crystallized recipes (not hand-crafted YAML) have a Delete control on the card and in the YAML modal.
@@ -46,7 +46,7 @@
 
 ### 2.5. The Completed Missions Archive (`/completed`)
 - **Gallery Layout**: Modeled after the Recipe Library (`/recipes`) with dark glass UI, KPI overview cards, and responsive 3-column card grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`).
-- **Domain Filter Tabs**: 8 category tabs (`All Completed`, `MinAtar`, `Snake`, `Tetris`, `2048`, `LLM & Reasoning`, `AgentGym`, `Classic Control & ML`). The MinAtar tab includes Grid Pac-Man.
+- **Task Filter Tabs**: `All Completed`, then the eight tasks (Environment RL, reinforcement fine-tuning, supervised fine-tuning, on-policy distillation, calibrated decision, prompt edit, classical ML, retrieval). A tab keeps missions whose `task_type` is one of that task’s workers. Snake, MinAtar, and AgentGym all sit under Environment RL because their worker is `rl`.
 - **Interactive Search & Sorting**: Real-time filtering across goals, IDs, environments, hosts, and task types; sortable by newest, highest metric score, or fastest duration.
 - **KPI Summary Cards**: Displays Total Completed Runs, Target Pass Rate (% meeting or exceeding target), and Total Iterations Executed across historical runs.
 - **Convergence Cards**: Shows short ID, task type tag, remote/local node host, relative/exact timestamp, goal text, target metric vs achieved best score, progress bar, iterations, and duration. Clicking a card opens the Mission HUD.

@@ -47,10 +47,14 @@ def test_docs_and_goal_bar_use_the_same_task_names():
     readme = (_ROOT / "README.md").read_text()
     goal = (_ROOT / "frontend" / "src" / "components" / "command-center" / "GoalInput.tsx").read_text()
     docs_page = (_ROOT / "frontend" / "src" / "app" / "docs" / "page.tsx").read_text()
+    completed = (_ROOT / "frontend" / "src" / "app" / "completed" / "page.tsx").read_text()
+    recipes = (_ROOT / "frontend" / "src" / "app" / "recipes" / "page.tsx").read_text()
     for group in TASK_GROUPS:
         assert group.task in design
         assert group.task in readme
         assert group.task in docs_page
+        assert f'label: "{group.task}"' in completed
+        assert f'label: "{group.task}"' in recipes
         assert f'label: "{group.task}"' in goal or f"label: '{group.task}'" in goal
         for algo in group.algorithms:
             assert f'value: "{algo.task_type}"' in goal
