@@ -13,7 +13,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Dedicated Completed Missions Archive & Proof Verification** — Dedicated historical repository (`/completed`) with multi-domain category tabs, instant search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`).
 - **Live Mission HUD & Model Play** — Missions stay on training (telemetry, memory gauges, pivots). Play / inference is `/models/{id}`: canvas players stream frame-by-frame Q-values, action probabilities, and Shannon policy entropy.
 - **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), the MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, and MultiTurnAgentGym.
-- **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, On-Policy Distillation (OPD), RFT, and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
+- **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, On-Policy Distillation (OPD), RFT, RLCD (calibrated skill readout), and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
 
 
 ### Screenshots
@@ -51,7 +51,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task Types
 
-ASTRA supports eleven training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `prompt`, `star` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains.
+ASTRA supports twelve training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `rlcd`, `prompt`, `star` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains. `embed` and `rerank` are local sentence-transformer tasks, not Mini LoRA paradigms.
 
 ## Quick Start
 
@@ -140,11 +140,11 @@ ASTRA's architecture and capabilities are structured into seven core development
 
 Optimized for **Apple Silicon M4, 24 GB unified memory**.
 
-Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
+Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `rlcd`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
 
 | Machine | Role | Models / Load |
 |---|---|---|
 | MacBook M4 24 GB | MLX inference (Lead + Critic agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) ≈ 8.5 GB |
-| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
+| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `rlcd`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.

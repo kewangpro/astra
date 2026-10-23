@@ -2727,3 +2727,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `ENSEMBLE_RERANKER_MODEL`. Astra recipe `ensemble_rerank_v1` / task_type
   `rerank` (same local wrapper as embed).
 
+### Phase 89 — RLCD calibrated routing decisions (2026-10-23)
+
+- [x] **`task_type: rlcd`** wired through LeadAgent schema/prompts, `_ENV_RECIPE` → `ensemble_rlcd_v1.yaml`, SSH force-remote set, pivot safelist (`num_generations`, `temp` ≤ 1.0), crystallizer skip, safety classifier, checkpoint pattern `checkpoints/best/`, GoalInput + completed/recipes LLM filters. Goal metric is the trainer's readout `Pass rate`, not `bare_eval` JSON-plan scoring.
+- [x] **`ensemble/finetune/rlcd_train.py`** — sample M rationales, read the closed skill-set distribution after `Answer:` (joint log-prob, then softmax), stage 1 pathwise Brier, stage 2 REINFORCE at `c=0.3` with KL `β=0.04` to the stage-1 weights. `best/` is lowest Brier. Deployed to Mini `~/finetune/rlcd_train.py`. Recipe is a 1B cold start, 100 steps per stage.
+- [x] **Docs** — DESIGN / UX_SPEC / README; ensemble `FINETUNE.md` Method G.
+

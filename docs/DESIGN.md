@@ -60,7 +60,7 @@ Plan → generate script → sandbox → evaluate → pivot or stop.
 - **Pivots** escalate when a plateau holds: hyperparameters, then architecture, then algorithm (unless the goal named one), then reward shape. Deep plateau plus a long stretch without a new best is **converged below target** (terminal `stalled`). Reverting a bad architecture restores the checkpoint but still counts as a failed search.
 - **Unnamed RL goals** take the env recipe’s algorithm; a named trainer stays locked.
 - **Warm-start** loads a prior checkpoint only when algorithm and policy tensor shapes match. A smaller net than the best-known architecture is refused until deep plateau.
-- **Fine-tune-remote** missions (`dpo` / `grpo` / `distill` / `opd` / `rft` / `sft` / `prompt`) keep the recipe authoritative. Pivots may only touch a small per-type sampling or duration safelist so a LoRA warm-start cannot be broken by a hallucinated learning rate or layer count.
+- **Fine-tune-remote** missions (`dpo` / `grpo` / `distill` / `opd` / `rft` / `rlcd` / `sft` / `prompt`) keep the recipe authoritative. Pivots may only touch a small per-type sampling or duration safelist so a LoRA warm-start cannot be broken by a hallucinated learning rate or layer count.
 
 ### 2.3. Memory
 
@@ -85,6 +85,7 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | `grpo` | On-policy group-relative policy gradient. |
 | `distill` | Teacher completions → student SFT. Not bounded by the student’s own plateau the way DPO/GRPO are. |
 | `opd` | On-policy distillation: student rollouts graded by teacher reverse KL via uncentered PPO advantages (dense credit on student states; optional centered outcome bonus). Still teacher-capped. |
+| `rlcd` | Calibrated routing decision (arXiv:2609.38850). Sample rationales, read the skill distribution after `Answer:`, train it with a proper score (Brier), then reinforce the rationale with that same score and a KL anchor to the stage-1 weights. Goal metric is readout accuracy. `best/` is the lowest Brier checkpoint, not a JSON-plan `bare_eval`. |
 | `rft` | Rejection-sample the student itself; SFT on survivors. No teacher. |
 | `prompt` | Append routing rules to a **copy** of the conductor prompt and score. Production prompt is never edited. |
 | `star` | Self-taught reasoner: rollouts, then hint-guided rationalization, then LoRA. |
