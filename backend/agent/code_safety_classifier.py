@@ -272,7 +272,7 @@ class CodeSafetyClassifier:
             and re.search(r"\bos\.execv\s*\(", code_only)
             and re.search(
                 r"dpo_train\.py|grpo_train\.py|distill_train\.py|rft_train\.py|"
-                r"opd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"
+                r"opd_train\.py|rlcd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"
                 r"train_embedding\.py|train_reranker\.py",
                 script,
             )

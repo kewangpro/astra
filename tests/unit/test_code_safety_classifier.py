@@ -194,6 +194,13 @@ def test_execv_distill_dispatch_is_safe():
     assert v.classifier == "static"
 
 
+def test_execv_rlcd_dispatch_is_safe():
+    script = "import os\nos.execv('/x/bin/python', ['/x/bin/python', '/Users/kewang/finetune/rlcd_train.py', '--model', 'x'])\n"
+    v = _check(script)
+    assert v.safe
+    assert v.classifier == "static"
+
+
 def test_execv_opd_dispatch_is_safe():
     script = "import os\nos.execv('/x/bin/python', ['/x/bin/python', '/Users/kewang/finetune/opd_train.py', '--model', 'x'])\n"
     v = _check(script)

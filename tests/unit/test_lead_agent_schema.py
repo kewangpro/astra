@@ -20,6 +20,7 @@ def test_plan_schema_task_type_enum_includes_finetune_types():
     assert "rft" in enum
     # opd: on-policy distillation — student rollouts + teacher reverse KL.
     assert "opd" in enum
+    assert "rlcd" in enum
     # prompt: edits the conductor prompt, not the weights. The only lever
     # measured to move the number, and directly deployable — production serves a
     # prompt, not an adapter.
@@ -29,7 +30,7 @@ def test_plan_schema_task_type_enum_includes_finetune_types():
 def test_plan_schema_task_type_enum_unchanged_for_existing_types():
     enum = _PLAN_SCHEMA["properties"]["plan"]["properties"]["task_type"]["enum"]
     assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill",
-                         "rft", "opd", "prompt"}
+                         "rft", "opd", "rlcd", "prompt", "embed", "rerank"}
 
 
 def test_planning_system_prompt_instructs_empty_hyperparameters_for_finetune():

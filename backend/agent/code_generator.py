@@ -1408,6 +1408,79 @@ The script must:
    "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
    Do not insert an empty string element in the list.)"""
 
+_RLCD_REMOTE_WRAPPER = """\
+import os
+
+os.chdir("{finetune_dir}")
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+argv = [
+    "{python_bin}", "{finetune_dir}/rlcd_train.py",
+    "--model", "{base_model}",
+    {adapter_arg}
+    "--save-dir", "{checkpoint_dir}",
+    "--prompt-template", "{prompt_template}",
+    "--stage", "{stage}",
+    "--score", "{score}",
+    "--num-generations", "{num_generations}",
+    "--temp", "{temp}",
+    "--max-tokens", "{max_tokens}",
+    "--eval-max-tokens", "{eval_max_tokens}",
+    "--sf-coef", "{sf_coef}",
+    "--kl-beta", "{kl_beta}",
+    "--num-layers", "{num_layers}",
+    "--lora-rank", "{lora_rank}",
+    "--lora-scale", "{lora_scale}",
+    "--lora-dropout", "{lora_dropout}",
+    "--iters", "{iters}",
+    "--learning-rate", "{learning_rate}",
+    "--max-grad-norm", "{max_grad_norm}",
+    "--steps-per-eval", "{steps_per_eval}",
+    "--steps-per-report", "{steps_per_report}",
+    "--save-every", "{save_every}",
+    "--max-seq-len", "{max_seq_len}",
+]
+if {routing_only}:
+    argv.append("--routing-only")
+
+os.execv("{python_bin}", argv)
+"""
+
+
+def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
+    """Canned os.execv wrapper. The coder model does not write the RLCD loop."""
+    cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
+    adapter_arg = '"--no-adapter",' if cold else '"--adapter", "%s",' % hp.get("adapter", "")
+    return _RLCD_REMOTE_WRAPPER.format(
+        finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
+        python_bin=hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+        checkpoint_dir=checkpoint_dir,
+        base_model=hp.get("base_model", ""),
+        adapter_arg=adapter_arg,
+        prompt_template=hp.get("prompt_template", "backend/prompts/conductor_min.md"),
+        stage=hp.get("stage", "both"),
+        score=hp.get("score", "brier"),
+        num_generations=hp.get("num_generations", 4),
+        temp=hp.get("temp", 1.0),
+        max_tokens=hp.get("max_tokens", 256),
+        eval_max_tokens=hp.get("eval_max_tokens", 256),
+        sf_coef=hp.get("sf_coef", 0.3),
+        kl_beta=hp.get("kl_beta", 0.04),
+        num_layers=hp.get("num_layers", -1),
+        lora_rank=hp.get("lora_rank", 16),
+        lora_scale=hp.get("lora_scale", 20.0),
+        lora_dropout=hp.get("lora_dropout", 0.0),
+        iters=hp.get("iters", 100),
+        learning_rate=hp.get("learning_rate", 2e-6),
+        max_grad_norm=hp.get("max_grad_norm", 1.0),
+        steps_per_eval=hp.get("steps_per_eval", 25),
+        steps_per_report=hp.get("steps_per_report", 1),
+        save_every=hp.get("save_every", 25),
+        max_seq_len=hp.get("max_seq_len", 4096),
+        routing_only=bool(hp.get("routing_only", True)),
+    )
+
+
 _STAR_REMOTE_WRAPPER = """\
 import sys
 import os
@@ -1797,6 +1870,8 @@ _ENV_RECIPE: dict = {
     # Seventh: full-suite RFT + surgical --force-gold-cases for git only (v6 stall).
     "ensemble_rft_focus_v7": "ensemble_rft_focus_v7.yaml",
     "opd": "ensemble_opd_v1.yaml",
+    "rlcd": "ensemble_rlcd_v1.yaml",
+    "ensemble_rlcd_v1": "ensemble_rlcd_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
     "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
@@ -1917,6 +1992,9 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # num_generations and temp are the diversity levers. Temp ceiling 1.0:
     # 7b6c78a6 pivots to 1.2–1.3 repeatedly collapsed mid-run held-out to 0%.
     "opd":     {"num_generations": (2, 4), "temp": (0.7, 1.0)},
+    # RLCD samples M rationales. Temp ceiling 1.0: the paper samples at 1, and
+    # the same collapse seen in OPD/RFT above 1.0 applies to rationale sampling.
+    "rlcd":    {"num_generations": (2, 4), "temp": (0.7, 1.0)},
     # prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
@@ -1999,7 +2077,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "star", "ensemble_star_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "prompt", "star", "embed", "rerank"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "star", "ensemble_star_v1", "ensemble_rlcd_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2170,6 +2248,10 @@ class CodeGenerator:
                 code = _SFT_REMOTE_WRAPPER.format(**sft_ctx)
             else:
                 code = _CANONICAL_SFT_RUNNER.format(**sft_ctx)
+        elif active_task == "rlcd":
+            # Canned wrapper. _build_user_prompt already formatted it from the
+            # recipe; do not ask the coder model to reimplement the readout.
+            code = user_prompt
         elif active_task == "star":
             star_ctx = self._build_star_context(
                 mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
@@ -2450,6 +2532,8 @@ class CodeGenerator:
             "api_url": api_url,
             "target_metric": json.dumps(plan.get("target_metric", {})),
         }
+        if effective_task_type == "rlcd":
+            return _format_rlcd_wrapper(hp, checkpoint_dir)
         if effective_task_type == "rl":
             tm = plan.get("target_metric", {})
             tm_name = next(iter(tm), None) if tm else None
@@ -2937,7 +3021,7 @@ class CodeGenerator:
         """
         import re
         trainers = (
-            "rft_train.py", "distill_train.py", "opd_train.py", "grpo_train.py",
+            "rft_train.py", "distill_train.py", "opd_train.py", "rlcd_train.py", "grpo_train.py",
             "dpo_train.py", "sft_train.py", "star_train.py",
         )
         if not code or not any(name in code for name in trainers):

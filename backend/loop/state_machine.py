@@ -354,6 +354,9 @@ _FINETUNE_PIVOT_KEYS_BY_TASK = {
     "rft":     frozenset({"k_samples", "temp"}),
     # OPD: student rollouts graded by teacher reverse KL — diversity levers.
     "opd":     frozenset({"num_generations", "temp"}),
+    # RLCD: rationale count and temperature. Temp ceiling 1.0 matches the paper
+    # (sampling at 1) and the OPD/RFT collapse above 1.0.
+    "rlcd":    frozenset({"num_generations", "temp"}),
     # Prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  frozenset(),
@@ -1053,6 +1056,14 @@ class LoopStateMachine:
                         elif _mission_task_type_for_eval in _FINETUNE_REMOTE_TASK_TYPES:
                             if _mission_task_type_for_eval == "sft":
                                 goal_val = current_metrics.get("eval_loss")
+                            elif _mission_task_type_for_eval == "rlcd":
+                                # Readout argmax accuracy from rlcd_train.py.
+                                # bare_eval scores JSON plans; RLCD's decision is
+                                # the skill distribution after "Answer:".
+                                goal_val = getattr(self, "_live_pass_rate_best", {}).pop(mission_id, None)
+                                if goal_val is None:
+                                    pct = self._local_acc_from_log(mission_id, _PASS_RATE_RE)
+                                    goal_val = None if pct is None else pct / 100.0
                             elif _mission_task_type_for_eval == "post-training":
                                 active_t = plan.get("active_task_type", "sft")
                                 if active_t == "sft":
@@ -1252,7 +1263,7 @@ class LoopStateMachine:
                 # checkpoint that first set the best.
                 active_t = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
                 if (
-                    active_t in ("dpo", "grpo", "distill", "rft", "opd", "star")
+                    active_t in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "star")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
@@ -1580,7 +1591,7 @@ class LoopStateMachine:
                     # and the pivot telemetry don't advertise changes that never
                     # actually happen (real incident: mission 15a1d093 iter 4 pivot
                     # logged Snake reward-shaping env_kwargs on a DPO mission).
-                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "opd", "prompt"):
+                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt"):
                         _safelist = _FINETUNE_PIVOT_KEYS_BY_TASK.get(plan.get("task_type"), frozenset())
                         _dropped = {k for k in adjustments if k not in _safelist}
                         if _dropped:
@@ -3810,6 +3821,8 @@ class LoopStateMachine:
                 "rft": _DISTILL_LOSS_RE,
                 # opd_train.py uses the same Step N/M loss=… contract.
                 "opd": _DISTILL_LOSS_RE,
+                # rlcd_train.py prints "Step N/M | loss=<brier>" — same shape as GRPO.
+                "rlcd": _GRPO_LOSS_RE,
             }.get(active_t, _DPO_LOSS_RE)
             for match in loss_re.finditer(new_output):
                 step_num = int(match.group(1))
@@ -3851,7 +3864,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "opd", "prompt", "sft", "post-training", "star", "embed", "rerank"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "sft", "post-training", "star", "embed", "rerank"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

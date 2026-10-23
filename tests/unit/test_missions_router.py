@@ -174,6 +174,7 @@ def test_infer_task_type_from_goal():
     assert _infer_task_type_from_goal("Distill conductor_gemma to 82% pass rate") == "distill"
     assert _infer_task_type_from_goal("On-policy distillation for Ensemble routing to 90% pass rate") == "opd"
     assert _infer_task_type_from_goal("OPD student rollouts with teacher reverse KL") == "opd"
+    assert _infer_task_type_from_goal("RLCD calibrated decision model for routing") == "rlcd"
     assert _infer_task_type_from_goal("Prompt optimization for conductor prompt") == "prompt"
     assert _infer_task_type_from_goal("Train a Snake-v0 PPO agent to achieve 100 food eaten") == "rl"
 

@@ -55,6 +55,7 @@ export function GoalInput() {
             <option value="auto">auto (detect)</option>
             <option value="rft">rft</option>
             <option value="opd">opd</option>
+            <option value="rlcd">rlcd</option>
             <option value="distill">distill</option>
             <option value="dpo">dpo</option>
             <option value="grpo">grpo</option>

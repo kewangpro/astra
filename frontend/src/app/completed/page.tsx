@@ -119,6 +119,7 @@ export default function CompletedMissionsPage() {
           taskTypeStr === "star" ||
           taskTypeStr === "rft" ||
           taskTypeStr === "opd" ||
+          taskTypeStr === "rlcd" ||
           taskTypeStr === "distill" ||
           taskTypeStr === "prompt" ||
           taskTypeStr === "mlx_lora" ||

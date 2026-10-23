@@ -2451,6 +2451,44 @@ def test_opd_resolve_hyperparams_recipe_authoritative():
     assert hp["prompt_template"] == "backend/prompts/conductor_min.md"
 
 
+def test_rlcd_wrapper_execs_the_trainer(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+    gen = CodeGenerator(_make_provider())
+    plan = {"task_type": "rlcd", "hyperparameters": {}, "target_metric": {"pass_rate": 0.5}}
+    script = gen._build_user_prompt("rlcd", "test-id", plan, "/Users/kewang/finetune/adapters/astra_test_iter0")
+    assert "rlcd_train.py" in script
+    assert "os.execv(" in script
+    assert "subprocess" not in script
+    assert 'os.chdir("/Users/kewang/finetune")' in script
+    assert '"--stage", "both"' in script
+    assert '"--score", "brier"' in script
+    assert '"--sf-coef", "0.3"' in script
+    assert '"--kl-beta", "0.04"' in script
+    assert '"--no-adapter",' in script
+    assert "if True:" in script
+
+
+def test_rlcd_pivot_lever_is_num_generations_and_temp():
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp
+    assert _clamp_finetune_pivot_hp("rlcd", {"num_generations": 99, "temp": 1.4, "learning_rate": 1.0}) == {
+        "num_generations": 4,
+        "temp": 1.0,
+    }
+
+
+def test_rlcd_resolve_hyperparams_recipe_authoritative():
+    from backend.agent.code_generator import _resolve_hyperparams
+    hp = _resolve_hyperparams("rlcd", {"learning_rate": 0.9, "num_layers": 3, "sf_coef": 1.0})
+    assert hp["learning_rate"] == 2e-6
+    assert hp["num_layers"] == -1
+    assert hp["sf_coef"] == 0.3
+    assert hp["kl_beta"] == 0.04
+    assert hp["stage"] == "both"
+    assert hp["no_adapter"] is True
+
+
 def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
     p = _opd_prompt(tmp_path, monkeypatch)
     assert '"--adv-clip", "5.0"' in p or '"--adv-clip", "5"' in p

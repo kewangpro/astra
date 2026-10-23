@@ -136,7 +136,7 @@ class ErrorAnalyzer:
                     f.write(pinned)
                 return fixed_path
             trainers = (
-                "rft_train.py", "distill_train.py", "opd_train.py", "grpo_train.py",
+                "rft_train.py", "distill_train.py", "opd_train.py", "rlcd_train.py", "grpo_train.py",
                 "dpo_train.py", "sft_train.py", "star_train.py",
             )
             if any(name in original_code for name in trainers) and "os.execv" in original_code:

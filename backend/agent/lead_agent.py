@@ -23,7 +23,7 @@ You are ASTRA's Lead Agent — an autonomous ML training strategist.
 Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
-Consider: task type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/prompt), algorithm selection, hyperparameters,
+Consider: task type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/rlcd/prompt), algorithm selection, hyperparameters,
 curriculum phases, and how you will measure success against the target metric.
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
@@ -34,15 +34,15 @@ For mlx_lora tasks (Apple Silicon MLX fine-tuning), include "dataset" as a top-l
 with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lora_scale,
 lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
 
-For sft/dpo/grpo/distill/rft/opd/prompt tasks (Ensemble routing model fine-tuning or prompt optimization via existing scripts in
-ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.py, rft_train.py, opd_train.py, bare_eval.py): leave "hyperparameters"
+For sft/dpo/grpo/distill/rft/opd/rlcd/prompt tasks (Ensemble routing model fine-tuning or prompt optimization via existing scripts in
+ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, bare_eval.py): leave "hyperparameters"
 as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
 finetune_dir/python_bin paths, LoRA config, and all training/eval hyperparameters are supplied
 entirely by the recipe (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml
-/ ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
+/ ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_rlcd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
 mismatched num_layers will crash the run. The only fields you should set are "task_type"
-("sft", "dpo", "grpo", "distill", "rft", "opd", or "prompt"), "algorithm" (a short label, e.g. "MLX SFT", "DPO", "GRPO",
-"Distill", "RFT", "OPD", "Prompt Optimization"), and "reasoning".
+("sft", "dpo", "grpo", "distill", "rft", "opd", "rlcd", or "prompt"), "algorithm" (a short label, e.g. "MLX SFT", "DPO", "GRPO",
+"Distill", "RFT", "OPD", "RLCD", "Prompt Optimization"), and "reasoning".
   - "sft": supervised fine-tuning on routing demonstrations. Learns schema and basic task assignment via MLX on Apple Silicon GPU.
   - "prompt": optimize routing instructions by proposing additional routing rules appended to the conductor prompt. Evaluated on model-routed accuracy via bare_eval.
   - "distill": teach correct decisions from a STRONGER TEACHER model (off-policy: teacher completions → SFT). Capped by the teacher:
@@ -58,6 +58,7 @@ mismatched num_layers will crash the run. The only fields you should set are "ta
     model can produce at least once", which is strictly higher than "what a 12B gets right
     first try". Prefer rft over distill/opd when the failing cases are ones the teacher also gets
     wrong, or when a case is answered correctly only sometimes.
+  - "rlcd": calibrated routing decision (arXiv:2609.38850). Sample rationales, read the skill distribution after Answer:, train it with the Brier score, then reinforce the rationale with the same score. Pass rate is readout accuracy, not JSON-plan accuracy. Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
   - "dpo"/"grpo": preference / RL fine-tuning.
 
 For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
@@ -94,23 +95,23 @@ You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaue
 Given the current metrics, training history, and escalation level, propose a strategic pivot.
 Respond with valid JSON.
 
-For sft/dpo/grpo/distill/rft/opd/prompt tasks (Ensemble routing model fine-tuning or prompt optimization): almost every hyperparameter is
+For sft/dpo/grpo/distill/rft/opd/rlcd/prompt tasks (Ensemble routing model fine-tuning or prompt optimization): almost every hyperparameter is
 recipe-locked and CANNOT be changed by a pivot — the warm-start adapter path, LoRA config,
 learning_rate, beta, epochs, and everything else are known-good values tuned against a specific
 adapter (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml /
-ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_prompt_v1.yaml); any other
+ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_rlcd_v1.yaml / ensemble_prompt_v1.yaml); any other
 value you propose for them is silently ignored, and so is any algorithm switch (task type is
 locked). The PPO/DQN ranges and escalation-level guidance below do NOT apply to these. The ONLY
 hyperparameters one of these pivots can actually affect, within these bounds:
   - "learning_rate": 1e-5 – 5e-4       (sft only)
   - "iters": 50 – 300                 (sft only)
   - "temp" (sampling temperature): 0.7 – 1.5           (dpo/grpo)
-  - "temp" (RFT/OPD): 0.7 – 1.0   (pivots above 1.0 collapsed 7b6c78a6 and 6f4204c7)
+  - "temp" (RFT/OPD/RLCD): 0.7 – 1.0   (pivots above 1.0 collapsed 7b6c78a6 and 6f4204c7)
   - "k_collect" (DPO only — candidates sampled per case): 4 – 16
-  - "num_generations" (GRPO/OPD — rollouts per prompt): 2 – 4
+  - "num_generations" (GRPO/OPD/RLCD — rollouts per prompt): 2 – 4
   - "iters" (distill only — mlx_lm.lora training steps): 200 – 800
   - "k_samples" (RFT only — completions sampled per case before filtering): 4 – 16
-  - "temp" applies to rft/opd as well as dpo/grpo: rft and opd need temperature > 0 so
+  - "temp" applies to rft/opd/rlcd as well as dpo/grpo: rft, opd, and rlcd need temperature > 0 so
     sampling visits diverse states. At temp 0 every sample is identical and the method
     degenerates.
 For "prompt" tasks, all hyperparameters are recipe-locked (greedy eval at temperature 0) and adjustments must be an empty object {}.
@@ -244,7 +245,7 @@ _PLAN_SCHEMA = {
         "plan": {
             "type": "object",
             "properties": {
-                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill", "rft", "opd", "prompt", "embed", "rerank"]},
+                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "embed", "rerank"]},
                 "algorithm": {"type": "string"},
                 "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},
@@ -298,7 +299,7 @@ class LeadAgent:
             f"Task type hint: {task_type}\n"
             f"Target metric: {json.dumps(target_metric)}\n"
             + (f"Warm-start hint (best matching past recipe): {json.dumps(warm_hint)}\n" if warm_hint else "")
-            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/prompt/embed/rerank) that best matches the Goal. Return JSON."
+            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/rlcd/prompt/embed/rerank) that best matches the Goal. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PLAN_SCHEMA)

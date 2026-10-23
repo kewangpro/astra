@@ -116,6 +116,7 @@ export default function RecipesPage() {
       return (
         r.name.toLowerCase().includes("distill") ||
         r.name.toLowerCase().includes("opd") ||
+        r.name.toLowerCase().includes("rlcd") ||
         r.name.toLowerCase().includes("dpo") ||
         r.name.toLowerCase().includes("grpo") ||
         r.name.toLowerCase().includes("prompt") ||
