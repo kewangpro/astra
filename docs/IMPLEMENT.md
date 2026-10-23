@@ -2733,3 +2733,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **`ensemble/finetune/rlcd_train.py`** — sample M rationales, read the closed skill-set distribution after `Answer:` (joint log-prob, then softmax), stage 1 pathwise Brier, stage 2 REINFORCE at `c=0.3` with KL `β=0.04` to the stage-1 weights. `best/` is lowest Brier. Deployed to Mini `~/finetune/rlcd_train.py`. Recipe is a 1B cold start, 100 steps per stage.
 - [x] **Docs** — DESIGN / UX_SPEC / README; ensemble `FINETUNE.md` Method G.
 
+### Phase 90 — Suite event loop on Python 3.9 (2026-10-23)
+
+- [x] **`asyncio.run` closed the process loop.** `test_fix_script_pins_finetune_interpreter_instead_of_rewriting` and `test_fix_script_refuses_to_rewrite_already_pinned_wrapper` called `asyncio.run()`. On Python 3.9 that closes the loop and does not install a new one. Every later `asyncio.get_event_loop()` in `test_error_analyzer.py`, `test_remote_telemetry_tail.py`, and `test_state_machine_helpers.py` then raised "no current event loop" — 32 failures that each passed when run alone. Both call sites now use `get_event_loop().run_until_complete()`, matching the rest of the unit tests. Full suite: **1271 passed**. Do not reintroduce `asyncio.run()` in these sync tests.
+

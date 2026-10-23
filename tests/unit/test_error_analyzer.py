@@ -136,7 +136,11 @@ def test_fix_script_strips_markdown_fences(tmp_path):
 
 
 def test_fix_script_pins_finetune_interpreter_instead_of_rewriting(tmp_path):
-    """ModuleNotFoundError: mlx on an os.execv wrapper must not become a gym script."""
+    """ModuleNotFoundError: mlx on an os.execv wrapper must not become a gym script.
+
+    Drive the coroutine with get_event_loop().run_until_complete. asyncio.run()
+    closes the Python 3.9 loop and fails every later get_event_loop() test.
+    """
     script = tmp_path / "train.py"
     script.write_text(
         'argv = ["/Users/kewang/finetune-env/bin/python", "/Users/kewang/finetune/rft_train.py"]\n'
@@ -150,7 +154,9 @@ def test_fix_script_pins_finetune_interpreter_instead_of_rewriting(tmp_path):
     )
     provider = _make_provider("import gym\nfrom stable_baselines3 import PPO\n")
     analyzer = ErrorAnalyzer(provider)
-    path = asyncio.run(analyzer.fix_script(str(script), mlx_error, iteration=1))
+    path = asyncio.get_event_loop().run_until_complete(
+        analyzer.fix_script(str(script), mlx_error, iteration=1)
+    )
     text = (tmp_path / "train.py").read_text()
     assert "gym" not in text
     assert 'os.execv("/Users/kewang/finetune-env/bin/python", argv)' in text
@@ -168,7 +174,9 @@ def test_fix_script_refuses_to_rewrite_already_pinned_wrapper(tmp_path):
     provider = _make_provider("import gym\n")
     analyzer = ErrorAnalyzer(provider)
     with pytest.raises(RuntimeError, match="interpreter"):
-        asyncio.run(analyzer.fix_script(str(script), mlx_error, iteration=1))
+        asyncio.get_event_loop().run_until_complete(
+            analyzer.fix_script(str(script), mlx_error, iteration=1)
+        )
     provider.generate.assert_not_called()
     assert "gym" not in script.read_text()
 
