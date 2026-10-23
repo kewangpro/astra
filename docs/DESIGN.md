@@ -73,22 +73,20 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 ### 2.4. Specialist trainers
 
-`task_type` selects the worker. LoRA is a mechanism, not a task type. `prompt` changes no weights.
+A task is the objective. An algorithm is the update rule under that task. `task_type` is the worker key for the algorithm. LoRA is a mechanism, not a task. Only Environment RL switches algorithms during a mission. `prompt` changes no weights.
 
-| Type | Intent |
+| Task | Algorithms |
 |---|---|
-| `rl` | Policy from reward in a Gym env (Snake, Tetris, 2048, MinAtar suite, Grid Pac-Man, AgentGym, or a standard Gymnasium id). SB3, or a custom lookahead / actor-critic trainer where the env needs it. |
-| `sft` | Supervised fine-tune on labeled completions (held-out split, optional CoT traces). Local HF/PEFT or remote MLX. |
-| `ml` | Tabular / classical ML. |
-| `mlx_lora` | Local Apple-Silicon LoRA. |
-| `dpo` | Preference pairs; no separate reward model. |
-| `grpo` | On-policy group-relative policy gradient. |
-| `distill` | Teacher completions → student SFT. Not bounded by the student’s own plateau the way DPO/GRPO are. |
-| `opd` | On-policy distillation: student rollouts graded by teacher reverse KL via uncentered PPO advantages (dense credit on student states; optional centered outcome bonus). Still teacher-capped. |
-| `rlcd` | Calibrated routing decision (arXiv:2609.38850). Sample rationales, read the skill distribution after `Answer:`, train it with a proper score (Brier), then reinforce the rationale with that same score and a KL anchor to the stage-1 weights. Goal metric is readout accuracy. `best/` is the lowest Brier checkpoint, not a JSON-plan `bare_eval`. |
-| `rft` | Rejection-sample the student itself; SFT on survivors. No teacher. |
-| `prompt` | Append routing rules to a **copy** of the conductor prompt and score. Production prompt is never edited. |
-| `star` | Self-taught reasoner: rollouts, then hint-guided rationalization, then LoRA. |
+| Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) |
+| Reinforcement fine-tuning | GRPO (`grpo`), DPO (`dpo`) |
+| Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
+| On-policy distillation | OPD (`opd`) |
+| Calibrated decision | RLCD (`rlcd`) |
+| Prompt edit | rule append (`prompt`) |
+| Classical ML | random forest (`ml`) |
+| Retrieval | embedding (`embed`), reranker (`rerank`) |
+
+Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO turns that same oracle into chosen and rejected pairs, then applies the offline preference loss. RLCD trains the skill distribution after each rationale with the Brier score; its goal is readout accuracy, and `best/` is the lowest Brier checkpoint.
 
 **Environments.** Arcade envs are 10×10 NumPy Gym wrappers. Seaquest, Asterix, and Grid Pac-Man follow their source rules closely enough that play and checkpoints stay honest (oxygen/surface, spawn/ramp, leftover ghosts chase, mouth faces movement). Env classes load lazily so importing the package does not load every game.
 

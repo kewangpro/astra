@@ -14,6 +14,7 @@ from typing import Optional
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
 from backend.agent.kv_cache import SmartKVCache
+from backend.agent.task_catalog import format_task_pairs, task_type_enum
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -23,8 +24,10 @@ You are ASTRA's Lead Agent — an autonomous ML training strategist.
 Your job is to decompose a high-level training goal into a concrete plan.
 
 Always respond with valid JSON. Think step by step before committing to a plan.
-Consider: task type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/rlcd/prompt), algorithm selection, hyperparameters,
-curriculum phases, and how you will measure success against the target metric.
+Consider the task-algorithm pairs below, then hyperparameters, curriculum phases, and how you will measure success against the target metric.
+
+Task is the objective. Algorithm is the update rule. task_type is the worker for that algorithm. Only Environment RL may switch among PPO, DQN, A2C, SAC, and TD3. Every other algorithm stays fixed for the mission. Rejection sampling is supervised fine-tuning. GRPO and DPO are reinforcement fine-tuning.
+""" + format_task_pairs() + """
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
 (e.g. "iris", "digits", "breast_cancer", "wine") for built-in datasets, or a file path for
@@ -34,15 +37,13 @@ For mlx_lora tasks (Apple Silicon MLX fine-tuning), include "dataset" as a top-l
 with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lora_scale,
 lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
 
-For sft/dpo/grpo/distill/rft/opd/rlcd/prompt tasks (Ensemble routing model fine-tuning or prompt optimization via existing scripts in
-ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, bare_eval.py): leave "hyperparameters"
+For sft/dpo/grpo/distill/rft/opd/rlcd/star/prompt tasks (Ensemble routing model fine-tuning or prompt optimization via existing scripts in
+ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, star_train.py, bare_eval.py): leave "hyperparameters"
 as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
 finetune_dir/python_bin paths, LoRA config, and all training/eval hyperparameters are supplied
 entirely by the recipe (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml
 / ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_rlcd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
-mismatched num_layers will crash the run. The only fields you should set are "task_type"
-("sft", "dpo", "grpo", "distill", "rft", "opd", "rlcd", or "prompt"), "algorithm" (a short label, e.g. "MLX SFT", "DPO", "GRPO",
-"Distill", "RFT", "OPD", "RLCD", "Prompt Optimization"), and "reasoning".
+mismatched num_layers will crash the run. The only fields you should set are "task_type" (the worker key from the pairs above), "algorithm" (the algorithm name: "PPO", "DQN", "A2C", "SAC", "TD3", "GRPO", "DPO", "SFT", "MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization"), and "reasoning".
   - "sft": supervised fine-tuning on routing demonstrations. Learns schema and basic task assignment via MLX on Apple Silicon GPU.
   - "prompt": optimize routing instructions by proposing additional routing rules appended to the conductor prompt. Evaluated on model-routed accuracy via bare_eval.
   - "distill": teach correct decisions from a STRONGER TEACHER model (off-policy: teacher completions → SFT). Capped by the teacher:
@@ -53,7 +54,7 @@ mismatched num_layers will crash the run. The only fields you should set are "ta
     the student's own states (fixes exposure bias vs off-policy distill). Still teacher-capped —
     prefer rft/grpo when the failing cases are ones the teacher also gets wrong. Prefer opd over
     distill when trajectories are long enough that early mistakes compound.
-  - "rft": rejection-sampling fine-tuning. NO teacher — sample K completions from the model
+  - "rft": rejection sampling, a supervised fine-tuning algorithm. NO teacher — sample K completions from the model
     itself, keep only the ones that score correct, and SFT on those. Its ceiling is "what the
     model can produce at least once", which is strictly higher than "what a 12B gets right
     first try". Prefer rft over distill/opd when the failing cases are ones the teacher also gets
@@ -245,7 +246,7 @@ _PLAN_SCHEMA = {
         "plan": {
             "type": "object",
             "properties": {
-                "task_type": {"type": "string", "enum": ["rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "embed", "rerank"]},
+                "task_type": {"type": "string", "enum": task_type_enum()},
                 "algorithm": {"type": "string"},
                 "env_id": {"type": "string"},
                 "hyperparameters": {"type": "object"},
@@ -349,7 +350,7 @@ class LeadAgent:
                 f"{json.dumps(tried_architectures)}. Propose something structurally different in "
                 f"depth or width (e.g. a different number of layers, not just resized existing ones)."
             )
-        if current_algorithm.upper() in ("DPO", "GRPO", "DISTILL", "RFT", "OPD"):
+        if current_algorithm.upper() in ("DPO", "GRPO", "DISTILL", "RFT", "OPD", "RLCD"):
             if current_algorithm.upper() == "DISTILL":
                 _lever_desc = "\"iters\" (200–800), the mlx_lm.lora training-step count"
             elif current_algorithm.upper() == "RFT":
@@ -367,6 +368,11 @@ class LeadAgent:
                     "\"temp\" (0.7–1.0) — OPD needs on-policy variety so the teacher "
                     "grades states the student actually visits; temps above 1.0 "
                     "collapsed mid-run held-out on 7b6c78a6"
+                )
+            elif current_algorithm.upper() == "RLCD":
+                _lever_desc = (
+                    "\"num_generations\" (2–4), rationales per question, and "
+                    "\"temp\" (0.7–1.0)"
                 )
             else:
                 _sampling_key = "num_generations" if current_algorithm.upper() == "GRPO" else "k_collect"
@@ -427,7 +433,7 @@ class LeadAgent:
             current_state_lines.append(f"Current hyperparameters: {json.dumps(current_hyperparameters)}")
         if current_env_kwargs:
             current_state_lines.append(f"Current env_kwargs: {json.dumps(current_env_kwargs)}")
-        if current_algorithm.upper() not in ("DPO", "GRPO", "DISTILL", "RFT", "OPD"):
+        if current_algorithm.upper() not in ("DPO", "GRPO", "DISTILL", "RFT", "OPD", "RLCD"):
             current_state_lines.append(
                 f"Reward-shaping constraints for env_id={env_id or 'unknown'}: "
                 f"{env_reward_guidance(env_id)}"

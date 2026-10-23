@@ -139,6 +139,19 @@ class TestDpoGrpoEscalation:
         assert "food_reward" not in query and "net_arch" not in query
 
     @pytest.mark.asyncio
+    async def test_rlcd_escalation_mentions_num_generations_and_temp(self):
+        agent = _agent()
+        await agent.propose_pivot(
+            {"pass_rate": 0.4}, [], escalation_level=2,
+            current_algorithm="RLCD", algorithm_locked=True,
+        )
+        query = agent._generate_structured.call_args.args[0][-1].content
+        assert "num_generations" in query
+        assert "temp" in query
+        assert "k_collect" not in query
+        assert "food_reward" not in query and "net_arch" not in query
+
+    @pytest.mark.asyncio
     async def test_dpo_escalation_case_insensitive_algorithm(self):
         agent = _agent()
         await agent.propose_pivot(

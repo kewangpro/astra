@@ -2737,3 +2737,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 - [x] **`asyncio.run` closed the process loop.** `test_fix_script_pins_finetune_interpreter_instead_of_rewriting` and `test_fix_script_refuses_to_rewrite_already_pinned_wrapper` called `asyncio.run()`. On Python 3.9 that closes the loop and does not install a new one. Every later `asyncio.get_event_loop()` in `test_error_analyzer.py`, `test_remote_telemetry_tail.py`, and `test_state_machine_helpers.py` then raised "no current event loop" — 32 failures that each passed when run alone. Both call sites now use `get_event_loop().run_until_complete()`, matching the rest of the unit tests. Full suite: **1271 passed**. Do not reintroduce `asyncio.run()` in these sync tests.
 
+### Phase 91 — Task / algorithm pairs (2026-10-23)
+
+- [x] **Catalog** — `backend/agent/task_catalog.py` is the worker list. A task is the objective; an algorithm is the update rule; `task_type` is the worker key. Environment RL is PPO, DQN, A2C, SAC, TD3 on `rl`. Reinforcement fine-tuning is GRPO and DPO. Supervised fine-tuning is SFT, local LoRA, distillation, rejection sampling (`rft`), and STaR. On-policy distillation, RLCD, prompt edit, classical ML, and retrieval each keep their own worker. Language-model PPO is not a reinforcement fine-tuning algorithm.
+- [x] **Planner and goal bar** — the plan schema enum comes from the catalog (adds `star`). The planning prompt states the pairs. The goal bar groups algorithms under those task labels. RLCD pivots use `num_generations` and `temp`, the same lock as the other fine-tune algorithms.
+- [x] **Docs** — DESIGN § 2.4, README, UX_SPEC.
+

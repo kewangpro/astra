@@ -30,7 +30,7 @@ def test_plan_schema_task_type_enum_includes_finetune_types():
 def test_plan_schema_task_type_enum_unchanged_for_existing_types():
     enum = _PLAN_SCHEMA["properties"]["plan"]["properties"]["task_type"]["enum"]
     assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill",
-                         "rft", "opd", "rlcd", "prompt", "embed", "rerank"}
+                         "rft", "opd", "rlcd", "prompt", "embed", "rerank", "star"}
 
 
 def test_planning_system_prompt_instructs_empty_hyperparameters_for_finetune():

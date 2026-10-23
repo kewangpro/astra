@@ -13,7 +13,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Dedicated Completed Missions Archive & Proof Verification** — Dedicated historical repository (`/completed`) with multi-domain category tabs, instant search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`).
 - **Live Mission HUD & Model Play** — Missions stay on training (telemetry, memory gauges, pivots). Play / inference is `/models/{id}`: canvas players stream frame-by-frame Q-values, action probabilities, and Shannon policy entropy.
 - **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), the MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, and MultiTurnAgentGym.
-- **Multi-Paradigm Post-Training & Hybrid Compute** — Supports RL, SFT (with strict held-out validation and reasoning `<think>...</think>` preservation), DPO, GRPO, Distillation, On-Policy Distillation (OPD), RFT, RLCD (calibrated skill readout), and ML across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
+- **Multi-Paradigm Post-Training & Hybrid Compute** — Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), supervised fine-tuning (SFT, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decisions (RLCD), prompt edits, and classical ML, across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
 
 
 ### Screenshots
@@ -49,9 +49,20 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 | [IMPLEMENT.md](docs/IMPLEMENT.md) | Phase-by-phase implementation roadmap |
 | [UX_SPEC.md](docs/UX_SPEC.md) | Dashboard UX specification |
 
-## Task Types
+## Task and algorithm
 
-ASTRA supports twelve training paradigms — `rl`, `sft`, `ml`, `mlx_lora`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `rlcd`, `prompt`, `star` — each driving a different trainer/code-gen path. See [DESIGN.md § 2.4](docs/DESIGN.md) for what each one optimizes and how it trains. `embed` and `rerank` are local sentence-transformer tasks, not Mini LoRA paradigms.
+A task is the objective. An algorithm is the update rule. `task_type` is the worker key. See [DESIGN.md § 2.4](docs/DESIGN.md).
+
+| Task | Algorithms |
+|---|---|
+| Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) |
+| Reinforcement fine-tuning | GRPO (`grpo`), DPO (`dpo`) |
+| Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
+| On-policy distillation | OPD (`opd`) |
+| Calibrated decision | RLCD (`rlcd`) |
+| Prompt edit | rule append (`prompt`) |
+| Classical ML | random forest (`ml`) |
+| Retrieval | embedding (`embed`), reranker (`rerank`) |
 
 ## Quick Start
 

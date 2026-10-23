@@ -6,6 +6,53 @@ import { useRouter } from "next/navigation";
 
 const MAX = 280;
 
+const TASK_GROUPS: { label: string; options: { value: string; label: string }[] }[] = [
+  {
+    label: "Environment RL",
+    options: [{ value: "rl", label: "PPO, DQN, A2C, SAC, TD3" }],
+  },
+  {
+    label: "Reinforcement fine-tuning",
+    options: [
+      { value: "grpo", label: "GRPO" },
+      { value: "dpo", label: "DPO" },
+    ],
+  },
+  {
+    label: "Supervised fine-tuning",
+    options: [
+      { value: "sft", label: "SFT" },
+      { value: "mlx_lora", label: "SFT (local LoRA)" },
+      { value: "distill", label: "distillation" },
+      { value: "rft", label: "rejection sampling" },
+      { value: "star", label: "STaR" },
+    ],
+  },
+  {
+    label: "On-policy distillation",
+    options: [{ value: "opd", label: "OPD" }],
+  },
+  {
+    label: "Calibrated decision",
+    options: [{ value: "rlcd", label: "RLCD" }],
+  },
+  {
+    label: "Prompt edit",
+    options: [{ value: "prompt", label: "rule append" }],
+  },
+  {
+    label: "Classical ML",
+    options: [{ value: "ml", label: "random forest" }],
+  },
+  {
+    label: "Retrieval",
+    options: [
+      { value: "embed", label: "embedding" },
+      { value: "rerank", label: "reranker" },
+    ],
+  },
+];
+
 export function GoalInput() {
   const [goal, setGoal] = useState("");
   const [taskType, setTaskType] = useState("auto");
@@ -46,24 +93,22 @@ export function GoalInput() {
           mission.objective
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-[#64748b]">task:</span>
+          <span className="text-[10px] text-[#64748b]">algorithm:</span>
           <select
             value={taskType}
             onChange={(e) => setTaskType(e.target.value)}
             className="bg-[#0f172a] text-[#14b8a6] text-[10px] px-2 py-0.5 rounded border border-[rgba(20,184,166,0.2)] focus:outline-none cursor-pointer"
           >
             <option value="auto">auto (detect)</option>
-            <option value="rft">rft</option>
-            <option value="opd">opd</option>
-            <option value="rlcd">rlcd</option>
-            <option value="distill">distill</option>
-            <option value="dpo">dpo</option>
-            <option value="grpo">grpo</option>
-            <option value="prompt">prompt</option>
-            <option value="rl">rl</option>
-            <option value="sft">sft</option>
-            <option value="ml">ml</option>
-            <option value="mlx_lora">mlx_lora</option>
+            {TASK_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
       </div>
