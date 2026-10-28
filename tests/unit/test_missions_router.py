@@ -177,6 +177,8 @@ def test_infer_task_type_from_goal():
     assert _infer_task_type_from_goal("RLCD calibrated decision model for routing") == "rlcd"
     assert _infer_task_type_from_goal("Prompt optimization for conductor prompt") == "prompt"
     assert _infer_task_type_from_goal("Train a Snake-v0 PPO agent to achieve 100 food eaten") == "rl"
+    assert _infer_task_type_from_goal("Train HSTU on MovieLens-1M to reach HR@10 0.30") == "hstu"
+    assert _infer_task_type_from_goal("generative recommenders HSTU fine-tuning") == "hstu"
 
 
 

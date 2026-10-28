@@ -85,8 +85,9 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | Prompt edit | rule append (`prompt`) |
 | Classical ML | random forest (`ml`) |
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
+| Generative recommendation | HSTU (`hstu`) |
 
-Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO turns that same oracle into chosen and rejected pairs, then applies the offline preference loss. RLCD trains the skill distribution after each rationale with the Brier score; its goal is readout accuracy, and `best/` is the lowest Brier checkpoint.
+Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO turns that same oracle into chosen and rejected pairs, then applies the offline preference loss. RLCD trains the skill distribution after each rationale with the Brier score; its goal is readout accuracy, and `best/` is the lowest Brier checkpoint. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
 
 **Environments.** Arcade envs are 10×10 NumPy Gym wrappers. Seaquest, Asterix, and Grid Pac-Man follow their source rules closely enough that play and checkpoints stay honest (oxygen/surface, spawn/ramp, leftover ghosts chase, mouth faces movement). Env classes load lazily so importing the package does not load every game.
 

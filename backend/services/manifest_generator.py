@@ -38,6 +38,8 @@ _CHECKPOINT_PATTERNS: dict = {
     "embed": "checkpoints/modules.json",
     # CrossEncoder also writes config.json; modules.json may be absent — accept either
     "rerank": "checkpoints/config.json",
+    # hstu_train.py writes best.pt / last.pt under the mission checkpoint dir.
+    "hstu": "checkpoints/*.pt",
 }
 
 # For metrics where lower is better, flip the operator

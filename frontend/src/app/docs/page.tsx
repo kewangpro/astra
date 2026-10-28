@@ -171,6 +171,19 @@ const TASKS: Task[] = [
       },
     ],
   },
+  {
+    id: "generative-recommendation",
+    task: "Generative recommendation",
+    summary:
+      "Sequential transduction on user–item histories. From-scratch PyTorch HSTU in Astra (LSTM-style train loop) — not Mini MLX.",
+    algorithms: [
+      {
+        name: "HSTU",
+        taskType: "hstu",
+        body: "Next-item HSTU on MovieLens-1M (auto-download); goal metric is Hit Rate@10.",
+      },
+    ],
+  },
 ];
 
 export default function DocsPage() {

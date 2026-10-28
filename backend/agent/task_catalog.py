@@ -71,6 +71,10 @@ TASK_GROUPS: tuple[TaskGroup, ...] = (
             Algorithm("reranker", "rerank"),
         ),
     ),
+    TaskGroup(
+        "Generative recommendation",
+        (Algorithm("HSTU", "hstu"),),
+    ),
 )
 
 

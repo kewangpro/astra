@@ -24,6 +24,7 @@ def test_catalog_matches_the_task_algorithm_table():
         ("Prompt edit", [("rule append", "prompt")]),
         ("Classical ML", [("random forest", "ml")]),
         ("Retrieval", [("embedding", "embed"), ("reranker", "rerank")]),
+        ("Generative recommendation", [("HSTU", "hstu")]),
     ]
 
 

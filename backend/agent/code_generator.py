@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Optional
 
 from backend.agent.inference.base import InferenceProvider, Message, GenerationConfig
@@ -975,6 +976,31 @@ argv = [
 os.execv("{python_bin}", argv)
 """
 
+# HSTU — from-scratch PyTorch trainer in-repo (LSTM-style). NOT Mini MLX,
+# NOT Meta generative-recommenders. MovieLens-1M auto-downloads on first run.
+_HSTU_LOCAL_WRAPPER = """\
+import os
+
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+argv = [
+    "{python_bin}", "-m", "backend.trainers.hstu_train",
+    "--data-dir", "{data_dir}",
+    "--out", "{checkpoint_dir}",
+    "--epochs", "{epochs}",
+    "--batch-size", "{batch_size}",
+    "--lr", "{learning_rate}",
+    "--d-model", "{d_model}",
+    "--n-layers", "{n_layers}",
+    "--n-heads", "{n_heads}",
+    "--max-len", "{max_len}",
+    "--dropout", "{dropout}",
+    "--weight-decay", "{weight_decay}",
+    "--seed", "{seed}",
+]
+os.execv("{python_bin}", argv)
+"""
+
 _SFT_TEMPLATE = """\
 Generate a complete SFT (QLoRA) fine-tuning script using Astra's SFTTrainer.
 Use Astra's SFTTrainer (from backend.trainers.sft_trainer import SFTTrainer) to orchestrate training with strict held-out train_dataset and eval_dataset splitting (fixed seed 42), <think>...</think> reasoning trace preservation, and comprehensive telemetry (train_loss, eval_loss, perplexity).
@@ -1826,6 +1852,10 @@ _ENV_RECIPE: dict = {
     "ensemble_rerank_v1": "ensemble_rerank_v1.yaml",
     "rerank": "ensemble_rerank_v1.yaml",
     "rerank/v1": "ensemble_rerank_v1.yaml",
+    "hstu_ml1m_v1": "hstu_ml1m_v1.yaml",
+    "hstu": "hstu_ml1m_v1.yaml",
+    "hstu/ml1m": "hstu_ml1m_v1.yaml",
+    "hstu/v1": "hstu_ml1m_v1.yaml",
     "mlx_lora": "mlx_lora_v1.yaml",
     "dpo": "ensemble_dpo_v1.yaml",
     "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
@@ -1999,9 +2029,10 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     # there are no numerical hyperparameters to tune via pivot.
     "prompt":  {},
     "sft":     {"learning_rate": (1e-5, 5e-4), "iters": (50, 300)},
-    # embed/rerank: recipe-locked ST HPs — no pivot levers (same rationale as distill iters).
+    # embed/rerank/hstu: recipe-locked external trainers — no pivot levers.
     "embed":   {},
     "rerank":  {},
+    "hstu":    {},
     "post-training": {},
     "star":    {"k_samples": (4, 16), "temp": (0.7, 1.5), "rationalize_temp": (0.5, 1.2), "learning_rate": (1e-5, 5e-4)},
 }
@@ -2077,7 +2108,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "star", "ensemble_star_v1", "ensemble_rlcd_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2237,6 +2268,11 @@ class CodeGenerator:
             code = _EMBED_LOCAL_WRAPPER.format(
                 **self._build_embed_context(mission_id, plan, checkpoint_dir)
             )
+        elif active_task == "hstu":
+            # Local CUDA: Meta generative-recommenders. Not Mini MLX finetune-remote.
+            code = _HSTU_LOCAL_WRAPPER.format(
+                **self._build_hstu_context(mission_id, plan, checkpoint_dir)
+            )
         elif active_task == "sft":
             # For SFT on remote Mac Mini (settings.sandbox_host), generate the thin
             # os.execv wrapper invoking ~/finetune/sft_train.py (same pattern as DPO).
@@ -2346,6 +2382,37 @@ class CodeGenerator:
 
         logger.info("Generated training script: %s (%d chars)", script_path, len(code))
         return script_path
+
+    def _build_hstu_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+    ) -> dict:
+        recipe_key = plan.get("recipe") or plan.get("task_type") or "hstu"
+        hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
+        project_root = os.path.abspath(os.path.join(settings.data_path, ".."))
+        venv_python = os.path.join(project_root, ".venv", "bin", "python")
+        data_dir = str(hp.get("data_dir", "data/hstu"))
+        if not os.path.isabs(data_dir):
+            data_dir = os.path.join(project_root, data_dir)
+        ckpt = os.path.abspath(checkpoint_dir)
+        return {
+            "mission_id": mission_id,
+            "checkpoint_dir": ckpt,
+            "python_bin": str(hp.get("python_bin", venv_python if os.path.isfile(venv_python) else sys.executable)),
+            "data_dir": data_dir,
+            "epochs": int(hp.get("epochs", 5)),
+            "batch_size": int(hp.get("batch_size", 256)),
+            "learning_rate": float(hp.get("learning_rate", 1e-3)),
+            "d_model": int(hp.get("d_model", 64)),
+            "n_layers": int(hp.get("n_layers", 2)),
+            "n_heads": int(hp.get("n_heads", 2)),
+            "max_len": int(hp.get("max_len", 50)),
+            "dropout": float(hp.get("dropout", 0.1)),
+            "weight_decay": float(hp.get("weight_decay", 0.01)),
+            "seed": int(hp.get("seed", 42)),
+        }
 
     def _build_embed_context(
         self,

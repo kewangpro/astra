@@ -13,7 +13,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Dedicated Completed Missions Archive & Proof Verification** — Dedicated historical repository (`/completed`) with multi-domain category tabs, instant search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`).
 - **Live Mission HUD & Model Play** — Missions stay on training (telemetry, memory gauges, pivots). Play / inference is `/models/{id}`: canvas players stream frame-by-frame Q-values, action probabilities, and Shannon policy entropy.
 - **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), the MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, and MultiTurnAgentGym.
-- **Multi-Paradigm Post-Training & Hybrid Compute** — Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), supervised fine-tuning (SFT, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decisions (RLCD), prompt edits, and classical ML, across local Apple Silicon (Metal/MLX) and remote SSH compute nodes with real-time cluster memory visibility.
+- **Multi-Paradigm Post-Training & Hybrid Compute** — Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), supervised fine-tuning (SFT, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decisions (RLCD), prompt edits, classical ML, retrieval, and generative recommendation (HSTU), across local Apple Silicon (Metal/MLX), local CUDA, and remote SSH compute nodes with real-time cluster memory visibility.
 
 
 ### Screenshots
@@ -63,6 +63,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the wor
 | Prompt edit | rule append (`prompt`) |
 | Classical ML | random forest (`ml`) |
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
+| Generative recommendation | HSTU (`hstu`) |
 
 ## Quick Start
 

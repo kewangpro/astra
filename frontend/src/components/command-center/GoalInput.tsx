@@ -51,6 +51,10 @@ const TASK_GROUPS: { label: string; options: { value: string; label: string }[] 
       { value: "rerank", label: "reranker" },
     ],
   },
+  {
+    label: "Generative recommendation",
+    options: [{ value: "hstu", label: "HSTU" }],
+  },
 ];
 
 export function GoalInput() {

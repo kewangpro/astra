@@ -1,0 +1,31 @@
+name: hstu_ml1m_v1
+version: "1.1.0"
+created_at: "2026-10-28"
+task_type: hstu
+domain: recsys
+description: >
+  From-scratch HSTU (Hierarchical Sequential Transduction Units) next-item
+  trainer on MovieLens-1M — same shape as training a small LSTM recommender
+  (PyTorch loop in backend/trainers/hstu_train.py). Auto-downloads ML-1M on
+  first run. Local SubprocessSandbox (CPU/MPS/CUDA); not Mini MLX and not Meta
+  generative-recommenders. Goal metric is Hit Rate@10.
+
+hyperparameters:
+  data_dir: data/hstu
+  epochs: 5
+  batch_size: 256
+  learning_rate: 0.001
+  d_model: 64
+  n_layers: 2
+  n_heads: 2
+  max_len: 50
+  dropout: 0.1
+  weight_decay: 0.01
+  seed: 42
+
+target_metric:
+  # Honest for a tiny 2-layer HSTU; raise after you scale d_model / epochs.
+  hr_at_10: 0.05
+
+metric_ceiling:
+  hr_at_10: 0.35

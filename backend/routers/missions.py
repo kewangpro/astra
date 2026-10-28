@@ -95,6 +95,13 @@ def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
         return "mlx_lora"
     if any(k in g for k in ("scikit-learn", "sklearn", "classifier", "randomforest", "logisticregression", "iris", "digits", "breast_cancer", "wine")):
         return "ml"
+    if (
+        re.search(r"\bhstu\b", g)
+        or "generative recommend" in g
+        or "movielens" in g
+        or ("sequential recommend" in g and "hstu" in g)
+    ):
+        return "hstu"
     return default
 
 

@@ -23,6 +23,7 @@ _REQUIRED_PACKAGES: dict = {
     "ml":  ["sklearn", "joblib"],
     "rl":  ["stable_baselines3", "gymnasium"],
     "sft": ["transformers", "peft", "trl"],
+    "hstu": ["torch"],
 }
 
 

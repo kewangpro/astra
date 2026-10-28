@@ -37,13 +37,19 @@ For mlx_lora tasks (Apple Silicon MLX fine-tuning), include "dataset" as a top-l
 with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lora_scale,
 lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
 
+For hstu tasks (from-scratch PyTorch HSTU next-item trainer on MovieLens via hstu_ml1m_v1.yaml):
+leave "hyperparameters" as {}. The recipe supplies epochs/batch_size/d_model/etc. Set task_type
+"hstu", algorithm "HSTU", and reasoning. Goal metric is hr_at_10. Same shape as training a small
+LSTM recommender — local Astra .venv, auto-downloads ML-1M. Prefer hstu for HSTU / MovieLens /
+sequential recommendation goals.
+
 For sft/dpo/grpo/distill/rft/opd/rlcd/star/prompt tasks (Ensemble routing model fine-tuning or prompt optimization via existing scripts in
 ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, star_train.py, bare_eval.py): leave "hyperparameters"
 as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
 finetune_dir/python_bin paths, LoRA config, and all training/eval hyperparameters are supplied
 entirely by the recipe (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml
 / ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_rlcd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
-mismatched num_layers will crash the run. The only fields you should set are "task_type" (the worker key from the pairs above), "algorithm" (the algorithm name: "PPO", "DQN", "A2C", "SAC", "TD3", "GRPO", "DPO", "SFT", "MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization"), and "reasoning".
+mismatched num_layers will crash the run. The only fields you should set are "task_type" (the worker key from the pairs above), "algorithm" (the algorithm name: "PPO", "DQN", "A2C", "SAC", "TD3", "GRPO", "DPO", "SFT", "MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization", "HSTU"), and "reasoning".
   - "sft": supervised fine-tuning on routing demonstrations. Learns schema and basic task assignment via MLX on Apple Silicon GPU.
   - "prompt": optimize routing instructions by proposing additional routing rules appended to the conductor prompt. Evaluated on model-routed accuracy via bare_eval.
   - "distill": teach correct decisions from a STRONGER TEACHER model (off-policy: teacher completions → SFT). Capped by the teacher:
@@ -61,6 +67,7 @@ mismatched num_layers will crash the run. The only fields you should set are "ta
     wrong, or when a case is answered correctly only sometimes.
   - "rlcd": calibrated routing decision (arXiv:2609.38850). Sample rationales, read the skill distribution after Answer:, train it with the Brier score, then reinforce the rationale with the same score. Pass rate is readout accuracy, not JSON-plan accuracy. Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
   - "dpo"/"grpo": preference / RL fine-tuning.
+  - "hstu": HSTU generative recommender training (MovieLens public config).
 
 For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
 Available environments:
@@ -300,7 +307,7 @@ class LeadAgent:
             f"Task type hint: {task_type}\n"
             f"Target metric: {json.dumps(target_metric)}\n"
             + (f"Warm-start hint (best matching past recipe): {json.dumps(warm_hint)}\n" if warm_hint else "")
-            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/rlcd/prompt/embed/rerank) that best matches the Goal. Return JSON."
+            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/rlcd/prompt/embed/rerank/hstu) that best matches the Goal. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PLAN_SCHEMA)

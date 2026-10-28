@@ -29,6 +29,7 @@ const TASK_TABS: { id: string; label: string; types?: string[] }[] = [
   { id: "prompt-edit", label: "Prompt edit", types: ["prompt"] },
   { id: "classical-ml", label: "Classical ML", types: ["ml"] },
   { id: "retrieval", label: "Retrieval", types: ["embed", "rerank"] },
+  { id: "generative-recommendation", label: "Generative recommendation", types: ["hstu"] },
 ];
 
 function isLowerBetterMetric(key: string): boolean {
