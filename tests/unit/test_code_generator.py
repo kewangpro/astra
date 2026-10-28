@@ -2482,7 +2482,9 @@ def test_rlcd_resolve_hyperparams_recipe_authoritative():
     from backend.agent.code_generator import _resolve_hyperparams
     hp = _resolve_hyperparams("rlcd", {"learning_rate": 0.9, "num_layers": 3, "sf_coef": 1.0})
     assert hp["learning_rate"] == 2e-6
-    assert hp["num_layers"] == -1
+    # v1.1: scale=20 / num_layers=-1 collapsed chat generation on bare_eval.
+    assert hp["num_layers"] == 8
+    assert hp["lora_scale"] == 4.0
     assert hp["sf_coef"] == 0.3
     assert hp["kl_beta"] == 0.04
     assert hp["stage"] == "both"

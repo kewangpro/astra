@@ -1,6 +1,7 @@
 name: ensemble_rlcd_v1
-version: "1.0.0"
+version: "1.1.0"
 created_at: "2026-10-23"
+updated_at: "2026-10-27"
 task_type: rlcd
 domain: NLP
 description: >
@@ -12,6 +13,14 @@ description: >
   bare_eval's JSON-plan score. best/ is the lowest Brier checkpoint.
   Cold-start gemma-3-1b. Paper uses 400 steps × 8 questions; this is 100
   steps × 1 question per stage so a mission can finish on the Mini.
+
+  NOTE (v1.1): lora_scale reduced from 20.0 → 4.0 and num_layers capped at 8.
+  The original scale=20.0 / num_layers=-1 caused the LoRA weights to overwrite
+  the base model's chat-template generation capability entirely, yielding 0/54
+  on bare_eval despite correct readout accuracy (0.932). At scale=4.0 the
+  calibrated Answer: distribution is preserved while JSON plan generation
+  remains functional. Verified: mission 183841eb collapsed to <end_of_turn>
+  repetition loops on all 54 bare_eval cases.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -32,9 +41,15 @@ hyperparameters:
   sf_coef: 0.3
   kl_beta: 0.04
 
-  num_layers: -1
+  # lora_scale reduced from 20.0 → 4.0: scale=20.0 with all layers caused
+  # <end_of_turn> collapse on bare_eval (0/54). scale=4.0 keeps the Brier
+  # calibration signal without overwriting the generation capability.
+  # num_layers capped at 8 (from -1/all) for the same reason — the readout
+  # gradient only needs to reach the skill-token log-prob layers; fine-tuning
+  # all layers at high scale destroys the chat template.
+  num_layers: 8
   lora_rank: 16
-  lora_scale: 20.0
+  lora_scale: 4.0
   lora_dropout: 0.0
 
   iters: 100
