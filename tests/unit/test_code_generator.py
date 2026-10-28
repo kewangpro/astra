@@ -2491,6 +2491,25 @@ def test_rlcd_resolve_hyperparams_recipe_authoritative():
     assert hp["no_adapter"] is True
 
 
+def test_rlcd_warm_start_clears_cold_start_and_emits_adapter():
+    """After iter0, chaining must warm-start — recipe no_adapter is iter-0 only.
+
+    Mission ede50372 iter1 re-emitted --no-adapter because last_checkpoint_path
+    was never saved (_raw_goal_val stayed None on the RLCD eval path).
+    """
+    from backend.agent.code_generator import _format_rlcd_wrapper, _resolve_hyperparams
+
+    warm = _resolve_hyperparams(
+        "rlcd", {}, warm_start_adapter="adapters/astra_ede50372_iter0/best",
+    )
+    assert warm["no_adapter"] is False
+    assert warm["adapter"] == "adapters/astra_ede50372_iter0/best"
+
+    wrapped = _format_rlcd_wrapper(warm, "/Users/kewang/finetune/adapters/astra_ede50372_iter1")
+    assert "--no-adapter" not in wrapped
+    assert '"--adapter", "adapters/astra_ede50372_iter0/best"' in wrapped
+
+
 def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
     p = _opd_prompt(tmp_path, monkeypatch)
     assert '"--adv-clip", "5.0"' in p or '"--adv-clip", "5"' in p

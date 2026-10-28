@@ -1234,6 +1234,12 @@ class LoopStateMachine:
                             _reliable, current_iteration,
                         )
                     elif goal_val is not None:
+                        # RLCD (and other non-floored finetune tasks) land here.
+                        # Without this, _raw_goal_val stays None and the chaining
+                        # guard below never saves last_checkpoint_path — so the
+                        # next iteration re-emits --no-adapter and throws away
+                        # the prior best (mission ede50372 iter0→iter1).
+                        _raw_goal_val = goal_val
                         await self._append_telemetry_metric(
                             mission_id, metric_name, goal_val, current_iteration
                         )
