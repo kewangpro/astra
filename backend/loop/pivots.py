@@ -438,6 +438,30 @@ class PivotEngine:
         best_entry = self._best_entry()
         return best_entry[1] if best_entry else None
 
+    def best_metric_value_before(self, iteration: int) -> Optional[float]:
+        """Best metric among history entries with iteration strictly before ``iteration``.
+
+        Used for checkpoint chaining: mid-training live ``pass_rate`` lines for
+        the *current* iteration can be replayed into history after a restart and
+        must not outrank this iteration's own final score (mission ede50372:
+        live peak 0.534 then final 0.521 blocked chaining to iter1/best).
+        """
+        best_val: Optional[float] = None
+        for h in self._history:
+            it = h.get("iteration")
+            if not isinstance(it, int) or it >= iteration:
+                continue
+            if it == -1:
+                # Seed / persisted best counts as a prior checkpoint score.
+                pass
+            v = self._resolve_metric(self._metric_name, h)
+            if v is None:
+                continue
+            is_better = (best_val is None) or ((v < best_val) if self._is_loss else (v > best_val))
+            if is_better:
+                best_val = v
+        return best_val
+
     def best_metric_iteration(self) -> Optional[int]:
         """Return the iteration index at which the best metric was recorded."""
         best_entry = self._best_entry()

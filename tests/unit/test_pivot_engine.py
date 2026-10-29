@@ -90,6 +90,18 @@ def test_best_metric_value_tracked():
     assert e.best_metric_value() == 50.0
 
 
+def test_best_metric_value_before_excludes_current_iteration():
+    """Live mid-training peaks for the current iter must not block chaining."""
+    e = PivotEngine({"pass_rate": 0.5})
+    e.restore_history([
+        {"iteration": 0, "pass_rate": 0.452},
+        {"iteration": 1, "pass_rate": 0.534},  # live peak after restart replay
+    ])
+    assert e.best_metric_value() == 0.534
+    assert e.best_metric_value_before(1) == 0.452
+    assert e.best_metric_value_before(0) is None
+
+
 def test_best_metric_iteration_returns_correct_iter():
     e = _engine()
     e.record(0, {"mean_reward": 10.0})

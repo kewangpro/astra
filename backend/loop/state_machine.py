@@ -1027,6 +1027,12 @@ class LoopStateMachine:
                 _was_floored = False
                 _raw_goal_val: Optional[float] = None
                 _prev_best = pivot_engine.best_metric_value()
+                # Chaining must compare against prior iterations only. After a
+                # mid-run restart, live Pass rate: lines for the current
+                # iteration are replayed into pivot history and can inflate
+                # _prev_best above this iteration's final score — then
+                # last_checkpoint_path never advances (ede50372 iter1).
+                _prev_best_for_chain = pivot_engine.best_metric_value_before(current_iteration)
                 if metric_name and metric_name != "mean_reward":
                     if metric_name not in current_metrics:
                         await emit_status(
@@ -1290,7 +1296,10 @@ class LoopStateMachine:
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
-                    and (_prev_best is None or _raw_goal_val > _prev_best)
+                    and (
+                        _prev_best_for_chain is None
+                        or _raw_goal_val > _prev_best_for_chain
+                    )
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
                     _hp_for_chain = _resolve_hyperparams(plan.get("recipe") or active_t, plan.get("hyperparameters", {}))
