@@ -1465,9 +1465,14 @@ argv = [
     "--steps-per-report", "{steps_per_report}",
     "--save-every", "{save_every}",
     "--max-seq-len", "{max_seq_len}",
+    {focus_cases_flag}
 ]
 if {routing_only}:
     argv.append("--routing-only")
+if {focus_weight} != 10:
+    argv.extend(["--focus-weight", str({focus_weight})])
+if {empty_rationale}:
+    argv.append("--empty-rationale")
 
 os.execv("{python_bin}", argv)
 """
@@ -1504,6 +1509,9 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
         save_every=hp.get("save_every", 25),
         max_seq_len=hp.get("max_seq_len", 4096),
         routing_only=bool(hp.get("routing_only", True)),
+        focus_cases_flag=_focus_cases_flag(hp),
+        focus_weight=int(hp.get("focus_weight") or 10),
+        empty_rationale=bool(hp.get("empty_rationale", False)),
     )
 
 
@@ -1902,6 +1910,7 @@ _ENV_RECIPE: dict = {
     "opd": "ensemble_opd_v1.yaml",
     "rlcd": "ensemble_rlcd_v1.yaml",
     "ensemble_rlcd_v1": "ensemble_rlcd_v1.yaml",
+    "ensemble_rlcd_focus_v1": "ensemble_rlcd_focus_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
     "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
@@ -2108,7 +2117,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
