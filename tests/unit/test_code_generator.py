@@ -2462,11 +2462,12 @@ def test_rlcd_wrapper_execs_the_trainer(tmp_path, monkeypatch):
     assert "os.execv(" in script
     assert "subprocess" not in script
     assert 'os.chdir("/Users/kewang/finetune")' in script
-    assert '"--stage", "both"' in script
+    assert '"--stage", "1"' in script
     assert '"--score", "brier"' in script
     assert '"--sf-coef", "0.3"' in script
     assert '"--kl-beta", "0.04"' in script
     assert '"--no-adapter",' in script
+    assert 'argv.append("--empty-rationale")' in script
     assert "if True:" in script
 
 
@@ -2487,7 +2488,8 @@ def test_rlcd_resolve_hyperparams_recipe_authoritative():
     assert hp["lora_scale"] == 4.0
     assert hp["sf_coef"] == 0.3
     assert hp["kl_beta"] == 0.04
-    assert hp["stage"] == "both"
+    assert hp["stage"] == "1"
+    assert hp["empty_rationale"] is True
     assert hp["no_adapter"] is True
 
 
@@ -2508,6 +2510,17 @@ def test_rlcd_warm_start_clears_cold_start_and_emits_adapter():
     wrapped = _format_rlcd_wrapper(warm, "/Users/kewang/finetune/adapters/astra_ede50372_iter1")
     assert "--no-adapter" not in wrapped
     assert '"--adapter", "adapters/astra_ede50372_iter0/best"' in wrapped
+    assert 'argv.append("--empty-rationale")' in wrapped
+
+
+def test_rlcd_wrapper_defaults_empty_rationale_when_hp_omits_it():
+    from backend.agent.code_generator import _format_rlcd_wrapper
+
+    wrapped = _format_rlcd_wrapper(
+        {"adapter": "adapters/x/best", "routing_only": True},
+        "/Users/kewang/finetune/adapters/out",
+    )
+    assert 'argv.append("--empty-rationale")' in wrapped
 
 
 def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):

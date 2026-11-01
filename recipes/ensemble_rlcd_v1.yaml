@@ -1,18 +1,19 @@
 name: ensemble_rlcd_v1
-version: "1.1.0"
+version: "1.2.0"
 created_at: "2026-10-23"
-updated_at: "2026-10-27"
+updated_at: "2026-10-31"
 task_type: rlcd
 domain: NLP
 description: >
-  RLCD (arXiv:2609.38850) for the Ensemble routing decision. Sample M
-  rationales, read the distribution over the closed skill set after "Answer:",
-  and score it with the Brier score. Stage 1 trains that readout (pathwise
-  only). Stage 2 reinforces the rationale with the same score, c=0.3, KL
-  β=0.04 to the stage-1 weights. Pass rate is readout argmax accuracy, not
-  bare_eval's JSON-plan score. best/ is the lowest Brier checkpoint.
-  Cold-start gemma-3-1b. Paper uses 400 steps × 8 questions; this is 100
-  steps × 1 question per stage so a mission can finish on the Mini.
+  RLCD (arXiv:2609.38850) for the Ensemble §167 routing decision. Live Choice
+  posts an empty rationale to POST /v1/rlcd/readout, so the default recipe
+  calibrates that same empty-rationale prefix (stage 1 pathwise only). Pass
+  rate is readout argmax accuracy, not bare_eval's JSON-plan score. best/ is
+  the lowest Brier checkpoint. Cold-start gemma-3-1b.
+
+  For paper-style stage-2 rationale reinforce, set empty_rationale: false and
+  stage: both (M≥2). That path does not match live Choice and must not be used
+  to promote a :8082 adapter without an empty-rationale probe.
 
   NOTE (v1.1): lora_scale reduced from 20.0 → 4.0 and num_layers capped at 8.
   The original scale=20.0 / num_layers=-1 caused the LoRA weights to overwrite
@@ -22,19 +23,25 @@ description: >
   remains functional. Verified: mission 183841eb collapsed to <end_of_turn>
   repetition loops on all 54 bare_eval cases.
 
+  NOTE (v1.2): empty_rationale default. Generated-rationale train hit ~90%
+  train readout while live Choice collapsed to Programming; empty-rationale
+  focus (missions 46624d8c / bf94ca32) reached live 167/167 on 6b767bdb-bde.
+
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/conductor_min.md
 
-  # Cold start — stage 2's anchor is the in-process stage-1 endpoint.
+  # Cold start — warm-start chaining clears this after iter0.
   no_adapter: true
   adapter: ""
 
-  stage: both
+  # Match live /v1/rlcd/readout (empty rationale). Forces stage 1 in rlcd_train.
+  stage: "1"
+  empty_rationale: true
   score: brier
-  num_generations: 4
+  num_generations: 1
   temp: 1.0
   max_tokens: 256
   eval_max_tokens: 256

@@ -1511,7 +1511,8 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
         routing_only=bool(hp.get("routing_only", True)),
         focus_cases_flag=_focus_cases_flag(hp),
         focus_weight=int(hp.get("focus_weight") or 10),
-        empty_rationale=bool(hp.get("empty_rationale", False)),
+        # Default True: live Choice uses empty rationale on /v1/rlcd/readout.
+        empty_rationale=bool(hp["empty_rationale"]) if "empty_rationale" in hp else True,
     )
 
 
