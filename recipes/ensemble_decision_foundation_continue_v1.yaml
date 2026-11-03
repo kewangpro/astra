@@ -1,0 +1,50 @@
+name: ensemble_decision_foundation_continue_v1
+version: "1.0.0"
+created_at: "2026-11-03"
+updated_at: "2026-11-03"
+task_type: rlcd
+domain: NLP
+description: >
+  Continue foundation RLCD from astra_4e08d667_iter0/best on a larger
+  foundation_train (~1830: 900 Noul + 900 Choice + all Score). Empty-rationale
+  stage 1, decision_prompt frame. Side-serve on Mini :8084 after best/; do not
+  replace product :8082 (bf94ca32 + conductor_min).
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  prompt_template: backend/prompts/decision.md
+  no_adapter: false
+  adapter: adapters/astra_4e08d667_iter0/best
+  # Relative to finetune_dir after chdir (Mini flat tree).
+  cases: data/decision/foundation/foundation_train.jsonl
+  routing_only: false
+  stage: "1"
+  empty_rationale: true
+  score: brier
+  num_generations: 1
+  temp: 1.0
+  max_tokens: 256
+  eval_max_tokens: 256
+  eval_max_cases: 250
+  sf_coef: 0.3
+  kl_beta: 0.04
+  num_layers: 8
+  lora_rank: 16
+  lora_scale: 4.0
+  lora_dropout: 0.0
+  iters: 150
+  learning_rate: 0.0000015
+  max_grad_norm: 1.0
+  steps_per_eval: 25
+  steps_per_report: 1
+  save_every: 25
+  max_seq_len: 4096
+
+target_metric:
+  # Beat first foundation held-out (~0.57); :8084 becomes useful for Noul/Choice/Score A/B.
+  pass_rate: 0.65
+
+metric_ceiling:
+  pass_rate: 1.0

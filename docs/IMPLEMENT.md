@@ -2751,3 +2751,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Ensemble contract** — generic decision JSONL + `decision_prompt` (Noul/Choice/Score) live in the Ensemble repo (`rlcd_train.py --cases`, `build_foundation_decisions.py`, `export_ensemble_decisions.py`). Live `RLCD_GENERIC_PROMPT` stays off until specialize clears the hermetic gate; `astra_bf94ca32` / `conductor_min` Choice path remains recoverable.
 - [x] **Docs** — DESIGN § 2.4 RLCD paragraph; README calibrated-decision row; in-app `/docs` Calibrated decision section (`frontend/src/app/docs/page.tsx`); UX_SPEC; this phase.
 
+### Phase 93 — Foundation continue + specialize focus (2026-11-03)
+
+- [x] **Recipes** — `ensemble_decision_foundation_continue_v1` (warm-start `astra_4e08d667_iter0/best`, larger `foundation_train.jsonl`, `eval_max_cases: 250`); `ensemble_decision_specialize_focus_v1` (warm-start specialize best, Choice-heavy JSONL). Registered in `_ENV_RECIPE` + recipe-authoritative allowlist.
+- [x] **Wrapper** — `_format_rlcd_wrapper` emits `--eval-max-cases` when recipe `eval_max_cases` > 0 (caps held-out readout on multi-thousand foundation pools).
+- [x] **Ensemble ops** — `make mlx-jev-foundation` side-serves foundation on Mini `:8084`; product `:8082` stays `bf94ca32`. First specialize/focus did not clear routing A/B / hermetic — keep `RLCD_GENERIC_PROMPT` off on product until a later specialize clears ≥167/167.
+- [x] **Dispatch rule** — Mini RLCD trains only via Astra `POST /recipes/{name}/dispatch` (no bare `rlcd_train.py` outside a mission).
+
