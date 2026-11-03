@@ -120,12 +120,12 @@ const TASKS: Task[] = [
     id: "calibrated-decision",
     task: "Calibrated decision",
     summary:
-      "The decision is a distribution over the closed skill set, not a sampled skill and not a JSON plan. The reported pass rate is readout accuracy. best/ is the lowest Brier checkpoint.",
+      "The decision is a probability distribution over declared option strings after Answer:, not a sampled skill and not a JSON plan. The reported pass rate is readout accuracy. best/ is the lowest Brier checkpoint. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default empty_rationale (stage 1 only).",
     algorithms: [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Sample rationales, read the skill distribution after Answer:, and score it with Brier. Stage 1 trains that readout. Stage 2 reinforces the rationale with the same score and a KL pull back to the stage-1 weights.",
+        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). ensemble_decision_foundation_v1 then ensemble_decision_specialize_v1 train Noul/Choice/Score on generic --cases JSONL (decision_prompt, independent of conductor_min). Do not promote a foundation adapter alone to product :8082; specialize must clear Ensemble’s live hermetic gate, then set RLCD_GENERIC_PROMPT.",
       },
     ],
   },

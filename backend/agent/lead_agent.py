@@ -65,7 +65,7 @@ mismatched num_layers will crash the run. The only fields you should set are "ta
     model can produce at least once", which is strictly higher than "what a 12B gets right
     first try". Prefer rft over distill/opd when the failing cases are ones the teacher also gets
     wrong, or when a case is answered correctly only sometimes.
-  - "rlcd": calibrated routing decision (arXiv:2609.38850). Sample rationales, read the skill distribution after Answer:, train it with the Brier score, then reinforce the rationale with the same score. Pass rate is readout accuracy, not JSON-plan accuracy. Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
+  - "rlcd": calibrated decision (arXiv:2609.38850). Read the distribution over declared option strings after Answer:, train with Brier (empty-rationale stage 1 matches live /v1/rlcd/readout). Pass rate is readout accuracy, not JSON-plan accuracy. Recipes: ensemble_rlcd_* (Ensemble routing) or ensemble_decision_foundation_v1 → ensemble_decision_specialize_v1 (generic Noul/Choice/Score). Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
   - "dpo"/"grpo": preference / RL fine-tuning.
   - "hstu": HSTU generative recommender training (MovieLens public config).
 

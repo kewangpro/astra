@@ -2744,3 +2744,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Docs** — DESIGN § 2.4, README, UX_SPEC.
 - [x] **In-app Docs** — `/docs` in the nav after Models. One section per task, one row per algorithm, with the worker key.
 
+### Phase 92 — Decision foundation RLCD (2026-11-02)
+
+- [x] **Recipes** — `ensemble_decision_foundation_v1.yaml` (cold start, `--cases` foundation mix, `routing_only: false`, empty-rationale stage 1) and `ensemble_decision_specialize_v1.yaml` (warm-start from foundation `best/`, Ensemble specialize JSONL). Registered in `_ENV_RECIPE` and the fine-tune-remote env allowlist.
+- [x] **Wrapper** — `_format_rlcd_wrapper` emits `--cases PATH` when the recipe sets `cases`; defaults `routing_only` to false when cases are present so foundation/specialize do not also pull Ensemble routing YAML.
+- [x] **Ensemble contract** — generic decision JSONL + `decision_prompt` (Noul/Choice/Score) live in the Ensemble repo (`rlcd_train.py --cases`, `build_foundation_decisions.py`, `export_ensemble_decisions.py`). Live `RLCD_GENERIC_PROMPT` stays off until specialize clears the hermetic gate; `astra_bf94ca32` / `conductor_min` Choice path remains recoverable.
+- [x] **Docs** — DESIGN § 2.4 RLCD paragraph; README calibrated-decision row; in-app `/docs` Calibrated decision section (`frontend/src/app/docs/page.tsx`); UX_SPEC; this phase.
+

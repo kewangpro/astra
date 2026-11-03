@@ -2523,6 +2523,18 @@ def test_rlcd_wrapper_defaults_empty_rationale_when_hp_omits_it():
     assert 'argv.append("--empty-rationale")' in wrapped
 
 
+def test_decision_foundation_wrapper_passes_cases_not_routing():
+    from backend.agent.code_generator import _format_rlcd_wrapper, _resolve_hyperparams
+
+    hp = _resolve_hyperparams("ensemble_decision_foundation_v1", {})
+    assert hp.get("cases")
+    assert hp.get("routing_only") is False
+    wrapped = _format_rlcd_wrapper(hp, "/Users/kewang/finetune/adapters/astra_found_iter0")
+    assert '"--cases"' in wrapped or "argv.extend([\"--cases\"" in wrapped
+    assert "foundation_mix.jsonl" in wrapped
+    assert "argv.append(\"--routing-only\")" not in wrapped or "if False:" in wrapped
+
+
 def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
     p = _opd_prompt(tmp_path, monkeypatch)
     assert '"--adv-clip", "5.0"' in p or '"--adv-clip", "5"' in p

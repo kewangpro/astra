@@ -27,6 +27,11 @@ description: >
   train readout while live Choice collapsed to Programming; empty-rationale
   focus (missions 46624d8c / bf94ca32) reached live 167/167 on 6b767bdb-bde.
 
+  NOTE (v1.3): For a scenario-independent decision foundation (Noul+Choice+Score),
+  prefer ensemble_decision_foundation_v1 → ensemble_decision_specialize_v1
+  (--cases JSONL, decision_prompt). This recipe remains the Ensemble-routing
+  --routing-only path.
+
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
   finetune_dir: /Users/kewang/finetune

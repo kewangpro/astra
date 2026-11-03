@@ -1,0 +1,49 @@
+name: ensemble_decision_foundation_v1
+version: "1.0.0"
+created_at: "2026-11-02"
+updated_at: "2026-11-02"
+task_type: rlcd
+domain: NLP
+description: >
+  Decision foundation LoRA (Noul + Choice + Score) on generic closed questions.
+  Train data is Ensemble finetune/data/decision/foundation/foundation_mix.jsonl
+  (smoke BoolQ/ARC + curated Likert; expand with build_foundation_decisions.py
+  --download). Empty-rationale stage 1 only — matches live /v1/rlcd/readout.
+  Prompt is decision_prompt (not conductor_min). Do NOT promote this adapter
+  alone to product :8082 routing; warm-start specialize next.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  prompt_template: backend/prompts/decision.md
+  no_adapter: true
+  adapter: ""
+  cases: finetune/data/decision/foundation/foundation_mix.jsonl
+  routing_only: false
+  stage: "1"
+  empty_rationale: true
+  score: brier
+  num_generations: 1
+  temp: 1.0
+  max_tokens: 256
+  eval_max_tokens: 256
+  sf_coef: 0.3
+  kl_beta: 0.04
+  num_layers: 8
+  lora_rank: 16
+  lora_scale: 4.0
+  lora_dropout: 0.0
+  iters: 100
+  learning_rate: 0.000002
+  max_grad_norm: 1.0
+  steps_per_eval: 25
+  steps_per_report: 1
+  save_every: 25
+  max_seq_len: 4096
+
+target_metric:
+  pass_rate: 0.5
+
+metric_ceiling:
+  pass_rate: 1.0

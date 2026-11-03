@@ -1467,6 +1467,8 @@ argv = [
     "--max-seq-len", "{max_seq_len}",
     {focus_cases_flag}
 ]
+if {cases_flag}:
+    argv.extend(["--cases", "{cases}"])
 if {routing_only}:
     argv.append("--routing-only")
 if {focus_weight} != 10:
@@ -1482,6 +1484,9 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
     """Canned os.execv wrapper. The coder model does not write the RLCD loop."""
     cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
     adapter_arg = '"--no-adapter",' if cold else '"--adapter", "%s",' % hp.get("adapter", "")
+    cases = str(hp.get("cases") or "").strip()
+    # Foundation / specialize recipes set cases; default routing-only when unset.
+    routing_only = bool(hp["routing_only"]) if "routing_only" in hp else (not cases)
     return _RLCD_REMOTE_WRAPPER.format(
         finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
         python_bin=hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
@@ -1508,7 +1513,9 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
         steps_per_report=hp.get("steps_per_report", 1),
         save_every=hp.get("save_every", 25),
         max_seq_len=hp.get("max_seq_len", 4096),
-        routing_only=bool(hp.get("routing_only", True)),
+        cases_flag=bool(cases),
+        cases=cases.replace('"', '\\"'),
+        routing_only=routing_only,
         focus_cases_flag=_focus_cases_flag(hp),
         focus_weight=int(hp.get("focus_weight") or 10),
         # Default True: live Choice uses empty rationale on /v1/rlcd/readout.
@@ -1912,6 +1919,8 @@ _ENV_RECIPE: dict = {
     "rlcd": "ensemble_rlcd_v1.yaml",
     "ensemble_rlcd_v1": "ensemble_rlcd_v1.yaml",
     "ensemble_rlcd_focus_v1": "ensemble_rlcd_focus_v1.yaml",
+    "ensemble_decision_foundation_v1": "ensemble_decision_foundation_v1.yaml",
+    "ensemble_decision_specialize_v1": "ensemble_decision_specialize_v1.yaml",
     "prompt": "ensemble_prompt_v1.yaml",
     "post-training": "ensemble_post_training_v1.yaml",
     "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
@@ -2118,7 +2127,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
+    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1", "ensemble_decision_foundation_v1", "ensemble_decision_specialize_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;

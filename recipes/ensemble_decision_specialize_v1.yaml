@@ -1,0 +1,49 @@
+name: ensemble_decision_specialize_v1
+version: "1.0.0"
+created_at: "2026-11-02"
+updated_at: "2026-11-02"
+task_type: rlcd
+domain: NLP
+description: >
+  Ensemble specialize after decision foundation. Warm-start from a foundation
+  best/ adapter. Cases from finetune/data/decision/ensemble/specialize.jsonl
+  (export_ensemble_decisions.py: Choice routing + cascade/grounding Noul +
+  Score). Empty-rationale stage 1. Gate live hermetic ≥167/167 before promoting
+  to :8082; keep bf94ca32 recoverable until A/B wins.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  prompt_template: backend/prompts/decision.md
+  no_adapter: false
+  # Replace with the foundation mission best/ path after foundation train.
+  adapter: adapters/astra_decision_foundation_v1/best
+  cases: finetune/data/decision/ensemble/specialize.jsonl
+  routing_only: false
+  stage: "1"
+  empty_rationale: true
+  score: brier
+  num_generations: 1
+  temp: 1.0
+  max_tokens: 256
+  eval_max_tokens: 256
+  sf_coef: 0.3
+  kl_beta: 0.04
+  num_layers: 8
+  lora_rank: 16
+  lora_scale: 4.0
+  lora_dropout: 0.0
+  iters: 120
+  learning_rate: 0.000002
+  max_grad_norm: 1.0
+  steps_per_eval: 20
+  steps_per_report: 1
+  save_every: 20
+  max_seq_len: 4096
+
+target_metric:
+  pass_rate: 0.92
+
+metric_ceiling:
+  pass_rate: 1.0

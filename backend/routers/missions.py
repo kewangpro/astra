@@ -77,7 +77,11 @@ def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
     if "rejection-sampling" in g or "rejection sampling" in g or re.search(r"\brft\b", g):
         return "rft"
     # OPD before plain "distill" — "on-policy distillation" contains "distillation".
-    if re.search(r"\brlcd\b", g) or "calibrated decision" in g:
+    if (
+        re.search(r"\brlcd\b", g)
+        or "calibrated decision" in g
+        or "decision foundation" in g
+    ):
         return "rlcd"
     if re.search(r"\bopd\b", g) or "on-policy distill" in g or "on policy distill" in g:
         return "opd"
