@@ -1,0 +1,50 @@
+name: ensemble_decision_specialize_focus_v1
+version: "1.0.0"
+created_at: "2026-11-03"
+updated_at: "2026-11-03"
+task_type: rlcd
+domain: NLP
+description: >
+  Choice-heavy specialize focus after 0a820d25. Warm-start from that best/
+  adapter. Cases: specialize_choice_focus.jsonl (Choice ×5 + Noul/Score once)
+  so routing under decision_prompt can approach bf94ca32 without wiping Noul.
+  Empty-rationale stage 1. Do not promote to :8082 until routing Choice A/B
+  under decision_prompt beats or matches bf94ca32; keep conductor_min +
+  bf94ca32 live until then.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  prompt_template: backend/prompts/decision.md
+  no_adapter: false
+  adapter: adapters/astra_0a820d25_iter0/best
+  cases: data/decision/ensemble/specialize_choice_focus.jsonl
+  routing_only: false
+  stage: "1"
+  empty_rationale: true
+  score: brier
+  num_generations: 1
+  temp: 1.0
+  max_tokens: 256
+  eval_max_tokens: 256
+  eval_max_cases: 200
+  sf_coef: 0.3
+  kl_beta: 0.04
+  num_layers: 8
+  lora_rank: 16
+  lora_scale: 4.0
+  lora_dropout: 0.0
+  iters: 150
+  learning_rate: 0.000002
+  max_grad_norm: 1.0
+  steps_per_eval: 25
+  steps_per_report: 1
+  save_every: 25
+  max_seq_len: 4096
+
+target_metric:
+  pass_rate: 0.7
+
+metric_ceiling:
+  pass_rate: 1.0

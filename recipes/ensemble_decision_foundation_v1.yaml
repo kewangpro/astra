@@ -19,7 +19,9 @@ hyperparameters:
   prompt_template: backend/prompts/decision.md
   no_adapter: true
   adapter: ""
-  cases: finetune/data/decision/foundation/foundation_mix.jsonl
+  # Relative to finetune_dir after chdir (Mini flat tree).
+  # foundation_train.jsonl = capped mix (~800); full foundation_mix.jsonl is ~4k.
+  cases: data/decision/foundation/foundation_train.jsonl
   routing_only: false
   stage: "1"
   empty_rationale: true
@@ -28,6 +30,7 @@ hyperparameters:
   temp: 1.0
   max_tokens: 256
   eval_max_tokens: 256
+  eval_max_cases: 200
   sf_coef: 0.3
   kl_beta: 0.04
   num_layers: 8
