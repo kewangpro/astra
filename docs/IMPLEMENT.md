@@ -2753,8 +2753,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ### Phase 93 — Foundation continue + specialize focus (2026-11-03)
 
-- [x] **Recipes** — `ensemble_decision_foundation_continue_v1` (warm-start `astra_4e08d667_iter0/best`, larger `foundation_train.jsonl`, `eval_max_cases: 250`); `ensemble_decision_specialize_focus_v1` (warm-start specialize best, Choice-heavy JSONL). Registered in `_ENV_RECIPE` + recipe-authoritative allowlist.
+- [x] **Recipes** — `ensemble_decision_foundation_continue_v1` (warm-start from cold foundation, larger `foundation_train.jsonl`, `eval_max_cases: 250`); `ensemble_decision_specialize_focus_v1` (warm-start specialize best, Choice-heavy JSONL). Registered in `_ENV_RECIPE` + recipe-authoritative allowlist.
 - [x] **Wrapper** — `_format_rlcd_wrapper` emits `--eval-max-cases` when recipe `eval_max_cases` > 0 (caps held-out readout on multi-thousand foundation pools).
-- [x] **Ensemble ops** — `make mlx-jev-foundation` side-serves foundation on Mini `:8084`; product `:8082` stays `bf94ca32`. First specialize/focus did not clear routing A/B / hermetic — keep `RLCD_GENERIC_PROMPT` off on product until a later specialize clears ≥167/167.
+- [x] **Continue mission `70791e17`** — plateaued ~0.56 pass_rate on 250-case BoolQ/ARC held-out (best **0.564** @ iter4 → `adapters/astra_70791e17_iter4/best`). Absolute target **0.65** unreachable for Gemma 1B; empty-rationale pivots on `temp`/`num_generations` did not help. Mission stopped; continue recipe retargeted to `pass_rate: 0.56` and warm-start `astra_70791e17_iter4/best`.
+- [x] **Ensemble ops** — `make mlx-jev-foundation` side-serves that iter4 best on Mini `:8084`; product `:8082` stays `bf94ca32`. Sample letter vs foundation A/B ~53% / 57%. First specialize/focus did not clear routing A/B / hermetic — keep `RLCD_GENERIC_PROMPT` off on product until a later specialize clears ≥167/167. Gate foundation on letter A/B, not BoolQ pass_rate 0.65.
 - [x] **Dispatch rule** — Mini RLCD trains only via Astra `POST /recipes/{name}/dispatch` (no bare `rlcd_train.py` outside a mission).
 

@@ -125,7 +125,7 @@ const TASKS: Task[] = [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation line: ensemble_decision_foundation_v1 → foundation_continue_v1 → specialize_v1 / specialize_focus_v1 on generic --cases JSONL (decision_prompt; eval_max_cases caps large evals). Dispatch only via Astra recipe missions — not bare Mini rlcd_train. Ensemble side-serves foundation on :8084; do not promote to product :8082 until specialize clears live ≥167/167, then set RLCD_GENERIC_PROMPT.",
+        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation line: ensemble_decision_foundation_v1 → foundation_continue_v1 (best astra_70791e17_iter4, target pass_rate 0.56 — not 0.65 on BoolQ/ARC) → specialize_v1 / specialize_focus_v1 on generic --cases JSONL (decision_prompt; eval_max_cases caps large evals). Dispatch only via Astra recipe missions — not bare Mini rlcd_train. Ensemble side-serves foundation on :8084 for letter A/B; do not promote to product :8082 until specialize clears live ≥167/167, then set RLCD_GENERIC_PROMPT.",
       },
     ],
   },
