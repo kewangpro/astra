@@ -125,7 +125,7 @@ const TASKS: Task[] = [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation line: foundation → continue → specialize → focus on generic --cases JSONL (decision_prompt). Best decision_prompt routing so far: c8b2644c (bf94 warm-start) 46/74 vs bf94@8082 conductor_min 60/74; focus v5 584b02cb (routing-eval inject) in flight. Held-out alone is insufficient. Dispatch only via Astra missions. Side-serve on Ensemble :8084 for A/B; do not promote :8082 until routing A/B then live ≥167/167, then RLCD_GENERIC_PROMPT.",
+        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus on generic --cases JSONL (decision_prompt). Two gates: (1) closed-skill routing A/B — fbb7b31a 62/74 beats bf94 60/74; (2) live hermetic ≥167/167 with RLCD_GENERIC_PROMPT — side-port run failed (~17 fails by case 65), so product :8082 stays bf94ca32+conductor_min. Focus v7 6cdbca88 targets hermetic Choice misses. Dispatch only via Astra missions.",
       },
     ],
   },

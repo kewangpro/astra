@@ -1,14 +1,14 @@
 name: ensemble_decision_specialize_focus_v1
-version: "1.5.0"
+version: "1.7.0"
 created_at: "2026-11-03"
 updated_at: "2026-11-04"
 task_type: rlcd
 domain: NLP
 description: >
-  Choice-focus v5: warm-start c8b2644c (best decision_prompt routing 46/74).
-  Cases: specialize_choice_focus_v5.jsonl — inject closed routing eval_cases
-  as Choice gold + GC/MA/Calendar/Research upweight to fight Research sink.
-  Empty-rationale stage 1. Do not promote to :8082 until routing A/B ≥ bf94.
+  Choice-focus v7: warm-start fbb7b31a (routing A/B 62/74 vs bf94 60/74).
+  Cases: specialize_choice_focus_v7.jsonl — hermetic miss upweight (System
+  Admin/Programming/MA/Business Reporting vs Research sink + abstains).
+  Empty-rationale stage 1. Product :8082 stays bf94 until live hermetic clears.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -16,9 +16,9 @@ hyperparameters:
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/decision.md
   no_adapter: false
-  # bf94→decision_prompt v4 best (held-out 0.818; routing A/B 46/74).
-  adapter: adapters/astra_c8b2644c_iter0/best
-  cases: data/decision/ensemble/specialize_choice_focus_v5.jsonl
+  # Routing A/B winner; hermetic still failed — target Choice misses next.
+  adapter: adapters/astra_fbb7b31a_iter0/best
+  cases: data/decision/ensemble/specialize_choice_focus_v7.jsonl
   routing_only: false
   stage: "1"
   empty_rationale: true
@@ -43,8 +43,7 @@ hyperparameters:
   max_seq_len: 4096
 
 target_metric:
-  # Soft held-out; real gate is routing A/B vs bf94 under decision_prompt.
-  pass_rate: 0.85
+  pass_rate: 0.9
 
 metric_ceiling:
   pass_rate: 1.0
