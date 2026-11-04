@@ -59,7 +59,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the wor
 | Reinforcement fine-tuning | GRPO (`grpo`), DPO (`dpo`) |
 | Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
 | On-policy distillation | OPD (`opd`) |
-| Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; foundation → continue (`70791e17` iter4 best, target 0.56) → specialize / focus via `ensemble_decision_foundation_v1` / `_continue_v1` / `ensemble_decision_specialize_v1` / `_focus_v1` (Astra mission dispatch only) |
+| Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; foundation → continue → specialize (`708931dd`) → focus (`407140f2` / v2 `8037dd34`); gate promote on routing A/B vs bf94 under `decision_prompt`, not held-out alone (Astra mission dispatch only) |
 | Prompt edit | rule append (`prompt`) |
 | Classical ML | random forest (`ml`) |
 | Retrieval | embedding (`embed`), reranker (`rerank`) |

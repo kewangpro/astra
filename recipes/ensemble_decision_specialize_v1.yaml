@@ -1,15 +1,16 @@
 name: ensemble_decision_specialize_v1
-version: "1.0.0"
+version: "1.1.0"
 created_at: "2026-11-02"
-updated_at: "2026-11-02"
+updated_at: "2026-11-03"
 task_type: rlcd
 domain: NLP
 description: >
-  Ensemble specialize after decision foundation. Warm-start from a foundation
-  best/ adapter. Cases from finetune/data/decision/ensemble/specialize.jsonl
-  (export_ensemble_decisions.py: Choice routing + cascade/grounding Noul +
-  Score). Empty-rationale stage 1. Gate live hermetic ≥167/167 before promoting
-  to :8082; keep bf94ca32 recoverable until A/B wins.
+  Ensemble specialize after decision foundation continue. Warm-start from
+  astra_70791e17_iter4/best (continue plateau best). Cases from
+  specialize.jsonl (Choice routing + cascade/grounding Noul + Score).
+  Empty-rationale stage 1, decision_prompt. Gate live hermetic ≥167/167 and
+  routing Choice A/B vs bf94 before promoting to :8082; keep bf94ca32 +
+  conductor_min live until then.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -17,8 +18,8 @@ hyperparameters:
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/decision.md
   no_adapter: false
-  # Foundation mission 4e08d667 — Brier-best at step 75 (not final step 100).
-  adapter: adapters/astra_4e08d667_iter0/best
+  # Continue mission 70791e17 best (prior cold foundation: astra_4e08d667_iter0/best).
+  adapter: adapters/astra_70791e17_iter4/best
   # Relative to finetune_dir after chdir (Mini flat tree).
   cases: data/decision/ensemble/specialize.jsonl
   routing_only: false
@@ -45,9 +46,8 @@ hyperparameters:
   max_seq_len: 4096
 
 target_metric:
-  # First specialize bar: beat foundation held-out (~0.57) on Ensemble mix;
-  # raise toward 0.92 after a clean live probe.
-  pass_rate: 0.6
+  # Beat prior specialize held-out floor; raise after routing A/B vs bf94 clears.
+  pass_rate: 0.7
 
 metric_ceiling:
   pass_rate: 1.0

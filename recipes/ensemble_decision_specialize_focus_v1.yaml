@@ -1,16 +1,15 @@
 name: ensemble_decision_specialize_focus_v1
-version: "1.0.0"
+version: "1.2.0"
 created_at: "2026-11-03"
 updated_at: "2026-11-03"
 task_type: rlcd
 domain: NLP
 description: >
-  Choice-heavy specialize focus after 0a820d25. Warm-start from that best/
-  adapter. Cases: specialize_choice_focus.jsonl (Choice ×5 + Noul/Score once)
-  so routing under decision_prompt can approach bf94ca32 without wiping Noul.
-  Empty-rationale stage 1. Do not promote to :8082 until routing Choice A/B
-  under decision_prompt beats or matches bf94ca32; keep conductor_min +
-  bf94ca32 live until then.
+  Choice-heavy specialize focus after 407140f2. Warm-start from that best/.
+  Cases: specialize_choice_focus_v2.jsonl (General Chat / System Admin /
+  Data Services upweighted after routing A/B misses). Empty-rationale stage 1.
+  Do not promote to :8082 until routing Choice A/B under decision_prompt beats
+  or matches bf94ca32; keep conductor_min + bf94ca32 live until then.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -18,8 +17,9 @@ hyperparameters:
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/decision.md
   no_adapter: false
-  adapter: adapters/astra_0a820d25_iter0/best
-  cases: data/decision/ensemble/specialize_choice_focus.jsonl
+  # Focus mission 407140f2 (held-out 0.848; routing A/B 44/74 vs bf94 60/74).
+  adapter: adapters/astra_407140f2_iter0/best
+  cases: data/decision/ensemble/specialize_choice_focus_v2.jsonl
   routing_only: false
   stage: "1"
   empty_rationale: true
@@ -35,8 +35,8 @@ hyperparameters:
   lora_rank: 16
   lora_scale: 4.0
   lora_dropout: 0.0
-  iters: 150
-  learning_rate: 0.000002
+  iters: 180
+  learning_rate: 0.0000015
   max_grad_norm: 1.0
   steps_per_eval: 25
   steps_per_report: 1
@@ -44,7 +44,8 @@ hyperparameters:
   max_seq_len: 4096
 
 target_metric:
-  pass_rate: 0.7
+  # Beat prior focus held-out (0.848) on GC-upweighted mix; real gate is routing A/B.
+  pass_rate: 0.85
 
 metric_ceiling:
   pass_rate: 1.0

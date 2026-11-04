@@ -2759,3 +2759,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Ensemble ops** — `make mlx-jev-foundation` side-serves that iter4 best on Mini `:8084`; product `:8082` stays `bf94ca32`. Sample letter vs foundation A/B ~53% / 57%. First specialize/focus did not clear routing A/B / hermetic — keep `RLCD_GENERIC_PROMPT` off on product until a later specialize clears ≥167/167. Gate foundation on letter A/B, not BoolQ pass_rate 0.65.
 - [x] **Dispatch rule** — Mini RLCD trains only via Astra `POST /recipes/{name}/dispatch` (no bare `rlcd_train.py` outside a mission).
 
+### Phase 94 — Specialize + Choice-focus routing A/B (2026-11-03)
+
+- [x] **Specialize `708931dd`** — warm-start `astra_70791e17_iter4/best` → `specialize.jsonl`; completed best **0.727** @ iter3 (`adapters/astra_708931dd_iter3/best`). Recipe `ensemble_decision_specialize_v1` points at that continue best; target pass_rate 0.7.
+- [x] **Routing A/B (74 closed)** — bf94@`:8082` `conductor_min` **60/74 (81.1%)** vs specialize@`:8084` `decision_prompt` **33/74 (44.6%)** (heavy Research & Search collapse).
+- [x] **Focus `407140f2`** — warm-start specialize iter3 → `specialize_choice_focus.jsonl`; completed best **0.848**. Routing A/B improved to **44/74 (59.5%)** still −21.6pp vs bf94 (General Chat→Market Analysis dominant miss).
+- [x] **Focus v2 `8037dd34`** — warm-start `astra_407140f2_iter0/best` → `specialize_choice_focus_v2.jsonl` (GC / System Admin / Data Services upweighted); recipe target 0.85; in flight. Do not promote to product `:8082` until routing A/B clears.
+
