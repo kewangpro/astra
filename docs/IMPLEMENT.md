@@ -2764,5 +2764,8 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Specialize `708931dd`** — warm-start `astra_70791e17_iter4/best` → `specialize.jsonl`; completed best **0.727** @ iter3 (`adapters/astra_708931dd_iter3/best`). Recipe `ensemble_decision_specialize_v1` points at that continue best; target pass_rate 0.7.
 - [x] **Routing A/B (74 closed)** — bf94@`:8082` `conductor_min` **60/74 (81.1%)** vs specialize@`:8084` `decision_prompt` **33/74 (44.6%)** (heavy Research & Search collapse).
 - [x] **Focus `407140f2`** — warm-start specialize iter3 → `specialize_choice_focus.jsonl`; completed best **0.848**. Routing A/B improved to **44/74 (59.5%)** still −21.6pp vs bf94 (General Chat→Market Analysis dominant miss).
-- [x] **Focus v2 `8037dd34`** — warm-start `astra_407140f2_iter0/best` → `specialize_choice_focus_v2.jsonl` (GC / System Admin / Data Services upweighted); recipe target 0.85; in flight. Do not promote to product `:8082` until routing A/B clears.
+- [x] **Focus v2 `8037dd34`** — warm-start `astra_407140f2_iter0/best` → `specialize_choice_focus_v2.jsonl`; completed best **0.879**. Routing A/B **regressed** to **37/74 (50.0%)** (GC/MA→Research sink). Do not promote.
+- [x] **Focus v3 `48e32bde`** — warm-start `407140f2` → `specialize_choice_focus_v3.jsonl` (GC+MA+Research); held-out plateaued **0.758** (target 0.85 unreachable — stopped after identical iters). Routing A/B **43/74 (58.1%)**.
+- [x] **Focus v4 `c8b2644c`** — warm-start **product `bf94ca32`** into `decision_prompt` on `specialize_choice_focus_v4.jsonl`; completed best **0.818**. Routing A/B **46/74 (62.2%)** — best `decision_prompt` so far, still −18.9pp vs bf94 (Research sink returned).
+- [x] **Focus v5 `584b02cb`** — warm-start `c8b2644c` → `specialize_choice_focus_v5.jsonl` (closed routing eval inject ×3 + GC/MA/Calendar/Research upweight); in flight. Product `:8082` stays `bf94ca32` + `conductor_min` until routing A/B clears.
 

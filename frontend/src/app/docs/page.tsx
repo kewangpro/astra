@@ -125,7 +125,7 @@ const TASKS: Task[] = [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation line: foundation_v1 → continue (70791e17 iter4) → specialize (708931dd 0.727) → focus (407140f2 0.848) → focus_v2 cases (8037dd34) on generic --cases JSONL (decision_prompt). Held-out pass_rate is not enough: routing Choice A/B under decision_prompt still trails bf94@8082 conductor_min (focus 44/74 vs 60/74). Dispatch only via Astra missions. Side-serve on Ensemble :8084 for A/B; do not promote :8082 until routing A/B then live ≥167/167, then RLCD_GENERIC_PROMPT.",
+        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation line: foundation → continue → specialize → focus on generic --cases JSONL (decision_prompt). Best decision_prompt routing so far: c8b2644c (bf94 warm-start) 46/74 vs bf94@8082 conductor_min 60/74; focus v5 584b02cb (routing-eval inject) in flight. Held-out alone is insufficient. Dispatch only via Astra missions. Side-serve on Ensemble :8084 for A/B; do not promote :8082 until routing A/B then live ≥167/167, then RLCD_GENERIC_PROMPT.",
       },
     ],
   },

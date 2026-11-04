@@ -1,15 +1,14 @@
 name: ensemble_decision_specialize_focus_v1
-version: "1.2.0"
+version: "1.5.0"
 created_at: "2026-11-03"
-updated_at: "2026-11-03"
+updated_at: "2026-11-04"
 task_type: rlcd
 domain: NLP
 description: >
-  Choice-heavy specialize focus after 407140f2. Warm-start from that best/.
-  Cases: specialize_choice_focus_v2.jsonl (General Chat / System Admin /
-  Data Services upweighted after routing A/B misses). Empty-rationale stage 1.
-  Do not promote to :8082 until routing Choice A/B under decision_prompt beats
-  or matches bf94ca32; keep conductor_min + bf94ca32 live until then.
+  Choice-focus v5: warm-start c8b2644c (best decision_prompt routing 46/74).
+  Cases: specialize_choice_focus_v5.jsonl — inject closed routing eval_cases
+  as Choice gold + GC/MA/Calendar/Research upweight to fight Research sink.
+  Empty-rationale stage 1. Do not promote to :8082 until routing A/B ≥ bf94.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -17,9 +16,9 @@ hyperparameters:
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/decision.md
   no_adapter: false
-  # Focus mission 407140f2 (held-out 0.848; routing A/B 44/74 vs bf94 60/74).
-  adapter: adapters/astra_407140f2_iter0/best
-  cases: data/decision/ensemble/specialize_choice_focus_v2.jsonl
+  # bf94→decision_prompt v4 best (held-out 0.818; routing A/B 46/74).
+  adapter: adapters/astra_c8b2644c_iter0/best
+  cases: data/decision/ensemble/specialize_choice_focus_v5.jsonl
   routing_only: false
   stage: "1"
   empty_rationale: true
@@ -28,7 +27,7 @@ hyperparameters:
   temp: 1.0
   max_tokens: 256
   eval_max_tokens: 256
-  eval_max_cases: 200
+  eval_max_cases: 250
   sf_coef: 0.3
   kl_beta: 0.04
   num_layers: 8
@@ -44,7 +43,7 @@ hyperparameters:
   max_seq_len: 4096
 
 target_metric:
-  # Beat prior focus held-out (0.848) on GC-upweighted mix; real gate is routing A/B.
+  # Soft held-out; real gate is routing A/B vs bf94 under decision_prompt.
   pass_rate: 0.85
 
 metric_ceiling:
