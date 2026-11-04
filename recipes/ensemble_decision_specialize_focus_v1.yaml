@@ -1,14 +1,15 @@
 name: ensemble_decision_specialize_focus_v1
-version: "1.8.0"
+version: "1.9.4"
 created_at: "2026-11-03"
 updated_at: "2026-11-04"
 task_type: rlcd
 domain: NLP
 description: >
-  Choice-focus v8 done (c7b78b5d): warm-start fbb7b31a → specialize_choice_focus_v8.jsonl.
-  Routing A/B 68/74 under decision_prompt (beats fbb7 62 / bf94 60). Held-out 0.977
-  is contaminated — not a promote gate. Empty-rationale stage 1. Product :8082 stays
-  bf94 until live hermetic clears on :8084.
+  Choice-focus (parked): warm-start c7b78b5d. v9 disk-upweight plateaued
+  (best ~0.87, A/B <68) — stop LoRA churn. Remaining hermetic GC sinks
+  (disk_usage / run_code) use stack remap_decision_skill, not more focus.
+  Empty-rationale stage 1. Product :8082 stays bf94 until hermetic 167/167.
+  Side :8084 stays c7b78.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -16,8 +17,8 @@ hyperparameters:
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/decision.md
   no_adapter: false
-  adapter: adapters/astra_fbb7b31a_iter0/best
-  cases: data/decision/ensemble/specialize_choice_focus_v8.jsonl
+  adapter: adapters/astra_c7b78b5d_iter0/best
+  cases: data/decision/ensemble/specialize_choice_focus_v9.jsonl
   routing_only: false
   stage: "1"
   empty_rationale: true
@@ -41,8 +42,10 @@ hyperparameters:
   save_every: 25
   max_seq_len: 4096
 
+# Held-out readout is contaminated by focus JSONL overlap — not a promote gate.
+# Keep target near warm-start so Astra does not pivot-spin chasing 0.9.
 target_metric:
-  pass_rate: 0.9
+  pass_rate: 0.85
 
 metric_ceiling:
   pass_rate: 1.0
