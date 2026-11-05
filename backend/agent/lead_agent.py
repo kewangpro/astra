@@ -122,6 +122,10 @@ hyperparameters one of these pivots can actually affect, within these bounds:
   - "temp" applies to rft/opd/rlcd as well as dpo/grpo: rft, opd, and rlcd need temperature > 0 so
     sampling visits diverse states. At temp 0 every sample is identical and the method
     degenerates.
+  - CRITICAL exception — RLCD with empty_rationale=true (Choice-facing / decision foundation
+    recipes): adjustments MUST be {}. Live /v1/rlcd/readout posts an empty rationale so
+    num_generations must stay 1; pivoting temp/num_generations only burns Mini time
+    (missions 70791e17, 2235f69e flat for dozens of pivots).
 For "prompt" tasks, all hyperparameters are recipe-locked (greedy eval at temperature 0) and adjustments must be an empty object {}.
 If such a run is plateaued, propose a small change to the knob(s) valid for its task type via
 "adjustments" and explain your reasoning in "reason" — do not propose anything else, it will be
@@ -377,10 +381,18 @@ class LeadAgent:
                     "collapsed mid-run held-out on 7b6c78a6"
                 )
             elif current_algorithm.upper() == "RLCD":
-                _lever_desc = (
-                    "\"num_generations\" (2–4), rationales per question, and "
-                    "\"temp\" (0.7–1.0)"
-                )
+                _hp = current_hyperparameters or {}
+                if _hp.get("empty_rationale"):
+                    _lever_desc = (
+                        "NONE — empty_rationale RLCD is fully recipe-locked "
+                        "(num_generations must stay 1 to match live readout). "
+                        "Return \"adjustments\": {} and say the search is exhausted"
+                    )
+                else:
+                    _lever_desc = (
+                        "\"num_generations\" (2–4), rationales per question, and "
+                        "\"temp\" (0.7–1.0)"
+                    )
             else:
                 _sampling_key = "num_generations" if current_algorithm.upper() == "GRPO" else "k_collect"
                 _lever_desc = (

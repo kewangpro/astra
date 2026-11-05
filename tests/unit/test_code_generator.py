@@ -2479,6 +2479,27 @@ def test_rlcd_pivot_lever_is_num_generations_and_temp():
     }
 
 
+def test_rlcd_empty_rationale_pivot_lever_is_empty():
+    """Choice-facing RLCD must not pivot num_generations/temp (2235f69e)."""
+    from backend.agent.code_generator import _clamp_finetune_pivot_hp, _resolve_hyperparams
+
+    assert _clamp_finetune_pivot_hp(
+        "rlcd",
+        {"num_generations": 4, "temp": 0.8},
+        empty_rationale=True,
+    ) == {}
+    # from_scratch / foundation recipes declare empty_rationale — pivot must not
+    # override recipe num_generations=1.
+    hp = _resolve_hyperparams(
+        "ensemble_decision_from_scratch_v1",
+        {"num_generations": 4, "temp": 0.8, "learning_rate": 0.9},
+    )
+    assert hp["num_generations"] == 1
+    assert hp["temp"] == 1.0
+    assert hp["empty_rationale"] is True
+    assert hp["learning_rate"] == 0.000002
+
+
 def test_rlcd_resolve_hyperparams_recipe_authoritative():
     from backend.agent.code_generator import _resolve_hyperparams
     hp = _resolve_hyperparams("rlcd", {"learning_rate": 0.9, "num_layers": 3, "sf_coef": 1.0})

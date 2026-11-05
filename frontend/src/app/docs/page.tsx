@@ -125,7 +125,7 @@ const TASKS: Task[] = [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus on generic --cases JSONL (decision_prompt). Two gates: (1) closed-skill routing A/B — fbb7b31a 62/74 beats bf94 60/74; (2) live hermetic ≥167/167 with RLCD_GENERIC_PROMPT — side-port run failed (~17 fails by case 65), so product :8082 stays bf94ca32+conductor_min. Focus v7 6cdbca88 targets hermetic Choice misses. Dispatch only via Astra missions.",
+        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus (or one-shot ensemble_decision_from_scratch_v1) on generic --cases JSONL (decision_prompt). Approach: public Noul/Choice/Score → foundation LoRA → Ensemble specialize → live :8082. Product Choice is focus v8 c7b78b5d (A/B 68/74, hermetic 167/167 with RLCD_GENERIC_PROMPT + remap_decision_skill); bf94+conductor_min is rollback. Held-out pass_rate is not a promote gate; empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
       },
     ],
   },

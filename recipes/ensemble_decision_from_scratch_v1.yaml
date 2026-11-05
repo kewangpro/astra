@@ -1,7 +1,7 @@
 name: ensemble_decision_from_scratch_v1
-version: "1.0.0"
+version: "1.0.1"
 created_at: "2026-11-04"
-updated_at: "2026-11-04"
+updated_at: "2026-11-05"
 task_type: rlcd
 domain: NLP
 description: >
@@ -12,7 +12,10 @@ description: >
   four-step chain (foundation → continue → specialize → focus) for a single
   mission. Held-out pass_rate is contaminated — gate promote on Choice A/B
   (74) then hermetic 167 with RLCD_GENERIC_PROMPT + remap_decision_skill,
-  not this target. Product :8082 stays bf94 until explicit swap.
+  not this target. Product :8082 is already c7b78b5d + decision_prompt
+  (bf94 = rollback) — this recipe replays training, it does not auto-swap.
+  Mission 2235f69e: best 0.576 @ iter5 then 26 empty-rationale pivots flat;
+  target lowered to that plateau so dispatch completes instead of spinning.
   Dispatch: POST /recipes/ensemble_decision_from_scratch_v1/dispatch
   See Ensemble finetune/data/decision/README.md.
 
@@ -50,9 +53,10 @@ hyperparameters:
   save_every: 25
   max_seq_len: 4096
 
-# Contaminated vs train overlap — keep near a reachable floor, not 0.9.
+# Contaminated held-out — ≈ 2235f69e plateau (0.576). Do not set 0.85.
 target_metric:
-  pass_rate: 0.85
+  pass_rate: 0.57
 
+# Reject unreachable create/dispatch targets (0.85 would 422).
 metric_ceiling:
-  pass_rate: 1.0
+  pass_rate: 0.60

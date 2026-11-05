@@ -9,9 +9,9 @@ description: >
   astra_70791e17_iter4/best (continue plateau best). Cases from
   specialize.jsonl (Choice routing + cascade/grounding Noul + Score).
   Empty-rationale stage 1, decision_prompt. Historical step in the cleared
-  lineage (focus v8 c7b78 + remap → hermetic 167/167). Prefer specialize_focus
-  only if replaying; do not promote specialize alone. Product :8082 stays
-  bf94ca32 + conductor_min until an explicit swap.
+  lineage (focus v8 c7b78 + remap → hermetic 167/167; now on product :8082).
+  Prefer specialize_focus only if replaying; do not promote specialize alone.
+  Rollback path remains bf94ca32 + conductor_min.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit

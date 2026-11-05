@@ -1,15 +1,16 @@
 name: ensemble_decision_specialize_focus_v1
-version: "1.9.5"
+version: "1.9.6"
 created_at: "2026-11-03"
-updated_at: "2026-11-04"
+updated_at: "2026-11-05"
 task_type: rlcd
 domain: NLP
 description: >
   Choice-focus — PARKED. Gates cleared by v8 c7b78b5d (A/B 68/74) +
   Ensemble remap_decision_skill (hermetic 167/167). Do not dispatch for
   more miss-upweight (v7/v9 plateaued or regressed). Cases pin v8 (winning
-  mix); v9.jsonl is archival only. Product :8082 stays bf94 until explicit
-  swap. Empty-rationale stage 1. See Ensemble finetune/data/decision/README.md.
+  mix); v9.jsonl is archival only. Product :8082 is already this adapter
+  (c7b78b5d + decision_prompt; bf94 = rollback). Empty-rationale stage 1.
+  See Ensemble finetune/data/decision/README.md.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -45,9 +46,9 @@ hyperparameters:
   max_seq_len: 4096
 
 # Held-out readout is contaminated by focus JSONL overlap — not a promote gate.
-# Target ≈ warm-start so accidental dispatch does not pivot-spin chasing 0.9.
+# Target near warm-start so accidental dispatch does not pivot-spin (2235f69e).
 target_metric:
-  pass_rate: 0.85
+  pass_rate: 0.58
 
 metric_ceiling:
-  pass_rate: 1.0
+  pass_rate: 0.60

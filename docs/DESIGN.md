@@ -87,7 +87,27 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
 | Generative recommendation | HSTU (`hstu`) |
 
-Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO turns that same oracle into chosen and rejected pairs, then applies the offline preference loss. RLCD trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; its goal is readout accuracy, and `best/` is the lowest Brier checkpoint. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true` (stage 1 only). Recipes: `ensemble_rlcd_v1` / `ensemble_rlcd_focus_v1` (legacy Ensemble routing via `--routing-only`); foundation line `ensemble_decision_foundation_v1` → `continue_v1` → `specialize_v1` → `specialize_focus_v1` on generic `--cases` JSONL (`decision_prompt`, independent of `conductor_min`). The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare `rlcd_train.py` outside a mission. **Outcome:** best Choice candidate `c7b78b5d` (**68/74** A/B); side hermetic **167/167** with `RLCD_GENERIC_PROMPT` + Ensemble `remap_decision_skill` (`66b3f7bc-2d1`). Both promote gates clear; product `:8082` stays `bf94ca32` + `conductor_min` until an explicit swap. Absolute BoolQ/ARC **0.65** and contaminated specialize held-out are not gates — see Ensemble `finetune/data/decision/README.md` learnings. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
+Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO turns that same oracle into chosen and rejected pairs, then applies the offline preference loss. RLCD trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; its goal is readout accuracy, and `best/` is the lowest Brier checkpoint. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true` (stage 1 only).
+
+**Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA (public Noul/Choice/Score) → Ensemble specialize/focus → live `:8082` readout. One-shot replay: `ensemble_decision_from_scratch_v1`. Staged: `ensemble_decision_foundation_v1` → `continue_v1` → `specialize_v1` → `specialize_focus_v1`. Legacy routing: `ensemble_rlcd_*` (`--routing-only`). Diagram + promote rules live in Ensemble [`finetune/data/decision/README.md`](../../ensemble/finetune/data/decision/README.md#locked-approach) and Ensemble DESIGN §3.15b.
+
+```mermaid
+flowchart LR
+  publicData[Public_Noul_Choice_Score]
+  schema[decision_cases_jsonl]
+  foundation[Foundation_LoRA]
+  ensData[Ensemble_exporters]
+  specialize[Specialize_LoRA]
+  live[":8082_rlcd_readout"]
+
+  publicData --> schema
+  ensData --> schema
+  schema --> foundation
+  foundation --> specialize
+  specialize --> live
+```
+
+The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare `rlcd_train.py` outside a mission. Empty-rationale pivots on `temp`/`num_generations` are no-ops (mission `2235f69e`). **Outcome:** product Choice `c7b78b5d` (**68/74** A/B + hermetic **167/167** with `RLCD_GENERIC_PROMPT` + `remap_decision_skill`). Absolute BoolQ/ARC **0.65** and contaminated specialize held-out are not gates. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
 
 **Environments.** Arcade envs are 10×10 NumPy Gym wrappers. Seaquest, Asterix, and Grid Pac-Man follow their source rules closely enough that play and checkpoints stay honest (oxygen/surface, spawn/ramp, leftover ghosts chase, mouth faces movement). Env classes load lazily so importing the package does not load every game.
 

@@ -363,6 +363,8 @@ _FINETUNE_PIVOT_KEYS_BY_TASK = {
     "opd":     frozenset({"num_generations", "temp"}),
     # RLCD: rationale count and temperature. Temp ceiling 1.0 matches the paper
     # (sampling at 1) and the OPD/RFT collapse above 1.0.
+    # empty_rationale recipes strip this to frozenset() at the pivot site —
+    # M must stay 1 to match live /v1/rlcd/readout (2235f69e).
     "rlcd":    frozenset({"num_generations", "temp"}),
     # Prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
@@ -1625,6 +1627,13 @@ class LoopStateMachine:
                     # logged Snake reward-shaping env_kwargs on a DPO mission).
                     if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt"):
                         _safelist = _FINETUNE_PIVOT_KEYS_BY_TASK.get(plan.get("task_type"), frozenset())
+                        # Choice-facing empty-rationale RLCD: no sampling levers —
+                        # num_generations must remain 1 (live readout posts "").
+                        _empty_rationale = bool(
+                            (plan.get("hyperparameters") or {}).get("empty_rationale")
+                        )
+                        if plan.get("task_type") == "rlcd" and _empty_rationale:
+                            _safelist = frozenset()
                         _dropped = {k for k in adjustments if k not in _safelist}
                         if _dropped:
                             logger.warning(
@@ -1639,6 +1648,7 @@ class LoopStateMachine:
                         adjustments = _clamp_finetune_pivot_hp(
                             plan.get("task_type"),
                             {k: v for k, v in adjustments.items() if k in _safelist},
+                            empty_rationale=_empty_rationale,
                         )
                         for _stray in ("env_kwargs", "policy_kwargs", "algorithm"):
                             pivot.pop(_stray, None)

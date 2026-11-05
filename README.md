@@ -59,7 +59,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the wor
 | Reinforcement fine-tuning | GRPO (`grpo`), DPO (`dpo`) |
 | Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
 | On-policy distillation | OPD (`opd`) |
-| Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; one-shot `ensemble_decision_from_scratch_v1` (cold start); or staged foundation → specialize → focus (**c7b78b5d** A/B **68/74** + hermetic **167/167** with remap; product bf94 until swap) |
+| Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; one-shot `ensemble_decision_from_scratch_v1` (cold start); or staged foundation → specialize → focus. Product `:8082` = **c7b78b5d** + `decision_prompt` (A/B **68/74**, hermetic **167/167** + remap); bf94 = rollback |
 | Prompt edit | rule append (`prompt`) |
 | Classical ML | random forest (`ml`) |
 | Retrieval | embedding (`embed`), reranker (`rerank`) |

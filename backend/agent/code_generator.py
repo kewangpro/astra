@@ -2049,6 +2049,10 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
     "opd":     {"num_generations": (2, 4), "temp": (0.7, 1.0)},
     # RLCD samples M rationales. Temp ceiling 1.0: the paper samples at 1, and
     # the same collapse seen in OPD/RFT above 1.0 applies to rationale sampling.
+    # empty_rationale=True (Choice-facing / decision foundation) overrides this
+    # to {} in _clamp_finetune_pivot_hp — live /v1/rlcd/readout posts an empty
+    # rationale so M must stay 1; mission 2235f69e burned 26 pivots forcing
+    # num_generations into 2–4 while held-out stayed flat at 0.576.
     "rlcd":    {"num_generations": (2, 4), "temp": (0.7, 1.0)},
     # prompt missions evaluate candidate rule variants greedily at temperature 0;
     # there are no numerical hyperparameters to tune via pivot.
@@ -2063,11 +2067,21 @@ _FINETUNE_PIVOT_RANGES_BY_TASK = {
 }
 
 
-def _clamp_finetune_pivot_hp(task_type: str, plan_hp: dict) -> dict:
+def _clamp_finetune_pivot_hp(
+    task_type: str, plan_hp: dict, *, empty_rationale: bool = False,
+) -> dict:
     """Clamp the small safelist of pivot keys valid for this finetune-remote task
-    type; silently drop everything else."""
+    type; silently drop everything else.
+
+    When ``empty_rationale`` is set (Choice-facing RLCD), return {} — sampling
+    diversity levers would break the M=1 empty-rationale contract that matches
+    live readout, and they do not move held-out pass_rate (2235f69e / 70791e17).
+    """
+    ranges = _FINETUNE_PIVOT_RANGES_BY_TASK.get(task_type, {})
+    if task_type == "rlcd" and empty_rationale:
+        ranges = {}
     clamped = {}
-    for k, (lo, hi) in _FINETUNE_PIVOT_RANGES_BY_TASK.get(task_type, {}).items():
+    for k, (lo, hi) in ranges.items():
         if k not in plan_hp:
             continue
         try:
@@ -2140,7 +2154,10 @@ def _resolve_hyperparams(
         # PIVOT_SYSTEM's hyperparameter guidance is RL-oriented (PPO/DQN ranges) and
         # doesn't know these are recipe-locked.
         hp = dict(recipe_hp)
-        hp.update(_clamp_finetune_pivot_hp(task_type, plan_hp))
+        hp.update(_clamp_finetune_pivot_hp(
+            task_type, plan_hp,
+            empty_rationale=bool(recipe_hp.get("empty_rationale")),
+        ))
         # warm_start_adapter comes from Mission.last_checkpoint_path (state_machine,
         # system-controlled), never from plan_hp/the LLM pivot — deliberately outside
         # the plan_hp merge above so it can't be spoofed through the same channel the
