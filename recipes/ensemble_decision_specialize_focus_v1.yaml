@@ -5,11 +5,11 @@ updated_at: "2026-11-04"
 task_type: rlcd
 domain: NLP
 description: >
-  Choice-focus (parked): warm-start c7b78b5d. v9 disk-upweight plateaued
-  (best ~0.87, A/B <68) — stop LoRA churn. Remaining hermetic GC sinks
-  (disk_usage / run_code) use stack remap_decision_skill, not more focus.
-  Empty-rationale stage 1. Product :8082 stays bf94 until hermetic 167/167.
-  Side :8084 stays c7b78.
+  Choice-focus (parked — gates already cleared by v8 + stack remap).
+  Warm-start c7b78b5d. Do not resume v9-style disk-upweight (plateaued /
+  A/B regress). Hermetic 167/167 cleared with remap_decision_skill; product
+  :8082 stays bf94 until explicit swap. Empty-rationale stage 1. Side :8084
+  stays c7b78. See Ensemble finetune/data/decision/README.md learnings.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
