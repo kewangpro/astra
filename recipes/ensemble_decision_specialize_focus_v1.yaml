@@ -1,15 +1,15 @@
 name: ensemble_decision_specialize_focus_v1
-version: "1.9.4"
+version: "1.9.5"
 created_at: "2026-11-03"
 updated_at: "2026-11-04"
 task_type: rlcd
 domain: NLP
 description: >
-  Choice-focus (parked — gates already cleared by v8 + stack remap).
-  Warm-start c7b78b5d. Do not resume v9-style disk-upweight (plateaued /
-  A/B regress). Hermetic 167/167 cleared with remap_decision_skill; product
-  :8082 stays bf94 until explicit swap. Empty-rationale stage 1. Side :8084
-  stays c7b78. See Ensemble finetune/data/decision/README.md learnings.
+  Choice-focus — PARKED. Gates cleared by v8 c7b78b5d (A/B 68/74) +
+  Ensemble remap_decision_skill (hermetic 167/167). Do not dispatch for
+  more miss-upweight (v7/v9 plateaued or regressed). Cases pin v8 (winning
+  mix); v9.jsonl is archival only. Product :8082 stays bf94 until explicit
+  swap. Empty-rationale stage 1. See Ensemble finetune/data/decision/README.md.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
@@ -17,8 +17,10 @@ hyperparameters:
   python_bin: /Users/kewang/finetune-env/bin/python
   prompt_template: backend/prompts/decision.md
   no_adapter: false
+  # Cleared side candidate (do not warm-start past this for focus churn).
   adapter: adapters/astra_c7b78b5d_iter0/best
-  cases: data/decision/ensemble/specialize_choice_focus_v9.jsonl
+  # Winning mix — not v9 (disk-upweight discarded).
+  cases: data/decision/ensemble/specialize_choice_focus_v8.jsonl
   routing_only: false
   stage: "1"
   empty_rationale: true
@@ -43,7 +45,7 @@ hyperparameters:
   max_seq_len: 4096
 
 # Held-out readout is contaminated by focus JSONL overlap — not a promote gate.
-# Keep target near warm-start so Astra does not pivot-spin chasing 0.9.
+# Target ≈ warm-start so accidental dispatch does not pivot-spin chasing 0.9.
 target_metric:
   pass_rate: 0.85
 
