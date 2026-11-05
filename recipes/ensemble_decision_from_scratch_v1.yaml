@@ -1,0 +1,58 @@
+name: ensemble_decision_from_scratch_v1
+version: "1.0.0"
+created_at: "2026-11-04"
+updated_at: "2026-11-04"
+task_type: rlcd
+domain: NLP
+description: >
+  ONE-SHOT cold-start replay of the cleared decision-foundation lineage.
+  Gemma 1B + empty-rationale stage 1 + decision_prompt on the combined mix
+  foundation_train + specialize + specialize_choice_focus_v8
+  (decision_from_scratch_v1.jsonl). No warm-start adapter. Replaces the
+  four-step chain (foundation → continue → specialize → focus) for a single
+  mission. Held-out pass_rate is contaminated — gate promote on Choice A/B
+  (74) then hermetic 167 with RLCD_GENERIC_PROMPT + remap_decision_skill,
+  not this target. Product :8082 stays bf94 until explicit swap.
+  Dispatch: POST /recipes/ensemble_decision_from_scratch_v1/dispatch
+  See Ensemble finetune/data/decision/README.md.
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  prompt_template: backend/prompts/decision.md
+  # Cold start — full lineage from base weights.
+  no_adapter: true
+  adapter: ""
+  cases: data/decision/ensemble/decision_from_scratch_v1.jsonl
+  routing_only: false
+  stage: "1"
+  empty_rationale: true
+  score: brier
+  num_generations: 1
+  temp: 1.0
+  max_tokens: 256
+  eval_max_tokens: 256
+  # Cap held-out readout; pool is ~3.5k after dedupe.
+  eval_max_cases: 250
+  sf_coef: 0.3
+  kl_beta: 0.04
+  num_layers: 8
+  lora_rank: 16
+  lora_scale: 4.0
+  lora_dropout: 0.0
+  # Longer than a single focus pass — covers foundation+specialize+focus budget.
+  iters: 250
+  learning_rate: 0.000002
+  max_grad_norm: 1.0
+  steps_per_eval: 25
+  steps_per_report: 1
+  save_every: 25
+  max_seq_len: 4096
+
+# Contaminated vs train overlap — keep near a reachable floor, not 0.9.
+target_metric:
+  pass_rate: 0.85
+
+metric_ceiling:
+  pass_rate: 1.0
