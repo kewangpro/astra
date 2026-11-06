@@ -87,6 +87,30 @@ def get_code_provider() -> InferenceProvider:
     return _code_provider
 
 
+def register_loop_task(
+    mission_id: str,
+    loop: LoopStateMachine,
+    task: "asyncio.Task",
+) -> "asyncio.Task":
+    """Register a live loop in both maps so cancel can set ``_user_cancelled``.
+
+    Dispatch ``auto_start`` and boot state-recovery historically only filled
+    ``_running_tasks``. Cancel then called ``task.cancel()`` without
+    ``request_user_cancel()``, so CancelledError was treated as uvicorn
+    shutdown (PENDING) — and concurrent MLX plan loads under memory pressure
+    could kill the backend. Always pair task + loop.
+    """
+    _running_tasks[mission_id] = task
+    _running_loops[mission_id] = loop
+
+    def _cleanup(_t: asyncio.Task, mid: str = mission_id) -> None:
+        _running_tasks.pop(mid, None)
+        _running_loops.pop(mid, None)
+
+    task.add_done_callback(_cleanup)
+    return task
+
+
 @router.post("/missions/{mission_id}/run", status_code=202)
 @router.post("/missions/{mission_id}/resume", status_code=202)
 async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
@@ -112,14 +136,7 @@ async def run_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
 
     loop = _build_loop()
     task = asyncio.create_task(loop.run(mission_id))
-    _running_tasks[mission_id] = task
-    _running_loops[mission_id] = loop
-
-    def _cleanup(_t: asyncio.Task, mid: str = mission_id) -> None:
-        _running_tasks.pop(mid, None)
-        _running_loops.pop(mid, None)
-
-    task.add_done_callback(_cleanup)
+    register_loop_task(mission_id, loop, task)
     logger.info("Agent: launched loop for mission=%s", mission_id)
     return {"mission_id": mission_id, "status": "loop_started"}
 

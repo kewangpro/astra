@@ -1,0 +1,39 @@
+name: agent_gym_agrpo_smoke_v1
+version: "1.0.0"
+created_at: "2026-11-05"
+task_type: agrpo
+domain: AgentGym
+description: >
+  Short smoke recipe for Agent GRPO verification on Mac Mini (1B, 2 iters).
+  Not a promote target — use agent_gym_agrpo_v1 for real runs.
+
+target_metric:
+  pass_rate: 0.01
+
+metric_ceiling:
+  pass_rate: 1.0
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  adapter: ""
+  no_adapter: true
+  num_layers: 4
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+  iters: 2
+  num_generations: 2
+  temp: 1.0
+  max_tokens: 48
+  max_turns: 6
+  tool_failure_prob: 0.0
+  reward_mode: agent_gym
+  e2e_cases: ""
+  learning_rate: 0.000001
+  clip_epsilon: 0.1
+  max_grad_norm: 1.0
+  steps_per_report: 1
+  steps_per_eval: 2
+  save_every: 2

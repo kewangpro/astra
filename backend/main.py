@@ -25,14 +25,12 @@ async def lifespan(app: FastAPI):
         for mission_id in restart_ids:
             loop = agent._build_loop()
             task = asyncio.create_task(loop.run(mission_id))
-            agent._running_tasks[mission_id] = task
-            task.add_done_callback(lambda t, mid=mission_id: agent._running_tasks.pop(mid, None))
+            agent.register_loop_task(mission_id, loop, task)
             logger.info("State recovery: auto-restarted loop for mission=%s", mission_id)
         for mission_id in resume_ids:
             loop = agent._build_loop()
             task = asyncio.create_task(loop.run(mission_id, resume_existing_sandbox=True))
-            agent._running_tasks[mission_id] = task
-            task.add_done_callback(lambda t, mid=mission_id: agent._running_tasks.pop(mid, None))
+            agent.register_loop_task(mission_id, loop, task)
             logger.info("State recovery: reattached loop for mission=%s", mission_id)
     yield
     # Cancel all running mission loops so shutdown doesn't block indefinitely

@@ -2095,6 +2095,7 @@ _ENV_RECIPE: dict = {
     "grpo": "ensemble_grpo_v1.yaml",
     "agrpo": "agent_gym_agrpo_v1.yaml",
     "agent_gym_agrpo_v1": "agent_gym_agrpo_v1.yaml",
+    "agent_gym_agrpo_smoke_v1": "agent_gym_agrpo_smoke_v1.yaml",
     "ensemble_agent_grpo_v1": "ensemble_agent_grpo_v1.yaml",
     "ensemble_grpo_1b_v1": "ensemble_grpo_1b_v1.yaml",
     "grpo/1b": "ensemble_grpo_1b_v1.yaml",
@@ -2367,7 +2368,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1", "ensemble_decision_foundation_v1", "ensemble_decision_foundation_continue_v1", "ensemble_decision_specialize_v1", "ensemble_decision_specialize_focus_v1", "ensemble_decision_from_scratch_v1", "agent_gym_agrpo_v1", "ensemble_agent_grpo_v1") or task_type in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
+    if env_id in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1", "ensemble_decision_foundation_v1", "ensemble_decision_foundation_continue_v1", "ensemble_decision_specialize_v1", "ensemble_decision_specialize_focus_v1", "ensemble_decision_from_scratch_v1", "agent_gym_agrpo_v1", "agent_gym_agrpo_smoke_v1", "ensemble_agent_grpo_v1") or task_type in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;

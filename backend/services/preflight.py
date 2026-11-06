@@ -116,6 +116,11 @@ class PreflightChecker:
             scripts = ["sft_train.py", "dpo_train.py", "grpo_train.py"]
         elif task_type == "prompt":
             scripts = ["bare_eval.py"]
+        elif task_type == "agrpo":
+            # Worker key is agrpo; Ensemble script is agent_grpo_train.py
+            # (not agrpo_train.py — that false miss crashed nothing but
+            # poisoned preflight + HUD for every Agent GRPO mission).
+            scripts = ["agent_grpo_train.py"]
         else:
             scripts = [f"{task_type}_train.py"]
 

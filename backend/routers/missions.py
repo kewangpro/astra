@@ -254,12 +254,11 @@ async def create_mission(payload: MissionCreate, db: AsyncSession = Depends(get_
 
     if payload.auto_start:
         import asyncio
-        from backend.routers.agent import _build_loop, _running_tasks
+        from backend.routers.agent import _build_loop, register_loop_task
 
         loop = _build_loop()
         task = asyncio.create_task(loop.run(mission.id))
-        _running_tasks[mission.id] = task
-        task.add_done_callback(lambda t: _running_tasks.pop(mission.id, None))
+        register_loop_task(mission.id, loop, task)
         logger.info("Missions: auto-started loop for mission=%s", mission.id)
 
     return mission
@@ -349,8 +348,11 @@ async def delete_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
 
-    # Cancel running loop task
-    from backend.routers.agent import _running_tasks
+    # Cancel running loop task (set user-cancel flag first — same as Stop)
+    from backend.routers.agent import _running_loops, _running_tasks
+    loop = _running_loops.pop(mission_id, None)
+    if loop is not None:
+        loop.request_user_cancel()
     task = _running_tasks.pop(mission_id, None)
     if task and not task.done():
         task.cancel()

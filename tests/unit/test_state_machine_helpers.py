@@ -2264,6 +2264,20 @@ def test_remote_script_check_does_not_block_on_unreachable_host():
     assert "unreachable" in out[0]["detail"]
 
 
+def test_remote_script_check_agrpo_uses_agent_grpo_train():
+    """agrpo worker key ≠ script basename — must probe agent_grpo_train.py."""
+    with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
+         patch("backend.services.preflight.subprocess.run") as run:
+        run.return_value = MagicMock(stdout="yes\n", stderr="")
+        out = _preflight()._check_remote_script("agrpo")
+    assert out[0]["passed"] is True
+    assert out[0]["name"] == "remote_script_agent_grpo_train"
+    assert out[0]["detail"].endswith("/agent_grpo_train.py")
+    cmd = run.call_args_list[-1].args[0][2]
+    assert "agent_grpo_train.py" in cmd
+    assert "agrpo_train.py" not in cmd
+
+
 # ── algo-switch env_kwargs + escalation reset ─────────────────────────────────
 
 def test_recipe_env_kwargs_seaquest_dqn_is_empty():

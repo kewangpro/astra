@@ -142,3 +142,22 @@ async def test_cancel_marks_loop_user_cancelled():
 
     loop.request_user_cancel.assert_called_once()
     task.cancel.assert_called_once()
+
+
+def test_register_loop_task_pairs_task_and_loop():
+    """Dispatch/recovery must register both maps — cancel needs the loop."""
+    from backend.routers import agent as agent_mod
+
+    task = MagicMock(spec=asyncio.Task)
+    loop = MagicMock()
+    tasks: dict = {}
+    loops: dict = {}
+
+    with patch.object(agent_mod, "_running_tasks", tasks), \
+         patch.object(agent_mod, "_running_loops", loops):
+        agent_mod.register_loop_task("m1", loop, task)
+
+    assert tasks["m1"] is task
+    assert loops["m1"] is loop
+    # done-callback registered so both maps clean up together
+    task.add_done_callback.assert_called_once()
