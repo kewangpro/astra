@@ -2805,9 +2805,14 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] Ensemble `finetune/agent_grpo_train.py` + vendored `agent_gym_env.py` + `trajectory_reward.py`.
 - [x] Astra `task_type: agrpo` catalog group **Agentic RL**, `_AGRPO_TEMPLATE`, SSH pin, pivot safelist.
 - [x] Recipe `recipes/agent_gym_agrpo_v1.yaml` (reward_mode=agent_gym).
+- [x] Smoke recipe `recipes/agent_gym_agrpo_smoke_v1.yaml` (1B / 2 iters) for Mini path checks.
+- [x] Preflight maps worker key `agrpo` → remote script `agent_grpo_train.py` (not `agrpo_train.py`).
+- [x] `register_loop_task` pairs `_running_tasks` + `_running_loops` on dispatch / auto-start / boot recovery so cancel sets `_user_cancelled` (FAILED / `cancelled_by_user`) instead of PENDING-as-shutdown; delete also requests user-cancel before `task.cancel()`.
+- [x] **Mini verified:** mission `11774989` (`agent_gym_agrpo_v1`, Gemma-3-12B-it-4bit, 50 iters) completed with AgentGym `pass_rate` **0.625** (5/8; baseline 0.50; target 0.50). Adapter `~/finetune/adapters/astra_11774989_iter0/best`.
 
 ## Phase 94: Ensemble e2e stub trajectory rewards
 
 - [x] Pluggable `score_trajectory_e2e` + `finetune/data/agent_e2e_stubs.yaml`.
 - [x] Recipe `recipes/ensemble_agent_grpo_v1.yaml` (reward_mode=e2e).
 - [x] Docs: DESIGN / README / UX / in-app docs — Agentic RL ≠ routing GRPO; pass rate ≠ hermetic 167.
+- [ ] Mini verify `ensemble_agent_grpo_v1` end-to-end (e2e stub rewards during train; gate metric still AgentGym `pass_rate`).
