@@ -13,7 +13,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 - **Dedicated Completed Missions Archive & Proof Verification** — Dedicated historical repository (`/completed`) with multi-domain category tabs, instant search, sortable metrics, and verifiable requirement manifests (`score >= target: PASSED`, `clean sandbox exit: PASSED`).
 - **Live Mission HUD & Model Play** — Missions stay on training (telemetry, memory gauges, pivots). Play / inference is `/models/{id}`: canvas players stream frame-by-frame Q-values, action probabilities, and Shannon policy entropy.
 - **High-Throughput Custom Envs** — Pure Python/NumPy environments (>50k steps/sec) for Snake, Tetris, 2048 (with 1-step lookahead evaluation), the MinAtar arcade suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, and MultiTurnAgentGym.
-- **Multi-Paradigm Post-Training & Hybrid Compute** — Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), supervised fine-tuning (SFT, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decisions (RLCD), prompt edits, classical ML, retrieval, and generative recommendation (HSTU), across local Apple Silicon (Metal/MLX), local CUDA, and remote SSH compute nodes with real-time cluster memory visibility.
+- **Multi-Paradigm Post-Training & Hybrid Compute** — Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), Agentic RL (Agent GRPO / multi-turn tool trajectories), supervised fine-tuning (SFT, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decisions (RLCD), prompt edits, classical ML, retrieval, and generative recommendation (HSTU), across local Apple Silicon (Metal/MLX), local CUDA, and remote SSH compute nodes with real-time cluster memory visibility.
 
 
 ### Screenshots
@@ -57,6 +57,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the wor
 |---|---|
 | Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) |
 | Reinforcement fine-tuning | GRPO (`grpo`, **online** on-policy rollouts), DPO (`dpo`, **offline** preference pairs) |
+| Agentic RL | Agent GRPO (`agrpo`, **online** multi-turn tool trajectories on AgentGym / e2e stubs) |
 | Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
 | On-policy distillation | OPD (`opd`) |
 | Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; one-shot `ensemble_decision_from_scratch_v1` (cold start); or staged foundation → specialize → focus. Product `:8082` = **c7b78b5d** + `decision_prompt` (A/B **68/74**, hermetic **167/167** + remap); bf94 = rollback |
@@ -131,7 +132,7 @@ make ports  # show port status for all services
 
 ## Strategic Development Milestones
 
-ASTRA's architecture and capabilities are structured into seven core development epochs:
+ASTRA's architecture and capabilities are structured into eight core development epochs:
 
 | Epoch | Scope & Strategic Capabilities | Key Components | Status |
 |---|---|---|---|
@@ -142,6 +143,7 @@ ASTRA's architecture and capabilities are structured into seven core development
 | **Epoch 5: Model Registry, Tournaments & Recipe Evolution** (Phases 55–56, 86) | Multi-environment Model Registry, deterministic fixed-seed Tournament Arena scored in each checkpoint's training env (same as play), exclusive champion crowning, and Recipe Library with evolutionary Lineage DAG. | `ModelRegistry`, `BenchmarkSuite` tournaments, `RecipeLibrary`, Lineage DAG | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels** (Phases 57–63, 66) | Unified 3-stage post-training pipeline (SFT → DPO → GRPO), `<think>...</think>` CoT reasoning preservation, MLX Apple Silicon remote offload, adapter auto-detection, and Self-Taught Reasoner (STaR) closed-loop data bootstrapping with backward rationalization. | Conductor pipeline, SFTTrainer, STaR flywheel (`star_train.py`), unbuffered streaming | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments** (Phase 64) | `MultiTurnAgentGym-v0` 32D environment, 8 multi-turn scenarios (customer support, data triage, billing), dense milestone & task completion rewards, and PPO agent policy optimization. | `AgentToolGym`, `recipes/agent_gym_ppo_v1.yaml`, multi-turn scenario engine | ✅ Complete |
+| **Epoch 8: Agentic RL (LLM Trajectory GRPO)** (Phases 92–94) | Harden AgentGym (`task_success`, play HUD, text obs); Agent GRPO multi-turn tool RL (`agrpo`) on AgentGym bridge then Ensemble e2e stubs. | `agent_grpo_train.py`, `agrpo` worker, `agent_gym_agrpo_v1`, `ensemble_agent_grpo_v1` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 
@@ -152,11 +154,11 @@ ASTRA's architecture and capabilities are structured into seven core development
 
 Optimized for **Apple Silicon M4, 24 GB unified memory**.
 
-Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `rlcd`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
+Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `agrpo`, `distill`, `opd`, `rft`, `rlcd`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
 
 | Machine | Role | Models / Load |
 |---|---|---|
 | MacBook M4 24 GB | MLX inference (Lead + Critic agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) ≈ 8.5 GB |
-| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `distill`, `opd`, `rft`, `rlcd`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
+| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `agrpo`, `distill`, `opd`, `rft`, `rlcd`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.

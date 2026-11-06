@@ -8,6 +8,7 @@ const TASK_TABS: { id: string; label: string; types?: string[] }[] = [
   { id: "all", label: "All Recipes" },
   { id: "environment-rl", label: "Environment RL", types: ["rl"] },
   { id: "reinforcement-fine-tuning", label: "Reinforcement fine-tuning", types: ["grpo", "dpo"] },
+  { id: "agentic-rl", label: "Agentic RL", types: ["agrpo"] },
   {
     id: "supervised-fine-tuning",
     label: "Supervised fine-tuning",
@@ -32,6 +33,7 @@ function recipeAlgorithm(r: Recipe): string {
   const taskType = String(content.task_type ?? "").toLowerCase();
   const byWorker: Record<string, string> = {
     grpo: "GRPO",
+    agrpo: "Agent GRPO",
     dpo: "DPO",
     sft: "SFT",
     mlx_lora: "SFT",

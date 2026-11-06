@@ -175,3 +175,45 @@ def test_agent_gym_recipe_and_codegen():
     )
     assert "_register_agent_gym" in user_prompt
     assert "envs.agent_gym" in user_prompt
+    assert "_eval_task_success" in user_prompt
+    assert 'json={{"mission_id": "test-agent-gym-123", "name": _name' in user_prompt or (
+        "task_success" in user_prompt and "best_score.txt" in user_prompt
+    )
+
+
+def test_agent_gym_text_obs_mode():
+    """Text observation mode returns a prompt string suitable for LM bridge."""
+    env = gym.make("MultiTurnAgentGymText-v0", scenario_idx=0)
+    obs, info = env.reset()
+    assert isinstance(obs, str)
+    assert "User query:" in obs
+    assert "order #8492" in obs.lower() or "8492" in obs
+    assert info.get("obs_mode") == "text"
+    assert "dialogue" in info
+
+    obs2, reward, term, trunc, info2 = env.step({"tool": "query_database"})
+    assert isinstance(obs2, str)
+    assert "Last tool result:" in obs2
+    assert info2["sequence_progress"] == 1
+    assert info2["dialogue"]["last_tool_result"]
+
+
+def test_agent_gym_tool_failure_prob():
+    """Stochastic tool failures do not advance the milestone sequence."""
+    env = AgentToolGym(scenario_idx=0, tool_failure_prob=1.0, obs_mode="vector")
+    env.reset(seed=0)
+    obs, reward, term, trunc, info = env.step(ACTION_QUERY_DB)
+    assert not term
+    assert info["sequence_progress"] == 0
+    assert info["task_success"] == 0.0
+    assert "failed" in (info.get("last_tool_result") or "").lower()
+
+
+def test_agent_gym_dialogue_state_for_play():
+    env = gym.make("MultiTurnAgentGym-v0", scenario_idx=0)
+    env.reset()
+    env.step(ACTION_QUERY_DB)
+    dialogue = env.unwrapped.dialogue_state()
+    assert dialogue["scenario_id"] == "order_delay_notify"
+    assert dialogue["sequence_progress"] == 1
+    assert len(dialogue["history"]) >= 2

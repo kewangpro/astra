@@ -19,6 +19,10 @@ const TASK_GROUPS: { label: string; options: { value: string; label: string }[] 
     ],
   },
   {
+    label: "Agentic RL",
+    options: [{ value: "agrpo", label: "Agent GRPO" }],
+  },
+  {
     label: "Supervised fine-tuning",
     options: [
       { value: "sft", label: "SFT" },

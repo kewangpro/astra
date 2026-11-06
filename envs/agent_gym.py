@@ -5,7 +5,7 @@ Simulates interactive agent workflows where an agent processes user queries by o
 sequences of tools (e.g., database lookup, calculation, knowledge base retrieval, email notification,
 human escalation) across multiple turns before submitting a final solution.
 
-Observation Space:
+Observation Space (obs_mode=\"vector\", default):
   Box(low=0.0, high=1.0, shape=(32,), dtype=np.float32)
   Normalized 32D dialogue state feature vector:
     [0]: Normalized turn count (current_step / max_steps)
@@ -16,6 +16,10 @@ Observation Space:
     [19:27]: Bitmask of tools executed so far in episode
     [27]: Repetition penalty flag (1.0 if agent called identical tool consecutively)
     [28:32]: Scenario context flags [requires_email, requires_calc, is_escalation, is_blocked]
+
+Observation Space (obs_mode=\"text\"):
+  Text string with query, last tool result, progress, and remaining step budget.
+  Used by LLM trajectory RL (Agent GRPO); SB3 MLP policies use vector mode.
 
 Action Space:
   Discrete(8)
@@ -29,20 +33,24 @@ Action Space:
     7: CLARIFY_QUERY    (Request clarification on ambiguous parameters)
 
 Reward Shaping:
-  +0.5: Correct tool invocation matching next scenario milestone
-  +0.5: Task progression towards required goal
-  -0.2: Redundant or irrelevant tool call
-  -0.05: Turn penalty (encourages concise execution)
+  +step_reward (default 0.5): Correct tool invocation matching next scenario milestone
+  -invalid_penalty (default 0.2): Redundant or irrelevant tool call
+  -0.1: Extra penalty for repeating the same invalid tool consecutively
+  -turn_penalty (default 0.05): Per-step cost (encourages concise execution)
   -1.0: Premature task completion before required milestones
-  +2.0: Terminal task success bonus when all milestones verified
+  +completion_reward (default 2.0): Terminal task success bonus when all milestones verified
 """
 from __future__ import annotations
 
 import json
-from typing import Optional, Dict, Any, List, Tuple
+import string
+from typing import Optional, Dict, Any, List, Tuple, Union
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+
+# Broad charset so tool-result text obs passes Gymnasium's Text space checker.
+_TEXT_CHARSET = string.printable + "—–""''…€"
 
 ACTION_FINISH = 0
 ACTION_QUERY_DB = 1
@@ -63,6 +71,17 @@ ACTION_NAMES = [
     "retry_tool",
     "clarify_query",
 ]
+
+TOOL_RESULT_TEMPLATES = {
+    ACTION_QUERY_DB: "Database result: records retrieved successfully for the active query.",
+    ACTION_SEND_EMAIL: "Email sent successfully to the recipient.",
+    ACTION_SEARCH_KB: "Knowledge base hit: relevant policy article returned.",
+    ACTION_CALCULATE: "Calculation complete: numeric result computed.",
+    ACTION_ESCALATE: "Escalation ticket opened for human operator.",
+    ACTION_RETRY: "Retry succeeded after transient failure.",
+    ACTION_CLARIFY: "Clarification request sent to the user.",
+    ACTION_FINISH: "Task marked complete.",
+}
 
 SCENARIOS = [
     {
@@ -123,9 +142,11 @@ SCENARIOS = [
     },
 ]
 
+ObsType = Union[np.ndarray, str]
+
 
 class AgentToolGym(gym.Env):
-    metadata = {"render_modes": ["text"]}
+    metadata = {"render_modes": ["text", "human"]}
 
     def __init__(
         self,
@@ -136,6 +157,8 @@ class AgentToolGym(gym.Env):
         completion_reward: float = 2.0,
         invalid_penalty: float = 0.2,
         scenario_idx: Optional[int] = None,
+        obs_mode: str = "vector",
+        tool_failure_prob: float = 0.0,
     ):
         super().__init__()
         self.max_steps = max_steps
@@ -145,11 +168,20 @@ class AgentToolGym(gym.Env):
         self.completion_reward = completion_reward
         self.invalid_penalty = invalid_penalty
         self.fixed_scenario_idx = scenario_idx
+        self.obs_mode = (obs_mode or "vector").lower()
+        if self.obs_mode not in ("vector", "text"):
+            raise ValueError(f"obs_mode must be 'vector' or 'text', got {obs_mode!r}")
+        self.tool_failure_prob = float(tool_failure_prob)
 
         self.action_space = spaces.Discrete(len(ACTION_NAMES))
-        self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(32,), dtype=np.float32
-        )
+        if self.obs_mode == "text":
+            self.observation_space = spaces.Text(
+                max_length=4096, min_length=1, charset=_TEXT_CHARSET
+            )
+        else:
+            self.observation_space = spaces.Box(
+                low=0.0, high=1.0, shape=(32,), dtype=np.float32
+            )
 
         self._step_count = 0
         self._current_scenario_idx = 0
@@ -161,13 +193,15 @@ class AgentToolGym(gym.Env):
         self._executed_tools_mask = [0.0] * 8
         self._history: List[Dict[str, Any]] = []
         self._task_success = False
+        self._last_tool_result = ""
+        self._repetition_flag = 0.0
 
     def reset(
         self,
         *,
         seed: Optional[int] = None,
         options: Optional[dict] = None,
-    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+    ) -> Tuple[ObsType, Dict[str, Any]]:
         super().reset(seed=seed)
         self._step_count = 0
         self._sequence_progress = 0
@@ -176,6 +210,8 @@ class AgentToolGym(gym.Env):
         self._executed_tools_mask = [0.0] * 8
         self._task_success = False
         self._history = []
+        self._last_tool_result = ""
+        self._repetition_flag = 0.0
 
         if self.fixed_scenario_idx is not None:
             self._current_scenario_idx = self.fixed_scenario_idx % len(SCENARIOS)
@@ -193,15 +229,15 @@ class AgentToolGym(gym.Env):
         })
 
         obs = self._get_obs()
-        info = {
-            "scenario_id": self._scenario["id"],
-            "scenario_name": self._scenario["name"],
-            "query": self._scenario["query"],
+        info = self._base_info()
+        info.update({
             "required_steps": len(self._required_sequence),
-        }
+            "task_success": 0.0,
+            "dialogue": self.dialogue_state(),
+        })
         return obs, info
 
-    def step(self, action: int | Dict[str, Any] | str) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+    def step(self, action: int | Dict[str, Any] | str) -> Tuple[ObsType, float, bool, bool, Dict[str, Any]]:
         # Support text or dict actions for LLM / structured agents
         if isinstance(action, str):
             try:
@@ -217,12 +253,12 @@ class AgentToolGym(gym.Env):
         reward = -self.turn_penalty
         terminated = False
         truncated = False
+        self._repetition_flag = 0.0
 
         repetition = (self._last_action is not None and self._last_action == action)
         if 0 <= action < 8:
             self._executed_tools_mask[action] = 1.0
 
-        # Check expected milestone
         expected_action = (
             self._required_sequence[self._sequence_progress]
             if self._sequence_progress < len(self._required_sequence)
@@ -230,42 +266,69 @@ class AgentToolGym(gym.Env):
         )
 
         if action == expected_action:
-            # Correct next step
-            self._sequence_progress += 1
-            reward += self.step_reward
-            self._last_action_success = 1.0
-            self._history.append({
-                "role": "assistant",
-                "tool": ACTION_NAMES[action],
-                "status": "success",
-            })
+            # Optional stochastic tool failure (does not advance milestone)
+            failed = (
+                action != ACTION_FINISH
+                and self.tool_failure_prob > 0.0
+                and float(self.np_random.random()) < self.tool_failure_prob
+            )
+            if failed:
+                self._last_action_success = 0.0
+                self._last_tool_result = (
+                    f"Tool {ACTION_NAMES[action]} failed: transient error. Retry or choose another tool."
+                )
+                reward -= self.invalid_penalty
+                self._history.append({
+                    "role": "assistant",
+                    "tool": ACTION_NAMES[action],
+                    "status": "tool_failure",
+                    "result": self._last_tool_result,
+                })
+            else:
+                self._sequence_progress += 1
+                reward += self.step_reward
+                self._last_action_success = 1.0
+                self._last_tool_result = TOOL_RESULT_TEMPLATES.get(
+                    action, f"Tool {ACTION_NAMES[action]} succeeded."
+                )
+                self._history.append({
+                    "role": "assistant",
+                    "tool": ACTION_NAMES[action],
+                    "status": "success",
+                    "result": self._last_tool_result,
+                })
 
-            # Check if finished
-            if action == ACTION_FINISH:
-                if self._sequence_progress == len(self._required_sequence):
-                    reward += self.completion_reward
-                    self._task_success = True
-                terminated = True
+                if action == ACTION_FINISH:
+                    if self._sequence_progress == len(self._required_sequence):
+                        reward += self.completion_reward
+                        self._task_success = True
+                    terminated = True
         else:
-            # Incorrect or out-of-order action
             self._last_action_success = 0.0
             if action == ACTION_FINISH:
-                # Premature finish
                 reward -= 1.0
                 terminated = True
+                self._last_tool_result = "Premature finish: required milestones incomplete."
                 self._history.append({
                     "role": "assistant",
                     "tool": "finish_task",
                     "status": "premature_failure",
+                    "result": self._last_tool_result,
                 })
             else:
                 reward -= self.invalid_penalty
                 if repetition:
                     reward -= 0.1
+                    self._repetition_flag = 1.0
+                tool_name = ACTION_NAMES[action] if 0 <= action < len(ACTION_NAMES) else f"unknown_{action}"
+                self._last_tool_result = (
+                    f"Tool {tool_name} was invalid or out of order for this scenario."
+                )
                 self._history.append({
                     "role": "assistant",
-                    "tool": ACTION_NAMES[action] if 0 <= action < len(ACTION_NAMES) else f"unknown_{action}",
+                    "tool": tool_name,
                     "status": "invalid_or_out_of_order",
+                    "result": self._last_tool_result,
                 })
 
         self._last_action = action
@@ -274,45 +337,87 @@ class AgentToolGym(gym.Env):
             truncated = True
 
         obs = self._get_obs()
-        info = {
-            "scenario_id": self._scenario["id"],
+        info = self._base_info()
+        info.update({
             "step_count": self._step_count,
             "sequence_progress": self._sequence_progress,
             "required_steps": len(self._required_sequence),
             "task_success": 1.0 if self._task_success else 0.0,
             "last_action_name": ACTION_NAMES[action] if 0 <= action < len(ACTION_NAMES) else str(action),
-        }
+            "last_tool_result": self._last_tool_result,
+            "dialogue": self.dialogue_state(),
+        })
 
         return obs, reward, terminated, truncated, info
 
-    def _get_obs(self) -> np.ndarray:
+    def dialogue_state(self) -> Dict[str, Any]:
+        """Structured dialogue payload for play HUD / LM bridge."""
+        return {
+            "scenario_id": self._scenario.get("id", ""),
+            "scenario_name": self._scenario.get("name", ""),
+            "query": self._scenario.get("query", ""),
+            "history": list(self._history),
+            "sequence_progress": self._sequence_progress,
+            "required_steps": len(self._required_sequence),
+            "required_tools": [ACTION_NAMES[a] for a in self._required_sequence],
+            "steps_remaining": max(0, self.max_steps - self._step_count),
+            "task_success": bool(self._task_success),
+            "last_tool_result": self._last_tool_result,
+        }
+
+    def _base_info(self) -> Dict[str, Any]:
+        return {
+            "scenario_id": self._scenario.get("id", ""),
+            "scenario_name": self._scenario.get("name", ""),
+            "query": self._scenario.get("query", ""),
+            "obs_mode": self.obs_mode,
+        }
+
+    def _get_obs(self) -> ObsType:
+        if self.obs_mode == "text":
+            return self._get_text_obs()
+        return self._get_vector_obs()
+
+    def _get_text_obs(self) -> str:
+        progress = f"{self._sequence_progress}/{max(1, len(self._required_sequence))}"
+        remaining = max(0, self.max_steps - self._step_count)
+        tools_used = [
+            ACTION_NAMES[i] for i, flag in enumerate(self._executed_tools_mask) if flag
+        ]
+        lines = [
+            f"Scenario: {self._scenario.get('name', '')}",
+            f"User query: {self._scenario.get('query', '')}",
+            f"Progress: {progress} milestones | Steps remaining: {remaining}",
+            f"Tools used: {', '.join(tools_used) if tools_used else '(none)'}",
+        ]
+        if self._last_tool_result:
+            lines.append(f"Last tool result: {self._last_tool_result}")
+        else:
+            lines.append("Last tool result: (none yet)")
+        lines.append(
+            "Respond with a single JSON object: "
+            '{"tool": "<one of: ' + ", ".join(ACTION_NAMES) + '>"}'
+        )
+        return "\n".join(lines)
+
+    def _get_vector_obs(self) -> np.ndarray:
         obs = np.zeros(32, dtype=np.float32)
-        # [0]: Normalized turn count
         obs[0] = min(1.0, self._step_count / max(1, self.max_steps))
 
-        # [1:9]: Scenario one-hot (8 slots)
         if 0 <= self._current_scenario_idx < 8:
             obs[1 + self._current_scenario_idx] = 1.0
 
-        # [9:17]: Last action one-hot (8 slots)
         if self._last_action is not None and 0 <= self._last_action < 8:
             obs[9 + self._last_action] = 1.0
 
-        # [17]: Last tool execution success
         obs[17] = self._last_action_success
 
-        # [18]: Goal progress fraction
         total_req = max(1, len(self._required_sequence))
         obs[18] = min(1.0, self._sequence_progress / total_req)
 
-        # [19:27]: Executed tools bitmask (8 slots)
         obs[19:27] = self._executed_tools_mask
+        obs[27] = self._repetition_flag
 
-        # [27]: Repetition flag
-        if self._step_count > 1 and self._last_action_success == 0.0:
-            obs[27] = 1.0
-
-        # [28:32]: Scenario context flags
         context_flags = self._scenario.get("context_flags", [0.0, 0.0, 0.0, 0.0])
         obs[28:32] = context_flags[:4]
 
@@ -334,27 +439,37 @@ class AgentToolGym(gym.Env):
         lines.append(f"Query: {self._scenario.get('query', '')}")
         lines.append("Dialogue Steps:")
         for h in self._history:
-            lines.append(f"  [{h.get('role')}] {h.get('tool', h.get('content', ''))} (status: {h.get('status', 'ok')})")
-        lines.append(f"Progress: {self._sequence_progress}/{len(self._required_sequence)} | Success: {self._task_success}")
+            lines.append(
+                f"  [{h.get('role')}] {h.get('tool', h.get('content', ''))} "
+                f"(status: {h.get('status', 'ok')})"
+            )
+        lines.append(
+            f"Progress: {self._sequence_progress}/{len(self._required_sequence)} "
+            f"| Success: {self._task_success}"
+        )
         output = "\n".join(lines)
         if self.render_mode == "human":
             print(output)
         return output
 
 
-# ── Gymnasium Registration ────────────────────────────────────────────────────
-
 def register():
-    """Register MultiTurnAgentGym-v0 and AgentGym-v0 in Gymnasium registry."""
+    """Register MultiTurnAgentGym-v0, AgentGym-v0, and text observation alias."""
     if "MultiTurnAgentGym-v0" not in gym.envs.registry:
         gym.register(
             id="MultiTurnAgentGym-v0",
             entry_point="envs.agent_gym:AgentToolGym",
-            kwargs={"max_steps": 8},
+            kwargs={"max_steps": 8, "obs_mode": "vector"},
         )
     if "AgentGym-v0" not in gym.envs.registry:
         gym.register(
             id="AgentGym-v0",
             entry_point="envs.agent_gym:AgentToolGym",
-            kwargs={"max_steps": 8},
+            kwargs={"max_steps": 8, "obs_mode": "vector"},
+        )
+    if "MultiTurnAgentGymText-v0" not in gym.envs.registry:
+        gym.register(
+            id="MultiTurnAgentGymText-v0",
+            entry_point="envs.agent_gym:AgentToolGym",
+            kwargs={"max_steps": 8, "obs_mode": "text"},
         )

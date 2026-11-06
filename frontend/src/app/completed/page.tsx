@@ -19,6 +19,7 @@ const TASK_TABS: { id: string; label: string; types?: string[] }[] = [
   { id: "all", label: "All Completed" },
   { id: "environment-rl", label: "Environment RL", types: ["rl"] },
   { id: "reinforcement-fine-tuning", label: "Reinforcement fine-tuning", types: ["grpo", "dpo"] },
+  { id: "agentic-rl", label: "Agentic RL", types: ["agrpo"] },
   {
     id: "supervised-fine-tuning",
     label: "Supervised fine-tuning",

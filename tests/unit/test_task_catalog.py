@@ -15,6 +15,7 @@ def test_catalog_matches_the_task_algorithm_table():
             ("PPO", "rl"), ("DQN", "rl"), ("A2C", "rl"), ("SAC", "rl"), ("TD3", "rl"),
         ]),
         ("Reinforcement fine-tuning", [("GRPO", "grpo"), ("DPO", "dpo")]),
+        ("Agentic RL", [("Agent GRPO", "agrpo")]),
         ("Supervised fine-tuning", [
             ("SFT", "sft"), ("SFT", "mlx_lora"), ("distillation", "distill"),
             ("rejection sampling", "rft"), ("STaR", "star"),

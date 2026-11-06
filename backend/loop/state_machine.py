@@ -355,6 +355,8 @@ _ENVIRONMENTAL_ERROR_RE = re.compile(
 _FINETUNE_PIVOT_KEYS_BY_TASK = {
     "dpo":     frozenset({"temp", "k_collect"}),
     "grpo":    frozenset({"temp", "num_generations"}),
+    # Agent GRPO: sampling + horizon + duration only (recipe owns LoRA / lr).
+    "agrpo":   frozenset({"temp", "num_generations", "iters", "max_turns"}),
     "distill": frozenset({"iters"}),
     # RFT's lever is how many candidates it draws before rejection filtering —
     # or every sample is identical and there is nothing to reject.
@@ -376,6 +378,7 @@ _FINETUNE_PIVOT_RANGES = {
     "num_generations": (2, 4),
     "iters": (200, 800),
     "k_samples": (4, 16),
+    "max_turns": (4, 12),
 }
 
 # dpo_train.py's collect_pairs() phase (sampling K completions per case to build
@@ -1161,7 +1164,7 @@ class LoopStateMachine:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
                     _active_t_for_floor = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
-                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "distill", "rft", "opd"):
+                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "agrpo", "distill", "rft", "opd"):
                         # Record the true observed value to telemetry so the
                         # Metric History chart stays honest…
                         await self._append_telemetry_metric(
@@ -1294,7 +1297,7 @@ class LoopStateMachine:
                 # checkpoint that first set the best.
                 active_t = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
                 if (
-                    active_t in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "star")
+                    active_t in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "star")
                     and not _was_floored
                     and _raw_goal_val is not None
                     and _raw_goal_val > 0.0
@@ -1625,7 +1628,7 @@ class LoopStateMachine:
                     # and the pivot telemetry don't advertise changes that never
                     # actually happen (real incident: mission 15a1d093 iter 4 pivot
                     # logged Snake reward-shaping env_kwargs on a DPO mission).
-                    if plan.get("task_type") in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt"):
+                    if plan.get("task_type") in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt"):
                         _safelist = _FINETUNE_PIVOT_KEYS_BY_TASK.get(plan.get("task_type"), frozenset())
                         # Choice-facing empty-rationale RLCD: no sampling levers —
                         # num_generations must remain 1 (live readout posts "").
@@ -2562,8 +2565,18 @@ class LoopStateMachine:
             "MinAtar-Asterix": {"max_steps", "gold_reward", "death_penalty", "ramping"},
             "GridPacMan-v0": {"max_steps", "pellet_reward", "power_reward", "ghost_eat_reward", "clear_bonus", "death_penalty"},
             "PacMan-v0": {"max_steps", "pellet_reward", "power_reward", "ghost_eat_reward", "clear_bonus", "death_penalty"},
-            "MultiTurnAgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
-            "AgentGym-v0": {"max_steps", "turn_penalty", "step_reward", "completion_reward", "invalid_penalty"},
+            "MultiTurnAgentGym-v0": {
+                "max_steps", "turn_penalty", "step_reward", "completion_reward",
+                "invalid_penalty", "obs_mode", "tool_failure_prob", "scenario_idx",
+            },
+            "AgentGym-v0": {
+                "max_steps", "turn_penalty", "step_reward", "completion_reward",
+                "invalid_penalty", "obs_mode", "tool_failure_prob", "scenario_idx",
+            },
+            "MultiTurnAgentGymText-v0": {
+                "max_steps", "turn_penalty", "step_reward", "completion_reward",
+                "invalid_penalty", "obs_mode", "tool_failure_prob", "scenario_idx",
+            },
         }
         _RANGES = {
             "food_reward":    (5.0, 50.0),
@@ -3887,6 +3900,8 @@ class LoopStateMachine:
         else:
             loss_re = {
                 "grpo": _GRPO_LOSS_RE,
+                # agent_grpo_train.py uses the same "Step N/M | loss=…" contract.
+                "agrpo": _GRPO_LOSS_RE,
                 "distill": _DISTILL_LOSS_RE,
                 # rft_train.py's SFT half reuses distill_train.py's step-logging
                 # format, so the same regex applies.
@@ -3936,7 +3951,7 @@ class LoopStateMachine:
     # (_ENV_RECIPE in code_generator.py) and ignores the crystallized YAML
     # entirely. Crystallizing these only produces orphaned library entries —
     # see the dpo_dpo_v1/v2 incidents (commit 9ac6cb2).
-    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "sft", "post-training", "star", "embed", "rerank", "hstu"})
+    _NO_CRYSTALLIZE_TASK_TYPES = frozenset({"dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "sft", "post-training", "star", "embed", "rerank", "hstu"})
 
     async def _crystallize(self, mission_id: str, plan: dict, score: Optional[float]) -> None:
         """Distil a completed mission into a reusable recipe (non-blocking on failure)."""

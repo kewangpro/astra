@@ -4,6 +4,7 @@ import { SnakePlayer } from "./SnakePlayer";
 import { TetrisPlayer } from "./TetrisPlayer";
 import { Game2048Player } from "./Game2048Player";
 import { MinAtarPlayer } from "./MinAtarPlayer";
+import { AgentGymPlayer } from "./AgentGymPlayer";
 import { envIdFromDomain, isPlayableEnv } from "@/lib/playWs";
 
 type Props = {
@@ -27,6 +28,15 @@ export function PolicyPlayer({ modelId, missionId, envId }: Props) {
   }
   if (lower.includes("2048")) {
     return <Game2048Player modelId={modelId} missionId={missionId} envId="Game2048-v0" />;
+  }
+  if (lower.includes("agentgym") || lower.includes("multiturnagent")) {
+    return (
+      <AgentGymPlayer
+        modelId={modelId}
+        missionId={missionId}
+        envId="MultiTurnAgentGym-v0"
+      />
+    );
   }
   if (
     lower.includes("minatar") ||

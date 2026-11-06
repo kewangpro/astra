@@ -39,6 +39,12 @@ TASK_GROUPS: tuple[TaskGroup, ...] = (
         ),
     ),
     TaskGroup(
+        "Agentic RL",
+        (
+            Algorithm("Agent GRPO", "agrpo"),
+        ),
+    ),
+    TaskGroup(
         "Supervised fine-tuning",
         (
             Algorithm("SFT", "sft"),

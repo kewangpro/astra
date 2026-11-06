@@ -234,6 +234,154 @@ The script must:
 6. After training, save the final model: model.save("{checkpoint_dir}/last_model")
 7. Exit cleanly when target mean_reward is reached."""
 
+# AgentGym: same SB3 contract, but best_score / early-stop key off task_success
+# (mean terminal info["task_success"]), with mean_reward kept as secondary telemetry.
+_AGENT_GYM_RL_TEMPLATE = """\
+Generate a complete RL training script using Stable-Baselines3.
+{env_setup}
+Mission ID: {mission_id}
+Algorithm: {algorithm}
+Environment: {env_id}
+Hyperparameters: {hyperparameters}
+Policy kwargs (network architecture): {policy_kwargs}
+Target metric: {target_metric}
+Checkpoint directory: {checkpoint_dir}
+Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
+
+The script MUST start with these exact imports (do not omit any):
+    import os
+    import gymnasium as gym
+    import numpy as np
+    import requests
+    import logging
+    from stable_baselines3 import {algorithm}
+    from stable_baselines3.common.callbacks import BaseCallback
+
+The script must:
+1. Create the environment with EXACTLY these lines — copy verbatim:
+       import gymnasium as gym
+       env = gym.make("{env_id}"{env_kwargs_str})
+   The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
+   Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
+2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
+
+       def _linear_schedule(initial_value):
+           def _schedule(progress_remaining):
+               return progress_remaining * initial_value
+           return _schedule
+
+       {valid_keys_var} = {valid_keys_set}
+       _hp = {hyperparameters}
+       _filtered = {{k: v for k, v in _hp.items() if k in {valid_keys_var}}}
+       if _hp.get("lr_schedule") == "linear" and "learning_rate" in _filtered:
+           _filtered["learning_rate"] = _linear_schedule(_filtered["learning_rate"])
+       _policy_kwargs = {policy_kwargs}
+       model = {algorithm}("MlpPolicy", env, **_filtered,
+                   **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
+
+3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
+
+       _best_ckpt = "{checkpoint_dir}/best_model.zip"
+       _algo_tag = "{checkpoint_dir}/best_model_algo.txt"
+       _ckpt_algo = ""
+       try:
+           _ckpt_algo = open(_algo_tag).read().strip()
+       except Exception:
+           _ckpt_algo = ""
+       if os.path.exists(_best_ckpt) and (not _ckpt_algo or _ckpt_algo == "{algorithm}"):
+           try:
+               _warm = {algorithm}.load(_best_ckpt, env=env)
+               _warm_sd = _warm.policy.state_dict()
+               _model_sd = model.policy.state_dict()
+               _shapes_ok = (
+                   set(_warm_sd) == set(_model_sd)
+                   and all(_warm_sd[k].shape == _model_sd[k].shape for k in _model_sd)
+               )
+               if _shapes_ok:
+                   model.policy.load_state_dict(_warm_sd)
+               else:
+                   logging.warning(
+                       "Warm-start skipped: policy tensor shapes differ from checkpoint "
+                       "(%d checkpoint tensors, %d current) — random init for this net_arch",
+                       len(_warm_sd), len(_model_sd),
+                   )
+               del _warm, _warm_sd, _model_sd
+           except Exception as _e:
+               logging.warning("Warm-start skipped (architecture mismatch or load error): %s", _e)
+       elif os.path.exists(_best_ckpt) and _ckpt_algo and _ckpt_algo != "{algorithm}":
+           logging.warning(
+               "Warm-start skipped: checkpoint algo %s != current %s",
+               _ckpt_algo, "{algorithm}",
+           )
+
+4. Implement a custom BaseCallback. Copy this ENTIRE class EXACTLY — do not add, remove, or
+   modify any line. AgentGym goals use task_success (mean terminal info), NOT mean_reward,
+   for best_model / best_score.txt / early stop. mean_reward is still posted as secondary telemetry.
+
+       class CustomCallback(BaseCallback):
+           def __init__(self, verbose=0):
+               super().__init__(verbose=verbose)
+               try:
+                   self._best_score = float(open("{checkpoint_dir}/best_score.txt").read().strip())
+               except Exception:
+                   self._best_score = float("-inf")
+
+           def _eval_task_success(self, n_episodes=8):
+               successes = []
+               for _ in range(n_episodes):
+                   _obs = self.training_env.reset()
+                   if isinstance(_obs, tuple):
+                       _obs = _obs[0]
+                   _done = False
+                   _info = {{}}
+                   while not _done:
+                       _act, _ = self.model.predict(_obs, deterministic=True)
+                       _step = self.training_env.step(_act)
+                       if len(_step) == 5:
+                           _obs, _r, _term, _trunc, _info = _step
+                           _done = bool(_term or _trunc)
+                       else:
+                           _obs, _r, _done, _info = _step
+                       if isinstance(_info, (list, tuple)) and _info:
+                           _info = _info[0] if isinstance(_info[0], dict) else {{}}
+                   successes.append(float((_info or {{}}).get("task_success", 0.0)))
+               return float(np.mean(successes)) if successes else 0.0
+
+           def _on_step(self) -> bool:
+               if self.n_calls % {telemetry_interval} == 0 and len(self.model.ep_info_buffer) > 0:
+                   mean_reward = float(np.mean([ep["r"] for ep in self.model.ep_info_buffer]))
+                   task_success = self._eval_task_success()
+                   for _name, _val in (("mean_reward", mean_reward), ("task_success", task_success)):
+                       try:
+                           response = requests.post(
+                               "{api_url}/telemetry/missions/{mission_id}/metrics",
+                               json={{"mission_id": "{mission_id}", "name": _name,
+                                      "value": _val, "step": self.n_calls,
+                                      "iteration": {current_iteration}}},
+                               timeout=2,
+                           )
+                           if not response.ok:
+                               logging.warning("Telemetry failed: %s", response.status_code)
+                       except Exception as exc:
+                           logging.warning("Telemetry error: %s", exc)
+                   if task_success > self._best_score:
+                       self._best_score = task_success
+                       self.model.save("{checkpoint_dir}/best_model")
+                       with open("{checkpoint_dir}/best_score.txt", "w") as _f:
+                           _f.write(str(task_success))
+                       with open("{checkpoint_dir}/best_model_algo.txt", "w") as _f:
+                           _f.write(self.model.__class__.__name__)
+                   if task_success >= {target_reward}:
+                       return False
+               return True
+
+   The `self.n_calls % {telemetry_interval} == 0` guard is MANDATORY. Never remove it.
+   The best_model save block is MANDATORY — it ensures the peak model is preserved.
+   The __init__ loading from best_score.txt is MANDATORY — it preserves peak weights across restarts.
+5. Call model.learn(total_timesteps={total_timesteps}, callback=callback).
+6. After training, save the final model: model.save("{checkpoint_dir}/last_model")
+7. Exit cleanly when target task_success is reached."""
+
 _ACTOR_CRITIC_CONTRACT = """\
 Generate a complete custom Actor-Critic training script for Tetris using PyTorch.
 Do NOT use Stable-Baselines3. Implement everything with PyTorch and plain Python.
@@ -1225,6 +1373,68 @@ The script must:
    comma, as its own list element) or omitted entirely if empty — do not insert
    an empty string element in the list.)"""
 
+_AGRPO_TEMPLATE = """\
+Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) by
+invoking the EXISTING agent_grpo_train.py script — do NOT reimplement the
+rollout loop, reward, or GRPO update yourself. This script is a thin
+orchestration wrapper only — it does NOT report telemetry itself. Astra tails
+this process's own log remotely and parses "Pass rate" lines on its own; do not
+add any network calls (no requests, no HTTP) to this script.
+
+Mission ID: {mission_id}
+Finetune dir (remote host, agent_grpo_train.py lives here): {finetune_dir}
+Python interpreter (has mlx_lm installed): {python_bin}
+Base model: {base_model}
+Warm-start adapter: {adapter}
+LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
+Agent GRPO: iters={iters}, num_generations={num_generations}, temp={temp},
+max_tokens={max_tokens}, max_turns={max_turns}, reward_mode={reward_mode}
+tool_failure_prob={tool_failure_prob}
+e2e_cases={e2e_cases}
+Optimizer: lr={learning_rate}, clip_epsilon={clip_epsilon}, max_grad_norm={max_grad_norm}
+Logging: steps_per_report={steps_per_report}, steps_per_eval={steps_per_eval}, save_every={save_every}
+Adapter output: {checkpoint_dir}
+
+The script must:
+1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
+   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
+   sandbox tracks this wrapper process's own pid as "the training process." If
+   this script fork+execs agent_grpo_train.py as a child (subprocess.run/Popen),
+   the child gets a DIFFERENT pid that astra never learns and can never clean up.
+   os.execv REPLACES this process's image in place (no fork, same pid).
+2. First os.chdir("{finetune_dir}") — agent_grpo_train.py and its imports resolve
+   relative paths from the Ensemble repo root / finetune checkout cwd.
+3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path):
+       os.execv(
+           "{python_bin}",
+           [
+               "{python_bin}", "{finetune_dir}/agent_grpo_train.py",
+               "--model", "{base_model}",
+               {adapter_arg}
+               "--save-dir", "{checkpoint_dir}",
+               "--num-layers", "{num_layers}",
+               "--lora-rank", "{lora_rank}",
+               "--lora-dropout", "{lora_dropout}",
+               "--lora-scale", "{lora_scale}",
+               "--iters", "{iters}",
+               "--num-generations", "{num_generations}",
+               "--temp", "{temp}",
+               "--max-tokens", "{max_tokens}",
+               "--max-turns", "{max_turns}",
+               "--tool-failure-prob", "{tool_failure_prob}",
+               "--reward-mode", "{reward_mode}",
+               {e2e_cases_flag}
+               "--learning-rate", "{learning_rate}",
+               "--clip-epsilon", "{clip_epsilon}",
+               "--max-grad-norm", "{max_grad_norm}",
+               "--steps-per-report", "{steps_per_report}",
+               "--steps-per-eval", "{steps_per_eval}",
+               "--save-every", "{save_every}",
+           ],
+       )
+   ({adapter_arg} is either '"--adapter", "{adapter}",' or '"--no-warmstart",' —
+   never both. {e2e_cases_flag} is either '"--e2e-cases", "{e2e_cases}",' or empty.)"""
+
 _DISTILL_TEMPLATE = """\
 Generate a script that runs knowledge-distillation fine-tuning by invoking the
 EXISTING distill_train.py script — do NOT reimplement teacher generation, the
@@ -1854,9 +2064,10 @@ _ENV_RECIPE: dict = {
     "MinAtar-Asterix-v0": "minatar_asterix_dqn_v1.yaml",
     "GridPacMan-v0": "grid_pacman_dqn_v1.yaml",
     "PacMan-v0": "grid_pacman_dqn_v1.yaml",
-    "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
+            "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
     "AgentGym-v0": "agent_gym_ppo_v1.yaml",
     "agent-gym": "agent_gym_ppo_v1.yaml",
+    "MultiTurnAgentGymText-v0": "agent_gym_ppo_v1.yaml",
     "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
     "ensemble_sft_v1": "ensemble_sft_v1.yaml",
     "ensemble_sft_1b_v5": "ensemble_sft_1b_v5.yaml",
@@ -1882,6 +2093,9 @@ _ENV_RECIPE: dict = {
     "dpo/ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
     "ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
     "grpo": "ensemble_grpo_v1.yaml",
+    "agrpo": "agent_gym_agrpo_v1.yaml",
+    "agent_gym_agrpo_v1": "agent_gym_agrpo_v1.yaml",
+    "ensemble_agent_grpo_v1": "ensemble_agent_grpo_v1.yaml",
     "ensemble_grpo_1b_v1": "ensemble_grpo_1b_v1.yaml",
     "grpo/1b": "ensemble_grpo_1b_v1.yaml",
     "grpo/1b_v1": "ensemble_grpo_1b_v1.yaml",
@@ -2027,6 +2241,12 @@ def recipe_metric_ceiling(env_id: str, algorithm: str = "") -> dict:
 _FINETUNE_PIVOT_RANGES_BY_TASK = {
     "dpo":     {"temp": (0.7, 1.5), "k_collect": (4, 16)},
     "grpo":    {"temp": (0.7, 1.5), "num_generations": (2, 4)},
+    "agrpo":   {
+        "temp": (0.7, 1.5),
+        "num_generations": (2, 4),
+        "iters": (20, 200),
+        "max_turns": (4, 12),
+    },
     # distill: NO pivot lever as of 2026-09-05. `iters` was the one safe knob, but
     # it let a plan override the recipe's value — _resolve_hyperparams applies
     # recipe_hp then hp.update(clamped plan keys), so the LeadAgent's proposal
@@ -2147,7 +2367,7 @@ def _resolve_hyperparams(
     recipe = _load_recipe_for_env(env_id, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
-    if env_id in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1", "ensemble_decision_foundation_v1", "ensemble_decision_foundation_continue_v1", "ensemble_decision_specialize_v1", "ensemble_decision_specialize_focus_v1", "ensemble_decision_from_scratch_v1") or task_type in ("dpo", "grpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
+    if env_id in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1", "ensemble_decision_foundation_v1", "ensemble_decision_foundation_continue_v1", "ensemble_decision_specialize_v1", "ensemble_decision_specialize_focus_v1", "ensemble_decision_from_scratch_v1", "agent_gym_agrpo_v1", "ensemble_agent_grpo_v1") or task_type in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):
         # Recipe is authoritative for everything except the small sampling-diversity
         # safelist above — no plan/pivot override allowed for anything else. These are
         # LoRA/optimizer settings tuned against a specific warm-start adapter;
@@ -2375,7 +2595,9 @@ class CodeGenerator:
                 ) and "register" not in code:
                     code = _MINATAR_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected MinAtar registration preamble")
-                elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym") and "register" not in code:
+                elif env_id in (
+                    "MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym", "MultiTurnAgentGymText-v0",
+                ) and "register" not in code:
                     code = _AGENT_GYM_SETUP.format(project_root=_proj_root) + "\n" + code
                     logger.info("CodeGenerator: injected MultiTurnAgentGym-v0 registration preamble")
                 # Inject curriculum loop if recipe defines phases
@@ -2665,7 +2887,9 @@ class CodeGenerator:
                 env_setup = _MINATAR_SETUP.format(project_root=_project_root)
             elif env_id in ("GridPacMan-v0", "PacMan-v0") or "pacman" in env_id.lower() or "pac-man" in env_id.lower():
                 env_setup = _GRIDPACMAN_SETUP.format(project_root=_project_root)
-            elif env_id in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
+            elif env_id in (
+                "MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym", "MultiTurnAgentGymText-v0",
+            ):
                 env_setup = _AGENT_GYM_SETUP.format(project_root=_project_root)
             else:
                 env_setup = ""
@@ -2762,6 +2986,12 @@ class CodeGenerator:
             valid_keys = _VALID_ALGO_KEYS.get(algo_upper, _VALID_ALGO_KEYS["PPO"])
             valid_keys_var = f"_VALID_{algo_upper}_KEYS"
             valid_keys_set = "{" + ", ".join(f'"{k}"' for k in sorted(valid_keys)) + "}"
+            is_agent_gym = env_id in (
+                "MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym", "MultiTurnAgentGymText-v0",
+            )
+            # AgentGym goal metric is task_success — use the real target for early stop.
+            if is_agent_gym and tm_name == "task_success":
+                target_reward = tm_value
             ctx = {
                 "algorithm": algorithm,
                 "valid_keys_var": valid_keys_var,
@@ -2777,6 +3007,8 @@ class CodeGenerator:
                 "telemetry_interval": hp.get("telemetry_interval", 2048),
                 **base,
             }
+            if is_agent_gym:
+                return _AGENT_GYM_RL_TEMPLATE.format(**ctx)
             return _RL_TEMPLATE.format(**ctx)
         if effective_task_type == "sft":
             ctx = self._build_sft_context(
@@ -2814,6 +3046,26 @@ class CodeGenerator:
                 **base,
             }
             return _GRPO_TEMPLATE.format(**ctx)
+        if effective_task_type == "agrpo":
+            _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
+            _e2e = hp.get("e2e_cases") or ""
+            ctx = {
+                **hp,
+                "adapter": hp.get("adapter", ""),
+                "adapter_arg": (
+                    '"--no-warmstart",' if _cold
+                    else '"--adapter", "%s",' % hp.get("adapter", "")
+                ),
+                "max_turns": hp.get("max_turns", 8),
+                "tool_failure_prob": hp.get("tool_failure_prob", 0.0),
+                "reward_mode": hp.get("reward_mode", "agent_gym"),
+                "e2e_cases": _e2e,
+                "e2e_cases_flag": (
+                    f'"--e2e-cases", "{_e2e}",' if _e2e else ""
+                ),
+                **base,
+            }
+            return _AGRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "distill":
             # Cold start: no warm-start adapter exists for this base model, so
             # LoRA weights are freshly initialised and the run ESTABLISHES a

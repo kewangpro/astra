@@ -1,6 +1,6 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA`, structured into **seven strategic epochs** encompassing 85 phases of development:
+This document outlines the architectural implementation roadmap for `ASTRA`, structured into **eight strategic epochs**:
 
 ## Strategic Epoch Roadmap
 
@@ -13,6 +13,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
 | **Epoch 5: Model Registry, Tournaments & Recipe Lineage** | Multi-environment Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with evolutionary Lineage DAG | Phases 55–56 | ✅ Complete |
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
+| **Epoch 8: Agentic RL (LLM Trajectory GRPO)** | AgentGym product harden; Agent GRPO (`agrpo`) multi-turn tool RL; e2e stub rewards | Phases 92–94 | ✅ Complete |
 
 ---
 
@@ -2787,3 +2788,26 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Recipes** — from_scratch target **0.57** / ceiling **0.60**; focus parked target **0.58** / ceiling **0.60** (reject 0.85 create). Held-out remains non-promote; gate A/B + hermetic.
 - [x] **Docs** — locked approach + training mermaid in Ensemble decision README / DESIGN §3.15b / methods Method H / FINETUNE; Astra DESIGN §2.4, README, UX_SPEC, in-app `/docs` Calibrated decision — product = c7b78, not bf94-until-swap.
 
+
+---
+
+# Epoch 8: Agentic RL — LLM Trajectory GRPO (Phases 92–94)
+
+## Phase 92: AgentGym harden (task_success, play HUD, text obs)
+
+- [x] Training callback for AgentGym writes `best_score.txt` / telemetry from eval `task_success` (mean_reward secondary).
+- [x] `obs_mode=vector|text`, `tool_failure_prob`, `MultiTurnAgentGymText-v0`, dialogue_state for play.
+- [x] Play HUD: `AgentGymPlayer`, `playWs` enablement, WS dialogue fields.
+- [x] Reward docstring aligned with single milestone `step_reward`.
+
+## Phase 93: Agent GRPO worker (`agrpo`) on AgentGym bridge
+
+- [x] Ensemble `finetune/agent_grpo_train.py` + vendored `agent_gym_env.py` + `trajectory_reward.py`.
+- [x] Astra `task_type: agrpo` catalog group **Agentic RL**, `_AGRPO_TEMPLATE`, SSH pin, pivot safelist.
+- [x] Recipe `recipes/agent_gym_agrpo_v1.yaml` (reward_mode=agent_gym).
+
+## Phase 94: Ensemble e2e stub trajectory rewards
+
+- [x] Pluggable `score_trajectory_e2e` + `finetune/data/agent_e2e_stubs.yaml`.
+- [x] Recipe `recipes/ensemble_agent_grpo_v1.yaml` (reward_mode=e2e).
+- [x] Docs: DESIGN / README / UX / in-app docs — Agentic RL ≠ routing GRPO; pass rate ≠ hermetic 167.

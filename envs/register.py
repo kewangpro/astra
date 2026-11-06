@@ -34,6 +34,11 @@ def register_for_env_id(env_id: str) -> None:
     elif eid in ("GridPacMan-v0", "PacMan-v0") or "pacman" in key or "pac-man" in key:
         from envs.grid_pacman_env import register as _reg
         _reg()
-    elif eid in ("MultiTurnAgentGym-v0", "AgentGym-v0", "agent-gym"):
+    elif eid in (
+        "MultiTurnAgentGym-v0",
+        "AgentGym-v0",
+        "agent-gym",
+        "MultiTurnAgentGymText-v0",
+    ) or "agentgym" in key.replace("-", "").replace("_", ""):
         from envs.agent_gym import register as _reg
         _reg()

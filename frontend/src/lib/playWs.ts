@@ -35,6 +35,9 @@ export function envIdFromDomain(domain: string): string {
   if (d.includes("tetris")) return "Tetris-v0";
   if (d.includes("2048")) return "Game2048-v0";
   if (d.includes("snake")) return "Snake-v0";
+  if (d.includes("agentgym") || d.includes("agent gym") || d.includes("multiturnagent")) {
+    return "MultiTurnAgentGym-v0";
+  }
   return domain;
 }
 
@@ -52,6 +55,8 @@ export function isPlayableEnv(envId: string): boolean {
     d.includes("asteroid") ||
     d.includes("pacman") ||
     d.includes("pac-man") ||
-    d.includes("space")
+    d.includes("space") ||
+    d.includes("agentgym") ||
+    d.includes("multiturnagent")
   );
 }

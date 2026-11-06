@@ -89,6 +89,15 @@ def _infer_task_type_from_goal(goal: str, default: str = "rl") -> str:
         return "distill"
     if re.search(r"\bdpo\b", g):
         return "dpo"
+    if (
+        re.search(r"\bagrpo\b", g)
+        or "agent grpo" in g
+        or "agentic rl" in g
+        or "trajectory grpo" in g
+        or "multi-turn tool" in g
+        or "multiturn tool" in g
+    ):
+        return "agrpo"
     if re.search(r"\bgrpo\b", g):
         return "grpo"
     if "prompt" in g and any(k in g for k in ("optimi", "variant", "conductor", "routing")):

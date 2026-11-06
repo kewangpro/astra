@@ -24,6 +24,7 @@ _CHECKPOINT_PATTERNS: dict = {
     "sft":  "checkpoints/*/",
     "dpo":  "checkpoints/best/",
     "grpo": "checkpoints/best/",
+    "agrpo": "checkpoints/best/",
     "distill": "checkpoints/best/",
     "rft": "checkpoints/best/",
     "opd": "checkpoints/best/",

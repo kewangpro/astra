@@ -26,7 +26,7 @@ Your job is to decompose a high-level training goal into a concrete plan.
 Always respond with valid JSON. Think step by step before committing to a plan.
 Consider the task-algorithm pairs below, then hyperparameters, curriculum phases, and how you will measure success against the target metric.
 
-Task is the objective. Algorithm is the update rule. task_type is the worker for that algorithm. Only Environment RL may switch among PPO, DQN, A2C, SAC, and TD3. Every other algorithm stays fixed for the mission. Rejection sampling is supervised fine-tuning. GRPO and DPO are reinforcement fine-tuning.
+Task is the objective. Algorithm is the update rule. task_type is the worker for that algorithm. Only Environment RL may switch among PPO, DQN, A2C, SAC, and TD3. Every other algorithm stays fixed for the mission. Rejection sampling is supervised fine-tuning. GRPO and DPO are reinforcement fine-tuning. Agent GRPO (agrpo) is agentic RL — multi-turn tool trajectories, not single-turn routing GRPO.
 """ + format_task_pairs() + """
 
 For ml tasks, always include "dataset_path" in hyperparameters. Use the sklearn dataset name
@@ -43,8 +43,8 @@ leave "hyperparameters" as {}. The recipe supplies epochs/batch_size/d_model/etc
 LSTM recommender — local Astra .venv, auto-downloads ML-1M. Prefer hstu for HSTU / MovieLens /
 sequential recommendation goals.
 
-For sft/dpo/grpo/distill/rft/opd/rlcd/star/prompt tasks (Ensemble routing model fine-tuning or prompt optimization via existing scripts in
-ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, star_train.py, bare_eval.py): leave "hyperparameters"
+For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/star/prompt tasks (Ensemble routing / agentic RL fine-tuning or prompt optimization via existing scripts in
+ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, agent_grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, star_train.py, bare_eval.py): leave "hyperparameters"
 as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
 finetune_dir/python_bin paths, LoRA config, and all training/eval hyperparameters are supplied
 entirely by the recipe (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml
@@ -66,7 +66,8 @@ mismatched num_layers will crash the run. The only fields you should set are "ta
     first try". Prefer rft over distill/opd when the failing cases are ones the teacher also gets
     wrong, or when a case is answered correctly only sometimes.
   - "rlcd": calibrated decision (arXiv:2609.38850). Read the distribution over declared option strings after Answer:, train with Brier (empty-rationale stage 1 matches live /v1/rlcd/readout). Pass rate is readout accuracy, not JSON-plan accuracy. Recipes: ensemble_rlcd_* (Ensemble routing); decision foundation one-shot ensemble_decision_from_scratch_v1 (cold start); or staged ensemble_decision_foundation_v1 → continue → specialize → focus. Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
-  - "dpo"/"grpo": preference / RL fine-tuning.
+  - "dpo"/"grpo": preference / single-turn RL fine-tuning.
+  - "agrpo": Agent GRPO — multi-turn tool trajectory RL (AgentGym / e2e stubs).
   - "hstu": HSTU generative recommender training (MovieLens public config).
 
 For rl tasks, always include "env_id" as a top-level field in the plan (NOT in hyperparameters).
@@ -103,7 +104,7 @@ You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaue
 Given the current metrics, training history, and escalation level, propose a strategic pivot.
 Respond with valid JSON.
 
-For sft/dpo/grpo/distill/rft/opd/rlcd/prompt tasks (Ensemble routing model fine-tuning or prompt optimization): almost every hyperparameter is
+For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/prompt tasks (Ensemble routing / agentic RL fine-tuning or prompt optimization): almost every hyperparameter is
 recipe-locked and CANNOT be changed by a pivot — the warm-start adapter path, LoRA config,
 learning_rate, beta, epochs, and everything else are known-good values tuned against a specific
 adapter (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml /
@@ -228,10 +229,16 @@ _ENV_REWARD_GUIDANCE: dict[str, str] = {
         "clear_bonus, death_penalty."
     ),
     "MultiTurnAgentGym-v0": (
-        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, invalid_penalty."
+        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, "
+        "invalid_penalty, obs_mode, tool_failure_prob, scenario_idx."
     ),
     "AgentGym-v0": (
-        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, invalid_penalty."
+        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, "
+        "invalid_penalty, obs_mode, tool_failure_prob, scenario_idx."
+    ),
+    "MultiTurnAgentGymText-v0": (
+        "Valid env_kwargs ONLY: max_steps, turn_penalty, step_reward, completion_reward, "
+        "invalid_penalty, obs_mode, tool_failure_prob, scenario_idx."
     ),
 }
 
@@ -311,7 +318,7 @@ class LeadAgent:
             f"Task type hint: {task_type}\n"
             f"Target metric: {json.dumps(target_metric)}\n"
             + (f"Warm-start hint (best matching past recipe): {json.dumps(warm_hint)}\n" if warm_hint else "")
-            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/distill/rft/opd/rlcd/prompt/embed/rerank/hstu) that best matches the Goal. Return JSON."
+            + "\nDesign the optimal training plan. You may select any task_type (rl/sft/ml/mlx_lora/dpo/grpo/agrpo/distill/rft/opd/rlcd/prompt/embed/rerank/hstu) that best matches the Goal. Return JSON."
         )
         messages = self._cache.get_messages(query)
         response = await self._generate_structured(messages, _PLAN_SCHEMA)

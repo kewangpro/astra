@@ -71,6 +71,19 @@ const TASKS: Task[] = [
     ],
   },
   {
+    id: "agentic-rl",
+    task: "Agentic RL",
+    summary:
+      "Online multi-turn tool trajectories: the LM calls tools, observes results, and receives a trajectory-level reward. Distinct from single-turn routing GRPO and from Environment RL PPO on AgentGym’s MLP policy. Stage 2 scores AgentGym milestones; Stage 3 uses Ensemble e2e stub graders. Pass rate is AgentGym task_success, not the hermetic routing suite.",
+    algorithms: [
+      {
+        name: "Agent GRPO",
+        taskType: "agrpo",
+        body: "Online: sample K multi-turn tool trajectories, score each with a pluggable trajectory reward (AgentGym or e2e stubs), and apply group-relative advantage across assistant turns with a PPO-style clip.",
+      },
+    ],
+  },
+  {
     id: "supervised-fine-tuning",
     task: "Supervised fine-tuning",
     summary:

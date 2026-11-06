@@ -29,7 +29,7 @@ def test_plan_schema_task_type_enum_includes_finetune_types():
 
 def test_plan_schema_task_type_enum_unchanged_for_existing_types():
     enum = _PLAN_SCHEMA["properties"]["plan"]["properties"]["task_type"]["enum"]
-    assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "distill",
+    assert set(enum) == {"rl", "sft", "ml", "mlx_lora", "dpo", "grpo", "agrpo", "distill",
                          "rft", "opd", "rlcd", "prompt", "embed", "rerank", "star",
                          "hstu"}
 
@@ -37,6 +37,7 @@ def test_plan_schema_task_type_enum_unchanged_for_existing_types():
 def test_planning_system_prompt_instructs_empty_hyperparameters_for_finetune():
     """The LLM must not guess adapter paths/num_layers for dpo/grpo/distill —
     those come entirely from the recipe and a wrong guess crashes the run."""
-    assert "dpo/grpo/distill" in _PLANNING_SYSTEM
+    assert "dpo/grpo/agrpo/distill" in _PLANNING_SYSTEM or "dpo/grpo/distill" in _PLANNING_SYSTEM
     assert 'leave "hyperparameters"' in _PLANNING_SYSTEM
     assert "empty object {}" in _PLANNING_SYSTEM
+    assert "agrpo" in _PLANNING_SYSTEM

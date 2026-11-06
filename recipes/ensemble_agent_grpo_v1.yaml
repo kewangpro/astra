@@ -1,0 +1,41 @@
+name: ensemble_agent_grpo_v1
+version: "1.0.0"
+created_at: "2026-11-05"
+task_type: agrpo
+domain: NLP
+description: >
+  Agent GRPO Stage 3 — multi-turn tool trajectory RL scored by Ensemble e2e stub
+  graders (finetune/data/agent_e2e_stubs.yaml). Does NOT use live network tools and
+  is NOT a substitute for routing GRPO or the hermetic 167-case suite. Promote
+  gates for this recipe are trainer pass_rate on AgentGym task_success eval only.
+
+target_metric:
+  pass_rate: 0.40
+
+metric_ceiling:
+  pass_rate: 1.0
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-12b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  adapter: ""
+  no_adapter: true
+  num_layers: 8
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+  iters: 40
+  num_generations: 2
+  temp: 1.0
+  max_tokens: 64
+  max_turns: 8
+  tool_failure_prob: 0.0
+  reward_mode: e2e
+  e2e_cases: finetune/data/agent_e2e_stubs.yaml
+  learning_rate: 0.000001
+  clip_epsilon: 0.1
+  max_grad_norm: 1.0
+  steps_per_report: 1
+  steps_per_eval: 10
+  save_every: 25

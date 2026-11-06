@@ -258,6 +258,7 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
     is_tetris = hasattr(base_env, "_lines_cleared_episode")
     is_snake = hasattr(base_env, "_snake")
     is_2048 = hasattr(base_env, "_max_tile")
+    is_agent_gym = hasattr(base_env, "_required_sequence")
     is_minatar = (
         hasattr(base_env, "_bricks")
         or hasattr(base_env, "_ramming")
@@ -287,7 +288,7 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
         action_names = ["NOOP", "LEFT", "UP", "RIGHT", "DOWN", "FIRE"]
     elif hasattr(base_env, "_pellets"):  # Grid Pac-Man
         action_names = ["NOOP", "LEFT", "RIGHT", "UP", "DOWN"]
-    elif hasattr(base_env, "_required_sequence"):  # MultiTurnAgentGym
+    elif is_agent_gym:  # MultiTurnAgentGym
         action_names = ["FINISH", "QUERY_DB", "SEND_EMAIL", "SEARCH_KB", "CALC", "ESCALATE", "RETRY", "CLARIFY"]
     else:
         action_names = [f"A{i}" for i in range(getattr(env.action_space, "n", 4))]
@@ -345,9 +346,11 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
 
         chosen_name = action_names[act_int] if act_int < len(action_names) else str(act_int)
 
-        obs, reward, done, truncated, _ = env.step(act_int)
+        obs, reward, done, truncated, info = env.step(act_int)
         episode_reward += float(reward)
         step += 1
+        if isinstance(info, (list, tuple)) and info:
+            info = info[0] if isinstance(info[0], dict) else {}
 
         if is_tetris:
             grid = _tetris_viewer_grid(base_env)
@@ -357,8 +360,10 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             grid = base_env.get_viewer_grid()
         elif is_minatar:
             grid = base_env.get_viewer_grid()
+        elif is_agent_gym:
+            grid = []
         else:
-            grid = obs.tolist()
+            grid = obs.tolist() if hasattr(obs, "tolist") else []
 
         frame: dict = {
             "type": "frame",
@@ -371,7 +376,27 @@ def _run_episode(model, env) -> tuple[list[dict], float]:
             "entropy": round(entropy, 3) if entropy is not None else None,
             "selected_action": chosen_name,
         }
-        if is_snake:
+        if is_agent_gym:
+            dialogue = {}
+            if hasattr(base_env, "dialogue_state"):
+                dialogue = base_env.dialogue_state()
+            elif isinstance(info, dict):
+                dialogue = info.get("dialogue") or {}
+            frame["dialogue"] = dialogue
+            frame["query"] = dialogue.get("query") or (info or {}).get("query", "")
+            frame["scenario_name"] = dialogue.get("scenario_name") or (info or {}).get("scenario_name", "")
+            frame["scenario_id"] = dialogue.get("scenario_id") or (info or {}).get("scenario_id", "")
+            frame["sequence_progress"] = int(
+                dialogue.get("sequence_progress", (info or {}).get("sequence_progress", 0))
+            )
+            frame["required_steps"] = int(
+                dialogue.get("required_steps", (info or {}).get("required_steps", 0))
+            )
+            frame["task_success"] = float((info or {}).get("task_success", 0.0))
+            frame["history"] = dialogue.get("history") or []
+            frame["last_tool_result"] = dialogue.get("last_tool_result") or ""
+            frame["text_obs"] = obs if isinstance(obs, str) else ""
+        elif is_snake:
             frame["food_eaten"] = base_env._food_eaten
         elif is_tetris:
             frame["lines_cleared"] = base_env._lines_cleared_episode
