@@ -23,32 +23,32 @@ const TASKS: Task[] = [
     id: "environment-rl",
     task: "Environment RL",
     summary:
-      "A policy learns from the environment’s own reward. This is the only task that may switch algorithms when a run plateaus. Environments include Snake, Tetris, 2048, the MinAtar suite, Grid Pac-Man, AgentGym, and a standard Gymnasium id.",
+      "A policy learns from the environment’s own reward. This is the only task that may switch algorithms when a run plateaus. Online algorithms (PPO, A2C) update from fresh rollouts; off-policy algorithms (DQN, SAC, TD3) reuse a replay buffer. Environments include Snake, Tetris, 2048, the MinAtar suite, Grid Pac-Man, AgentGym, and a standard Gymnasium id.",
     algorithms: [
       {
         name: "PPO",
         taskType: "rl",
-        body: "Clipped surrogate policy gradient (Stable-Baselines3). The usual start for discrete control such as Snake.",
+        body: "Online clipped surrogate policy gradient (Stable-Baselines3). The usual start for discrete control such as Snake.",
       },
       {
         name: "DQN",
         taskType: "rl",
-        body: "Off-policy Q-learning with a replay buffer. The recipe default for several MinAtar games, including Seaquest.",
+        body: "Offline/off-policy Q-learning with a replay buffer. The recipe default for several MinAtar games, including Seaquest.",
       },
       {
         name: "A2C",
         taskType: "rl",
-        body: "Synchronous advantage actor-critic. A lighter on-policy alternative to PPO.",
+        body: "Online synchronous advantage actor-critic. A lighter on-policy alternative to PPO.",
       },
       {
         name: "SAC",
         taskType: "rl",
-        body: "Off-policy actor-critic with an entropy bonus. For continuous actions.",
+        body: "Off-policy actor-critic with an entropy bonus and replay. For continuous actions.",
       },
       {
         name: "TD3",
         taskType: "rl",
-        body: "Twin delayed deterministic policy gradient. For continuous actions.",
+        body: "Off-policy twin delayed deterministic policy gradient with replay. For continuous actions.",
       },
     ],
   },
@@ -56,17 +56,17 @@ const TASKS: Task[] = [
     id: "reinforcement-fine-tuning",
     task: "Reinforcement fine-tuning",
     summary:
-      "A language-model policy is updated from the routing oracle in eval_cases.yaml. The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
+      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online = GRPO (fresh on-policy rollouts each step). Offline = DPO (preference loss on a fixed pair set). The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
     algorithms: [
       {
         name: "GRPO",
         taskType: "grpo",
-        body: "Sample a group of completions, score each with the oracle (skill match, partial credit, malformed JSON), and apply a group-relative advantage with a PPO-style clip.",
+        body: "Online RL: sample a group of completions, score each with the oracle (skill match, partial credit, malformed JSON), and apply a group-relative advantage with a PPO-style clip.",
       },
       {
         name: "DPO",
         taskType: "dpo",
-        body: "The same oracle labels one chosen completion and one rejected completion. The update is the offline preference loss, so a batch still teaches when every rollout in a GRPO group would have scored the same.",
+        body: "Offline preference learning: the same oracle labels one chosen and one rejected completion; the update is a preference loss on that dataset (pairs may be harvested earlier). Still teaches when every rollout in a GRPO group would have scored the same.",
       },
     ],
   },
@@ -74,32 +74,32 @@ const TASKS: Task[] = [
     id: "supervised-fine-tuning",
     task: "Supervised fine-tuning",
     summary:
-      "The model fits labeled completions. There is no policy-gradient reward, and the algorithm stays fixed.",
+      "Offline fitting of labeled completions (fixed JSONL or filtered survivors). There is no policy-gradient reward, and the algorithm stays fixed.",
     algorithms: [
       {
         name: "SFT",
         taskType: "sft",
-        body: "Remote MLX supervised fine-tune on routing demonstrations, with a held-out split.",
+        body: "Offline remote MLX supervised fine-tune on routing demonstrations, with a held-out split.",
       },
       {
         name: "SFT",
         taskType: "mlx_lora",
-        body: "The same supervised update on the local Apple Silicon machine, via MLX LoRA.",
+        body: "The same offline supervised update on the local Apple Silicon machine, via MLX LoRA.",
       },
       {
         name: "distillation",
         taskType: "distill",
-        body: "A stronger teacher writes the completions, then the student is trained with SFT. The ceiling is what the teacher already gets right.",
+        body: "Offline: a stronger teacher writes the completions, then the student is trained with SFT. The ceiling is what the teacher already gets right.",
       },
       {
         name: "rejection sampling",
         taskType: "rft",
-        body: "Sample K completions from the student, keep the ones the oracle marks correct, and run SFT on the survivors. No teacher. This is supervised fine-tuning, not reinforcement fine-tuning.",
+        body: "Mixed: sample K completions from the student (online collect), keep the ones the oracle marks correct, and run offline SFT on the survivors. No teacher. This is supervised fine-tuning, not reinforcement fine-tuning.",
       },
       {
         name: "STaR",
         taskType: "star",
-        body: "Roll out, write a hint-guided rationale for the misses, then LoRA on those traces.",
+        body: "Mixed: roll out, write a hint-guided rationale for the misses, then offline LoRA on those traces.",
       },
     ],
   },
@@ -107,12 +107,12 @@ const TASKS: Task[] = [
     id: "on-policy-distillation",
     task: "On-policy distillation",
     summary:
-      "The student samples its own rollouts. A teacher grades those states. The algorithm stays fixed, and the ceiling is still the teacher.",
+      "Online student rollouts: the student samples its own trajectories; a teacher grades those states. The algorithm stays fixed, and the ceiling is still the teacher.",
     algorithms: [
       {
         name: "OPD",
         taskType: "opd",
-        body: "Grade each student token with reverse KL against a teacher that scores those same states. Credit is dense on the student’s own trajectory.",
+        body: "Online: grade each student token with reverse KL against a teacher that scores those same states. Credit is dense on the student’s own trajectory.",
       },
     ],
   },
@@ -120,12 +120,12 @@ const TASKS: Task[] = [
     id: "calibrated-decision",
     task: "Calibrated decision",
     summary:
-      "The decision is a probability distribution over declared option strings after Answer:, not a sampled skill and not a JSON plan. The reported pass rate is readout accuracy. best/ is the lowest Brier checkpoint. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default empty_rationale (stage 1 only).",
+      "The decision is a probability distribution over declared option strings after Answer:, not a sampled skill and not a JSON plan. Training uses offline --cases JSONL (empty-rationale stage 1 for Choice). The reported pass rate is readout accuracy. best/ is the lowest Brier checkpoint.",
     algorithms: [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus (or one-shot ensemble_decision_from_scratch_v1) on generic --cases JSONL (decision_prompt). Approach: public Noul/Choice/Score → foundation LoRA → Ensemble specialize → live :8082. Product Choice is focus v8 c7b78b5d (A/B 68/74, hermetic 167/167 with RLCD_GENERIC_PROMPT + remap_decision_skill); bf94+conductor_min is rollback. Held-out pass_rate is not a promote gate; empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
+        body: "Offline cases + pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus (or one-shot ensemble_decision_from_scratch_v1) on generic decision_prompt JSONL. Product Choice is focus v8 c7b78b5d (A/B 68/74, hermetic 167/167 with RLCD_GENERIC_PROMPT + remap_decision_skill); bf94+conductor_min is rollback. Held-out pass_rate is not a promote gate; empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
       },
     ],
   },

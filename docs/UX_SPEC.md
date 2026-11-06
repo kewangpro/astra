@@ -53,7 +53,7 @@
 
 ### 2.6. Docs (`/docs`)
 
-Nav item after Models. A task index on the left, one section per task. Each section states the objective, then one row per algorithm with its worker key (`task_type`) and what the update does. The eight tasks match the goal-bar groups: Environment RL, reinforcement fine-tuning, supervised fine-tuning, on-policy distillation, calibrated decision, prompt edit, classical ML, and retrieval.
+Nav item after Models. A task index on the left, one section per task. Each section states the objective, then one row per algorithm with its worker key (`task_type`) and what the update does. Copy distinguishes **online** (fresh policy rollouts during training) vs **offline** (fixed logged / preference / JSONL data). The eight tasks match the goal-bar groups: Environment RL, reinforcement fine-tuning, supervised fine-tuning, on-policy distillation, calibrated decision, prompt edit, classical ML, and retrieval.
 
 
 

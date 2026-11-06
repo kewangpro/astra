@@ -87,7 +87,15 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
 | Generative recommendation | HSTU (`hstu`) |
 
-Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO turns that same oracle into chosen and rejected pairs, then applies the offline preference loss. RLCD trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; its goal is readout accuracy, and `best/` is the lowest Brier checkpoint. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true` (stage 1 only).
+**Online vs offline.** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it).
+
+| Mode | In ASTRA | Notes |
+|---|---|---|
+| **Online** | Env: PPO, A2C; LM: GRPO; OPD (student rollouts) | On-policy samples from the live policy each step |
+| **Offline** | Env: DQN/SAC/TD3 (replay); LM: DPO, SFT, distill, RFT survivors, STaR JSONL, RLCD `--cases` | Fixed buffer / preference pairs / labeled JSONL |
+| **Mixed** | DPO can *harvest* pairs online then optimize offline; RFT samples then SFT | Collection ≠ the loss |
+
+Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL. Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy rollouts with the routing oracle and a group-relative advantage. DPO is **offline** preference learning: the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true`.
 
 **Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA (public Noul/Choice/Score) → Ensemble specialize/focus → live `:8082` readout. One-shot replay: `ensemble_decision_from_scratch_v1`. Staged: `ensemble_decision_foundation_v1` → `continue_v1` → `specialize_v1` → `specialize_focus_v1`. Legacy routing: `ensemble_rlcd_*` (`--routing-only`). Diagram + promote rules live in Ensemble [`finetune/data/decision/README.md`](../../ensemble/finetune/data/decision/README.md#locked-approach) and Ensemble DESIGN §3.15b.
 
