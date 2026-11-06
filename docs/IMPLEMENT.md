@@ -2799,6 +2799,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] `obs_mode=vector|text`, `tool_failure_prob`, `MultiTurnAgentGymText-v0`, dialogue_state for play.
 - [x] Play HUD: `AgentGymPlayer`, `playWs` enablement, WS dialogue fields.
 - [x] Reward docstring aligned with single milestone `step_reward`.
+- [x] **Play HUD smoke:** WS `/ws/missions/a3ec506b…/play?env_id=MultiTurnAgentGym-v0` returns `dialogue` / `query` / `scenario_name` / `sequence_progress` / `text_obs` / `task_success` on live frames.
 
 ## Phase 93: Agent GRPO worker (`agrpo`) on AgentGym bridge
 
@@ -2816,3 +2817,4 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] Recipe `recipes/ensemble_agent_grpo_v1.yaml` (reward_mode=e2e).
 - [x] Docs: DESIGN / README / UX / in-app docs — Agentic RL ≠ routing GRPO; pass rate ≠ hermetic 167.
 - [ ] Mini verify `ensemble_agent_grpo_v1` end-to-end (e2e stub rewards during train; gate metric still AgentGym `pass_rate`).
+  - In flight: mission `3d55cefd` — sandbox up on Mini (`reward_mode=e2e`, `E2E stub cases: 8`, cold-start 12B, 40 iters, target 0.40).
