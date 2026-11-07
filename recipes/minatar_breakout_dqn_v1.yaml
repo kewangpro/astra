@@ -2,6 +2,8 @@ name: minatar_breakout_dqn_v1
 version: "1.0.0"
 created_at: "2026-09-10"
 task_type: rl
+gym_id: gymnasium:MinAtar-Breakout-v0
+learner_id: sb3_dqn
 domain: MinAtar
 env_id: MinAtar-Breakout-v0
 algorithm: DQN

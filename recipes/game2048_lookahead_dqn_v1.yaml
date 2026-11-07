@@ -1,6 +1,8 @@
 name: game2048_lookahead_dqn_v1
 domain: game2048
 task_type: rl
+gym_id: gymnasium:Game2048-v0
+learner_id: sb3_dqn
 trainer_type: lookahead_dqn
 algorithm: LOOKAHEAD_DQN
 version: 1.0.0

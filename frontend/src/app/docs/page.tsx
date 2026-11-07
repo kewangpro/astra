@@ -23,32 +23,32 @@ const TASKS: Task[] = [
     id: "environment-rl",
     task: "Environment RL",
     summary:
-      "A policy learns from the environment’s own reward. This is the only task that may switch algorithms when a run plateaus. Online algorithms (PPO, A2C) update from fresh rollouts; off-policy algorithms (DQN, SAC, TD3) reuse a replay buffer. Environments include Snake, Tetris, 2048, the MinAtar suite, Grid Pac-Man, AgentGym, and a standard Gymnasium id.",
+      "A policy learns from the environment’s own reward (AstraGym gymnasium:* / agent_gym_vector × AstraRL sb3_*). This is the only task that may switch algorithms when a run plateaus. Online algorithms (PPO, A2C) update from fresh rollouts; off-policy algorithms (DQN, SAC, TD3) reuse a replay buffer. Environments include Snake, Tetris, 2048, the MinAtar suite, Grid Pac-Man, AgentGym, and a standard Gymnasium id.",
     algorithms: [
       {
         name: "PPO",
         taskType: "rl",
-        body: "Online clipped surrogate policy gradient (Stable-Baselines3). The usual start for discrete control such as Snake.",
+        body: "Online clipped surrogate policy gradient (Stable-Baselines3 / learner_id sb3_ppo). The usual start for discrete control such as Snake.",
       },
       {
         name: "DQN",
         taskType: "rl",
-        body: "Offline/off-policy Q-learning with a replay buffer. The recipe default for several MinAtar games, including Seaquest.",
+        body: "Offline/off-policy Q-learning with a replay buffer (sb3_dqn). The recipe default for several MinAtar games, including Seaquest.",
       },
       {
         name: "A2C",
         taskType: "rl",
-        body: "Online synchronous advantage actor-critic. A lighter on-policy alternative to PPO.",
+        body: "Online synchronous advantage actor-critic (sb3_a2c). A lighter on-policy alternative to PPO.",
       },
       {
         name: "SAC",
         taskType: "rl",
-        body: "Off-policy actor-critic with an entropy bonus and replay. For continuous actions.",
+        body: "Off-policy actor-critic with an entropy bonus and replay (sb3_sac). For continuous actions.",
       },
       {
         name: "TD3",
         taskType: "rl",
-        body: "Off-policy twin delayed deterministic policy gradient with replay. For continuous actions.",
+        body: "Off-policy twin delayed deterministic policy gradient with replay (sb3_td3). For continuous actions.",
       },
     ],
   },
@@ -56,12 +56,12 @@ const TASKS: Task[] = [
     id: "reinforcement-fine-tuning",
     task: "Reinforcement fine-tuning",
     summary:
-      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online = GRPO (fresh on-policy rollouts each step). Offline = DPO (preference loss on a fixed pair set). The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
+      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing. Offline = DPO (outside AstraRL). The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
     algorithms: [
       {
         name: "GRPO",
         taskType: "grpo",
-        body: "Online RL: sample a group of completions, score each with the oracle (skill match, partial credit, malformed JSON), and apply a group-relative advantage with a PPO-style clip.",
+        body: "Online RL: sample a group of completions, score each with the oracle (skill match, partial credit, malformed JSON), and apply a group-relative advantage with a PPO-style clip (learner_id mlx_grpo_routing).",
       },
       {
         name: "DPO",
@@ -74,7 +74,7 @@ const TASKS: Task[] = [
     id: "agentic-rl",
     task: "Agentic RL",
     summary:
-      "Online multi-turn tool trajectories: the LM calls tools, observes results, and receives a trajectory-level reward. Distinct from single-turn routing GRPO and from Environment RL PPO on AgentGym’s MLP policy. Stage 2 scores AgentGym milestones; Stage 3 uses Ensemble e2e stub graders. Pass rate is AgentGym task_success, not the hermetic routing suite.",
+      "Online multi-turn tool trajectories (AstraGym agent_gym_text or e2e_stubs × AstraRL mlx_grpo_traj). Distinct from single-turn routing GRPO and from Environment RL PPO on AgentGym’s MLP policy. Stage 2 scores AgentGym milestones; Stage 3 uses Ensemble e2e stub graders. Pass rate is AgentGym task_success, not the hermetic routing suite.",
     algorithms: [
       {
         name: "Agent GRPO",
@@ -120,7 +120,7 @@ const TASKS: Task[] = [
     id: "on-policy-distillation",
     task: "On-policy distillation",
     summary:
-      "Online student rollouts: the student samples its own trajectories; a teacher grades those states. The algorithm stays fixed, and the ceiling is still the teacher.",
+      "Online student rollouts (AstraGym routing_prompt × AstraRL mlx_opd): the student samples its own trajectories; a teacher grades those states. The algorithm stays fixed, and the ceiling is still the teacher.",
     algorithms: [
       {
         name: "OPD",

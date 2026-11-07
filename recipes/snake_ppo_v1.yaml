@@ -2,6 +2,8 @@ name: snake_ppo_v1
 version: "2.0.0"
 created_at: "2026-06-22"
 task_type: RL
+gym_id: gymnasium:Snake-v0
+learner_id: sb3_ppo
 domain: Snake
 description: >
   PPO recipe for Snake-v0 using the compact 28D feature observation (obs_type=features).

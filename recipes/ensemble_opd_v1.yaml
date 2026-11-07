@@ -2,6 +2,8 @@ name: ensemble_opd_v1
 version: "1.0.0"
 created_at: "2026-10-05"
 task_type: opd
+gym_id: routing_prompt
+learner_id: mlx_opd
 domain: NLP
 description: >
   On-policy distillation (OPD) for the Ensemble routing model. Sample rollouts

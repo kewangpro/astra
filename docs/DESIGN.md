@@ -71,7 +71,24 @@ Plan → generate script → sandbox → evaluate → pivot or stop.
 
 Targets that exceed a recipe’s declared empirical ceiling are rejected at create time.
 
-### 2.4. Specialist trainers
+### 2.4. AstraGym, AstraRL, and the Orchestrator (Epoch 9)
+
+Online RL is split into three layers (inspired by Gym×RL product splits, **not** NVIDIA NeMo):
+
+| Layer | Package / role | Owns |
+|---|---|---|
+| **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
+| **AstraRL** | `astrarl/` | Learners: SB3 + MLX GRPO/OPD, checkpoints (`learner_id`) |
+| **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry |
+
+Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key.
+
+**AstraGym ids:** `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`.  
+**AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.
+
+Offline workers (DPO, SFT, distill, RFT, STaR, RLCD, prompt, embed, rerank, HSTU) are outside AstraRL.
+
+### 2.5. Specialist trainers
 
 A task is the objective. An algorithm is the update rule under that task. `task_type` is the worker key for the algorithm. LoRA is a mechanism, not a task. Only Environment RL switches algorithms during a mission. `prompt` changes no weights.
 
@@ -126,7 +143,7 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 
-### 2.5. Sandbox
+### 2.6. Sandbox
 
 Where training runs.
 
@@ -134,11 +151,11 @@ Where training runs.
 - **CUDA** — container with GPU toolkit.
 - **Isolation** — memory/compute caps; writes limited to mission data and the registry.
 
-### 2.6. Evaluator and introspection
+### 2.7. Evaluator and introspection
 
 A **benchmark suite** (golden challenges) and **stress** cases sit outside the training loop. Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
 
-### 2.7. Resilience
+### 2.8. Resilience
 
 - **Safety critic** — GAN-style review of the plan before execute.
 - **Mission manifest** — structured source of truth for the next iteration, not a growing chat log.

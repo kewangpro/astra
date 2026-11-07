@@ -14,6 +14,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
 | **Epoch 8: Agentic RL (LLM Trajectory GRPO)** | AgentGym product harden; Agent GRPO (`agrpo`) multi-turn tool RL; e2e stub rewards | Phases 92–94 | ✅ Complete |
+| **Epoch 9: AstraGym + AstraRL** | Online RL split: AstraGym worlds × AstraRL learners; Orchestrator unchanged | Phases 95–98 | ✅ Complete |
 
 ---
 
@@ -2742,15 +2743,15 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 - [x] **Catalog** — `backend/agent/task_catalog.py` is the worker list. A task is the objective; an algorithm is the update rule; `task_type` is the worker key. Environment RL is PPO, DQN, A2C, SAC, TD3 on `rl`. Reinforcement fine-tuning is GRPO and DPO. Supervised fine-tuning is SFT, local LoRA, distillation, rejection sampling (`rft`), and STaR. On-policy distillation, RLCD, prompt edit, classical ML, and retrieval each keep their own worker. Language-model PPO is not a reinforcement fine-tuning algorithm.
 - [x] **Planner and goal bar** — the plan schema enum comes from the catalog (adds `star`). The planning prompt states the pairs. The goal bar groups algorithms under those task labels. RLCD pivots use `num_generations` and `temp`, the same lock as the other fine-tune algorithms.
-- [x] **Docs** — DESIGN § 2.4, README, UX_SPEC.
+- [x] **Docs** — DESIGN specialist-trainers section (now § 2.5), README, UX_SPEC.
 - [x] **In-app Docs** — `/docs` in the nav after Models. One section per task, one row per algorithm, with the worker key.
 
 ### Phase 92 — Decision foundation RLCD (2026-11-02)
 
-- [x] **Recipes** — `ensemble_decision_foundation_v1.yaml` (cold start, `--cases` foundation mix, `routing_only: false`, empty-rationale stage 1) and `ensemble_decision_specialize_v1.yaml` (warm-start from foundation `best/`, Ensemble specialize JSONL). Registered in `_ENV_RECIPE` and the fine-tune-remote env allowlist.
+- [x] **Recipes** — `ensemble_decision_foundation_v1.yaml` (cold start, `--cases` `foundation_train.jsonl` capped mix, `routing_only: false`, empty-rationale stage 1) and `ensemble_decision_specialize_v1.yaml` (warm-start from foundation `best/`, Ensemble specialize JSONL). Registered in `_ENV_RECIPE` and the fine-tune-remote env allowlist.
 - [x] **Wrapper** — `_format_rlcd_wrapper` emits `--cases PATH` when the recipe sets `cases`; defaults `routing_only` to false when cases are present so foundation/specialize do not also pull Ensemble routing YAML.
 - [x] **Ensemble contract** — generic decision JSONL + `decision_prompt` (Noul/Choice/Score) live in the Ensemble repo (`rlcd_train.py --cases`, `build_foundation_decisions.py`, `export_ensemble_decisions.py`). Live `RLCD_GENERIC_PROMPT` stays off until specialize clears the hermetic gate; `astra_bf94ca32` / `conductor_min` Choice path remains recoverable.
-- [x] **Docs** — DESIGN § 2.4 RLCD paragraph; README calibrated-decision row; in-app `/docs` Calibrated decision section (`frontend/src/app/docs/page.tsx`); UX_SPEC; this phase.
+- [x] **Docs** — DESIGN § 2.5 RLCD paragraph; README calibrated-decision row; in-app `/docs` Calibrated decision section (`frontend/src/app/docs/page.tsx`); UX_SPEC; this phase.
 
 ### Phase 93 — Foundation continue + specialize focus (2026-11-03)
 
@@ -2786,7 +2787,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Mission `2235f69e`** — from-scratch best **0.576** @ iter5 then **26 pivots** flat (Astra forced `num_generations` 2–4 against recipe `1`). Cancelled; keep `adapters/astra_2235f69e_iter5/best`.
 - [x] **Engine** — `_clamp_finetune_pivot_hp(..., empty_rationale=True)` returns `{}` for RLCD; state_machine empties the RLCD safelist when plan `empty_rationale`; LeadAgent prompt/lever says adjustments `{}` for that case.
 - [x] **Recipes** — from_scratch target **0.57** / ceiling **0.60**; focus parked target **0.58** / ceiling **0.60** (reject 0.85 create). Held-out remains non-promote; gate A/B + hermetic.
-- [x] **Docs** — locked approach + training mermaid in Ensemble decision README / DESIGN §3.15b / methods Method H / FINETUNE; Astra DESIGN §2.4, README, UX_SPEC, in-app `/docs` Calibrated decision — product = c7b78, not bf94-until-swap.
+- [x] **Docs** — locked approach + training mermaid in Ensemble decision README / DESIGN §3.15b / methods Method H / FINETUNE; Astra DESIGN §2.5, README, UX_SPEC, in-app `/docs` Calibrated decision — product = c7b78, not bf94-until-swap.
 
 
 ---
@@ -2816,5 +2817,36 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] Pluggable `score_trajectory_e2e` + `finetune/data/agent_e2e_stubs.yaml`.
 - [x] Recipe `recipes/ensemble_agent_grpo_v1.yaml` (reward_mode=e2e).
 - [x] Docs: DESIGN / README / UX / in-app docs — Agentic RL ≠ routing GRPO; pass rate ≠ hermetic 167.
-- [ ] Mini verify `ensemble_agent_grpo_v1` end-to-end (e2e stub rewards during train; gate metric still AgentGym `pass_rate`).
-  - In flight: mission `3d55cefd` — sandbox up on Mini (`reward_mode=e2e`, `E2E stub cases: 8`, cold-start 12B, 40 iters, target 0.40).
+- [x] Mini verify `ensemble_agent_grpo_v1` end-to-end (e2e stub rewards during train; gate metric still AgentGym `pass_rate`).
+  - Mission `3d55cefd` **completed** with `pass_rate` **0.75** (target 0.40; cold-start 12B, `reward_mode=e2e`).
+
+---
+
+# Epoch 9: AstraGym + AstraRL (Phases 95–98)
+
+## Phase 95: Contracts and packages
+
+- [x] DESIGN §2.4 — AstraGym / AstraRL / Orchestrator; `gym_id` × `learner_id` taxonomy for all online RL.
+- [x] Packages `astragym/` and `astrarl/` with `make()` factories and protocols.
+- [x] Offline workers explicitly out of scope for AstraRL.
+
+## Phase 96: AstraGym implementations
+
+- [x] `gymnasium:<env_id>` adapter via `envs.register`.
+- [x] `agent_gym_vector` / `agent_gym_text` / `e2e_stubs` / `routing_prompt` gym ids.
+- [x] `resolve.infer_gym_id(...)` from recipe fields.
+
+## Phase 97: AstraRL implementations
+
+- [x] SB3 learners (`sb3_ppo|dqn|a2c|sac|td3`) wrapping Gymnasium envs from AstraGym.
+- [x] MLX trajectory / routing GRPO + OPD learner ids (CLI shims in Ensemble `*_train.py`).
+- [x] Env-RL codegen prefers `astragym.make` + `astrarl.make` for Snake / MinAtar Breakout / AgentGym PPO templates.
+- [x] `backend/trainers/rl_trainer.py` documents sandbox codegen + AstraRL as the real path.
+
+## Phase 98: Recipes, docs, verify
+
+- [x] Online-RL recipes annotated with `gym_id` / `learner_id` (or inferred defaults documented).
+- [x] README + in-app docs mention AstraGym / AstraRL.
+- [x] Unit tests for `astragym.make` / `astrarl.resolve` (9 passed).
+- [x] Mini: synced `astragym`/`astrarl` under `~/finetune`; import smoke OK; local SB3 Breakout learn(200) smoke OK.
+- [x] Ensemble vendors `finetune/astragym` + `finetune/astrarl` for SSH layout.

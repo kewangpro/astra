@@ -2,6 +2,8 @@ name: ensemble_grpo_v1
 version: "1.0.0"
 created_at: "2026-07-03"
 task_type: grpo
+gym_id: routing_prompt
+learner_id: mlx_grpo_routing
 domain: NLP
 description: >
   GRPO (Group Relative Policy Optimization) fine-tuning for the Ensemble

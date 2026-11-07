@@ -2,6 +2,8 @@ name: ensemble_agent_grpo_v1
 version: "1.0.0"
 created_at: "2026-11-05"
 task_type: agrpo
+gym_id: e2e_stubs
+learner_id: mlx_grpo_traj
 domain: NLP
 description: >
   Agent GRPO Stage 3 — multi-turn tool trajectory RL scored by Ensemble e2e stub

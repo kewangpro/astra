@@ -2,6 +2,8 @@ name: ensemble_grpo_1b_v1
 version: "1.0.0"
 created_at: "2026-10-21"
 task_type: grpo
+gym_id: routing_prompt
+learner_id: mlx_grpo_routing
 domain: NLP
 description: >
   Phase 2b: GRPO on the 1B cascade planner after SFT v5 (15aa4462) hit 48/54 MR.

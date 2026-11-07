@@ -1,6 +1,8 @@
 name: minatar_asteroids_dqn_v1
 domain: minatar_asteroids
 task_type: rl
+gym_id: gymnasium:MinAtar-Asteroids-v0
+learner_id: sb3_dqn
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0

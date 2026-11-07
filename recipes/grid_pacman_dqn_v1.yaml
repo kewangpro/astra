@@ -1,6 +1,8 @@
 name: grid_pacman_dqn_v1
 domain: grid_pacman
 task_type: rl
+gym_id: gymnasium:GridPacMan-v0
+learner_id: sb3_dqn
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0

@@ -43,6 +43,8 @@ Requirements:
 _SNAKE_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
+import astragym
+import astrarl
 from envs.snake_env import register as _register_snake
 _register_snake()
 """
@@ -51,6 +53,8 @@ _TETRIS_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
 import gymnasium as gym
+import astragym
+import astrarl
 from envs.tetris_env import register as _register_tetris
 _register_tetris()
 """
@@ -59,6 +63,8 @@ _GAME2048_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
 import gymnasium as gym
+import astragym
+import astrarl
 from envs.game2048_env import register as _register_2048
 _register_2048()
 """
@@ -67,6 +73,8 @@ _MINATAR_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
 import gymnasium as gym
+import astragym
+import astrarl
 from envs.minatar_env import register as _register_minatar
 from envs.minatar_space_invaders_env import register as _register_space_invaders
 from envs.minatar_asteroids_env import register as _register_asteroids
@@ -87,6 +95,8 @@ _GRIDPACMAN_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
 import gymnasium as gym
+import astragym
+import astrarl
 from envs.grid_pacman_env import register as _register_pacman
 _register_pacman()
 """
@@ -95,6 +105,8 @@ _AGENT_GYM_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
 import gymnasium as gym
+import astragym
+import astrarl
 from envs.agent_gym import register as _register_agent_gym
 _register_agent_gym()
 """
@@ -121,11 +133,16 @@ The script MUST start with these exact imports (do not omit any):
     from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
+Epoch 9: gym_id={gym_id} learner_id={learner_id} (AstraGym × AstraRL).
 1. Create the environment with EXACTLY these lines — copy verbatim:
        import gymnasium as gym
-       env = gym.make("{env_id}"{env_kwargs_str})
+       import astragym
+       import astrarl
+       _astra_gym = astragym.make("{gym_id}"{env_kwargs_str})
+       env = _astra_gym.raw_env
+   Equivalent legacy form (also acceptable): env = gym.make("{env_id}"{env_kwargs_str})
    The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
-   Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
+   Do NOT read it from hyperparameters.
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
 
        def _linear_schedule(initial_value):
@@ -141,6 +158,7 @@ The script must:
        _policy_kwargs = {policy_kwargs}
        model = {algorithm}("MlpPolicy", env, **_filtered,
                    **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
+       # Optional: astrarl.make("{learner_id}", _astra_gym, ...) wraps the same SB3 algo
 
    These values are set by the optimizer — do NOT substitute your own hyperparameter values.
    `lr_schedule` is an opt-in recipe setting (not an SB3 constructor kwarg, so it is
@@ -258,11 +276,16 @@ The script MUST start with these exact imports (do not omit any):
     from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
+Epoch 9: gym_id={gym_id} learner_id={learner_id} (AstraGym × AstraRL).
 1. Create the environment with EXACTLY these lines — copy verbatim:
        import gymnasium as gym
-       env = gym.make("{env_id}"{env_kwargs_str})
+       import astragym
+       import astrarl
+       _astra_gym = astragym.make("{gym_id}"{env_kwargs_str})
+       env = _astra_gym.raw_env
+   Equivalent legacy form (also acceptable): env = gym.make("{env_id}"{env_kwargs_str})
    The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
-   Do NOT read it from hyperparameters. Hard-code "{env_id}" in gym.make().
+   Do NOT read it from hyperparameters.
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
 
        def _linear_schedule(initial_value):
@@ -278,6 +301,7 @@ The script must:
        _policy_kwargs = {policy_kwargs}
        model = {algorithm}("MlpPolicy", env, **_filtered,
                    **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
+       # Optional: astrarl.make("{learner_id}", _astra_gym, ...) wraps the same SB3 algo
 
 3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
 
@@ -1380,6 +1404,9 @@ rollout loop, reward, or GRPO update yourself. This script is a thin
 orchestration wrapper only — it does NOT report telemetry itself. Astra tails
 this process's own log remotely and parses "Pass rate" lines on its own; do not
 add any network calls (no requests, no HTTP) to this script.
+
+Epoch 9: AstraGym gym_id={gym_id} × AstraRL learner_id={learner_id}
+(reward_mode={reward_mode} maps to the gym; CLI entrypoint remains agent_grpo_train.py).
 
 Mission ID: {mission_id}
 Finetune dir (remote host, agent_grpo_train.py lives here): {finetune_dir}
@@ -2993,11 +3020,33 @@ class CodeGenerator:
             # AgentGym goal metric is task_success — use the real target for early stop.
             if is_agent_gym and tm_name == "task_success":
                 target_reward = tm_value
+            from astragym.resolve import infer_gym_id as _infer_gym_id
+            from astrarl.resolve import infer_learner_id as _infer_learner_id
+            try:
+                _gym_id = _infer_gym_id(
+                    task_type="rl",
+                    env_id=env_id,
+                    gym_id=hp.get("gym_id") or plan.get("gym_id"),
+                    hyperparams=hp,
+                )
+            except ValueError:
+                _gym_id = f"gymnasium:{env_id}"
+            try:
+                _learner_id = _infer_learner_id(
+                    task_type="rl",
+                    algorithm=algorithm,
+                    learner_id=hp.get("learner_id") or plan.get("learner_id"),
+                    hyperparams=hp,
+                )
+            except ValueError:
+                _learner_id = f"sb3_{algorithm.lower()}"
             ctx = {
                 "algorithm": algorithm,
                 "valid_keys_var": valid_keys_var,
                 "valid_keys_set": valid_keys_set,
                 "env_id": env_id,
+                "gym_id": _gym_id,
+                "learner_id": _learner_id,
                 "hyperparameters": json.dumps(hp, indent=2),
                 "policy_kwargs": json.dumps(policy_kwargs) if policy_kwargs else "None",
                 "target_reward": target_reward,
@@ -3044,12 +3093,25 @@ class CodeGenerator:
             ctx = {
                 **hp,
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                "gym_id": hp.get("gym_id") or "routing_prompt",
+                "learner_id": hp.get("learner_id") or "mlx_grpo_routing",
                 **base,
             }
             return _GRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "agrpo":
             _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
             _e2e = hp.get("e2e_cases") or ""
+            _reward_mode = hp.get("reward_mode", "agent_gym")
+            try:
+                from astragym.resolve import infer_gym_id as _infer_gym_id
+                _agrpo_gym = _infer_gym_id(
+                    task_type="agrpo",
+                    reward_mode=_reward_mode,
+                    gym_id=hp.get("gym_id"),
+                    hyperparams=hp,
+                )
+            except ValueError:
+                _agrpo_gym = "e2e_stubs" if _reward_mode in ("e2e", "ensemble_e2e") else "agent_gym_text"
             ctx = {
                 **hp,
                 "adapter": hp.get("adapter", ""),
@@ -3059,7 +3121,9 @@ class CodeGenerator:
                 ),
                 "max_turns": hp.get("max_turns", 8),
                 "tool_failure_prob": hp.get("tool_failure_prob", 0.0),
-                "reward_mode": hp.get("reward_mode", "agent_gym"),
+                "reward_mode": _reward_mode,
+                "gym_id": _agrpo_gym,
+                "learner_id": hp.get("learner_id") or "mlx_grpo_traj",
                 "e2e_cases": _e2e,
                 "e2e_cases_flag": (
                     f'"--e2e-cases", "{_e2e}",' if _e2e else ""
@@ -3120,6 +3184,8 @@ class CodeGenerator:
                 "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
                 "focus_cases_flag": _focus_cases_flag(hp),
+                "gym_id": hp.get("gym_id") or "routing_prompt",
+                "learner_id": hp.get("learner_id") or "mlx_opd",
                 **base,
             }
             return _OPD_TEMPLATE.format(**ctx)

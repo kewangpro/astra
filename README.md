@@ -51,7 +51,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task and algorithm
 
-A task is the objective. An algorithm is the update rule. `task_type` is the worker key. See [DESIGN.md § 2.4](docs/DESIGN.md).
+A task is the objective. An algorithm is the update rule. `task_type` is the worker key. Online RL also uses AstraGym (`gym_id`) × AstraRL (`learner_id`) — see [DESIGN.md § 2.4–2.5](docs/DESIGN.md).
 
 | Task | Algorithms |
 |---|---|
@@ -144,6 +144,7 @@ ASTRA's architecture and capabilities are structured into eight core development
 | **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels** (Phases 57–63, 66) | Unified 3-stage post-training pipeline (SFT → DPO → GRPO), `<think>...</think>` CoT reasoning preservation, MLX Apple Silicon remote offload, adapter auto-detection, and Self-Taught Reasoner (STaR) closed-loop data bootstrapping with backward rationalization. | Conductor pipeline, SFTTrainer, STaR flywheel (`star_train.py`), unbuffered streaming | ✅ Complete |
 | **Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments** (Phase 64) | `MultiTurnAgentGym-v0` 32D environment, 8 multi-turn scenarios (customer support, data triage, billing), dense milestone & task completion rewards, and PPO agent policy optimization. | `AgentToolGym`, `recipes/agent_gym_ppo_v1.yaml`, multi-turn scenario engine | ✅ Complete |
 | **Epoch 8: Agentic RL (LLM Trajectory GRPO)** (Phases 92–94) | Harden AgentGym (`task_success`, play HUD, text obs); Agent GRPO multi-turn tool RL (`agrpo`) on AgentGym bridge then Ensemble e2e stubs. Mini `agent_gym_agrpo_v1` verified at pass_rate 0.625. | `agent_grpo_train.py`, `agrpo` worker, `agent_gym_agrpo_v1`, `ensemble_agent_grpo_v1` | ✅ Complete |
+| **Epoch 9: AstraGym + AstraRL** (Phases 95–98) | Split online RL into AstraGym (`gym_id` worlds) × AstraRL (`learner_id` learners) with Astra as Orchestrator; covers env SB3, routing GRPO, Agent GRPO, OPD. | `astragym/`, `astrarl/`, recipe `gym_id`/`learner_id` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

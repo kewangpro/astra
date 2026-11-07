@@ -1,6 +1,8 @@
 name: minatar_freeway_dqn_v1
 domain: minatar_freeway
 task_type: rl
+gym_id: gymnasium:MinAtar-Freeway-v0
+learner_id: sb3_dqn
 trainer_type: sb3
 algorithm: DQN
 version: 1.0.0

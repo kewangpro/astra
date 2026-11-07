@@ -2,6 +2,8 @@ name: agent_gym_ppo_v1
 version: "1.0.0"
 created_at: "2026-09-17"
 task_type: RL
+gym_id: agent_gym_vector
+learner_id: sb3_ppo
 domain: AgentGym
 env_id: MultiTurnAgentGym-v0
 description: >

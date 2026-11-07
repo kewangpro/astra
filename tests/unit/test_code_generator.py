@@ -2552,7 +2552,8 @@ def test_decision_foundation_wrapper_passes_cases_not_routing():
     assert hp.get("routing_only") is False
     wrapped = _format_rlcd_wrapper(hp, "/Users/kewang/finetune/adapters/astra_found_iter0")
     assert '"--cases"' in wrapped or "argv.extend([\"--cases\"" in wrapped
-    assert "foundation_mix.jsonl" in wrapped
+    # Recipe uses capped foundation_train.jsonl (~800); full foundation_mix (~4k) is expand-only.
+    assert "foundation_train.jsonl" in wrapped
     assert "argv.append(\"--routing-only\")" not in wrapped or "if False:" in wrapped
 
 
