@@ -7,6 +7,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 ## Feature Highlights
 
 - **End-to-End Autonomous Loop** — Plan → Critique → Implement → Sandbox → Train → Evaluate → Refine. Integrates GAN-style plan critique, automatic error recovery, and convergence guards that prevent runaway compute.
+- **AstraGym × AstraRL (Epoch 9)** — All **online RL** is split into **AstraGym** worlds (`gym_id`: Gymnasium envs, AgentGym, e2e stubs, routing prompts) and **AstraRL** learners (`learner_id`: SB3 PPO/DQN/…, MLX GRPO/OPD). Astra’s loop stays the **Orchestrator** (`task_type`, recipes, sandbox, HUD). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/). See [DESIGN.md § 2.4](docs/DESIGN.md).
 - **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts. Goals that name a trainer stay on it; unnamed "RL agent" goals seed the env recipe algorithm and, once plateaued, switch to a *different* trainer (`SB3 PPO` → `PPO` is not a switch).
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), each in its own `train_config` env (same table as `/models/{id}` play). Tracks score distributions and tie-split win rates; crowning a champion is exclusive per environment.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
@@ -51,15 +52,32 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 ## Task and algorithm
 
-A task is the objective. An algorithm is the update rule. `task_type` is the worker key. Online RL also uses AstraGym (`gym_id`) × AstraRL (`learner_id`) — see [DESIGN.md § 2.4–2.5](docs/DESIGN.md).
+A task is the objective. An algorithm is the update rule. `task_type` is the sandbox / preflight worker key.
+
+### AstraGym × AstraRL (online RL)
+
+| Layer | Package | Id | Owns |
+|---|---|---|---|
+| **AstraGym** | [`astragym/`](astragym/) | `gym_id` | Worlds: `reset` / `step`, rewards, eval |
+| **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Learners / checkpoints (SB3 + MLX GRPO/OPD) |
+| **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD |
+
+| Online worker | Typical `gym_id` | Typical `learner_id` |
+|---|---|---|
+| Environment RL (`rl`) | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_ppo` / `sb3_dqn` / … |
+| Routing GRPO (`grpo`) | `routing_prompt` | `mlx_grpo_routing` |
+| Agent GRPO (`agrpo`) | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
+| OPD (`opd`) | `routing_prompt` | `mlx_opd` |
+
+Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. Offline workers (DPO, SFT, distill, RFT, STaR, RLCD, prompt, embed, rerank, HSTU) stay outside AstraRL. Full contract: [DESIGN.md § 2.4–2.5](docs/DESIGN.md).
 
 | Task | Algorithms |
 |---|---|
-| Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) |
-| Reinforcement fine-tuning | GRPO (`grpo`, **online** on-policy rollouts), DPO (`dpo`, **offline** preference pairs) |
-| Agentic RL | Agent GRPO (`agrpo`, **online** multi-turn tool trajectories on AgentGym / e2e stubs) |
+| Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) — AstraGym × AstraRL SB3 |
+| Reinforcement fine-tuning | GRPO (`grpo`, **online** → AstraRL `mlx_grpo_routing`), DPO (`dpo`, **offline**, outside AstraRL) |
+| Agentic RL | Agent GRPO (`agrpo`, **online** → AstraRL `mlx_grpo_traj`) |
 | Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
-| On-policy distillation | OPD (`opd`) |
+| On-policy distillation | OPD (`opd`) — AstraGym `routing_prompt` × AstraRL `mlx_opd` |
 | Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; one-shot `ensemble_decision_from_scratch_v1` (cold start); or staged foundation → specialize → focus. Product `:8082` = **c7b78b5d** + `decision_prompt` (A/B **68/74**, hermetic **167/167** + remap); bf94 = rollback |
 | Prompt edit | rule append (`prompt`) |
 | Classical ML | random forest (`ml`) |
@@ -94,11 +112,13 @@ make run   # backend + frontend → http://localhost:8200 / http://localhost:320
 
 ```
 astra/
+├── astragym/            # AstraGym — online RL worlds (gym_id): Gymnasium, AgentGym, e2e, routing
+├── astrarl/             # AstraRL — online RL learners (learner_id): SB3 + MLX GRPO/OPD
 ├── backend/
 │   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ErrorAnalyzer, CodeSafetyClassifier, ModelManager, KVCache, inference providers
 │   ├── analysis/       # SpatialAnalyzer (Grad-CAM), PolicyAuditor
 │   ├── evaluator/      # SpecialistEvaluator, BenchmarkSuite, StressTester, ManifestEvaluator
-│   ├── loop/           # LoopStateMachine, PivotEngine
+│   ├── loop/           # LoopStateMachine, PivotEngine (Orchestrator)
 │   ├── models/         # ORM models: Mission, Experiment, ModelRecord, RecipeRecord, ApprovalGate, Manifest
 │   ├── routers/        # API route handlers
 │   ├── sandbox/        # SubprocessSandbox, ContainerSandbox, SSHSandbox, SandboxManager
@@ -107,11 +127,11 @@ astra/
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
-│   ├── unit/           # 1204 unit tests across all core modules
-│   └── integration/    # 20 integration tests for the loop state machine and stress test suites
+│   ├── unit/           # unit tests across all core modules (incl. test_astragym_astrarl)
+│   └── integration/    # integration tests for the loop state machine and stress test suites
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake, Tetris, 2048, MinAtar suite, Grid Pac-Man, AgentGym)
-├── recipes/            # YAML training recipes (hand-crafted + crystallized + evolved)
+├── recipes/            # YAML training recipes (gym_id / learner_id on online-RL recipes)
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
 ├── .env.example
@@ -132,7 +152,7 @@ make ports  # show port status for all services
 
 ## Strategic Development Milestones
 
-ASTRA's architecture and capabilities are structured into eight core development epochs:
+ASTRA's architecture and capabilities are structured into nine core development epochs:
 
 | Epoch | Scope & Strategic Capabilities | Key Components | Status |
 |---|---|---|---|

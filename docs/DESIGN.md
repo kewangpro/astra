@@ -9,7 +9,9 @@ Phase-level incidents and code contracts live in [IMPLEMENT.md](IMPLEMENT.md).
 
 ## 1. System Overview
 
-ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
+ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orchestrator**, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
+
+**Online RL** uses two first-class packages — **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) — under that Orchestrator (§ 2.4). Offline workers (DPO, SFT, …) skip AstraRL.
 
 ```
                     +-----------------------+
@@ -32,10 +34,14 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes, **specia
                                                         |    Secure Sandbox     |
                                                         +-----------+-----------+
                                                                     |
-                                                                    v
-                                                        +-----------------------+
-                                                        |      Environment      |
-                                                        +-----------------------+
+                                          online RL                 v
+                                          +-------------+-----------------------+
+                                          |  AstraGym   |       AstraRL         |
+                                          |  (gym_id)   |     (learner_id)      |
+                                          +------+------+-----------+-----------+
+                                                 |                  |
+                                                 v                  v
+                                          worlds / rewards    SB3 + MLX GRPO/OPD
 ```
 
 ---
@@ -73,7 +79,7 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 ### 2.4. AstraGym, AstraRL, and the Orchestrator (Epoch 9)
 
-Online RL is split into three layers (inspired by Gym×RL product splits, **not** NVIDIA NeMo):
+**Highlight.** Every **online RL** path in ASTRA is AstraGym × AstraRL. Do not treat SB3 envs, routing GRPO, Agent GRPO, or OPD as ad-hoc script islands — they share `astragym.make(gym_id)` and `astrarl.make(learner_id)` (or thin Ensemble CLI shims that import those packages). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
 | Layer | Package / role | Owns |
 |---|---|---|
@@ -82,6 +88,13 @@ Online RL is split into three layers (inspired by Gym×RL product splits, **not*
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry |
 
 Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key.
+
+| Online `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
+|---|---|---|
+| `rl` | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_{ppo,dqn,a2c,sac,td3}` |
+| `grpo` | `routing_prompt` | `mlx_grpo_routing` |
+| `agrpo` | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
+| `opd` | `routing_prompt` | `mlx_opd` |
 
 **AstraGym ids:** `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`.  
 **AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.
@@ -137,7 +150,7 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 **Environments.** Arcade envs are 10×10 NumPy Gym wrappers. Seaquest, Asterix, and Grid Pac-Man follow their source rules closely enough that play and checkpoints stay honest (oxygen/surface, spawn/ramp, leftover ghosts chase, mouth faces movement). Env classes load lazily so importing the package does not load every game.
 
-**Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or `gym.make`, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. RL scripts pin `gym.make` to the planned env id.
+**Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or env construction, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. Online env-RL scripts prefer `astragym.make(gym_id)` (with `learner_id` annotated for AstraRL); legacy `gym.make(env_id)` is still healed to the planned env.
 
 **Remote fine-tune.** The training host has no git checkout of ASTRA. A thin `os.execv` wrapper replaces itself with the standalone trainer. Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
 

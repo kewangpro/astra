@@ -2846,7 +2846,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 ## Phase 98: Recipes, docs, verify
 
 - [x] Online-RL recipes annotated with `gym_id` / `learner_id` (or inferred defaults documented).
-- [x] README + in-app docs mention AstraGym / AstraRL.
+- [x] README + DESIGN §2.4 + UX_SPEC highlight AstraGym × AstraRL; in-app `/docs` names gym/learner pairs in online task summaries only.
 - [x] Unit tests for `astragym.make` / `astrarl.resolve` (9 passed).
 - [x] Mini: synced `astragym`/`astrarl` under `~/finetune`; import smoke OK; local SB3 Breakout learn(200) smoke OK.
 - [x] Ensemble vendors `finetune/astragym` + `finetune/astrarl` for SSH layout.
