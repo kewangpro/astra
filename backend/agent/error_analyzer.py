@@ -23,7 +23,10 @@ Analyze the error and return the complete corrected Python script.
 Rules:
 - Scan the ENTIRE script for ALL instances of this error class and fix them all in one pass — do not fix just the one line that appeared in the traceback.
 - If the error is an ImportError or ModuleNotFoundError, add ALL missing imports at the top and check the full script for any other missing names at the same time.
-- NameError for `env` is NOT a missing import. Insert `env = gym.make("<PLANNED_ENV_ID>")` before the model constructor. Never substitute CartPole, SpaceInvaders, or any other environment.
+- NameError for `env` is NOT a missing import. Insert these lines before the model constructor:
+    _astra_gym = astragym.make("gymnasium:<PLANNED_ENV_ID>")
+    env = _astra_gym.raw_env
+  Never substitute CartPole, SpaceInvaders, or any other environment. Do NOT use gym.make.
 - For RL scripts using stable-baselines3, the script MUST include ALL of these imports — add any that are missing:
     from stable_baselines3 import PPO
     from stable_baselines3.common.callbacks import BaseCallback
@@ -63,22 +66,10 @@ def _extract_traceback(error_output: str) -> str:
 
 
 def _ensure_rl_gym_make(code: str, env_id: str, env_kwargs_str: str = "") -> str:
-    """Force `env = gym.make(<planned env>)` after an LLM heal.
+    """Force AstraGym env construction after an LLM heal (legacy gym.make healed too)."""
+    from backend.agent.code_generator import CodeGenerator
 
-    NameError: env is not a missing import — the healer used to invent
-    SpaceInvaders / CartPole. Pin the planned env_id instead.
-    """
-    if not env_id or not isinstance(code, str):
-        return code
-    make_line = f'env = gym.make("{env_id}"{env_kwargs_str})'
-    pattern = re.compile(r"env\s*=\s*gym\.make\s*\([^)]*\)")
-    if pattern.search(code):
-        return pattern.sub(make_line, code, count=1)
-    ctor = re.search(r"\n(?=model\s*=\s*(?:PPO|DQN|A2C|SAC|TD3)\s*\()", code)
-    if ctor:
-        return code[: ctor.start()] + f"\n{make_line}\n" + code[ctor.start() :]
-    return code
-
+    return CodeGenerator._ensure_rl_gym_make(code, env_id, env_kwargs_str)
 
 def _extract_error_type(error_output: str) -> str:
     """Return the exception class name from the traceback."""
@@ -160,8 +151,10 @@ class ErrorAnalyzer:
         if env_id:
             env_rule = (
                 f"\nThe planned environment is {env_id}. "
-                f'The script MUST contain env = gym.make("{env_id}"). '
-                "Do not use any other env_id.\n"
+                f'The script MUST contain:\n'
+                f'  _astra_gym = astragym.make("gymnasium:{env_id}")\n'
+                f'  env = _astra_gym.raw_env\n'
+                "Do not use gym.make or any other env_id.\n"
             )
         user_prompt = (
             f"The following Python training script raised a {error_type}:\n\n"
@@ -181,9 +174,11 @@ class ErrorAnalyzer:
             messages, GenerationConfig(max_tokens=4096, temperature=0.05)
         )
         fixed_code = self._strip_fences(fixed_code)
-        fixed_code = self._patch_missing_imports(fixed_code)
         if env_id:
             fixed_code = _ensure_rl_gym_make(fixed_code, env_id)
+            from backend.agent.code_generator import CodeGenerator
+            fixed_code = CodeGenerator._patch_rl_imports(fixed_code)
+        fixed_code = self._patch_missing_imports(fixed_code)
 
         import ast
         is_valid = True

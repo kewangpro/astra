@@ -318,7 +318,8 @@ def test_ensure_rl_gym_make_rewrites_healer_space_invaders():
         "model = PPO('MlpPolicy', env)\n"
     )
     result = _ensure_rl_gym_make(code, "GridPacMan-v0")
-    assert 'env = gym.make("GridPacMan-v0")' in result
+    assert 'astragym.make("gymnasium:GridPacMan-v0")' in result
+    assert "env = _astra_gym.raw_env" in result
     assert "SpaceInvaders" not in result
 
 
@@ -341,7 +342,8 @@ def test_fix_script_forces_planned_env_id(tmp_path):
             )
         )
     text = script.read_text()
-    assert 'env = gym.make("GridPacMan-v0")' in text
+    assert 'astragym.make("gymnasium:GridPacMan-v0")' in text
+    assert "env = _astra_gym.raw_env" in text
     assert "SpaceInvaders" not in text
 
 

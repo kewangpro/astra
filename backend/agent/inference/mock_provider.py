@@ -70,8 +70,9 @@ class MockProvider(InferenceProvider):
             return "The error is caused by a missing import. Add `import numpy as np` at the top."
         if "script" in prompt or "code" in prompt:
             return (
-                "import gymnasium as gym\n"
-                "env = gym.make('CartPole-v1')\n"
+                "import astragym\n"
+                '_astra_gym = astragym.make("gymnasium:CartPole-v1")\n'
+                "env = _astra_gym.raw_env\n"
                 "obs, _ = env.reset()\n"
                 "print('Mock training script generated')\n"
             )

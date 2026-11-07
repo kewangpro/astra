@@ -27,8 +27,10 @@ Generate complete, runnable Python training scripts.
 Requirements:
 - The script must run standalone inside a sandboxed Python environment.
 - Import all dependencies at the top.
-- For RL scripts: ALWAYS use `import gymnasium as gym` — NOT `import gym`.
-  The `gym` package is NOT installed; only `gymnasium` is available.
+- For RL (SB3) scripts: create envs with `astragym.make(gym_id)` and learners
+  with `astrarl.make(learner_id, gym, ...)`. Do NOT call `gym.make` or
+  `import gym`. Do not import `gymnasium` unless you use the Gymnasium API
+  directly (AstraGym wraps it).
 - NEVER import or call `stable_baselines3.common.logger.configure()` — it is
   not needed. Use Python's standard `logging` module for any logging.
 - Log metrics by POSTing to the ASTRA telemetry endpoint:
@@ -52,7 +54,6 @@ _register_snake()
 _TETRIS_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
-import gymnasium as gym
 import astragym
 import astrarl
 from envs.tetris_env import register as _register_tetris
@@ -62,7 +63,6 @@ _register_tetris()
 _GAME2048_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
-import gymnasium as gym
 import astragym
 import astrarl
 from envs.game2048_env import register as _register_2048
@@ -72,7 +72,6 @@ _register_2048()
 _MINATAR_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
-import gymnasium as gym
 import astragym
 import astrarl
 from envs.minatar_env import register as _register_minatar
@@ -94,7 +93,6 @@ _register_pacman()
 _GRIDPACMAN_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
-import gymnasium as gym
 import astragym
 import astrarl
 from envs.grid_pacman_env import register as _register_pacman
@@ -104,7 +102,6 @@ _register_pacman()
 _AGENT_GYM_SETUP = """\
 import sys as _sys
 _sys.path.insert(0, "{project_root}")
-import gymnasium as gym
 import astragym
 import astrarl
 from envs.agent_gym import register as _register_agent_gym
@@ -125,23 +122,21 @@ Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script MUST start with these exact imports (do not omit any):
     import os
-    import gymnasium as gym
     import numpy as np
     import requests
     import logging
+    import astragym
+    import astrarl
     from stable_baselines3 import {algorithm}
     from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
 Epoch 9: gym_id={gym_id} learner_id={learner_id} (AstraGym × AstraRL).
 1. Create the environment with EXACTLY these lines — copy verbatim:
-       import gymnasium as gym
-       import astragym
-       import astrarl
        _astra_gym = astragym.make("{gym_id}"{env_kwargs_str})
        env = _astra_gym.raw_env
-   Equivalent legacy form (also acceptable): env = gym.make("{env_id}"{env_kwargs_str})
-   The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
+   Do NOT call gym.make or import gymnasium. The planned env is "{env_id}"
+   (gym_id "{gym_id}"). Do NOT use "CartPole-v1" or any other env name.
    Do NOT read it from hyperparameters.
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
 
@@ -156,9 +151,14 @@ Epoch 9: gym_id={gym_id} learner_id={learner_id} (AstraGym × AstraRL).
        if _hp.get("lr_schedule") == "linear" and "learning_rate" in _filtered:
            _filtered["learning_rate"] = _linear_schedule(_filtered["learning_rate"])
        _policy_kwargs = {policy_kwargs}
-       model = {algorithm}("MlpPolicy", env, **_filtered,
-                   **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
-       # Optional: astrarl.make("{learner_id}", _astra_gym, ...) wraps the same SB3 algo
+       _learner = astrarl.make(
+           "{learner_id}",
+           _astra_gym,
+           policy="MlpPolicy",
+           **_filtered,
+           **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}),
+       )
+       model = _learner.model
 
    These values are set by the optimizer — do NOT substitute your own hyperparameter values.
    `lr_schedule` is an opt-in recipe setting (not an SB3 constructor kwarg, so it is
@@ -268,23 +268,21 @@ Telemetry URL: {api_url}/telemetry/missions/{mission_id}/metrics
 
 The script MUST start with these exact imports (do not omit any):
     import os
-    import gymnasium as gym
     import numpy as np
     import requests
     import logging
+    import astragym
+    import astrarl
     from stable_baselines3 import {algorithm}
     from stable_baselines3.common.callbacks import BaseCallback
 
 The script must:
 Epoch 9: gym_id={gym_id} learner_id={learner_id} (AstraGym × AstraRL).
 1. Create the environment with EXACTLY these lines — copy verbatim:
-       import gymnasium as gym
-       import astragym
-       import astrarl
        _astra_gym = astragym.make("{gym_id}"{env_kwargs_str})
        env = _astra_gym.raw_env
-   Equivalent legacy form (also acceptable): env = gym.make("{env_id}"{env_kwargs_str})
-   The env_id is "{env_id}". Do NOT use "CartPole-v1" or any other env name.
+   Do NOT call gym.make or import gymnasium. The planned env is "{env_id}"
+   (gym_id "{gym_id}"). Do NOT use "CartPole-v1" or any other env name.
    Do NOT read it from hyperparameters.
 2. The script MUST use these EXACT lines to construct the model — copy verbatim, do NOT change any values:
 
@@ -299,9 +297,14 @@ Epoch 9: gym_id={gym_id} learner_id={learner_id} (AstraGym × AstraRL).
        if _hp.get("lr_schedule") == "linear" and "learning_rate" in _filtered:
            _filtered["learning_rate"] = _linear_schedule(_filtered["learning_rate"])
        _policy_kwargs = {policy_kwargs}
-       model = {algorithm}("MlpPolicy", env, **_filtered,
-                   **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}))
-       # Optional: astrarl.make("{learner_id}", _astra_gym, ...) wraps the same SB3 algo
+       _learner = astrarl.make(
+           "{learner_id}",
+           _astra_gym,
+           policy="MlpPolicy",
+           **_filtered,
+           **(dict(policy_kwargs=_policy_kwargs) if _policy_kwargs else {{}}),
+       )
+       model = _learner.model
 
 3. Immediately after constructing the model, copy this warm-start block EXACTLY — do not modify:
 
@@ -424,7 +427,8 @@ model = ActorCriticNet()                            # shared MLP [4→64→64] +
 optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
-env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+_astra_gym = astragym.make("gymnasium:{env_id}")  # MANDATORY — before the training loop
+env = _astra_gym.raw_env
 BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
 _eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
@@ -549,7 +553,8 @@ target_model.eval()
 optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
-env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+_astra_gym = astragym.make("gymnasium:{env_id}")  # MANDATORY — before the training loop
+env = _astra_gym.raw_env
 BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_rewards, ep_lines = [], []
 _eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
@@ -677,7 +682,8 @@ model = ActorCriticNet()                            # value network: shared MLP 
 optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
-env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+_astra_gym = astragym.make("gymnasium:{env_id}")  # MANDATORY — before the training loop
+env = _astra_gym.raw_env
 ep_rewards, ep_lines = [], []
 _eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
 epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
@@ -823,7 +829,8 @@ model = ActorCriticNet()                            # value network: shared MLP 
 optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
-env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+_astra_gym = astragym.make("gymnasium:{env_id}")  # MANDATORY — before the training loop
+env = _astra_gym.raw_env
 ep_rewards, ep_lines = [], []
 _eps_path = "{checkpoint_dir}/epsilon.txt"  # persist epsilon across iterations — otherwise every fresh script resets to 1.0 (near-total random exploration) even though the model itself is warm-started, making training-time mean_reward meaningless relative to the model's real learned quality
 epsilon = float(open(_eps_path).read().strip()) if os.path.exists(_eps_path) else 1.0
@@ -945,7 +952,8 @@ target_model.eval()
 optimizer = torch.optim.Adam(model.parameters(), lr={lr})
 
 == Training skeleton (follow exactly — do NOT deviate from these API calls) ==
-env = gym.make("{env_id}")          # MANDATORY — must appear before the training loop
+_astra_gym = astragym.make("gymnasium:{env_id}")  # MANDATORY — before the training loop
+env = _astra_gym.raw_env
 BUFFER = collections.deque(maxlen={replay_buffer_size})
 ep_scores, ep_max_tiles = [], []
 _eps_path = "{checkpoint_dir}/epsilon.txt"
@@ -2599,7 +2607,6 @@ class CodeGenerator:
             code = await self._provider.generate(messages, GenerationConfig(max_tokens=4096, temperature=0.1))
             code = self._strip_fences(code)
             if task_type == "rl":
-                code = self._patch_rl_imports(code)
                 code = self._patch_undefined_logger(code)
                 env_id = plan.get("env_id", "")
                 _proj_root = os.path.abspath(os.path.join(settings.data_path, ".."))
@@ -2641,7 +2648,17 @@ class CodeGenerator:
                 _env_kw_str = ""
                 if _env_kw:
                     _env_kw_str = ", " + ", ".join(f"{k}={v!r}" for k, v in _env_kw.items())
-                code = self._ensure_rl_gym_make(code, env_id, _env_kw_str)
+                _hp = plan.get("hyperparameters") or {}
+                _gym_id = (
+                    plan.get("gym_id")
+                    or _hp.get("gym_id")
+                    or (f"gymnasium:{env_id}" if env_id else "")
+                )
+                # Pin AstraGym env before import patch so unused gymnasium can be stripped.
+                code = self._ensure_rl_gym_make(
+                    code, env_id, _env_kw_str, gym_id=_gym_id or None,
+                )
+                code = self._patch_rl_imports(code)
             # Fix any relative checkpoint paths the LLM may have substituted for the absolute checkpoint_dir
             code = self._fix_checkpoint_paths(code, checkpoint_dir)
             # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
@@ -2923,7 +2940,7 @@ class CodeGenerator:
                 env_setup = ""
             hp = dict(hp)  # copy so we don't mutate the plan's hyperparameters dict
             policy_kwargs = hp.pop("policy_kwargs", None)
-            # Build env_kwargs_str: ", key=value, ..." for gym.make() call
+            # Build env_kwargs_str: ", key=value, ..." for astragym.make() call
             env_kwargs = _resolve_env_kwargs(env_id, plan.get("env_kwargs"))
             if env_kwargs:
                 env_kwargs_str = ", " + ", ".join(f"{k}={v!r}" for k, v in env_kwargs.items())
@@ -3267,10 +3284,12 @@ class CodeGenerator:
         kw_str = (", " + ", ".join(f"{k}={v!r}" for k, v in base_kw.items())) if base_kw else ""
         grid_kw_str = ', grid_h=_ph["grid_h"], grid_w=_ph["grid_w"]' if has_grid_dims else ""
 
+        _gym_id = env_id if str(env_id).startswith("gymnasium:") else f"gymnasium:{env_id}"
         curriculum_block = (
             f'_CURRICULUM_PHASES = {phases_repr}\n'
             f'for _ph_idx, _ph in enumerate(_CURRICULUM_PHASES):\n'
-            f'    _ph_env = gym.make("{env_id}"{kw_str}{grid_kw_str})\n'
+            f'    _ph_gym = astragym.make("{_gym_id}"{kw_str}{grid_kw_str})\n'
+            f'    _ph_env = _ph_gym.raw_env\n'
             f'    model.set_env(_ph_env)\n'
             f'    callback._phase_best_metric = 0\n'
             f'    logging.info("Curriculum phase %d/%d: %s", _ph_idx + 1, len(_CURRICULUM_PHASES), _ph)\n'
@@ -3309,32 +3328,64 @@ class CodeGenerator:
         return code
 
     @staticmethod
-    def _ensure_rl_gym_make(code: str, env_id: str, env_kwargs_str: str = "") -> str:
-        """Force `env = gym.make(<planned env>)` so the LLM cannot omit it or swap games.
+    def _ensure_rl_gym_make(
+        code: str,
+        env_id: str,
+        env_kwargs_str: str = "",
+        gym_id: Optional[str] = None,
+    ) -> str:
+        """Force AstraGym env construction so the LLM cannot omit it or swap games.
 
-        Real incident: GridPacMan-v0 mission 9b49aa78 crashed `NameError: env`,
-        then the healer inserted `gym.make("Minatar-SpaceInvaders-v0")`.
+        Real incident: GridPacMan-v0 mission 9b49aa78 crashed ``NameError: env``,
+        then the healer inserted ``gym.make("Minatar-SpaceInvaders-v0")``.
+        Also rewrites legacy ``gym.make`` to ``astragym.make``.
         """
         import re
         if not env_id or not isinstance(code, str):
             return code
-        make_line = f'env = gym.make("{env_id}"{env_kwargs_str})'
-        pattern = re.compile(r"env\s*=\s*gym\.make\s*\([^)]*\)")
-        if pattern.search(code):
-            return pattern.sub(make_line, code, count=1)
-        ctor = re.search(r"\n(?=model\s*=\s*(?:PPO|DQN|A2C|SAC|TD3)\s*\()", code)
+        gid = gym_id or (
+            env_id if str(env_id).startswith("gymnasium:") else f"gymnasium:{env_id}"
+        )
+        astra_block = (
+            f'_astra_gym = astragym.make("{gid}"{env_kwargs_str})\n'
+            f'env = _astra_gym.raw_env'
+        )
+        astra_pat = re.compile(
+            r"_astra_gym\s*=\s*astragym\.make\s*\([^)]*\)\s*\n\s*"
+            r"env\s*=\s*_astra_gym\.raw_env"
+        )
+        gym_pat = re.compile(r"(?m)^[ \t]*env\s*=\s*gym\.make\s*\([^)]*\)[ \t]*\n?")
+        if astra_pat.search(code):
+            code = astra_pat.sub(astra_block, code, count=1)
+            return gym_pat.sub("", code)  # drop leftover legacy gym.make
+        if gym_pat.search(code):
+            return gym_pat.sub(astra_block + "\n", code, count=1)
+        ctor = re.search(
+            r"\n(?=model\s*=\s*(?:PPO|DQN|A2C|SAC|TD3)\s*\("
+            r"|_learner\s*=\s*astrarl\.make\s*\("
+            r"|model\s*=\s*_learner\.model"
+            r"|BUFFER\s*=\s*collections\.deque"
+            r"|while\s+total_steps\s*<)",
+            code,
+        )
         if ctor:
-            return code[: ctor.start()] + f"\n{make_line}\n" + code[ctor.start() :]
+            return code[: ctor.start()] + f"\n{astra_block}\n" + code[ctor.start() :]
         return code
 
     @staticmethod
     def _patch_rl_imports(code: str) -> str:
-        """Inject any SB3 imports the LLM forgot to include."""
+        """Inject any SB3 / AstraGym imports the LLM forgot; drop unused gymnasium."""
         import re
         # Replace `import stable_baselines3 as sb3` + `sb3.XXX` with direct imports
         if "import stable_baselines3 as sb3" in code:
             code = re.sub(r'\bsb3\.(PPO|SAC|A2C|DQN|TD3)\b', r'\1', code)
             code = re.sub(r'^\s*import stable_baselines3 as sb3\s*\n?', '', code, flags=re.MULTILINE)
+
+        # Drop unused gymnasium alias (AstraGym path does not need it).
+        if re.search(r"(?m)^import gymnasium as gym\s*$", code):
+            body = re.sub(r"(?m)^import gymnasium as gym\s*\n?", "", code)
+            if not re.search(r"\bgym\.", body):
+                code = body
 
         # Re-split after any string-level substitution above
         lines = code.splitlines()
@@ -3348,6 +3399,10 @@ class CodeGenerator:
         to_inject = []
         if "import os" not in import_lines:
             to_inject.append("import os")
+        if "astragym.make" in code and "import astragym" not in import_lines:
+            to_inject.append("import astragym")
+        if "astrarl.make" in code and "import astrarl" not in import_lines:
+            to_inject.append("import astrarl")
         for algo in ("PPO", "SAC", "A2C", "DQN", "TD3"):
             if algo in code and f"from stable_baselines3 import {algo}" not in import_lines:
                 to_inject.append(f"from stable_baselines3 import {algo}")

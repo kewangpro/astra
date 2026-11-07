@@ -71,7 +71,8 @@ def test_build_user_prompt_rl_contains_env_id(tmp_path, monkeypatch):
     plan = _make_rl_plan()
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert 'gym.make("CartPole-v1")' in prompt
+    assert 'astragym.make("gymnasium:CartPole-v1")' in prompt
+    assert "astrarl.make" in prompt
     assert "PPO" in prompt
     assert "475" in prompt                # target_reward
 
@@ -205,8 +206,9 @@ def test_patch_rl_imports_replaces_sb3_alias():
 def test_ensure_rl_gym_make_inserts_missing_env():
     code = "from stable_baselines3 import PPO\nmodel = PPO('MlpPolicy', env)\n"
     result = CodeGenerator._ensure_rl_gym_make(code, "GridPacMan-v0")
-    assert 'env = gym.make("GridPacMan-v0")' in result
-    assert result.index("env = gym.make") < result.index("model = PPO")
+    assert 'astragym.make("gymnasium:GridPacMan-v0")' in result
+    assert "env = _astra_gym.raw_env" in result
+    assert result.index("astragym.make") < result.index("model = PPO")
 
 
 def test_ensure_rl_gym_make_rewrites_wrong_env():
@@ -216,8 +218,46 @@ def test_ensure_rl_gym_make_rewrites_wrong_env():
         "model = PPO('MlpPolicy', env)\n"
     )
     result = CodeGenerator._ensure_rl_gym_make(code, "GridPacMan-v0")
-    assert 'env = gym.make("GridPacMan-v0")' in result
+    assert 'astragym.make("gymnasium:GridPacMan-v0")' in result
+    assert "env = _astra_gym.raw_env" in result
     assert "SpaceInvaders" not in result
+
+
+def test_ensure_rl_gym_make_rewrites_astragym_wrong_id():
+    code = (
+        'import astragym\n'
+        '_astra_gym = astragym.make("gymnasium:Snake-v0")\n'
+        'env = _astra_gym.raw_env\n'
+        "model = PPO('MlpPolicy', env)\n"
+    )
+    result = CodeGenerator._ensure_rl_gym_make(code, "GridPacMan-v0")
+    assert 'astragym.make("gymnasium:GridPacMan-v0")' in result
+    assert "Snake-v0" not in result
+
+
+def test_ensure_rl_gym_make_strips_leftover_gym_make():
+    code = (
+        'import astragym\n'
+        '_astra_gym = astragym.make("gymnasium:MinAtar-Breakout-v0")\n'
+        'env = _astra_gym.raw_env\n'
+        'env = gym.make("MinAtar-Breakout-v0", max_steps=1500)\n'
+        "model = DQN('MlpPolicy', env)\n"
+    )
+    result = CodeGenerator._ensure_rl_gym_make(code, "MinAtar-Breakout-v0")
+    assert "env = gym.make" not in result
+    assert result.count("astragym.make") == 1
+
+
+def test_patch_rl_imports_strips_unused_gymnasium():
+    code = (
+        "import gymnasium as gym\n"
+        "import astragym\n"
+        '_astra_gym = astragym.make("gymnasium:Snake-v0")\n'
+        "env = _astra_gym.raw_env\n"
+    )
+    result = CodeGenerator._patch_rl_imports(code)
+    assert "import gymnasium as gym" not in result
+    assert "import astragym" in result
 
 
 def test_build_user_prompt_rl_includes_policy_kwargs(tmp_path, monkeypatch):
@@ -453,7 +493,7 @@ def test_build_user_prompt_rl_no_env_kwargs_clean(tmp_path, monkeypatch):
     plan = _make_rl_plan()
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert 'gym.make("CartPole-v1")' in prompt
+    assert 'astragym.make("gymnasium:CartPole-v1")' in prompt
 
 
 def test_fix_checkpoint_paths_replaces_relative_paths():
@@ -917,7 +957,7 @@ def test_build_user_prompt_actor_critic_ac_telemetry_interval_default(tmp_path, 
 
 
 def test_build_user_prompt_actor_critic_includes_gym_make(tmp_path, monkeypatch):
-    """AC template skeleton must include env = gym.make(...) before the training loop."""
+    """AC template skeleton must include astragym.make(...) before the training loop."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -926,7 +966,8 @@ def test_build_user_prompt_actor_critic_includes_gym_make(tmp_path, monkeypatch)
     plan = _make_actor_critic_plan()
     prompt = gen._build_user_prompt("rl", "test-id", plan, str(tmp_path / "ckpt"))
 
-    assert 'gym.make("Tetris-v0")' in prompt
+    assert 'astragym.make("gymnasium:Tetris-v0")' in prompt
+    assert "env = _astra_gym.raw_env" in prompt
     assert "from envs.actor_critic_net import ActorCriticNet" in prompt
 
 
@@ -2060,15 +2101,15 @@ def test_inject_curriculum_grid_dims_come_from_phase():
 
 
 def test_inject_curriculum_excludes_grid_dims_from_base_kwargs():
-    """grid_h/grid_w must not appear in the base gym.make call (they come from phase)."""
+    """grid_h/grid_w must not appear in the base astragym.make call (they come from phase)."""
     env_kw_with_grid = {**_SAMPLE_ENV_KWARGS, "grid_h": 16, "grid_w": 16}
     code = _make_injectable_script()
     result = CodeGenerator._inject_curriculum(code, _SAMPLE_PHASES, "Snake-v0", env_kw_with_grid)
-    # The _ph_env = gym.make(...) line should not have literal grid_h=16
     for line in result.splitlines():
-        if "_ph_env = gym.make" in line:
+        if "_ph_gym = astragym.make" in line:
             assert "grid_h=16" not in line
             assert "grid_w=16" not in line
+            assert '_ph["grid_h"]' in line or "grid_h=_ph" in result
 
 
 def test_inject_curriculum_adds_phase_best_metric_to_init():
@@ -2112,9 +2153,10 @@ def test_inject_curriculum_tetris_no_grid_dims_in_gym_make():
     code = _make_injectable_script()
     result = CodeGenerator._inject_curriculum(code, _TETRIS_PHASES, "Tetris-v0", {"max_steps": 1000})
     for line in result.splitlines():
-        if "_ph_env = gym.make" in line:
+        if "_ph_gym = astragym.make" in line:
             assert "grid_h" not in line
             assert "grid_w" not in line
+    assert "_ph_env = _ph_gym.raw_env" in result
 
 
 def test_inject_curriculum_tetris_uses_max_iterations_as_duration():
