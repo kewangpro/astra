@@ -130,20 +130,19 @@ Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only a
 
 **Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA (public Noul/Choice/Score) → Ensemble specialize/focus → live `:8082` readout. One-shot replay: `ensemble_decision_from_scratch_v1`. Staged: `ensemble_decision_foundation_v1` → `continue_v1` → `specialize_v1` → `specialize_focus_v1`. Legacy routing: `ensemble_rlcd_*` (`--routing-only`). Diagram + promote rules live in Ensemble [`finetune/data/decision/README.md`](../../ensemble/finetune/data/decision/README.md#locked-approach) and Ensemble DESIGN §3.15b.
 
-```mermaid
-flowchart LR
-  publicData[Public_Noul_Choice_Score]
-  schema[decision_cases_jsonl]
-  foundation[Foundation_LoRA]
-  ensData[Ensemble_exporters]
-  specialize[Specialize_LoRA]
-  live[":8082_rlcd_readout"]
-
-  publicData --> schema
-  ensData --> schema
-  schema --> foundation
-  foundation --> specialize
-  specialize --> live
+```
+  Public_Noul_Choice_Score ──┐
+                             v
+  Ensemble_exporters ──> decision_cases_jsonl
+                             |
+                             v
+                       Foundation_LoRA
+                             |
+                             v
+                       Specialize_LoRA
+                             |
+                             v
+                      :8082_rlcd_readout
 ```
 
 The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare `rlcd_train.py` outside a mission. Empty-rationale pivots on `temp`/`num_generations` are no-ops (mission `2235f69e`). **Outcome:** product Choice `c7b78b5d` (**68/74** A/B + hermetic **167/167** with `RLCD_GENERIC_PROMPT` + `remap_decision_skill`). Absolute BoolQ/ARC **0.65** and contaminated specialize held-out are not gates. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
