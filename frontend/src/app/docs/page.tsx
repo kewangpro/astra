@@ -56,7 +56,7 @@ const TASKS: Task[] = [
     id: "reinforcement-fine-tuning",
     task: "Reinforcement fine-tuning",
     summary:
-      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing. Offline = DPO (outside AstraRL). The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
+      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing. DPO is dataset preference learning (not AstraRL). The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
     algorithms: [
       {
         name: "GRPO",

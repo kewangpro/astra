@@ -14,7 +14,7 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 6: Registry, Multi-Stage FT & STaR** | Model registry & tournaments; SFT→DPO→GRPO conductor; STaR; recipe lineage polish | 55–63, 66, 78, 80, 86 | 13 | ✅ |
 | **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
-| **Epoch 9: AstraGym + AstraRL** | Online RL split: AstraGym (`gym_id`) × AstraRL (`learner_id`); Orchestrator unchanged | 101–104 | 4 | ✅ |
+| **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split: AstraGym (`gym_id`) × AstraRL (`learner_id`); dataset workers out | 101–104 | 4 | ✅ |
 
 Epochs 7 and 9 are intentionally shorter **architecture** milestones (agent stack, then Gym×RL split); Epochs 3–6 absorb the former “continuity” band.
 
@@ -2838,9 +2838,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 101: Contracts and packages
 
-- [x] DESIGN §2.4 — AstraGym / AstraRL / Orchestrator; `gym_id` × `learner_id` taxonomy for all online RL.
+- [x] DESIGN §2.4 — AstraGym / AstraRL / Orchestrator; `gym_id` × `learner_id` taxonomy for gym-coupled RL (incl. off-policy SB3).
 - [x] Packages `astragym/` and `astrarl/` with `make()` factories and protocols.
-- [x] Offline workers explicitly out of scope for AstraRL.
+- [x] Dataset / preference / SFT-family workers remain outside AstraRL (off-policy SB3 stays in).
 
 ## Phase 102: AstraGym implementations
 

@@ -11,7 +11,7 @@ Phase-level incidents and code contracts live in [IMPLEMENT.md](IMPLEMENT.md).
 
 ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orchestrator**, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
 
-**Online RL** uses two first-class packages — **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) — under that Orchestrator (§ 2.4). Offline workers (DPO, SFT, …) skip AstraRL.
+**Interactive / gym-coupled RL** uses two first-class packages — **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) — under that Orchestrator (§ 2.4). That includes off-policy SB3 (DQN/SAC/TD3 replay). Dataset / preference / SFT-family workers (DPO, SFT, …) skip AstraRL.
 
 ```
                     +-----------------------+
@@ -34,7 +34,7 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orch
                                                         |    Secure Sandbox     |
                                                         +-----------+-----------+
                                                                     |
-                                          online RL                 v
+                                    gym-coupled RL              v
                                           +-------------+-----------------------+
                                           |  AstraGym   |       AstraRL         |
                                           |  (gym_id)   |     (learner_id)      |
@@ -79,17 +79,17 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 ### 2.4. AstraGym, AstraRL, and the Orchestrator (Epoch 9)
 
-**Highlight.** Every **online RL** path in ASTRA is AstraGym × AstraRL. Do not treat SB3 envs, routing GRPO, Agent GRPO, or OPD as ad-hoc script islands — they share `astragym.make(gym_id)` and `astrarl.make(learner_id)` (or thin Ensemble CLI shims that import those packages). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Do not treat SB3 envs, routing GRPO, Agent GRPO, or OPD as ad-hoc script islands — they share `astragym.make(gym_id)` and `astrarl.make(learner_id)` (or thin Ensemble CLI shims that import those packages). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
 | Layer | Package / role | Owns |
 |---|---|---|
 | **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
-| **AstraRL** | `astrarl/` | Learners: SB3 + MLX GRPO/OPD, checkpoints (`learner_id`) |
+| **AstraRL** | `astrarl/` | Gym-coupled learners: SB3 + MLX GRPO/OPD, checkpoints (`learner_id`) |
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry |
 
-Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key.
+Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; dataset workers use recipe `task_type` only.
 
-| Online `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
+| Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
 |---|---|---|
 | `rl` | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_{ppo,dqn,a2c,sac,td3}` |
 | `grpo` | `routing_prompt` | `mlx_grpo_routing` |
@@ -99,7 +99,10 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 **AstraGym ids:** `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`.  
 **AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.
 
-Offline workers (DPO, SFT, distill, RFT, STaR, RLCD, prompt, embed, rerank, HSTU) are outside AstraRL.
+| AstraRL? | Scope |
+|---|---|
+| **In** | Interactive / gym-coupled learners — on-policy or off-policy replay still counts if the train loop uses AstraGym (or MLX online rollouts): `sb3_*`, `mlx_grpo_*`, `mlx_opd` |
+| **Out** | Dataset / preference / SFT-family workers that do not need `astragym.make`: `dpo`, `sft`, `mlx_lora`, `distill`, `rft`, `star`, `rlcd`, `prompt`, `embed`, `rerank`, `hstu`, `ml` |
 
 ### 2.5. Specialist trainers
 
@@ -118,13 +121,14 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
 | Generative recommendation | HSTU (`hstu`) |
 
-**Online vs offline.** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it).
+**Online vs offline (data collection).** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it). **AstraRL?** is independent of that label: gym-coupled learners (including DQN replay) are In; dataset / preference / SFT-family workers are Out (§ 2.4).
 
-| Mode | In ASTRA | Notes |
-|---|---|---|
-| **Online** | Env: PPO, A2C; LM: GRPO, Agent GRPO (`agrpo`); OPD (student rollouts) | On-policy samples from the live policy each step |
-| **Offline** | Env: DQN/SAC/TD3 (replay); LM: DPO, SFT, distill, RFT survivors, STaR JSONL, RLCD `--cases` | Fixed buffer / preference pairs / labeled JSONL |
-| **Mixed** | DPO can *harvest* pairs online then optimize offline; RFT samples then SFT | Collection ≠ the loss |
+| Mode | In ASTRA | AstraRL? | Notes |
+|---|---|---|---|
+| **Online** | Env: PPO, A2C; LM: GRPO, Agent GRPO (`agrpo`); OPD (student rollouts) | Yes | On-policy samples from the live policy each step |
+| **Offline** | Env: DQN/SAC/TD3 (replay) | Yes | Replay buffer, but still `astragym` × `sb3_*` |
+| **Offline** | LM: DPO, SFT, distill, RFT survivors, STaR JSONL, RLCD `--cases` | No | Fixed preference pairs / labeled JSONL; no AstraGym |
+| **Mixed** | DPO can *harvest* pairs online then optimize offline; RFT samples then SFT | No | Collection ≠ the loss; workers stay dataset-family |
 
 Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL (including the AgentGym MLP policy). Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy **single-turn** rollouts with the routing oracle and a group-relative advantage. Agent GRPO (`agrpo`) is **online multi-turn** tool RL: K trajectories in AgentGym text (or e2e stubs), trajectory-level reward, GRPO over assistant turns — not routing `score_completion`. DPO is **offline** preference learning: the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true`.
 

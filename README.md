@@ -7,7 +7,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 ## Feature Highlights
 
 - **End-to-End Autonomous Loop** — Plan → Critique → Implement → Sandbox → Train → Evaluate → Refine. Integrates GAN-style plan critique, automatic error recovery, and convergence guards that prevent runaway compute.
-- **AstraGym × AstraRL (Epoch 9)** — All **online RL** is split into **AstraGym** worlds (`gym_id`: Gymnasium envs, AgentGym, e2e stubs, routing prompts) and **AstraRL** learners (`learner_id`: SB3 PPO/DQN/…, MLX GRPO/OPD). Astra’s loop stays the **Orchestrator** (`task_type`, recipes, sandbox, HUD). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/). See [DESIGN.md § 2.4](docs/DESIGN.md).
+- **AstraGym × AstraRL (Epoch 9)** — **Gym-coupled** RL is split into **AstraGym** worlds (`gym_id`) and **AstraRL** learners (`learner_id`: SB3 PPO/DQN/… including off-policy replay, plus MLX GRPO/OPD). Dataset / preference / SFT-family workers stay outside AstraRL. Astra’s loop stays the **Orchestrator**. Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/). See [DESIGN.md § 2.4](docs/DESIGN.md).
 - **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts. Goals that name a trainer stay on it; unnamed "RL agent" goals seed the env recipe algorithm and, once plateaued, switch to a *different* trainer (`SB3 PPO` → `PPO` is not a switch).
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), each in its own `train_config` env (same table as `/models/{id}` play). Tracks score distributions and tie-split win rates; crowning a champion is exclusive per environment.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
@@ -54,27 +54,27 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 A task is the objective. An algorithm is the update rule. `task_type` is the sandbox / preflight worker key.
 
-### AstraGym × AstraRL (online RL)
+### AstraGym × AstraRL (gym-coupled RL)
 
 | Layer | Package | Id | Owns |
 |---|---|---|---|
 | **AstraGym** | [`astragym/`](astragym/) | `gym_id` | Worlds: `reset` / `step`, rewards, eval |
-| **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Learners / checkpoints (SB3 + MLX GRPO/OPD) |
+| **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Gym-coupled learners / checkpoints (SB3 + MLX GRPO/OPD) |
 | **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD |
 
-| Online worker | Typical `gym_id` | Typical `learner_id` |
+| Gym-coupled worker | Typical `gym_id` | Typical `learner_id` |
 |---|---|---|
 | Environment RL (`rl`) | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_ppo` / `sb3_dqn` / … |
 | Routing GRPO (`grpo`) | `routing_prompt` | `mlx_grpo_routing` |
 | Agent GRPO (`agrpo`) | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
 | OPD (`opd`) | `routing_prompt` | `mlx_opd` |
 
-Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. Offline workers (DPO, SFT, distill, RFT, STaR, RLCD, prompt, embed, rerank, HSTU) stay outside AstraRL. Full contract: [DESIGN.md § 2.4–2.5](docs/DESIGN.md).
+Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. **In AstraRL:** gym-coupled learners (on-policy or off-policy SB3 replay). **Out:** dataset / preference / SFT-family (`dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`, `prompt`, `embed`, `rerank`, `hstu`, `ml`). Full contract: [DESIGN.md § 2.4–2.5](docs/DESIGN.md).
 
 | Task | Algorithms |
 |---|---|
-| Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) — AstraGym × AstraRL SB3 |
-| Reinforcement fine-tuning | GRPO (`grpo`, **online** → AstraRL `mlx_grpo_routing`), DPO (`dpo`, **offline**, outside AstraRL) |
+| Environment RL | PPO, DQN, A2C, SAC, TD3 (`rl`) — AstraGym × AstraRL SB3 (DQN/SAC/TD3 replay still In) |
+| Reinforcement fine-tuning | GRPO (`grpo` → AstraRL `mlx_grpo_routing`), DPO (`dpo`, dataset preference — not AstraRL) |
 | Agentic RL | Agent GRPO (`agrpo`, **online** → AstraRL `mlx_grpo_traj`) |
 | Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
 | On-policy distillation | OPD (`opd`) — AstraGym `routing_prompt` × AstraRL `mlx_opd` |
@@ -112,8 +112,8 @@ make run   # backend + frontend → http://localhost:8200 / http://localhost:320
 
 ```
 astra/
-├── astragym/            # AstraGym — online RL worlds (gym_id): Gymnasium, AgentGym, e2e, routing
-├── astrarl/             # AstraRL — online RL learners (learner_id): SB3 + MLX GRPO/OPD
+├── astragym/            # AstraGym — gym-coupled worlds (gym_id): Gymnasium, AgentGym, e2e, routing
+├── astrarl/             # AstraRL — gym-coupled learners (learner_id): SB3 + MLX GRPO/OPD
 ├── backend/
 │   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ErrorAnalyzer, CodeSafetyClassifier, ModelManager, KVCache, inference providers
 │   ├── analysis/       # SpatialAnalyzer (Grad-CAM), PolicyAuditor
@@ -164,7 +164,7 @@ ASTRA's architecture and capabilities are structured into nine thematic epochs (
 | **Epoch 6: Registry, Multi-Stage FT & STaR** (55–63, 66, 78, 80, 86) | Model registry & tournaments; SFT→DPO→GRPO conductor; STaR; recipe lineage. | `ModelRegistry`, conductor pipeline, `star_train.py` | ✅ Complete |
 | **Epoch 7: AgentGym & Agentic RL** (64, 98–100) | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs. | `AgentToolGym`, `agent_grpo_train.py`, `agrpo` | ✅ Complete |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** (87–97) | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78`. | `opd_train.py`, `rlcd_train.py`, decision recipes | ✅ Complete |
-| **Epoch 9: AstraGym + AstraRL** (101–104) | Online RL as AstraGym (`gym_id`) × AstraRL (`learner_id`) under the Orchestrator. | `astragym/`, `astrarl/` | ✅ Complete |
+| **Epoch 9: AstraGym + AstraRL** (101–104) | Gym-coupled RL as AstraGym (`gym_id`) × AstraRL (`learner_id`); dataset / preference / SFT-family stay out. | `astragym/`, `astrarl/` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

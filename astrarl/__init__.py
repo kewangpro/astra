@@ -1,4 +1,4 @@
-"""AstraRL — learners for online RL (Epoch 9)."""
+"""AstraRL — learners for interactive / gym-coupled RL (incl. off-policy SB3)."""
 from __future__ import annotations
 
 from typing import Any, Optional

@@ -55,7 +55,7 @@
 
 Nav item after Models. A task index on the left, one section per task. Each section states the objective, then one row per algorithm with its worker key (`task_type`) and what the update does. Copy distinguishes **online** (fresh policy rollouts during training) vs **offline** (fixed logged / preference / JSONL data). Task sections match the goal-bar groups, including **Agentic RL** (Agent GRPO / `agrpo` — multi-turn tool trajectories).
 
-Epoch 9: online RL is framed as **AstraGym** (`gym_id`) × **AstraRL** (`learner_id`) with Astra as Orchestrator — named in the relevant task summaries, not a separate docs section.
+Epoch 9: gym-coupled RL is framed as **AstraGym** (`gym_id`) × **AstraRL** (`learner_id`) with Astra as Orchestrator — named in the relevant online / env task summaries. Dataset / preference / SFT-family workers do not use AstraRL.
 
 
 
