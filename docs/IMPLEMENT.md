@@ -1,20 +1,22 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA`, structured into **eight strategic epochs**:
+This document outlines the architectural implementation roadmap for `ASTRA` in **nine thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
 
 ## Strategic Epoch Roadmap
 
-| Epoch | Focus & Strategic Capabilities | Encompassed Phases | Status |
-|---|---|---|---|
-| **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing code gen, 4-stage escalating pivots, regression rollback, vector memory | Phases 1–16, 85 | ✅ Complete |
-| **Epoch 2: High-Throughput RL & Lookahead** | Pure Gym environments (Snake, Tetris), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space, curriculum | Phases 17–24, 31–32 | ✅ Complete |
-| **Epoch 3: Post-Training, Distillation & Cluster Scaling** | Remote SSH execution, DPO/GRPO/Distill/RFT/Prompt paradigms, Nodes cluster HUD, checkpoint chaining, convergence guards | Phases 25–30, 33–50 | ✅ Complete |
-| **Epoch 4: Arcade Simulation Suite & Live HUD** | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0, live policy auditor on `/models/{id}` | Phases 51–54, 65, 79, 81–84 | ✅ Complete |
-| **Epoch 5: Model Registry, Tournaments & Recipe Lineage** | Multi-environment Model Registry, fixed-seed Tournament Arena, champion crowning, Recipe Library with evolutionary Lineage DAG | Phases 55–56 | ✅ Complete |
-| **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheel** | Unified 3-stage pipeline (SFT → DPO → GRPO), `<think>` CoT preservation, STaR backward rationalization, unbuffered live streaming | Phases 57–63, 66 | ✅ Complete |
-| **Epoch 7: Agent Trajectory RL & Multi-Turn Environments** | MultiTurnAgentGym-v0 32D environment, 8 multi-turn scenarios, milestone reward shaping, PPO agent policy optimization | Phase 64 | ✅ Complete |
-| **Epoch 8: Agentic RL (LLM Trajectory GRPO)** | AgentGym product harden; Agent GRPO (`agrpo`) multi-turn tool RL; e2e stub rewards | Phases 92–94 | ✅ Complete |
-| **Epoch 9: AstraGym + AstraRL** | Online RL split: AstraGym worlds × AstraRL learners; Orchestrator unchanged | Phases 95–98 | ✅ Complete |
+| Epoch | Focus & Strategic Capabilities | Encompassed Phases | ~n | Status |
+|---|---|---|---|---|
+| **Epoch 1: Core Autonomous Engine & Resilience** | End-to-end loop, GAN critique, self-healing codegen, escalating pivots, regression rollback, vector memory | 1–16 | 16 | ✅ |
+| **Epoch 2: High-Throughput RL & Lookahead** | Snake/Tetris Gym envs, lookahead DQN/PPO/A2C, flood-fill features, curriculum | 17–24, 31–32 | 10 | ✅ |
+| **Epoch 3: Distributed Post-Training Foundation** | SSH Mini, DPO/GRPO, Nodes HUD, checkpoint chaining, convergence/ceiling guards | 25–41 | 17 | ✅ |
+| **Epoch 4: Distill / RFT / Prompt & Mission Product** | Distill, RFT, prompt tasks; Kanban/completed archive; eval & loop harden | 42–50, 67–73, 75–77, 82 | 19 | ✅ |
+| **Epoch 5: Arcade Suite & Live Play** | MinAtar suite, Grid Pac-Man, 2048, play-on-models, policy auditor, `gym.make` pin | 51–54, 65, 74, 79, 81, 83–85 | 12 | ✅ |
+| **Epoch 6: Registry, Multi-Stage FT & STaR** | Model registry & tournaments; SFT→DPO→GRPO conductor; STaR; recipe lineage polish | 55–63, 66, 78, 80, 86 | 13 | ✅ |
+| **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
+| **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
+| **Epoch 9: AstraGym + AstraRL** | Online RL split: AstraGym (`gym_id`) × AstraRL (`learner_id`); Orchestrator unchanged | 101–104 | 4 | ✅ |
+
+Epochs 7 and 9 are intentionally shorter **architecture** milestones (agent stack, then Gym×RL split); Epochs 3–6 absorb the former “continuity” band.
 
 ---
 
@@ -965,7 +967,7 @@ This document outlines the architectural implementation roadmap for `ASTRA`, str
 
 ---
 
-# Epoch 3: Distributed Post-Training, Distillation & Cluster Scaling (Phases 25–30, 33–50)
+# Epoch 3: Distributed Post-Training Foundation (Phases 25–41)
 
 ## Phase 25 — DPO/GRPO Fine-Tune Task Types + Remote Telemetry Tailing
 
@@ -1536,6 +1538,10 @@ Root cause, confirmed via direct filesystem audit on mac-mini: `dpo_train.py` do
 
     Total: **910 tests** (assertions added to existing tests). `npx tsc --noEmit` clean.
 
+# Epoch 4: Distill / RFT / Prompt & Mission Product (Phases 42–50, 67–73, 75–77)
+
+Phases 67–73 and 75–77 (eval/loop/Metal harden) continue this epoch after the arcade/registry blocks below.
+
 ## Phase 42 — Distillation Task Type
 
 **Problem:** the Ensemble routing model's *primary* improvement method — knowledge distillation, where a strong teacher (`conductor_gemma.md` + `gemma3:12b` via Ollama) generates correct routing completions and the weak student (`conductor_min.md` + `gemma-3-12b-it-4bit`) is SFT'd to imitate them — is run entirely by hand: `ensemble/finetune/prepare_finetune_data.py --teacher` → `mlx_lm.lora --train` → `bare_eval.py`. The 2026-09-03 DPO β/lr sweep established `dpo`/`grpo` are exhausted for this recipe (ceiling ~86% = the `grpo_v9_min/best` warm-start); `recipes/ensemble_dpo_v1.yaml`'s changelog concludes *"the remaining routing gains need targeted SFT / prompt work."* astra had no task type to orchestrate the teacher→student→eval flywheel.
@@ -1713,7 +1719,7 @@ Two root causes were diagnosed:
 
 ---
 
-# Epoch 4: Arcade Simulation Suite & Live HUD Explainability (Phases 51–54, 65)
+# Epoch 5: Arcade Suite & Live Play (Phases 51–54, 65, 74, 79, 81–85)
 
 ## Phase 51 — 2048 & MinAtar Breakout RL Environments + Live Watch Game HUD Players
 
@@ -1827,7 +1833,9 @@ Two root causes were diagnosed:
 
 ---
 
-# Epoch 5: Model Registry, Tournaments & Recipe Evolution (Phases 55–56)
+# Epoch 6: Registry, Multi-Stage FT & STaR (Phases 55–63, 66, 78, 80, 86)
+
+Registry / lineage open here; multi-stage FT + STaR follow as Phases 57–63, 66; tournament/recipe polish as 78, 80, 86.
 
 ## Phase 55 — Model Registry & Tournament Leaderboard
 
@@ -1866,7 +1874,7 @@ Two root causes were diagnosed:
 
 ---
 
-# Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels (Phases 57–63, 66)
+# Epoch 6 (cont.): Multi-Stage Post-Training & STaR (Phases 57–63, 66)
 
 ## Phase 57 — SFT Post-Training with Strict Held-Out Splitting & Reasoning Preservation
 
@@ -2111,7 +2119,9 @@ Enable **closed-loop reasoning bootstrapping** via the `star` task type (`task_t
 
 ---
 
-# Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments (Phase 64)
+# Epoch 7: AgentGym & Agentic RL (Phases 64, 98–100)
+
+Env + SB3 PPO first (Phase 64); LLM trajectory GRPO continues at Phases 98–100 after Epoch 8.
 
 ## Phase 64: Multi-Turn Agent Gym Environment & Trajectory RL
 
@@ -2134,7 +2144,7 @@ Bridge Astra's Gymnasium reinforcement learning engine with multi-turn agent too
 
 ---
 
-## Phase 65: Complete MinAtar Arcade Suite (Freeway & Seaquest) & Dynamic HUD (Epoch 4 Extension)
+## Phase 65: Complete MinAtar Arcade Suite (Freeway & Seaquest) & Dynamic HUD (Epoch 5)
 
 Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pure Python/NumPy Gymnasium environments, canonical recipes, dynamic HUD rendering, and tournament support:
 
@@ -2176,7 +2186,7 @@ Complete the canonical 5-game MinAtar arcade suite (Young & Tian, 2019) with pur
 
 ---
 
-## Phase 66: STaR Checkpoint Chaining, Unbuffered Remote Logging & Telemetry Disambiguation (Epoch 6 Extension)
+## Phase 66: STaR Checkpoint Chaining, Unbuffered Remote Logging & Telemetry Disambiguation (Epoch 6)
 
 Harden the autonomous STaR flywheel with guaranteed LoRA adapter forward-chaining across loop iterations and backend restarts, eliminate remote SSH log buffering, and disambiguate intermediate evaluation scales:
 
@@ -2197,7 +2207,7 @@ Harden the autonomous STaR flywheel with guaranteed LoRA adapter forward-chainin
 
 ---
 
-## Phase 67: Autonomous Evaluation Hardening, Recipe Target Metric Normalization & MinAtar Autonomous Mission Execution
+## Phase 67: Autonomous Evaluation Hardening, Recipe Target Metric Normalization & MinAtar Autonomous Mission Execution (Epoch 4)
 
 Harden evaluation comparison resilience against null metrics, standardize recipe target metric shapes across arcade benchmarks, and execute/validate end-to-end autonomous MinAtar mission workflows:
 
@@ -2222,7 +2232,7 @@ Harden evaluation comparison resilience against null metrics, standardize recipe
 
 ---
 
-## Phase 68: Unified Mission Creation & Recipe Dispatch Pipeline Convergence
+## Phase 68: Unified Mission Creation & Recipe Dispatch Pipeline Convergence (Epoch 4)
 
 Converge `POST /missions` and `POST /recipes/{name}/dispatch` into a single, unified mission creation and dispatch pipeline with automatic canonical goal formatting and recipe seeding:
 
@@ -2249,7 +2259,7 @@ Converge `POST /missions` and `POST /recipes/{name}/dispatch` into a single, uni
 
 ---
 
-## Phase 69: Command Center Redesign & Dedicated Completed Missions Archive
+## Phase 69: Command Center Redesign & Dedicated Completed Missions Archive (Epoch 4)
 
 Redesign the Command Center to declutter operational workflows by moving completed missions to a dedicated, rich Completed Missions Archive page modeled after the Recipe Library:
 
@@ -2274,7 +2284,7 @@ Redesign the Command Center to declutter operational workflows by moving complet
 
 ---
 
-## Phase 70: Real Algorithm Switches on Unnamed RL Missions
+## Phase 70: Real Algorithm Switches on Unnamed RL Missions (Epoch 4)
 
 Untitled Seaquest missions (`Train a MinAtar-Seaquest-v0 RL agent to achieve … score`) never named PPO or DQN, so `_is_algorithm_locked` correctly left them unlocked — but they still never changed trainer. The Lead Agent defaulted to `SB3 PPO`, then at escalation level 2 "switched" `SB3 PPO` → `PPO` (a label change). Level 3+ pasted Snake `env_kwargs` and the loop stalled on PPO (`bef66c1e` best 52.5 vs target 100; `7c567090` best 21.5 vs target 50) while a DQN-titled sister (`3df793bf`) had already peaked at 87. Recipe `minatar_seaquest_dqn_v1` was sitting unused because the plan's algorithm never matched it.
 
@@ -2288,7 +2298,7 @@ Untitled Seaquest missions (`Train a MinAtar-Seaquest-v0 RL agent to achieve …
 
 ---
 
-## Phase 71: Stall Taxonomy, Algo-Switch Reset, Env-Specific Reward Prompts
+## Phase 71: Stall Taxonomy, Algo-Switch Reset, Env-Specific Reward Prompts (Epoch 4)
 
 `STALLED` had become a catch-all for "stopped without hitting the target." Unnamed Seaquest switches still inherited Snake `env_kwargs` and an almost-exhausted pivot count. Level 3 prompts always taught Snake food_reward.
 
@@ -2301,7 +2311,7 @@ Untitled Seaquest missions (`Train a MinAtar-Seaquest-v0 RL agent to achieve …
 
 ---
 
-## Phase 72: Algo-Switch Revert Must Not Restore the Old Trainer's Peak
+## Phase 72: Algo-Switch Revert Must Not Restore the Old Trainer's Peak (Epoch 4)
 
 Unnamed Seaquest `8bb85cc5` (target 100) did switch `DQN→PPO` at iter 29, then spent the rest of the run as PPO while every revert copied `checkpoint_iter_11` (DQN 53.5) over `best_model.zip`, restored DQN HPs (`buffer_size`, exploration), left `plan["algorithm"]` as PPO, and wrote `best_score.txt` back to 53.5. HUD Pivot History listed 14–23 `type=pivot` rows (generic "plateau detected"); Command Center "pivots" was DB `pivot_escalation_count`, which reverts decrement. Warm-start logged `unexpected keyword argument 'use_sde'` or 2/8 tensor matches. Later HUD reasons said "switch to a different canonical algorithm" with no `algo:` change — `_resolve_pivot_algorithm` only forced once (`len(distinct) < 2`), so A2C never ran. Seaquest's yaml is DQN-only, so `_apply_recipe_hyperparameters` on PPO could only strip keys and leave a DQN-shaped plan.
 
@@ -2314,7 +2324,7 @@ Unnamed Seaquest `8bb85cc5` (target 100) did switch `DQN→PPO` at iter 29, then
 
 ---
 
-## Phase 73: Do Not Import `mlx.core` Until Metal Devices Exist
+## Phase 73: Do Not Import `mlx.core` Until Metal Devices Exist (Epoch 4)
 
 Collecting pytest (and Cursor's sandboxed tool runner) imported `backend.loop` → `lead_agent` → `mlx_provider`, which did `import mlx.core` at module load. On Darwin/arm64 without a usable Metal device list, `mlx::core::metal::Device::Device()` throws an uncaught Objective-C `NSRangeException` (`-[__NSArray0 objectAtIndex:]`) and Python dies with SIGABRT — the same uncatchable Metal abort class as Phase 28, but at **import time**, so no `try/except` around `generate()` could help. Symptom: `Fatal Python error: Aborted` during test collection.
 
@@ -2325,7 +2335,7 @@ Collecting pytest (and Cursor's sandboxed tool runner) imported `backend.loop` �
 
 ---
 
-## Phase 74: MinAtar Seaquest Surface Camping Was an Env Spec Bug
+## Phase 74: MinAtar Seaquest Surface Camping Was an Env Spec Bug (Epoch 5)
 
 Live Player showed the submarine parked on row 0. That was not a HUD grid bug: `MinAtarSeaquestEnv` was safer than kenjyoung/MinAtar `seaquest.py`. Oxygen decremented every step (including the surface), empty surfacing only cost `-0.1` and did not terminate, DOWN could enter the gauge row 9, and spawn was mid-ocean. Row 0 has no enemies, so a trained policy camped the surface until oxygen death.
 
@@ -2335,7 +2345,7 @@ Live Player showed the submarine parked on row 0. That was not a HUD grid bug: `
 
 ---
 
-## Phase 75: Do Not Partial-Load a Mismatched `net_arch`
+## Phase 75: Do Not Partial-Load a Mismatched `net_arch` (Epoch 4)
 
 Locked DQN-70 `601c2404` hit **43 at iter 11** on `[400, 300]`, then eval **16 → 3** after the LLM shrank to `[128]` at `esc=1`. Sandbox logged `Warm-start: 2/12` then `0/8` matching tensors: the template copied leftover layers into a new MLP and left the rest random, so eval scored a near-random net while HUD still showed "DQN". DESIGN already said Level 0 is HP-only and Level 1 should prefer the best architecture; neither was enforced.
 
@@ -2345,7 +2355,7 @@ Locked DQN-70 `601c2404` hit **43 at iter 11** on `[400, 300]`, then eval **16 �
 
 ---
 
-## Phase 76: Persist the Revert Window and Heal an Already-Shrunk Net
+## Phase 76: Persist the Revert Window and Heal an Already-Shrunk Net (Epoch 4)
 
 Phase 75 stopped *new* `[128]` pivots and skipped partial warm-start. Live `601c2404` was already on `[128]`, and a uvicorn restart re-armed `pivot_pre_best=43` while **zeroing** `_iters_since_pivot`, so evals 14–16 never tripped `should_revert_pivot()`. Revert HPs also came from `_pre_pivot_hps` (`[400, 300]`) while `checkpoint_iter_11` is the 43-score `[256, 256]` zip.
 
@@ -2356,7 +2366,7 @@ Phase 75 stopped *new* `[128]` pivots and skipped partial warm-start. Live `601c
 
 ---
 
-## Phase 77: Deleted Missions Must Not Linger on the Models Page
+## Phase 77: Deleted Missions Must Not Linger on the Models Page (Epoch 4)
 
 `DELETE /missions/{id}` removed the mission row and cancelled the loop, but left `data/missions/<id>/checkpoints` and `model_records` intact. `GET /registry/models` then `_auto_sync_disk_checkpoints` re-created `DQN MinAtar-Seaquest-v0 (xxxxxxxx)` from those leftover zips, so the Models page still listed runs the user had deleted.
 
@@ -2366,7 +2376,7 @@ Phase 75 stopped *new* `[128]` pivots and skipped partial warm-start. Live `601c
 
 ---
 
-## Phase 78: Tournament Must Not Run the Same Zip Twice
+## Phase 78: Tournament Must Not Run the Same Zip Twice (Epoch 6)
 
 Seaquest tournament listed six rows that were three zips: `data/missions/<id>/…/best_model.zip` and `./data/missions/<id>/…/best_model.zip` each had a `model_records` row (auto-sync compared path strings). Identical 20-seed scores (80942f33 15.8, 601c2404 7.7, 28e65efd 7.3) and 20% win-rate ties were the same policy fighting itself.
 
@@ -2376,7 +2386,7 @@ Seaquest tournament listed six rows that were three zips: `data/missions/<id>/�
 
 ---
 
-## Phase 79: Missions Train; Models Play
+## Phase 79: Missions Train; Models Play (Epoch 5)
 
 The canvas sat on the Mission HUD, so play was mixed with training. Registry rows were a table, not a destination.
 
@@ -2386,7 +2396,7 @@ The canvas sat on the Mission HUD, so play was mixed with training. Registry row
 
 ---
 
-## Phase 80: Delete Auto-Crystallized Recipes
+## Phase 80: Delete Auto-Crystallized Recipes (Epoch 6)
 
 Hand-crafted YAML in `recipes/` should stay; auto-crystallized copies from completed missions pile up and had no UI to remove them.
 
@@ -2397,7 +2407,7 @@ Hand-crafted YAML in `recipes/` should stay; auto-crystallized copies from compl
 
 ---
 
-## Phase 81: MinAtar Asterix & Grid Pac-Man
+## Phase 81: MinAtar Asterix & Grid Pac-Man (Epoch 5)
 
 Arcade coverage was Breakout / Space Invaders / Asteroids / Freeway / Seaquest. Asterix (original MinAtar gold-vs-enemies) and a small-grid Pac-Man were missing from train / play / tournament.
 
@@ -2409,7 +2419,7 @@ Arcade coverage was Breakout / Space Invaders / Asteroids / Freeway / Seaquest. 
 
 ---
 
-## Phase 82: Reverted Pivots Still Count Toward Convergence
+## Phase 82: Reverted Pivots Still Count Toward Convergence (Epoch 4)
 
 Asterix mission `32a5cd58` reached 10.5/12 at iteration 73, then ran past
 iteration 206. It made 120 pivots and reverted 112 of them. Every revert
@@ -2425,7 +2435,7 @@ at zero and making the `pivot_count >= 15` convergence gate unreachable.
 
 ---
 
-## Phase 83: Grid Pac-Man Mouth Follows Movement
+## Phase 83: Grid Pac-Man Mouth Follows Movement (Epoch 5)
 
 The live player drew Pac-Man with a fixed right-facing mouth, so UP/LEFT/DOWN
 walks looked sideways.
@@ -2440,7 +2450,7 @@ walks looked sideways.
 
 ---
 
-## Phase 84: Leftover-Pellet Ghosts Chase Instead of Sliding
+## Phase 84: Leftover-Pellet Ghosts Chase Instead of Sliding (Epoch 5)
 
 With a few pellets left, Pac-Man camps in the `(2,4)`/`(2,5)` gap and the old
 ghost AI treated LEFT/RIGHT as equal to UP. Combined with 20% random reverse,
@@ -2465,7 +2475,7 @@ a left-right dance, not a chase.
 
 ---
 
-## Phase 85: Pin `gym.make` to the Planned Env
+## Phase 85: Pin `gym.make` to the Planned Env (Epoch 5)
 
 RL `train.py` is LLM-written. The prompt says copy `env = gym.make("{env_id}")`
 verbatim; codegen only patched imports and `register()`. Pac-Man PPO
@@ -2486,7 +2496,7 @@ the MinAtar preamble registers that game too.
 
 ---
 
-## Phase 86: Tournament and Registry Match Play
+## Phase 86: Tournament and Registry Match Play (Epoch 6)
 
 Play on `/models/{id}` loads that checkpoint's `train_config.json` env. The
 arena used one shared `gym.make` from the first zip, so a reward-shaped
@@ -2510,6 +2520,8 @@ crown off the other Grid Pac-Man row.
 - [x] **Tests** — `test_tournament_env_kwargs_uses_each_checkpoint_table`,
   `test_refresh_model_scores_from_best_score_txt`, exclusive-crown
   `test_update_model_champion`.
+
+# Epoch 8: OPD, Focused RFT & Calibrated Decisions (Phases 87–97)
 
 ### Phase 87 — On-Policy Distillation (`opd`) as a fourth post-training paradigm (2026-10-05)
 
@@ -2729,31 +2741,31 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
   `ENSEMBLE_RERANKER_MODEL`. Astra recipe `ensemble_rerank_v1` / task_type
   `rerank` (same local wrapper as embed).
 
-### Phase 89 — RLCD calibrated routing decisions (2026-10-23)
+### Phase 91 — RLCD calibrated routing decisions (2026-10-23)
 
 - [x] **`task_type: rlcd`** wired through LeadAgent schema/prompts, `_ENV_RECIPE` → `ensemble_rlcd_v1.yaml`, SSH force-remote set, pivot safelist (`num_generations`, `temp` ≤ 1.0), crystallizer skip, safety classifier, checkpoint pattern `checkpoints/best/`, GoalInput + completed/recipes LLM filters. Goal metric is the trainer's readout `Pass rate`, not `bare_eval` JSON-plan scoring.
 - [x] **`ensemble/finetune/rlcd_train.py`** — sample M rationales, read the closed skill-set distribution after `Answer:` (joint log-prob, then softmax), stage 1 pathwise Brier, stage 2 REINFORCE at `c=0.3` with KL `β=0.04` to the stage-1 weights. `best/` is lowest Brier. Deployed to Mini `~/finetune/rlcd_train.py`. Recipe is a 1B cold start, 100 steps per stage.
 - [x] **Docs** — DESIGN / UX_SPEC / README; ensemble `FINETUNE.md` Method G.
 
-### Phase 90 — Suite event loop on Python 3.9 (2026-10-23)
+### Phase 92 — Suite event loop on Python 3.9 (2026-10-23)
 
 - [x] **`asyncio.run` closed the process loop.** `test_fix_script_pins_finetune_interpreter_instead_of_rewriting` and `test_fix_script_refuses_to_rewrite_already_pinned_wrapper` called `asyncio.run()`. On Python 3.9 that closes the loop and does not install a new one. Every later `asyncio.get_event_loop()` in `test_error_analyzer.py`, `test_remote_telemetry_tail.py`, and `test_state_machine_helpers.py` then raised "no current event loop" — 32 failures that each passed when run alone. Both call sites now use `get_event_loop().run_until_complete()`, matching the rest of the unit tests. Full suite: **1271 passed**. Do not reintroduce `asyncio.run()` in these sync tests.
 
-### Phase 91 — Task / algorithm pairs (2026-10-23)
+### Phase 93 — Task / algorithm pairs (2026-10-23)
 
 - [x] **Catalog** — `backend/agent/task_catalog.py` is the worker list. A task is the objective; an algorithm is the update rule; `task_type` is the worker key. Environment RL is PPO, DQN, A2C, SAC, TD3 on `rl`. Reinforcement fine-tuning is GRPO and DPO. Supervised fine-tuning is SFT, local LoRA, distillation, rejection sampling (`rft`), and STaR. On-policy distillation, RLCD, prompt edit, classical ML, and retrieval each keep their own worker. Language-model PPO is not a reinforcement fine-tuning algorithm.
 - [x] **Planner and goal bar** — the plan schema enum comes from the catalog (adds `star`). The planning prompt states the pairs. The goal bar groups algorithms under those task labels. RLCD pivots use `num_generations` and `temp`, the same lock as the other fine-tune algorithms.
 - [x] **Docs** — DESIGN specialist-trainers section (now § 2.5), README, UX_SPEC.
 - [x] **In-app Docs** — `/docs` in the nav after Models. One section per task, one row per algorithm, with the worker key.
 
-### Phase 92 — Decision foundation RLCD (2026-11-02)
+### Phase 94 — Decision foundation RLCD (2026-11-02)
 
 - [x] **Recipes** — `ensemble_decision_foundation_v1.yaml` (cold start, `--cases` `foundation_train.jsonl` capped mix, `routing_only: false`, empty-rationale stage 1) and `ensemble_decision_specialize_v1.yaml` (warm-start from foundation `best/`, Ensemble specialize JSONL). Registered in `_ENV_RECIPE` and the fine-tune-remote env allowlist.
 - [x] **Wrapper** — `_format_rlcd_wrapper` emits `--cases PATH` when the recipe sets `cases`; defaults `routing_only` to false when cases are present so foundation/specialize do not also pull Ensemble routing YAML.
 - [x] **Ensemble contract** — generic decision JSONL + `decision_prompt` (Noul/Choice/Score) live in the Ensemble repo (`rlcd_train.py --cases`, `build_foundation_decisions.py`, `export_ensemble_decisions.py`). Live `RLCD_GENERIC_PROMPT` stays off until specialize clears the hermetic gate; `astra_bf94ca32` / `conductor_min` Choice path remains recoverable.
 - [x] **Docs** — DESIGN § 2.5 RLCD paragraph; README calibrated-decision row; in-app `/docs` Calibrated decision section (`frontend/src/app/docs/page.tsx`); UX_SPEC; this phase.
 
-### Phase 93 — Foundation continue + specialize focus (2026-11-03)
+### Phase 95 — Foundation continue + specialize focus (2026-11-03)
 
 - [x] **Recipes** — `ensemble_decision_foundation_continue_v1` (warm-start from cold foundation, larger `foundation_train.jsonl`, `eval_max_cases: 250`); `ensemble_decision_specialize_focus_v1` (warm-start specialize best, Choice-heavy JSONL). Registered in `_ENV_RECIPE` + recipe-authoritative allowlist.
 - [x] **Wrapper** — `_format_rlcd_wrapper` emits `--eval-max-cases` when recipe `eval_max_cases` > 0 (caps held-out readout on multi-thousand foundation pools).
@@ -2761,7 +2773,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Ensemble ops** — `make mlx-jev-foundation` side-serves that iter4 best on Mini `:8084`; product `:8082` stays `bf94ca32`. Sample letter vs foundation A/B ~53% / 57%. First specialize/focus did not clear routing A/B / hermetic — keep `RLCD_GENERIC_PROMPT` off on product until a later specialize clears ≥167/167. Gate foundation on letter A/B, not BoolQ pass_rate 0.65.
 - [x] **Dispatch rule** — Mini RLCD trains only via Astra `POST /recipes/{name}/dispatch` (no bare `rlcd_train.py` outside a mission).
 
-### Phase 94 — Specialize + Choice-focus routing A/B (2026-11-03)
+### Phase 96 — Specialize + Choice-focus routing A/B (2026-11-03)
 
 - [x] **Specialize `708931dd`** — warm-start `astra_70791e17_iter4/best` → `specialize.jsonl`; completed best **0.727** @ iter3 (`adapters/astra_708931dd_iter3/best`). Recipe `ensemble_decision_specialize_v1` points at that continue best; target pass_rate 0.7.
 - [x] **Routing A/B (74 closed)** — bf94@`:8082` `conductor_min` **60/74 (81.1%)** vs specialize@`:8084` `decision_prompt` **33/74 (44.6%)** (heavy Research & Search collapse).
@@ -2777,10 +2789,10 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] **Coerce handoff JSON instead** — `action:delegate`+`agent_id` → primary skill task (fill empty/meta skill from agent_id). Smoke on prior delegate-miss ids: **4/5** under fbb7/`decision_prompt`; leftover AWS cost→Data Services. Product bf94 hermetic reconfirmed **167/167** (`4f5cd6c8-8b9`).
 - [x] **Focus v8 `c7b78b5d`** — warm-start `fbb7b31a` → `specialize_choice_focus_v8.jsonl` (v6 base + modest shell/Programming/BR extras; keep GC/Calendar). Held-out **0.977** (contaminated vs train — not a gate). Routing A/B under `decision_prompt` **68/74 (91.9%)** vs fbb7 **62/74** and bf94 **60/74** — **clears Choice A/B**. Side `:8084` → `astra_c7b78b5d_iter0/best`. Hermetic side-port **165/167 (98.8%)** (`68b20e9a-b50`) — 2 fails → General Chat: `route_programming_run_code`, `route_shell_disk_usage` (readout: disk_usage margin-abstain GC≈SysAdmin).
 - [x] **Focus v9 `877dd459` (stopped)** — warm-start `c7b78b5d` → disk paraphrases; plateau best **0.87**, A/B mixes **&lt;68/74** — discarded. Do not keep spinning focus-upweight. Side `:8084` stays `c7b78b5d`. Recipe target lowered to **0.85** (held-out is contaminated; not a promote gate).
-- [x] **Stack remap (post-Choice)** — `remap_decision_skill` after Choice (and on margin-abstain): unambiguous disk/df/CPU/RAM → System Admin; run-this-code → Programming. Smoke 2/2; full hermetic c7b78@`:8084` + `RLCD_GENERIC_PROMPT` **167/167** (`66b3f7bc-2d1`, tag `manual-run-rlcd-c7b78-remap-8084`). Both promote gates cleared (swap landed Phase 95).
+- [x] **Stack remap (post-Choice)** — `remap_decision_skill` after Choice (and on margin-abstain): unambiguous disk/df/CPU/RAM → System Admin; run-this-code → Programming. Smoke 2/2; full hermetic c7b78@`:8084` + `RLCD_GENERIC_PROMPT` **167/167** (`66b3f7bc-2d1`, tag `manual-run-rlcd-c7b78-remap-8084`). Both promote gates cleared (swap landed Phase 97).
 - [x] **Outcome & learnings** — foundation → continue → specialize → modest focus (v8) beats heavy miss-upweight (v7/v9). A/B ≠ hermetic; held-out focus pass_rate is contaminated; last GC sinks need stack remap not more LoRA; generative `delegate` needs coerce-to-task. Canonical write-up: Ensemble `finetune/data/decision/README.md`.
 
-### Phase 95 — Promote + from-scratch + empty-rationale pivot lock (2026-11-04…05)
+### Phase 97 — Promote + from-scratch + empty-rationale pivot lock (2026-11-04…05)
 
 - [x] **Product swap (2026-11-04)** — Ensemble `:8082` → `astra_c7b78b5d_iter0/best` + `RLCD_GENERIC_PROMPT` (`decision_prompt`); Fast `:8081` keeps letter/Noul/Score/`mcp:`. Hermetic promote run `8784162c-603` **167/167**. Rollback: bf94 + unset `RLCD_GENERIC_PROMPT`. Steady Mini decision ports: **8081 + 8082** only (`:8083`/`:8084` retired).
 - [x] **One-shot recipe** — `ensemble_decision_from_scratch_v1` cold-starts Gemma 1B on combined foundation+specialize+v8 JSONL (`decision_from_scratch_v1.jsonl`). Not bit-exact four warm-starts; same mix, single LoRA train.
@@ -2792,9 +2804,9 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ---
 
-# Epoch 8: Agentic RL — LLM Trajectory GRPO (Phases 92–94)
+# Epoch 7 (cont.): Agentic RL — LLM Trajectory GRPO (Phases 98–100)
 
-## Phase 92: AgentGym harden (task_success, play HUD, text obs)
+## Phase 98: AgentGym harden (task_success, play HUD, text obs)
 
 - [x] Training callback for AgentGym writes `best_score.txt` / telemetry from eval `task_success` (mean_reward secondary).
 - [x] `obs_mode=vector|text`, `tool_failure_prob`, `MultiTurnAgentGymText-v0`, dialogue_state for play.
@@ -2802,7 +2814,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] Reward docstring aligned with single milestone `step_reward`.
 - [x] **Play HUD smoke:** WS `/ws/missions/a3ec506b…/play?env_id=MultiTurnAgentGym-v0` returns `dialogue` / `query` / `scenario_name` / `sequence_progress` / `text_obs` / `task_success` on live frames.
 
-## Phase 93: Agent GRPO worker (`agrpo`) on AgentGym bridge
+## Phase 99: Agent GRPO worker (`agrpo`) on AgentGym bridge
 
 - [x] Ensemble `finetune/agent_grpo_train.py` + vendored `agent_gym_env.py` + `trajectory_reward.py`.
 - [x] Astra `task_type: agrpo` catalog group **Agentic RL**, `_AGRPO_TEMPLATE`, SSH pin, pivot safelist.
@@ -2812,7 +2824,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] `register_loop_task` pairs `_running_tasks` + `_running_loops` on dispatch / auto-start / boot recovery so cancel sets `_user_cancelled` (FAILED / `cancelled_by_user`) instead of PENDING-as-shutdown; delete also requests user-cancel before `task.cancel()`.
 - [x] **Mini verified:** mission `11774989` (`agent_gym_agrpo_v1`, Gemma-3-12B-it-4bit, 50 iters) completed with AgentGym `pass_rate` **0.625** (5/8; baseline 0.50; target 0.50). Adapter `~/finetune/adapters/astra_11774989_iter0/best`.
 
-## Phase 94: Ensemble e2e stub trajectory rewards
+## Phase 100: Ensemble e2e stub trajectory rewards
 
 - [x] Pluggable `score_trajectory_e2e` + `finetune/data/agent_e2e_stubs.yaml`.
 - [x] Recipe `recipes/ensemble_agent_grpo_v1.yaml` (reward_mode=e2e).
@@ -2822,31 +2834,32 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ---
 
-# Epoch 9: AstraGym + AstraRL (Phases 95–98)
+# Epoch 9: AstraGym + AstraRL (Phases 101–104)
 
-## Phase 95: Contracts and packages
+## Phase 101: Contracts and packages
 
 - [x] DESIGN §2.4 — AstraGym / AstraRL / Orchestrator; `gym_id` × `learner_id` taxonomy for all online RL.
 - [x] Packages `astragym/` and `astrarl/` with `make()` factories and protocols.
 - [x] Offline workers explicitly out of scope for AstraRL.
 
-## Phase 96: AstraGym implementations
+## Phase 102: AstraGym implementations
 
 - [x] `gymnasium:<env_id>` adapter via `envs.register`.
 - [x] `agent_gym_vector` / `agent_gym_text` / `e2e_stubs` / `routing_prompt` gym ids.
 - [x] `resolve.infer_gym_id(...)` from recipe fields.
 
-## Phase 97: AstraRL implementations
+## Phase 103: AstraRL implementations
 
 - [x] SB3 learners (`sb3_ppo|dqn|a2c|sac|td3`) wrapping Gymnasium envs from AstraGym.
 - [x] MLX trajectory / routing GRPO + OPD learner ids (CLI shims in Ensemble `*_train.py`).
 - [x] Env-RL codegen prefers `astragym.make` + `astrarl.make` for Snake / MinAtar Breakout / AgentGym PPO templates.
 - [x] `backend/trainers/rl_trainer.py` documents sandbox codegen + AstraRL as the real path.
 
-## Phase 98: Recipes, docs, verify
+## Phase 104: Recipes, docs, verify
 
 - [x] Online-RL recipes annotated with `gym_id` / `learner_id` (or inferred defaults documented).
 - [x] README + DESIGN §2.4 + UX_SPEC highlight AstraGym × AstraRL; in-app `/docs` names gym/learner pairs in online task summaries only.
 - [x] Unit tests for `astragym.make` / `astrarl.resolve` (9 passed).
 - [x] Mini: synced `astragym`/`astrarl` under `~/finetune`; import smoke OK; local SB3 Breakout learn(200) smoke OK.
 - [x] Ensemble vendors `finetune/astragym` + `finetune/astrarl` for SSH layout.
+- [x] Live verify: mission `7a628486` (`minatar_breakout_dqn_v1`) completed score **20.2** (target 15) with `astragym.make("gymnasium:MinAtar-Breakout-v0", …)` in `train.py`.

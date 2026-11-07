@@ -152,19 +152,19 @@ make ports  # show port status for all services
 
 ## Strategic Development Milestones
 
-ASTRA's architecture and capabilities are structured into nine core development epochs:
+ASTRA's architecture and capabilities are structured into nine thematic epochs (~10–18 phases each; Epochs 7 and 9 are shorter architecture milestones). Phase numbers stay chronological; epoch membership is thematic — see [IMPLEMENT.md](docs/IMPLEMENT.md).
 
 | Epoch | Scope & Strategic Capabilities | Key Components | Status |
 |---|---|---|---|
-| **Epoch 1: Autonomous Execution Engine** (Phases 1–16, 85) | Autonomous Plan-Critique-Implement-Train-Eval loop, GAN-style plan critique, self-healing code generation, 4-stage escalating pivots, regression rollback, and vector memory. | `LoopStateMachine`, `LeadAgent`, `CriticAgent`, `CodeGenerator`, `PivotEngine`, `VectorMemory` | ✅ Complete |
-| **Epoch 2: Reinforcement Learning & Lookahead** (Phases 17–24, 31–32) | High-throughput pure Gymnasium environments (Snake-v0, Tetris-v0), 1-step successor lookahead DQN/PPO/A2C, flood-fill reachable space features, and curriculum learning. | `SnakeEnv`, `TetrisEnv`, lookahead DQN, custom reward shaping | ✅ Complete |
-| **Epoch 3: Post-Training, Distillation & Compute Cluster** (Phases 25–30, 33–50) | Remote SSH compute sandboxes, DPO, GRPO, Distillation, On-Policy Distillation (OPD), RFT, and Prompt optimization; cluster visibility (Nodes panel), checkpoint chaining, and convergence guards. | `SSHSandbox`, `SandboxManager`, DPO/GRPO/Distill/OPD trainers, Nodes panel, Kanban board | ✅ Complete |
-| **Epoch 4: Arcade Simulation Suite & Live HUD Explainability** (Phases 51–54, 65, 79, 81–84) | MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man, Game2048-v0; play / inference on `/models/{id}` with live Q-values, action distributions, and Shannon entropy. | MinAtar suite, `GridPacManEnv`, `Game2048Env`, `MinAtarPlayer`, `PolicyAuditor` | ✅ Complete |
-| **Epoch 5: Model Registry, Tournaments & Recipe Evolution** (Phases 55–56, 86) | Multi-environment Model Registry, deterministic fixed-seed Tournament Arena scored in each checkpoint's training env (same as play), exclusive champion crowning, and Recipe Library with evolutionary Lineage DAG. | `ModelRegistry`, `BenchmarkSuite` tournaments, `RecipeLibrary`, Lineage DAG | ✅ Complete |
-| **Epoch 6: Multi-Stage Post-Training & STaR Reasoning Flywheels** (Phases 57–63, 66) | Unified 3-stage post-training pipeline (SFT → DPO → GRPO), `<think>...</think>` CoT reasoning preservation, MLX Apple Silicon remote offload, adapter auto-detection, and Self-Taught Reasoner (STaR) closed-loop data bootstrapping with backward rationalization. | Conductor pipeline, SFTTrainer, STaR flywheel (`star_train.py`), unbuffered streaming | ✅ Complete |
-| **Epoch 7: Agent Trajectory RL & Multi-Turn Tool Environments** (Phase 64) | `MultiTurnAgentGym-v0` 32D environment, 8 multi-turn scenarios (customer support, data triage, billing), dense milestone & task completion rewards, and PPO agent policy optimization. | `AgentToolGym`, `recipes/agent_gym_ppo_v1.yaml`, multi-turn scenario engine | ✅ Complete |
-| **Epoch 8: Agentic RL (LLM Trajectory GRPO)** (Phases 92–94) | Harden AgentGym (`task_success`, play HUD, text obs); Agent GRPO multi-turn tool RL (`agrpo`) on AgentGym bridge then Ensemble e2e stubs. Mini `agent_gym_agrpo_v1` verified at pass_rate 0.625. | `agent_grpo_train.py`, `agrpo` worker, `agent_gym_agrpo_v1`, `ensemble_agent_grpo_v1` | ✅ Complete |
-| **Epoch 9: AstraGym + AstraRL** (Phases 95–98) | Split online RL into AstraGym (`gym_id` worlds) × AstraRL (`learner_id` learners) with Astra as Orchestrator; covers env SB3, routing GRPO, Agent GRPO, OPD. | `astragym/`, `astrarl/`, recipe `gym_id`/`learner_id` | ✅ Complete |
+| **Epoch 1: Autonomous Execution Engine** (1–16) | Plan-critique-implement-train-eval loop, GAN critique, self-healing codegen, escalating pivots, vector memory. | `LoopStateMachine`, `LeadAgent`, `CriticAgent`, `CodeGenerator`, `PivotEngine` | ✅ Complete |
+| **Epoch 2: RL & Lookahead** (17–24, 31–32) | Snake/Tetris Gym envs, lookahead DQN/PPO/A2C, flood-fill features, curriculum. | `SnakeEnv`, `TetrisEnv`, lookahead trainers | ✅ Complete |
+| **Epoch 3: Post-Training Foundation** (25–41) | SSH Mini sandboxes, DPO/GRPO, Nodes HUD, checkpoint chaining, convergence/ceiling guards. | `SSHSandbox`, DPO/GRPO trainers, Nodes panel | ✅ Complete |
+| **Epoch 4: Distill / RFT / Prompt & Mission Product** (42–50, 67–73, 75–77, 82) | Distill, RFT, prompt workers; Kanban/completed archive; eval & loop harden. | distill/rft/prompt recipes, Command Center | ✅ Complete |
+| **Epoch 5: Arcade Suite & Live Play** (51–54, 65, 74, 79, 81, 83–85) | MinAtar suite, Grid Pac-Man, 2048; play on `/models/{id}`; policy auditor. | MinAtar envs, `MinAtarPlayer`, `PolicyAuditor` | ✅ Complete |
+| **Epoch 6: Registry, Multi-Stage FT & STaR** (55–63, 66, 78, 80, 86) | Model registry & tournaments; SFT→DPO→GRPO conductor; STaR; recipe lineage. | `ModelRegistry`, conductor pipeline, `star_train.py` | ✅ Complete |
+| **Epoch 7: AgentGym & Agentic RL** (64, 98–100) | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs. | `AgentToolGym`, `agent_grpo_train.py`, `agrpo` | ✅ Complete |
+| **Epoch 8: OPD, Focused RFT & Calibrated Decisions** (87–97) | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78`. | `opd_train.py`, `rlcd_train.py`, decision recipes | ✅ Complete |
+| **Epoch 9: AstraGym + AstraRL** (101–104) | Online RL as AstraGym (`gym_id`) × AstraRL (`learner_id`) under the Orchestrator. | `astragym/`, `astrarl/` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 
