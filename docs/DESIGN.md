@@ -79,13 +79,43 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 ### 2.4. AstraGym, AstraRL, and the Orchestrator (Epoch 9)
 
-**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Do not treat SB3 envs, routing GRPO, Agent GRPO, or OPD as ad-hoc script islands — they share `astragym.make(gym_id)` and `astrarl.make(learner_id)` (or thin Ensemble CLI shims that import those packages). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Do not treat SB3 envs, routing GRPO, Agent GRPO, or OPD as ad-hoc script islands — they share `astragym.make(gym_id)` and `astrarl.make(learner_id)`. **Astra = platform** (contracts + GRPO runtime); **Ensemble = use case** (routing rewards, cases, prompts, adapters, thin CLI). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+
+```mermaid
+flowchart TB
+  subgraph astra [Astra platform]
+    orch[Mission loop recipes sandbox]
+    gym[AstraGym worlds]
+    rl[AstraRL Learner + rollout + GRPO runtime]
+  end
+  subgraph ensemble [Ensemble use case]
+    reward[score_completion case_pool]
+    prompts[conductor prompts eval_cases]
+    adapters[adapters bare_eval promote]
+    thin[Thin CLI wrappers]
+  end
+  orch --> rl
+  rl --> thin
+  thin --> reward
+  thin --> prompts
+  gym --> reward
+```
 
 | Layer | Package / role | Owns |
 |---|---|---|
 | **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
-| **AstraRL** | `astrarl/` | Gym-coupled learners: SB3 + MLX GRPO/OPD, checkpoints (`learner_id`) |
+| **AstraRL** | `astrarl/` | Learners (`learner_id`: SB3 + `MLXLearnerFacade`); platform GRPO runtime (`rollout`, `grpo_math`, `mlx_grpo_step`, `plugins`) |
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry |
+| **Ensemble (use case)** | `finetune/grpo_train.py` + `RoutingRewardPlugin` | Routing oracle, `case_pool`, conductor prompts, adapters, `bare_eval`; imports AstraRL for math/rollout |
+
+| Concern | Astra owns | Ensemble owns |
+|---|---|---|
+| **Contracts** | `Learner`, `RolloutBackend`, gym ids, recipe schema | Plugin implementations of reward / case source |
+| **Runtime** | Rollout backends, DAPO-lite clip / dynamic sampling, group GRPO loop | Thin `grpo_train.py` that wires plugin + argv |
+| **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
+| **Product data** | — | Prompts, `eval_cases`, adapters, `bare_eval`, decision JSONL |
+
+**Packaging:** installable `astragym` / `astrarl` from the Astra repo (`pip install -e`); Ensemble mirrors under `finetune/` are transitional — see Ensemble `finetune/VENDOR.md`.
 
 Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; dataset workers use recipe `task_type` only.
 

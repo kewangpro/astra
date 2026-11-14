@@ -2851,7 +2851,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 ## Phase 103: AstraRL implementations
 
 - [x] SB3 learners (`sb3_ppo|dqn|a2c|sac|td3`) wrapping Gymnasium envs from AstraGym.
-- [x] MLX trajectory / routing GRPO + OPD learner ids (CLI shims in Ensemble `*_train.py`).
+- [x] MLX trajectory / routing GRPO + OPD learner ids (Ensemble `*_train.py` CLIs; routing GRPO math later extracted into AstraRL Phases 109–110).
 - [x] Env-RL codegen prefers `astragym.make` + `astrarl.make` for Snake / MinAtar Breakout / AgentGym PPO templates.
 - [x] `backend/trainers/rl_trainer.py` documents sandbox codegen + AstraRL as the real path.
 
@@ -2872,7 +2872,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 106: Pluggable GRPO rollout backend
 
-- [x] Ensemble `finetune/rollout_backend.py`: `MLXRolloutBackend` + `OpenAICompatRolloutBackend`.
+- [x] Ensemble `finetune/rollout_backend.py`: `MLXRolloutBackend` + `OpenAICompatRolloutBackend` (canonical impl later moved to `astrarl.rollout` in Phase 109; this file is now a re-export).
 - [x] `grpo_train.py --rollout-backend {mlx,openai}` (+ base URL / API key / model).
 - [x] Astra GRPO codegen passes optional rollout flags from recipe hyperparameters.
 
@@ -2880,7 +2880,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 - [x] Asymmetric PPO clip: `--clip-epsilon-low` / `--clip-epsilon-high` (default both = `--clip-epsilon`).
 - [x] Dynamic sampling: `--dynamic-sample-retries` (default 0 = off; skip flat groups only when enabled).
-- [x] Pure-Python unit tests in `finetune/test_rollout_backend.py`; recipe knobs documented in `ensemble_grpo_v1.yaml`.
+- [x] Pure-Python unit tests (now under Astra / mirrored Ensemble); recipe knobs documented in `ensemble_grpo_v1.yaml`. Helpers later live in `astrarl.rollout` / `astrarl.grpo_math` (Phase 109).
 
 ## Phase 108: Docs for facade / rollout / DAPO-lite
 
@@ -2908,4 +2908,8 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 113: Boundary docs
 
-- [x] DESIGN §2.4 platform vs Ensemble plugin; Ensemble FINETUNE/methods updated.
+- [x] DESIGN §2.4 — boundary mermaid + ownership tables; Astra = platform GRPO runtime; Ensemble = `RoutingRewardPlugin` + thin CLI.
+- [x] README Epoch 9 (101–113), project structure (`pyproject.toml`, sync script), AstraRL ownership blurb.
+- [x] `recipes/ensemble_grpo_v1.yaml` description + platform vs plugin hyperparameter comments.
+- [x] Ensemble `docs/FINETUNE.md` (Astra packages + VENDOR link), `docs/finetune/methods.md` Method E ownership / How it works / DAPO-lite, `finetune/VENDOR.md`, MARKETS §131 note.
+- [x] UX_SPEC `/docs` Epoch 9 framing.

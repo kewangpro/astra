@@ -6,12 +6,11 @@ gym_id: routing_prompt
 learner_id: mlx_grpo_routing
 domain: NLP
 description: >
-  GRPO (Group Relative Policy Optimization) fine-tuning for the Ensemble
-  routing model. Wraps the existing ensemble/finetune/grpo_train.py script
-  rather than reimplementing the on-policy rollout/reward/advantage loop —
-  astra only orchestrates dispatch, telemetry, and pivoting. Runs on the Mac
-  Mini, where ~/finetune holds the script + adapters and ~/finetune-env has
-  mlx_lm installed.
+  GRPO fine-tuning for the Ensemble routing model. AstraRL owns rollout /
+  DAPO / GRPO math; Ensemble grpo_train.py is a thin CLI + RoutingRewardPlugin
+  (cases, score_completion, prompts). Missions dispatch via
+  astrarl.make("mlx_grpo_routing", use_execv=True).learn() on the Mac Mini
+  (~/finetune + ~/finetune-env). Astra orchestrates telemetry and pivoting.
 
 hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
