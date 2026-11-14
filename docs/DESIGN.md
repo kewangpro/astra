@@ -99,6 +99,10 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 **AstraGym ids:** `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`.  
 **AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.
 
+**MLX learners** return an `MLXLearnerFacade` that implements the `Learner` protocol (`learn` shells to Ensemble `grpo_train.py` / `agent_grpo_train.py` / `opd_train.py`; `predict` is not used — inference stays on JEV/MLX servers). Use `.descriptor()` when only the entrypoint name is needed.
+
+**Routing GRPO rollout backends** (Ensemble `finetune/rollout_backend.py`): `--rollout-backend mlx` (default) or `openai` (OpenAI-compatible HTTP via `--rollout-base-url`). **DAPO-lite** on routing GRPO (default-off / backward compatible): asymmetric clip `--clip-epsilon-low` / `--clip-epsilon-high`, and `--dynamic-sample-retries` to resample flat reward groups.
+
 | AstraRL? | Scope |
 |---|---|
 | **In** | Interactive / gym-coupled learners — on-policy or off-policy replay still counts if the train loop uses AstraGym (or MLX online rollouts): `sb3_*`, `mlx_grpo_*`, `mlx_opd` |

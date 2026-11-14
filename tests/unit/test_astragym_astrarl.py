@@ -61,8 +61,51 @@ def test_sb3_dqn_predict_smoke():
     g.close()
 
 
-def test_mlx_learner_descriptor():
-    d = astrarl.make("mlx_grpo_traj", reward_mode="e2e")
+def test_mlx_learner_facade():
+    from astrarl.protocol import Learner
+    from astrarl.mlx_facade import MLXLearnerFacade
+
+    learner = astrarl.make("mlx_grpo_traj", reward_mode="e2e")
+    assert isinstance(learner, MLXLearnerFacade)
+    assert isinstance(learner, Learner)
+    assert learner.entrypoint == "agent_grpo_train.py"
+    assert learner.gym_id == "e2e_stubs"
+    d = learner.descriptor()
     assert d["entrypoint"] == "agent_grpo_train.py"
     assert d["gym_id"] == "e2e_stubs"
     assert astrarl.entrypoint_for("mlx_grpo_routing") == "grpo_train.py"
+
+
+def test_mlx_learner_learn_invokes_entrypoint(monkeypatch):
+    calls = []
+
+    def fake_run(argv, cwd=None, env=None, check=False):
+        calls.append({"argv": list(argv), "cwd": cwd})
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr("astrarl.mlx_facade.subprocess.run", fake_run)
+    learner = astrarl.make(
+        "mlx_grpo_routing",
+        finetune_dir="/tmp/finetune",
+        python_bin="/usr/bin/python3",
+        iters=2,
+    )
+    result = learner.learn(total_timesteps=5)
+    assert result["returncode"] == 0
+    assert calls and calls[0]["argv"][0] == "/usr/bin/python3"
+    assert calls[0]["argv"][1].endswith("grpo_train.py")
+    assert "--iters" in calls[0]["argv"]
+    assert calls[0]["cwd"] == "/tmp/finetune"
+
+
+def test_mlx_learner_predict_not_implemented():
+    learner = astrarl.make("mlx_opd")
+    try:
+        learner.predict("x")
+        assert False, "expected NotImplementedError"
+    except NotImplementedError:
+        pass

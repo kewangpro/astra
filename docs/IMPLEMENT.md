@@ -14,7 +14,7 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 6: Registry, Multi-Stage FT & STaR** | Model registry & tournaments; SFT→DPO→GRPO conductor; STaR; recipe lineage polish | 55–63, 66, 78, 80, 86 | 13 | ✅ |
 | **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
-| **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split: AstraGym (`gym_id`) × AstraRL (`learner_id`); dataset workers out | 101–104 | 4 | ✅ |
+| **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split: AstraGym (`gym_id`) × AstraRL (`learner_id`); dataset workers out; MLX facade + DAPO-lite | 101–108 | 8 | ✅ |
 
 Epochs 7 and 9 are intentionally shorter **architecture** milestones (agent stack, then Gym×RL split); Epochs 3–6 absorb the former “continuity” band.
 
@@ -2834,7 +2834,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ---
 
-# Epoch 9: AstraGym + AstraRL (Phases 101–104)
+# Epoch 9: AstraGym + AstraRL (Phases 101–108)
 
 ## Phase 101: Contracts and packages
 
@@ -2863,3 +2863,25 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] Mini: synced `astragym`/`astrarl` under `~/finetune`; import smoke OK; local SB3 Breakout learn(200) smoke OK.
 - [x] Ensemble vendors `finetune/astragym` + `finetune/astrarl` for SSH layout.
 - [x] Live verify: mission `7a628486` (`minatar_breakout_dqn_v1`) completed score **20.2** (target 15) with `astragym.make("gymnasium:MinAtar-Breakout-v0", …)` in `train.py`.
+
+## Phase 105: MLXLearnerFacade
+
+- [x] `astrarl.make(mlx_*)` returns `MLXLearnerFacade` implementing `Learner` (`learn` → Ensemble CLI; `predict` NotImplemented).
+- [x] `.descriptor()` preserves the legacy dict shape for entrypoint/gym_id callers.
+- [x] Synced to Ensemble `finetune/astrarl/`; unit tests in `test_astragym_astrarl.py`.
+
+## Phase 106: Pluggable GRPO rollout backend
+
+- [x] Ensemble `finetune/rollout_backend.py`: `MLXRolloutBackend` + `OpenAICompatRolloutBackend`.
+- [x] `grpo_train.py --rollout-backend {mlx,openai}` (+ base URL / API key / model).
+- [x] Astra GRPO codegen passes optional rollout flags from recipe hyperparameters.
+
+## Phase 107: DAPO-lite on routing GRPO
+
+- [x] Asymmetric PPO clip: `--clip-epsilon-low` / `--clip-epsilon-high` (default both = `--clip-epsilon`).
+- [x] Dynamic sampling: `--dynamic-sample-retries` (default 0 = off; skip flat groups only when enabled).
+- [x] Pure-Python unit tests in `finetune/test_rollout_backend.py`; recipe knobs documented in `ensemble_grpo_v1.yaml`.
+
+## Phase 108: Docs for facade / rollout / DAPO-lite
+
+- [x] DESIGN §2.4, README AstraRL blurb, IMPLEMENT phases 105–108, Ensemble FINETUNE/methods flags.

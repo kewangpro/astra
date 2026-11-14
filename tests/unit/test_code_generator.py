@@ -1757,6 +1757,32 @@ def test_resolve_hyperparams_grpo_uses_recipe_clip_epsilon():
     assert result["clip_epsilon"] == 0.1
 
 
+def test_build_user_prompt_grpo_includes_dapo_rollout_flags(tmp_path, monkeypatch):
+    """Optional DAPO-lite / openai rollout kwargs appear in the execv argv list."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "grpo",
+        "hyperparameters": {
+            "clip_epsilon_high": 0.28,
+            "dynamic_sample_retries": 2,
+            "rollout_backend": "openai",
+            "rollout_base_url": "http://127.0.0.1:8081/v1",
+        },
+        "target_metric": {"pass_rate": 0.9},
+    }
+    prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
+    assert "--clip-epsilon-high" in prompt
+    assert "0.28" in prompt
+    assert "--dynamic-sample-retries" in prompt
+    assert "--rollout-backend" in prompt
+    assert "openai" in prompt
+    assert "--rollout-base-url" in prompt
+
+
 def test_resolve_hyperparams_grpo_num_layers_matches_warm_start_adapter():
     """num_layers MUST be 8 (not grpo_train.py's raw --num-layers default of 16) —
     all current warm-start adapters (grpo_v9_min/best, retrain_best) are 8-layer;

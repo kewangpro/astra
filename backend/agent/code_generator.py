@@ -1348,6 +1348,9 @@ eval_max_tokens={eval_max_tokens}, reward_schema={reward_schema}
 email_weight={email_weight}, focus_weight={focus_weight}
 max_zero_steps={max_zero_steps}, max_one_steps={max_one_steps}
 Optimizer: lr={learning_rate}, clip_epsilon={clip_epsilon}, max_grad_norm={max_grad_norm}
+DAPO-lite / rollout (optional): clip_epsilon_low={clip_epsilon_low},
+clip_epsilon_high={clip_epsilon_high}, dynamic_sample_retries={dynamic_sample_retries},
+rollout_backend={rollout_backend}, rollout_base_url={rollout_base_url}
 Logging: steps_per_report={steps_per_report}, steps_per_eval={steps_per_eval}, save_every={save_every}
 Adapter output: {checkpoint_dir}
 
@@ -1398,12 +1401,14 @@ The script must:
                "--steps-per-eval", "{steps_per_eval}",
                "--save-every", "{save_every}",
                {routing_only_flag}
+               {dapo_rollout_flags}
                "--prompt-template", "{prompt_template}",
            ],
        )
    ({routing_only_flag} is either the string "--routing-only", (with a trailing
    comma, as its own list element) or omitted entirely if empty — do not insert
-   an empty string element in the list.)"""
+   an empty string element in the list. {dapo_rollout_flags} is pre-rendered
+   optional argv for DAPO-lite / rollout backend, or empty.)"""
 
 _AGRPO_TEMPLATE = """\
 Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) by
@@ -2414,6 +2419,17 @@ def _resolve_hyperparams(
             task_type, plan_hp,
             empty_rationale=bool(recipe_hp.get("empty_rationale")),
         ))
+        # DAPO-lite / rollout backend: recipe defaults + explicit plan overrides
+        # (not in the temp/num_generations pivot safelist — they are opt-in experiment knobs).
+        if (task_type or env_id) in ("grpo", "ensemble_grpo_1b_v1") or env_id in (
+            "grpo", "ensemble_grpo_1b_v1", "grpo/1b", "grpo/1b_v1",
+        ):
+            for _k in (
+                "clip_epsilon_low", "clip_epsilon_high", "dynamic_sample_retries",
+                "rollout_backend", "rollout_base_url", "rollout_api_key", "rollout_model",
+            ):
+                if _k in plan_hp and plan_hp[_k] is not None:
+                    hp[_k] = plan_hp[_k]
         # warm_start_adapter comes from Mission.last_checkpoint_path (state_machine,
         # system-controlled), never from plan_hp/the LLM pivot — deliberately outside
         # the plan_hp merge above so it can't be spoofed through the same channel the
@@ -3107,9 +3123,33 @@ class CodeGenerator:
             }
             return _DPO_TEMPLATE.format(**ctx)
         if effective_task_type == "grpo":
+            _dapo_bits: list[str] = []
+            if hp.get("clip_epsilon_low") is not None:
+                _dapo_bits.append(f'"--clip-epsilon-low", "{hp["clip_epsilon_low"]}",')
+            if hp.get("clip_epsilon_high") is not None:
+                _dapo_bits.append(f'"--clip-epsilon-high", "{hp["clip_epsilon_high"]}",')
+            if int(hp.get("dynamic_sample_retries") or 0) > 0:
+                _dapo_bits.append(
+                    f'"--dynamic-sample-retries", "{int(hp["dynamic_sample_retries"])}",'
+                )
+            _rb = str(hp.get("rollout_backend") or "mlx").lower()
+            if _rb and _rb != "mlx":
+                _dapo_bits.append(f'"--rollout-backend", "{_rb}",')
+                if hp.get("rollout_base_url"):
+                    _dapo_bits.append(f'"--rollout-base-url", "{hp["rollout_base_url"]}",')
+                if hp.get("rollout_api_key"):
+                    _dapo_bits.append(f'"--rollout-api-key", "{hp["rollout_api_key"]}",')
+                if hp.get("rollout_model"):
+                    _dapo_bits.append(f'"--rollout-model", "{hp["rollout_model"]}",')
             ctx = {
                 **hp,
                 "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
+                "dapo_rollout_flags": "\n               ".join(_dapo_bits),
+                "clip_epsilon_low": hp.get("clip_epsilon_low", ""),
+                "clip_epsilon_high": hp.get("clip_epsilon_high", ""),
+                "dynamic_sample_retries": hp.get("dynamic_sample_retries", 0),
+                "rollout_backend": hp.get("rollout_backend", "mlx"),
+                "rollout_base_url": hp.get("rollout_base_url", ""),
                 "gym_id": hp.get("gym_id") or "routing_prompt",
                 "learner_id": hp.get("learner_id") or "mlx_grpo_routing",
                 **base,
