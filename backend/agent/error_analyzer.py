@@ -201,11 +201,15 @@ class ErrorAnalyzer:
         if is_sft:
             logger.warning("ErrorAnalyzer: SFT script error detected; resetting to canonical SFT runner")
             if settings.sandbox_host:
-                from backend.agent.code_generator import _SFT_REMOTE_WRAPPER
+                from backend.agent.code_generator import (
+                    _SFT_REMOTE_WRAPPER,
+                    _resolve_astra_pkg_root,
+                )
                 fixed_code = _SFT_REMOTE_WRAPPER.format(
                     mission_id=mission_id or "sft_mission",
                     finetune_dir="/Users/kewang/finetune",
                     python_bin="/Users/kewang/finetune-env/bin/python",
+                    astra_pkg_root=_resolve_astra_pkg_root(),
                     checkpoint_dir=f"/Users/kewang/finetune/adapters/astra_{mission_id[:8]}_iter{iteration}" if mission_id else "/Users/kewang/finetune/adapters/astra_sft_iter0",
                     base_model="mlx-community/Llama-3.2-1B-Instruct-4bit",
                     dataset_path="data/datasets/train.jsonl",
@@ -222,6 +226,7 @@ class ErrorAnalyzer:
                     steps_per_eval=25,
                     steps_per_report=5,
                     save_every=50,
+                    resume_adapter_kwarg="",
                 )
             else:
                 from backend.agent.code_generator import _CANONICAL_SFT_RUNNER

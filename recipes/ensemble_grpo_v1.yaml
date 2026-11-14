@@ -16,6 +16,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to ensemble/finetune checkout
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg       # editable Astra (astrarl); ASTRA_PKG_ROOT override
   # Warm-start target per docs/FINETUNE.md ("Warm-start target: grpo_v9_min/best
   # (8L) — the current best conductor_min.md adapter") — NOT grpo_train.py's own
   # generic DEFAULT_ADAPTER constant ("finetune/adapters/retrain_best"), which is

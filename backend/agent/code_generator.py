@@ -1105,6 +1105,7 @@ import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 import astratune
@@ -1136,13 +1137,14 @@ learner.learn()
 """
 
 # Canned remote AstraTune facade wrappers (no coder LLM).
-# Path/chdir before import so Mini works with pip-installed astratune or mirrors.
+# Path/chdir + astra_pkg_root before import (pip install -e; mirrors removed).
 _DPO_REMOTE_WRAPPER = """\
 import os
 import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs(os.path.dirname("{save_pairs_path}"), exist_ok=True)
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
@@ -1184,6 +1186,7 @@ import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 import astratune
@@ -1223,6 +1226,7 @@ import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 import astratune
@@ -1266,6 +1270,7 @@ import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 import astrarl
@@ -1500,14 +1505,15 @@ The script must:
    ~30-60 min) when only retraining hyperparameters (beta/epochs) change."""
 
 # Canned remote GRPO wrapper (no coder LLM). Path/chdir before import astrarl so
-# Mini works with either pip-installed astrarl or transitional finetune/ mirrors.
-# Do NOT call astragym.make here — MLXLearnerFacade does not need a gym instance.
+# Mini works with pip-installed astrarl (astra_pkg_root) even if launcher
+# python is not finetune-env. Do NOT call astragym.make — MLXLearnerFacade needs no gym.
 _GRPO_REMOTE_WRAPPER = """\
 import os
 import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 
 import astrarl
 
@@ -1580,6 +1586,7 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
        import os, sys
        os.chdir("{finetune_dir}")
        sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
        import astrarl
        learner = astrarl.make(
            "{learner_id}",
@@ -1897,6 +1904,7 @@ import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 import astratune
@@ -1956,6 +1964,7 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
     return _RLCD_REMOTE_WRAPPER.format(
         finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
         python_bin=hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+        astra_pkg_root=_resolve_astra_pkg_root(hp),
         checkpoint_dir=checkpoint_dir,
         base_model=hp.get("base_model", ""),
         adapter_kwarg=adapter_kwarg,
@@ -1993,6 +2002,7 @@ import sys
 
 os.chdir("{finetune_dir}")
 sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 import astratune
@@ -2687,6 +2697,33 @@ def _resolve_hyperparams(
     return hp
 
 
+_DEFAULT_ASTRA_PKG_ROOT = "/Users/kewang/astra-pkg"
+
+
+def _resolve_astra_pkg_root(hp: Optional[dict] = None) -> str:
+    """Absolute path to the editable Astra tree on the sandbox host.
+
+    Same role as ``finetune_dir`` / ``python_bin``: baked into canned wrappers at
+    codegen so ``import astrarl`` / ``import astratune`` resolve after mirrors
+    were removed. Resolution order:
+
+    1. recipe / plan HP ``astra_pkg_root``
+    2. ``ASTRA_PKG_ROOT`` (``settings.pkg_root``)
+    3. ``/Users/kewang/astra-pkg``
+
+    ``~`` is expanded at codegen time so generated scripts use absolute paths
+    like ``finetune_dir``, not runtime ``expanduser``.
+    """
+    raw = ""
+    if hp:
+        raw = str(hp.get("astra_pkg_root") or "").strip()
+    if not raw:
+        raw = (settings.pkg_root or "").strip()
+    if not raw:
+        raw = _DEFAULT_ASTRA_PKG_ROOT
+    return os.path.expanduser(raw)
+
+
 def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iteration: int) -> str:
     """Remote checkpoint/adapter output dir for dpo/grpo missions — under
     finetune_dir/adapters/, the same directory ensemble/finetune's own manual
@@ -3071,6 +3108,7 @@ class CodeGenerator:
         return {
             "finetune_dir": finetune_dir,
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter": hp.get("adapter", "adapters/grpo_v9_min/best"),
             "checkpoint_dir": checkpoint_dir,
@@ -3121,6 +3159,7 @@ class CodeGenerator:
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-1b-it-4bit"),
             "adapter_kwarg": (
                 "no_adapter=True," if _cold
@@ -3172,6 +3211,7 @@ class CodeGenerator:
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter_kwarg": (
                 "no_adapter=True," if _cold
@@ -3226,6 +3266,7 @@ class CodeGenerator:
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter_kwarg": (
                 "no_adapter=True," if _cold
@@ -3299,6 +3340,7 @@ class CodeGenerator:
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
             "learner_id": hp.get("learner_id") or plan.get("learner_id") or "mlx_grpo_routing",
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter": hp.get("adapter", "adapters/grpo_v9_min/best"),
@@ -3389,6 +3431,7 @@ class CodeGenerator:
             # Must win over **hp (recipe may carry adapter path strings).
             "resume_adapter_arg": resume_adapter_arg,
             "resume_adapter_kwarg": resume_adapter_kwarg,
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
         }
 
     def _build_star_context(
@@ -3452,6 +3495,7 @@ class CodeGenerator:
             "routing_only": "True" if hp.get("routing_only", True) else "False",
             **hp,
             **base,
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
         }
 
     def _build_user_prompt(
@@ -3669,6 +3713,7 @@ class CodeGenerator:
                     hp.get("finetune_dir", ""), "logs", f"astra_{mission_id[:8]}_pairs.jsonl"
                 ),
                 **base,
+                "astra_pkg_root": _resolve_astra_pkg_root(hp),
             }
             return _DPO_TEMPLATE.format(**ctx)
         if effective_task_type == "grpo":
@@ -3704,6 +3749,7 @@ class CodeGenerator:
                 "gym_id": hp.get("gym_id") or "routing_prompt",
                 "learner_id": hp.get("learner_id") or "mlx_grpo_routing",
                 **base,
+                "astra_pkg_root": _resolve_astra_pkg_root(hp),
             }
             return _GRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "agrpo":
