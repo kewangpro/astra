@@ -2873,7 +2873,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 106: Pluggable GRPO rollout backend
 
-- [x] Ensemble `finetune/rollout_backend.py`: `MLXRolloutBackend` + `OpenAICompatRolloutBackend` (canonical impl later moved to `astrarl.rollout` in Phase 109; this file is now a re-export).
+- [x] Ensemble `finetune/rollout_backend.py`: `MLXRolloutBackend` + `OpenAICompatRolloutBackend` (canonical impl later moved to `astrarl.rollout` in Phase 109; shim deleted — import `astrarl.rollout` directly).
 - [x] `grpo_train.py --rollout-backend {mlx,openai}` (+ base URL / API key / model).
 - [x] Astra GRPO codegen passes optional rollout flags from recipe hyperparameters.
 
@@ -2890,7 +2890,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 ## Phase 109: Extract GRPO runtime into AstraRL
 
 - [x] `astrarl/rollout.py`, `grpo_math.py` — platform rollout backends + DAPO helpers + GRPO loss/advantages.
-- [x] Ensemble `grpo_train.py` imports from `astrarl`; `rollout_backend.py` is a re-export only.
+- [x] Ensemble `grpo_train.py` imports from `astrarl`; `rollout_backend.py` shim removed.
 
 ## Phase 110: Ensemble reward plugin + group collect
 
@@ -2904,7 +2904,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 112: Packaging + Mini vendor story
 
-- [x] Root `pyproject.toml` for installable `astragym`/`astrarl`/`astratune`; `scripts/sync_astrarl_astragym.sh` (emergency mirrors only).
+- [x] Root `pyproject.toml` for installable `astragym`/`astrarl`/`astratune`; `scripts/emergency_mirror_astra_packages.sh` (emergency mirrors only).
 - [x] Ensemble `finetune/VENDOR.md` — prefer `pip install -e` Astra; mirrors transitional (removed in Epoch 10 / Phase 118).
 
 ## Phase 113: Boundary docs

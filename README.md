@@ -119,7 +119,7 @@ astra/
 ├── astrarl/             # AstraRL — gym-coupled learners + GRPO runtime
 ├── astratune/           # AstraTune — offline LM + shared LoRA I/O
 ├── pyproject.toml       # installable astragym + astrarl + astratune (pip install -e .)
-├── scripts/             # sync_astrarl_astragym.sh (emergency mirrors only)
+├── scripts/             # emergency_mirror_astra_packages.sh (mirrors only)
 ├── backend/
 │   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ErrorAnalyzer, CodeSafetyClassifier, ModelManager, KVCache, inference providers
 │   ├── analysis/       # SpatialAnalyzer (Grad-CAM), PolicyAuditor

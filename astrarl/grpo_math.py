@@ -20,7 +20,11 @@ def compute_advantages(rewards: list[float], baseline: float = 0.0) -> list[floa
 
 
 def completion_token_logps(model: Any, prompt_ids: list[int], comp_ids: list[int]) -> Any:
-    """Per-token log-probs of the completion tokens under model (MLX)."""
+    """Per-token log-probs of the completion tokens under model (MLX).
+
+    Softmax is applied only on the completion logit slice to avoid allocating a
+    full-sequence vocab tensor on long prompts (RFT / STAR / distill).
+    """
     import mlx.core as mx
     import mlx.nn as nn
 
@@ -28,10 +32,11 @@ def completion_token_logps(model: Any, prompt_ids: list[int], comp_ids: list[int
     inputs = full_ids[:-1]
     targets = full_ids[1:]
     logits = model(inputs[None])[0]
-    log_probs = nn.log_softmax(logits.astype(mx.float32), axis=-1)
-    tok_lp = log_probs[mx.arange(targets.shape[0]), targets]
     comp_start = len(prompt_ids) - 1
-    return tok_lp[comp_start : comp_start + len(comp_ids)]
+    comp_logits = logits[comp_start : comp_start + len(comp_ids)]
+    comp_targets = targets[comp_start : comp_start + len(comp_ids)]
+    log_probs = nn.log_softmax(comp_logits.astype(mx.float32), axis=-1)
+    return log_probs[mx.arange(comp_targets.shape[0]), comp_targets]
 
 
 def seq_log_prob(model: Any, prompt_ids: list[int], comp_ids: list[int]) -> Any:
