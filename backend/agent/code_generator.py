@@ -1328,6 +1328,54 @@ The script must:
    future run can pass --load-pairs to skip re-collection (the slowest phase,
    ~30-60 min) when only retraining hyperparameters (beta/epochs) change."""
 
+# Canned remote GRPO wrapper (no coder LLM). Path/chdir before import astrarl so
+# Mini works with either pip-installed astrarl or transitional finetune/ mirrors.
+# Do NOT call astragym.make here — MLXLearnerFacade does not need a gym instance.
+_GRPO_REMOTE_WRAPPER = """\
+import os
+import sys
+
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+
+import astrarl
+
+learner = astrarl.make(
+    "{learner_id}",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    adapter="{adapter}",
+    save_dir="{checkpoint_dir}",
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_dropout={lora_dropout},
+    lora_scale={lora_scale},
+    iters={iters},
+    num_generations={num_generations},
+    temp={temp},
+    max_tokens={max_tokens},
+    eval_max_tokens={eval_max_tokens},
+    reward_schema="{reward_schema}",
+    email_weight={email_weight},
+    focus_weight={focus_weight},
+    max_zero_steps={max_zero_steps},
+    max_one_steps={max_one_steps},
+    learning_rate={learning_rate},
+    clip_epsilon={clip_epsilon},
+    max_grad_norm={max_grad_norm},
+    steps_per_report={steps_per_report},
+    steps_per_eval={steps_per_eval},
+    save_every={save_every},
+    routing_only={routing_only_bool},
+    prompt_template="{prompt_template}",
+    {facade_dapo_kwargs}
+)
+learner.learn()
+"""
+
+# Prompt retained for healers / docs; live codegen uses _GRPO_REMOTE_WRAPPER.
 _GRPO_TEMPLATE = """\
 Generate a script that runs GRPO via AstraRL MLXLearnerFacade — do NOT reimplement
 rollout/reward/PPO math and do NOT hand-build a long os.execv argv list for every
@@ -1356,15 +1404,7 @@ Logging: steps_per_report={steps_per_report}, steps_per_eval={steps_per_eval}, s
 Adapter output: {checkpoint_dir}
 routing_only: {routing_only}
 
-The script must:
-1. Import os and sys only plus astrarl (available under finetune_dir or site-packages).
-   Do NOT import subprocess or requests.
-2. os.chdir("{finetune_dir}") so relative prompt/eval paths resolve.
-3. Ensure finetune_dir is on sys.path (insert 0) so `import astrarl` finds the
-   platform package (pip-installed or vendored under finetune/astrarl).
-4. Build the learner with astrarl.make and call learn(use_execv via kwargs) —
-   EXACT shape (fill values from the mission hyperparameters above; omit any
-   DAPO/rollout kwarg whose value is empty / None / default-off):
+Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
 
        import os, sys
        os.chdir("{finetune_dir}")
@@ -1404,9 +1444,7 @@ The script must:
        )
        learner.learn()
 
-   learn() with use_execv=True never returns (process image becomes grpo_train.py).
-   {facade_dapo_kwargs} is pre-rendered optional keyword args for DAPO-lite /
-   rollout (or empty). routing_only must be a Python bool True/False."""
+   learn() with use_execv=True never returns (process image becomes grpo_train.py)."""
 
 _AGRPO_TEMPLATE = """\
 Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) by
@@ -2600,6 +2638,15 @@ class CodeGenerator:
             # Canned wrapper. _build_user_prompt already formatted it from the
             # recipe; do not ask the coder model to reimplement the readout.
             code = user_prompt
+        elif active_task == "grpo":
+            # Canned facade wrapper — LLM previously imported astrarl before
+            # sys.path/chdir and invented astragym.make("gymnasium:None").
+            code = _GRPO_REMOTE_WRAPPER.format(
+                **self._build_grpo_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                )
+            )
         elif active_task == "star":
             star_ctx = self._build_star_context(
                 mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
@@ -2785,6 +2832,74 @@ class CodeGenerator:
             "batch_size": int(hp.get("batch_size", 16)),
             "learning_rate": float(hp.get("learning_rate", 2e-5)),
             "warmup_ratio": float(hp.get("warmup_ratio", 0.1)),
+        }
+
+    def _build_grpo_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        """Hyperparams + optional DAPO/rollout kwargs for _GRPO_REMOTE_WRAPPER."""
+        recipe_key = plan.get("recipe") or "ensemble_grpo_v1"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
+        _facade_dapo: list[str] = []
+        if hp.get("clip_epsilon_low") is not None:
+            _facade_dapo.append(f'clip_epsilon_low={hp["clip_epsilon_low"]},')
+        if hp.get("clip_epsilon_high") is not None:
+            _facade_dapo.append(f'clip_epsilon_high={hp["clip_epsilon_high"]},')
+        if int(hp.get("dynamic_sample_retries") or 0) > 0:
+            _facade_dapo.append(
+                f'dynamic_sample_retries={int(hp["dynamic_sample_retries"])},'
+            )
+        _rb = str(hp.get("rollout_backend") or "mlx").lower()
+        if _rb and _rb != "mlx":
+            _facade_dapo.append(f'rollout_backend="{_rb}",')
+            if hp.get("rollout_base_url"):
+                _facade_dapo.append(f'rollout_base_url="{hp["rollout_base_url"]}",')
+            if hp.get("rollout_api_key"):
+                _facade_dapo.append(f'rollout_api_key="{hp["rollout_api_key"]}",')
+            if hp.get("rollout_model"):
+                _facade_dapo.append(f'rollout_model="{hp["rollout_model"]}",')
+        return {
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "learner_id": hp.get("learner_id") or plan.get("learner_id") or "mlx_grpo_routing",
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
+            "adapter": hp.get("adapter", "adapters/grpo_v9_min/best"),
+            "checkpoint_dir": checkpoint_dir,
+            "num_layers": hp.get("num_layers", 8),
+            "lora_rank": hp.get("lora_rank", 8),
+            "lora_dropout": hp.get("lora_dropout", 0.0),
+            "lora_scale": hp.get("lora_scale", 20.0),
+            "iters": hp.get("iters", 100),
+            "num_generations": hp.get("num_generations", 2),
+            "temp": hp.get("temp", 1.2),
+            "max_tokens": hp.get("max_tokens", 96),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+            "reward_schema": hp.get("reward_schema", "v1"),
+            "email_weight": hp.get("email_weight", 0),
+            "focus_weight": hp.get("focus_weight", 10),
+            "max_zero_steps": hp.get("max_zero_steps", 3),
+            "max_one_steps": hp.get("max_one_steps", 3),
+            "learning_rate": hp.get("learning_rate", 1e-6),
+            "clip_epsilon": hp.get("clip_epsilon", 0.1),
+            "max_grad_norm": hp.get("max_grad_norm", 1.0),
+            "steps_per_report": hp.get("steps_per_report", 1),
+            "steps_per_eval": hp.get("steps_per_eval", 25),
+            "save_every": hp.get("save_every", 25),
+            "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
+            "prompt_template": hp.get(
+                "prompt_template", "backend/prompts/conductor_min.md"
+            ),
+            "facade_dapo_kwargs": "\n    ".join(_facade_dapo),
         }
 
     def _build_sft_context(
