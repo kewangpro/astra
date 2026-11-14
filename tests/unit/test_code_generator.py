@@ -2691,6 +2691,47 @@ def test_prompt_template_execs_bare_eval_with_the_variant(tmp_path, monkeypatch)
     assert "subprocess.run(" not in p
     assert '"--prompt-template"' in p
     assert "--no-adapter" in p          # scores the prompt, not an adapter
+    assert "/Users/kewang/astra-pkg" in p or "astra_pkg_root" in p
+
+
+def test_generate_training_script_prompt_canned_wrapper(tmp_path, monkeypatch):
+    """Live prompt missions freeze the shell; LLM only supplies EXTRA_RULES."""
+    import asyncio
+    from pathlib import Path
+    from unittest.mock import patch
+
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+
+    rules = (
+        'For cloud spend, NEVER route to Email; ALWAYS route to Business Reporting.\n'
+        'PLANNING EXAMPLE (billing):\n'
+        '- Query: "what is our AWS bill"\n'
+    )
+    provider = _make_provider(rules)
+    gen = CodeGenerator(provider)
+    plan = {
+        "task_type": "prompt",
+        "recipe": "ensemble_prompt_v1",
+        "hyperparameters": {},
+        "target_metric": {"pass_rate": 0.9},
+    }
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-prompt-can", plan)
+        )
+    text = Path(path).read_text()
+    assert "EXTRA_RULES =" in text
+    assert "Business Reporting" in text
+    assert "bare_eval.py" in text
+    assert "os.execv(" in text
+    assert "/Users/kewang/finetune" in text
+    assert "/Users/kewang/astra-pkg" in text
+    assert "/Users/kewang/finetune-env" in text
+    assert "expanduser" not in text
+    assert "ENSEMBLE_FROZEN_NOW" in text
+    provider.generate.assert_awaited()
 
 
 # ── SFT Code Generation Tests ────────────────────────────────────────────────

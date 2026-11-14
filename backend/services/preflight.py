@@ -48,6 +48,7 @@ class PreflightChecker:
         checks += self._check_packages(task_type)
         checks += self._check_remote_script(task_type)
         checks.append(self._check_remote_platform_imports(task_type))
+        checks.append(self._check_remote_astra_pkg_root(task_type))
 
         passed = all(c["passed"] for c in checks)
         result = PreflightResult(passed=passed, checks=checks)
@@ -203,6 +204,56 @@ class PreflightChecker:
                 f"({python_bin}). On Mini run: "
                 f"~/finetune-env/bin/pip install -e ~/astra-pkg "
                 f"(see Ensemble finetune/VENDOR.md). Original error: {err}"
+            ),
+        }
+
+    @staticmethod
+    def _check_remote_astra_pkg_root(task_type: str) -> dict:
+        """SSH ``test -d`` for the absolute astra_pkg_root baked into facades.
+
+        Remote train.py inserts this path on ``sys.path`` before astratune/astrarl
+        imports. A missing tree fails mid-mission with opaque ImportErrors after
+        codegen already burned an iteration. Unreachable host is non-blocking
+        (same policy as remote_script / remote_platform_imports).
+        """
+        from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
+        name = "remote_astra_pkg_root"
+        if task_type not in _FINETUNE_REMOTE_TASK_TYPES:
+            return {"name": name, "passed": True, "detail": "not a finetune-remote task — skipped"}
+        if not settings.sandbox_host:
+            return {"name": name, "passed": True,
+                    "detail": "no sandbox_host configured — skipped"}
+
+        from backend.agent.code_generator import (
+            _resolve_astra_pkg_root,
+            _resolve_hyperparams,
+        )
+        hp = _resolve_hyperparams(task_type, {})
+        root = _resolve_astra_pkg_root(hp)
+        if not root:
+            return {"name": name, "passed": True,
+                    "detail": "no astra_pkg_root resolved — skipped"}
+
+        try:
+            r = subprocess.run(
+                ["ssh", settings.sandbox_host,
+                 f"test -d {root} && echo yes || echo no"],
+                capture_output=True, text=True, timeout=30,
+            )
+        except Exception as exc:
+            return {"name": name, "passed": True,
+                    "detail": f"host unreachable, not blocking: {exc}"}
+
+        if r.stdout.strip() == "yes":
+            return {"name": name, "passed": True, "detail": root}
+
+        return {
+            "name": name,
+            "passed": False,
+            "detail": (
+                f"{root} not found on {settings.sandbox_host} — "
+                f"check recipe astra_pkg_root / ASTRA_PKG_ROOT, or rsync the "
+                f"Astra tree to Mini (see Ensemble finetune/VENDOR.md)"
             ),
         }
 

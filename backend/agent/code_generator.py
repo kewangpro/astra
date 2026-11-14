@@ -2083,71 +2083,112 @@ Emit EXACTLY:
 """
 
 
-_PROMPT_TEMPLATE = """\
-Generate a script that evaluates a CANDIDATE PROMPT VARIANT by invoking the
-EXISTING bare_eval.py — do NOT reimplement the eval, the scoring, or the routing
-oracle. This script writes one file and then execs bare_eval.py. It does NOT
-report telemetry itself; astra tails this process's log and parses the
-"Model-routed:" line on its own. Do not add any network calls.
+# Canned prompt-variant wrapper (shell frozen; LLM fills EXTRA_RULES only).
+_PROMPT_REMOTE_WRAPPER = """\
+import os
+import sys
+
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
+
+EXTRA_RULES = {extra_rules_repr}
+
+with open("{base_prompt}") as f:
+    base = f.read()
+os.makedirs(os.path.dirname("{variant_path}"), exist_ok=True)
+with open("{variant_path}", "w") as f:
+    f.write(base + "\\n\\n" + EXTRA_RULES)
+
+os.environ["ENSEMBLE_FROZEN_NOW"] = "{frozen_now}"
+os.execv(
+    "{python_bin}",
+    [
+        "{python_bin}", "{finetune_dir}/bare_eval.py",
+        "--model", "{base_model}",
+        "--no-adapter",
+        "--prompt-template", "{variant_path}",
+        "--max-tokens", "{eval_max_tokens}",
+    ],
+)
+"""
+
+# LLM prompt: emit only the appended EXTRA_RULES text (no Python).
+_PROMPT_RULES_PROMPT = """\
+Propose additional Ensemble routing rules that raise model-routed accuracy.
+Emit ONLY the appended rules block as plain text (markdown / examples OK).
+Do NOT emit Python, imports, os.execv, or a full script.
+
+You are NOT rewriting the base prompt — you cannot see it and must not try to
+reproduce it. It is ~5,100 tokens of existing rules; any attempt to restate it
+will silently drop content and score worse for a reason no one will be able to
+see. Astra reads the base file at runtime and appends your block (EXTRA_RULES).
 
 Mission ID: {mission_id}
-Finetune dir (remote host, bare_eval.py lives here): {finetune_dir}
-Python interpreter: {python_bin}
+BASE PROMPT path (read at runtime, never rewritten): {base_prompt}
+Variant output path: {variant_path}
+
+Target genuine routing ambiguities between canonical skills: "Market Analysis",
+"Business Reporting", "Data Services", "System Admin", "Programming",
+"Travel Planning", "General Chat", "Calendar", and dynamic MCP tools
+("mcp:<Server>:<tool>").
+
+CRITICAL GUIDANCE:
+- NEVER write abstract meta-rules (such as "be concise", "avoid repetition", or
+  "prioritize clarity"). Small language models (Gemma 3 4B) ignore abstract adages.
+- Prefer EXPLICIT NEGATIVE CONSTRAINTS and CONCRETE JSON FEW-SHOT EXAMPLES:
+    PLANNING EXAMPLE (<Label>):
+    - Query: "<query>"
+      - Task 1: {{"title": "<title>", "skill": "<Canonical Skill>", "agent_id": "<agent_id>", "arguments": {{...}}, "depends_on": []}}
+- A rule that repeats the base prompt is wasted; a contradicting rule makes the
+  model worse. Prefer few strong, specific rules over many weak ones.
+
+Output the EXTRA_RULES body only — nothing else.
+"""
+
+# Healer / docs: canned wrapper shape + same rules guidance (EXTRA_RULES filled live).
+_PROMPT_TEMPLATE = """\
+Generate EXTRA_RULES text for a canned prompt-variant wrapper that appends your
+block to the base conductor prompt and os.execv's bare_eval.py. Do NOT
+reimplement the eval/oracle. Live codegen freezes the shell; you supply rules.
+
+Mission ID: {mission_id}
+Finetune dir: {finetune_dir}
+Python: {python_bin}
+Astra pkg root: {astra_pkg_root}
 Base model: {base_model}
 BASE PROMPT (read at runtime, never rewritten): {base_prompt}
 Variant output path: {variant_path}
 Frozen clock instant: {frozen_now}
+eval_max_tokens: {eval_max_tokens}
 
-THE TASK: propose additional routing rules that raise model-routed accuracy, and
-write them as an APPENDED block. You are NOT rewriting the base prompt — you
-cannot see it and must not try to reproduce it. It is ~5,100 tokens of existing
-rules; any attempt to restate it will silently drop content and score worse for a
-reason no one will be able to see. The script reads the base file at runtime and
-appends your block to it.
+You are NOT rewriting the base prompt — you cannot see it and must not try to reproduce it.
+It is ~5,100 tokens of existing rules. Read-then-append ONLY —
+never open the base prompt for writing; it is ensemble's committed file.
 
-What the appended block should contain: a short, specific set of concrete routing
-rules or JSON planning examples. Target genuine routing ambiguities between
-canonical skills: "Market Analysis", "Business Reporting", "Data Services",
+Target skills: "Market Analysis", "Business Reporting", "Data Services",
 "System Admin", "Programming", "Travel Planning", "General Chat", "Calendar",
 and dynamic MCP tools ("mcp:<Server>:<tool>").
 
 CRITICAL GUIDANCE:
 - NEVER write abstract meta-rules (such as "be concise", "avoid repetition", or
-  "prioritize clarity"). Small language models (Gemma 3 4B) ignore abstract adages.
-- The model responds to EXPLICIT NEGATIVE CONSTRAINTS (e.g. "For cloud spend and
-  billing, NEVER route to Email or General Chat to ask for data; telemetry is auto-loaded;
-  ALWAYS route to Business Reporting") and CONCRETE JSON FEW-SHOT EXAMPLES:
-    PLANNING EXAMPLE (<Label>):
-    - Query: "<query>"
-      - Task 1: {{"title": "<title>", "skill": "<Canonical Skill>", "agent_id": "<agent_id>", "arguments": {{...}}, "depends_on": []}}
-- A rule that repeats something the base prompt already says is wasted, and a rule
-  that contradicts it makes the model worse. Prefer few strong, specific rules over
-  many weak ones.
+  "prioritize clarity").
+- Prefer EXPLICIT NEGATIVE CONSTRAINTS and CONCRETE JSON FEW-SHOT EXAMPLES.
+- Prefer few strong, specific rules over many weak ones.
 
-The script must:
-1. Import os and sys only. Do NOT import subprocess or requests. Do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — astra tracks this wrapper
-   process's own pid as the running job; a fork+exec child gets a pid astra never
-   learns and can never clean up.
-2. First os.chdir("{finetune_dir}") — bare_eval.py resolves --prompt-template and
-   its own eval-cases path relative to the working directory.
-3. Define your proposed rules as a module-level string literal named EXTRA_RULES.
-4. Read the base prompt, append EXTRA_RULES, and write the result to
-   "{variant_path}", creating parent directories if needed:
+The live train.py shape (EXTRA_RULES is your block):
+
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       EXTRA_RULES = \"\"\"…your rules…\"\"\"
        with open("{base_prompt}") as f:
            base = f.read()
        os.makedirs(os.path.dirname("{variant_path}"), exist_ok=True)
        with open("{variant_path}", "w") as f:
-           f.write(base + "\n\n" + EXTRA_RULES)
-   Read-then-append ONLY. Never open the base prompt for writing — it is
-   ensemble's committed file and this mission proposes a variant, it does not
-   edit the original.
-5. Set the frozen clock so the score is comparable across iterations and
-   missions. bare_eval does not freeze its own clock, and the prompt carries a
-   date that changes the model's output:
+           f.write(base + "\\n\\n" + EXTRA_RULES)
        os.environ["ENSEMBLE_FROZEN_NOW"] = "{frozen_now}"
-6. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path,
-   C-style exec convention) — this call does not return:
        os.execv(
            "{python_bin}",
            [
@@ -2157,7 +2198,8 @@ The script must:
                "--prompt-template", "{variant_path}",
                "--max-tokens", "{eval_max_tokens}",
            ],
-       )"""
+       )
+"""
 
 _ML_TEMPLATE = """\
 Generate a complete ML training script.
@@ -2907,6 +2949,32 @@ class CodeGenerator:
                     warm_start_adapter=warm_start_adapter,
                 )
             )
+        elif active_task == "prompt":
+            prompt_ctx = self._build_prompt_context(
+                mission_id, plan, checkpoint_dir, current_iteration,
+                warm_start_adapter=warm_start_adapter,
+            )
+            rules_prompt = _PROMPT_RULES_PROMPT.format(**prompt_ctx)
+            messages = [
+                Message(role="system", content=(
+                    "You propose Ensemble routing EXTRA_RULES only. "
+                    "No Python, no scripts, no os.execv."
+                )),
+                Message(role="user", content=rules_prompt),
+            ]
+            rules = await self._provider.generate(
+                messages, GenerationConfig(max_tokens=2048, temperature=0.4),
+            )
+            rules = self._strip_fences(rules).strip()
+            if not rules:
+                rules = (
+                    "# (empty rules — healer/provider returned nothing)\n"
+                    "# Prefer concrete negative constraints over meta-adages."
+                )
+            code = _PROMPT_REMOTE_WRAPPER.format(
+                **prompt_ctx,
+                extra_rules_repr=repr(rules),
+            )
         elif active_task == "dpo":
             code = _DPO_REMOTE_WRAPPER.format(
                 **self._build_dpo_context(
@@ -3407,6 +3475,32 @@ class CodeGenerator:
             "facade_dapo_kwargs": "\n    ".join(_facade_dapo),
         }
 
+    def _build_prompt_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        """Context for _PROMPT_REMOTE_WRAPPER / heal _PROMPT_TEMPLATE."""
+        recipe_key = plan.get("recipe") or "prompt"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        return {
+            "mission_id": mission_id,
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-4b-it-4bit"),
+            "base_prompt": hp.get("base_prompt", "backend/prompts/conductor_gemma.md"),
+            "variant_path": f"{checkpoint_dir}/conductor_variant.md",
+            "frozen_now": hp.get("frozen_now", "2026-09-08T09:00:00"),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+        }
+
     def _build_agrpo_context(
         self,
         mission_id: str,
@@ -3898,8 +3992,10 @@ class CodeGenerator:
             return _STAR_TEMPLATE.format(**ctx)
         if effective_task_type == "prompt":
             ctx = {
-                **hp,
-                "variant_path": f"{checkpoint_dir}/conductor_variant.md",
+                **self._build_prompt_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                ),
                 **base,
             }
             return _PROMPT_TEMPLATE.format(**ctx)

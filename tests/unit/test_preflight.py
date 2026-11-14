@@ -175,3 +175,46 @@ class TestCheckRemotePlatformImports:
             out = PreflightChecker._check_remote_platform_imports("distill")
         assert out["passed"] is True
         assert "unreachable" in out["detail"]
+
+
+# ── _check_remote_astra_pkg_root ──────────────────────────────────────────────
+
+class TestCheckRemoteAstraPkgRoot:
+    def test_skipped_for_local_task_types(self):
+        out = PreflightChecker._check_remote_astra_pkg_root("rl")
+        assert out["passed"] is True
+        assert "skipped" in out["detail"]
+
+    def test_skipped_without_sandbox_host(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "")
+        out = PreflightChecker._check_remote_astra_pkg_root("dpo")
+        assert out["passed"] is True
+        assert "skipped" in out["detail"]
+
+    def test_passes_when_directory_exists(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
+        with patch("backend.services.preflight.subprocess.run") as run:
+            run.return_value = type("R", (), {"returncode": 0, "stdout": "yes\n", "stderr": ""})()
+            out = PreflightChecker._check_remote_astra_pkg_root("prompt")
+        assert out["passed"] is True
+        assert out["name"] == "remote_astra_pkg_root"
+        cmd = run.call_args.args[0][2]
+        assert "test -d" in cmd
+        assert "astra-pkg" in cmd or "astra_pkg" in out["detail"]
+
+    def test_fails_with_recipe_rsync_hint(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
+        with patch("backend.services.preflight.subprocess.run") as run:
+            run.return_value = type("R", (), {"returncode": 0, "stdout": "no\n", "stderr": ""})()
+            out = PreflightChecker._check_remote_astra_pkg_root("grpo")
+        assert out["passed"] is False
+        assert "astra_pkg_root" in out["detail"] or "ASTRA_PKG_ROOT" in out["detail"]
+        assert "rsync" in out["detail"] or "VENDOR.md" in out["detail"]
+
+    def test_unreachable_host_does_not_block(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
+        with patch("backend.services.preflight.subprocess.run",
+                   side_effect=RuntimeError("ssh timeout")):
+            out = PreflightChecker._check_remote_astra_pkg_root("agrpo")
+        assert out["passed"] is True
+        assert "unreachable" in out["detail"]
