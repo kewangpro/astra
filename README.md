@@ -157,7 +157,7 @@ make ports  # show port status for all services
 
 ## Strategic Development Milestones
 
-ASTRA's architecture and capabilities are structured into nine thematic epochs (~10–18 phases each; Epochs 7 and 9 are shorter architecture milestones). Phase numbers stay chronological; epoch membership is thematic — see [IMPLEMENT.md](docs/IMPLEMENT.md).
+ASTRA's architecture and capabilities are structured into ten thematic epochs (~10–18 phases each; Epochs 7, 9, and 10 are shorter architecture milestones). Phase numbers stay chronological; epoch membership is thematic — see [IMPLEMENT.md](docs/IMPLEMENT.md).
 
 | Epoch | Scope & Strategic Capabilities | Key Components | Status |
 |---|---|---|---|

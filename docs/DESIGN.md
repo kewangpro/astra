@@ -34,14 +34,15 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orch
                                                         |    Secure Sandbox     |
                                                         +-----------+-----------+
                                                                     |
-                                    gym-coupled RL              v
-                                          +-------------+-----------------------+
-                                          |  AstraGym   |       AstraRL         |
-                                          |  (gym_id)   |     (learner_id)      |
-                                          +------+------+-----------+-----------+
-                                                 |                  |
-                                                 v                  v
-                                          worlds / rewards    SB3 + MLX GRPO/OPD
+                              platform packages (under sandbox)          v
+                    +-------------+------------------+------------------+
+                    |  AstraGym   |     AstraRL      |    AstraTune     |
+                    |  (gym_id)   |  (learner_id)    |  (learner_id)    |
+                    +------+------+--------+---------+--------+---------+
+                           |               |                  |
+                           v               v                  v
+                    worlds/rewards   SB3 + GRPO/OPD     SFT/DPO/distill/
+                                     (gym-coupled)      RFT/STAR/RLCD
 ```
 
 ---
@@ -66,7 +67,7 @@ Plan → generate script → sandbox → evaluate → pivot or stop.
 - **Pivots** escalate when a plateau holds: hyperparameters, then architecture, then algorithm (unless the goal named one), then reward shape. Deep plateau plus a long stretch without a new best is **converged below target** (terminal `stalled`). Reverting a bad architecture restores the checkpoint but still counts as a failed search.
 - **Unnamed RL goals** take the env recipe’s algorithm; a named trainer stays locked.
 - **Warm-start** loads a prior checkpoint only when algorithm and policy tensor shapes match. A smaller net than the best-known architecture is refused until deep plateau.
-- **Fine-tune-remote** missions (`dpo` / `grpo` / `distill` / `opd` / `rft` / `rlcd` / `sft` / `prompt`) keep the recipe authoritative. Pivots may only touch a small per-type sampling or duration safelist so a LoRA warm-start cannot be broken by a hallucinated learning rate or layer count.
+- **Fine-tune-remote** missions keep the recipe authoritative. Gym-coupled LM workers (`grpo` / `agrpo` / `opd`) dispatch via `astrarl.make(..., use_execv=True)`; offline LM workers (`sft` / `dpo` / `distill` / `rft` / `star` / `rlcd`) via `astratune.make(..., use_execv=True)`. Pivots may only touch a small per-type sampling or duration safelist so a LoRA warm-start cannot be broken by a hallucinated learning rate or layer count. Recipes one-click dispatch fills empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
 ### 2.3. Memory
 
@@ -168,16 +169,16 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
 | Generative recommendation | HSTU (`hstu`) |
 
-**Online vs offline (data collection).** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it). **AstraRL?** is independent of that label: gym-coupled learners (including DQN replay) are In; dataset / preference / SFT-family workers are Out (§ 2.4).
+**Online vs offline (data collection).** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it). Package ownership is independent of that label (§ 2.4): gym-coupled → AstraRL; offline LM → AstraTune.
 
-| Mode | In ASTRA | AstraRL? | Notes |
+| Mode | In ASTRA | Package | Notes |
 |---|---|---|---|
-| **Online** | Env: PPO, A2C; LM: GRPO, Agent GRPO (`agrpo`); OPD (student rollouts) | Yes | On-policy samples from the live policy each step |
-| **Offline** | Env: DQN/SAC/TD3 (replay) | Yes | Replay buffer, but still `astragym` × `sb3_*` |
-| **Offline** | LM: DPO, SFT, distill, RFT survivors, STaR JSONL, RLCD `--cases` | No | Fixed preference pairs / labeled JSONL; no AstraGym |
-| **Mixed** | DPO can *harvest* pairs online then optimize offline; RFT samples then SFT | No | Collection ≠ the loss; workers stay dataset-family |
+| **Online** | Env: PPO, A2C; LM: GRPO, Agent GRPO (`agrpo`); OPD (student rollouts) | AstraRL | On-policy samples from the live policy each step |
+| **Offline** | Env: DQN/SAC/TD3 (replay) | AstraRL | Replay buffer, but still `astragym` × `sb3_*` |
+| **Offline** | LM: DPO, SFT, distill, RFT survivors, STaR JSONL, RLCD `--cases` | AstraTune | Fixed preference pairs / labeled JSONL; no AstraGym |
+| **Mixed** | DPO can *harvest* pairs online then optimize offline; RFT samples then SFT | AstraTune | Collection ≠ the loss; workers stay dataset-family |
 
-Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL (including the AgentGym MLP policy). Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy **single-turn** rollouts with the routing oracle and a group-relative advantage. Agent GRPO (`agrpo`) is **online multi-turn** tool RL: K trajectories in AgentGym text (or e2e stubs), trajectory-level reward, GRPO over assistant turns — not routing `score_completion`. DPO is **offline** preference learning: the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true`.
+Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL (including the AgentGym MLP policy). Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy **single-turn** rollouts with the routing oracle and a group-relative advantage. Agent GRPO (`agrpo`) is **online multi-turn** tool RL: K trajectories in AgentGym text (or e2e stubs), trajectory-level reward, GRPO over assistant turns — not routing `score_completion`. DPO is **offline** preference learning via AstraTune (`mlx_dpo`): the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD (AstraTune `mlx_rlcd`) trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true`.
 
 **Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA (public Noul/Choice/Score) → Ensemble specialize/focus → live `:8082` readout. One-shot replay: `ensemble_decision_from_scratch_v1`. Staged: `ensemble_decision_foundation_v1` → `continue_v1` → `specialize_v1` → `specialize_focus_v1`. Legacy routing: `ensemble_rlcd_*` (`--routing-only`). Diagram + promote rules live in Ensemble [`finetune/data/decision/README.md`](../../ensemble/finetune/data/decision/README.md#locked-approach) and Ensemble DESIGN §3.15b.
 

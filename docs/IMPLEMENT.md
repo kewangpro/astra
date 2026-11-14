@@ -1,6 +1,6 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA` in **nine thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
+This document outlines the architectural implementation roadmap for `ASTRA` in **ten thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
 
 ## Strategic Epoch Roadmap
 
@@ -17,7 +17,7 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split; MLX facade + DAPO-lite; platform GRPO runtime extracted from Ensemble | 101–113 | 13 | ✅ |
 | **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini | 114–119 | 6 | ✅ |
 
-Epochs 7 and 9 are intentionally shorter **architecture** milestones (agent stack, then Gym×RL split); Epochs 3–6 absorb the former “continuity” band.
+Epochs 7, 9, and 10 are intentionally shorter **architecture** milestones (agent stack, Gym×RL split, then offline AstraTune); Epochs 3–6 absorb the former “continuity” band.
 
 ---
 
@@ -2841,7 +2841,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 - [x] DESIGN §2.4 — AstraGym / AstraRL / Orchestrator; `gym_id` × `learner_id` taxonomy for gym-coupled RL (incl. off-policy SB3).
 - [x] Packages `astragym/` and `astrarl/` with `make()` factories and protocols.
-- [x] Dataset / preference / SFT-family workers remain outside AstraRL (off-policy SB3 stays in).
+- [x] Dataset / preference / SFT-family workers remain outside AstraRL (off-policy SB3 stays in); Epoch 10 moves them into AstraTune.
 
 ## Phase 102: AstraGym implementations
 
@@ -2905,7 +2905,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 ## Phase 112: Packaging + Mini vendor story
 
 - [x] Root `pyproject.toml` for installable `astragym`/`astrarl`; `scripts/sync_astrarl_astragym.sh`.
-- [x] Ensemble `finetune/VENDOR.md` — prefer `pip install -e` Astra; mirrors transitional.
+- [x] Ensemble `finetune/VENDOR.md` — prefer `pip install -e` Astra; mirrors transitional (removed in Epoch 10 / Phase 118).
 
 ## Phase 113: Boundary docs
 
@@ -2949,6 +2949,7 @@ Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` 
 
 ## Phase 119: Docs + product surface
 
-- [x] DESIGN §2.4 third platform column + AstraTune tables; README Epoch 10.
-- [x] Ensemble FINETUNE / methods cite `astratune` for Methods A–D/F/H.
-- [x] In-app `/docs` SFT/DPO families; recipe dispatch target default documented.
+- [x] DESIGN §2.4 third platform column + AstraTune tables; overview ASCII includes AstraTune; online/offline package column.
+- [x] README / IMPLEMENT Epoch 10 (ten thematic epochs); UX_SPEC `/docs` Epoch 9–10 framing.
+- [x] Ensemble FINETUNE / methods cite `astratune` for Methods A–D/F/H (E/G stay `astrarl`); VENDOR pip-only.
+- [x] In-app `/docs` SFT/DPO/RLCD families; recipe dispatch target default documented.

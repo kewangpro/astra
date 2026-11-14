@@ -55,7 +55,7 @@
 
 Nav item after Models. A task index on the left, one section per task. Each section states the objective, then one row per algorithm with its worker key (`task_type`) and what the update does. Copy distinguishes **online** (fresh policy rollouts during training) vs **offline** (fixed logged / preference / JSONL data). Task sections match the goal-bar groups, including **Agentic RL** (Agent GRPO / `agrpo` — multi-turn tool trajectories).
 
-Epoch 9: gym-coupled RL is framed as **AstraGym** (`gym_id`) × **AstraRL** (`learner_id`) with Astra as Orchestrator — named in the relevant online / env task summaries. AstraRL also owns the platform GRPO runtime (rollout / DAPO-lite / loss); Ensemble is the routing reward-plugin use case. Dataset / preference / SFT-family workers do not use AstraRL.
+Epoch 9–10: gym-coupled RL is **AstraGym** (`gym_id`) × **AstraRL** (`learner_id`); offline LM post-training is **AstraTune** (`mlx_sft` / `mlx_dpo` / …). Astra is Orchestrator. AstraRL owns the platform GRPO runtime (rollout / DAPO-lite / loss); AstraTune owns LoRA I/O and SFT/DPO/distill/RLCD math. Ensemble is the use-case CLI + plugins (routing reward, preference pairs, decision cases). Named in the relevant `/docs` task summaries.
 
 
 
