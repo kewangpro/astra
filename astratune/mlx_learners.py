@@ -1,4 +1,8 @@
-"""AstraTune MLX offline learner entrypoints (Ensemble ``*_train.py`` scripts)."""
+"""AstraTune MLX offline learner entrypoints (Ensemble thin ``*_train.py``).
+
+Training loops live in ``astratune.train_*`` / ``ce_loop``; Ensemble CLIs stay
+the Mini ``os.execv`` targets and inject use-case hooks.
+"""
 from __future__ import annotations
 
 ENTRYPOINTS: dict[str, str] = {

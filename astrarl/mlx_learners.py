@@ -1,8 +1,9 @@
-"""MLX online-RL learner ids — CLI entrypoints live in Ensemble finetune/.
+"""MLX online-RL learner ids — facades execv into Ensemble thin CLIs.
 
-These symbols document the contract and provide resolve helpers. Heavy training
-remains in ``grpo_train.py`` / ``agent_grpo_train.py`` / ``opd_train.py`` so
-Mini SSH preflight script names stay stable.
+Heavy training loops live in ``astrarl.train_grpo_routing``,
+``astrarl.train_grpo_traj``, and ``astrarl.train_opd``. Ensemble
+``grpo_train.py`` / ``agent_grpo_train.py`` / ``opd_train.py`` remain the Mini
+SSH preflight / ``os.execv`` entrypoint names and inject use-case hooks.
 """
 from __future__ import annotations
 

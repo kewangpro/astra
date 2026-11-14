@@ -6,7 +6,14 @@ import math
 import pytest
 
 from astratune.dpo_math import dpo_loss_from_logprobs
-from astratune.rlcd_math import proper_score, readout_logit_grads, standard_brier
+from astratune.rlcd_math import (
+    fit_prompt,
+    leave_one_out_advantages,
+    proper_score,
+    readout_logit_grads,
+    softmax,
+    standard_brier,
+)
 
 
 def _sigmoid(x: float) -> float:
@@ -55,3 +62,31 @@ def test_readout_logit_grads_sum_to_zero() -> None:
     u = [0.5, 0.3, 0.2]
     grads = readout_logit_grads(u, 1, "brier")
     assert sum(grads) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_softmax_uniform() -> None:
+    u = softmax([0.0, 0.0, 0.0])
+    assert u == pytest.approx([1 / 3, 1 / 3, 1 / 3])
+
+
+def test_leave_one_out_zero_when_equal() -> None:
+    adv = leave_one_out_advantages([0.2, 0.2, 0.2, 0.2], [0.0, 0.0, 0.0, 0.0], beta=0.04)
+    assert adv == pytest.approx([0.0, 0.0, 0.0, 0.0])
+
+
+def test_leave_one_out_prefers_higher_reward() -> None:
+    adv = leave_one_out_advantages([1.0, 0.0, 0.0, 0.0], [0.0] * 4, beta=0.0)
+    assert adv[0] > adv[1]
+
+
+def test_leave_one_out_rejects_single() -> None:
+    with pytest.raises(ValueError):
+        leave_one_out_advantages([1.0], [0.0], beta=0.0)
+
+
+def test_fit_prompt_truncates_tail() -> None:
+    prompt = list(range(10))
+    comp = [100, 101]
+    out = fit_prompt(prompt, comp, limit=5)
+    assert len(out) + len(comp) == 5
+    assert out == [7, 8, 9]
