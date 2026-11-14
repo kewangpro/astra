@@ -58,7 +58,7 @@ def run_grpo_traj_train(args, hooks) -> None:
 
     print("--- Baseline eval (step 0) ---")
     model.eval()
-    base_rate, n_pass, n_total = eval_task_success(
+    base_rate, n_pass, n_total = hooks.eval_task_success(
         model, tokenizer, len(hooks.SCENARIOS), args.max_turns, args.max_tokens,
     )
     print(f"Pass rate: {base_rate:.1%} ({n_pass}/{n_total})")
@@ -82,12 +82,12 @@ def run_grpo_traj_train(args, hooks) -> None:
         for _ in range(args.num_generations):
             if e2e_cases:
                 case = random.choice(e2e_cases)
-                traj = rollout_e2e_stub(
+                traj = hooks.rollout_e2e_stub(
                     model, tokenizer, case, args.max_turns, args.max_tokens, args.temp,
                 )
             else:
                 scenario_idx = random.randrange(len(hooks.SCENARIOS))
-                traj = rollout_agent_gym(
+                traj = hooks.rollout_agent_gym(
                     model, tokenizer, scenario_idx, args.max_turns,
                     args.max_tokens, args.temp, args.tool_failure_prob,
                 )
@@ -172,7 +172,7 @@ def run_grpo_traj_train(args, hooks) -> None:
         if step % args.steps_per_eval == 0:
             print(f"\n--- Eval at step {step} ---")
             model.eval()
-            pass_rate, n_pass, n_total = eval_task_success(
+            pass_rate, n_pass, n_total = hooks.eval_task_success(
                 model, tokenizer, len(hooks.SCENARIOS), args.max_turns, args.max_tokens,
             )
             print(f"Pass rate: {pass_rate:.1%} ({n_pass}/{n_total})")
@@ -182,13 +182,13 @@ def run_grpo_traj_train(args, hooks) -> None:
                 print(f"  New best → {save_dir / 'best'}")
 
         if step % args.save_every == 0:
-            save_checkpoint(model, save_dir, step)
+            hooks.save_checkpoint(model, save_dir, step)
 
     hooks.save_final_adapter(model, save_dir, args)
     print(f"\nDone. Best pass rate: {best_pass_rate:.1%}")
     # Final pass-rate line for Astra telemetry parsers
     model.eval()
-    pass_rate, n_pass, n_total = eval_task_success(
+    pass_rate, n_pass, n_total = hooks.eval_task_success(
         model, tokenizer, len(hooks.SCENARIOS), args.max_turns, args.max_tokens,
     )
     print(f"Pass rate: {pass_rate:.1%} ({n_pass}/{n_total})")

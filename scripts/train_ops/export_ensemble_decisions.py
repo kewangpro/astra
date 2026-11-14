@@ -29,7 +29,7 @@ from core.decision_prompt import (  # noqa: E402
     normalize_decision_case,
     routing_case_to_decision,
 )
-from rlcd_train import (  # noqa: E402
+from ensemble_usecase.rlcd import (  # noqa: E402
     _case_expected_skill,
     closed_skill_set,
     load_routing_cases,

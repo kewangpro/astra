@@ -1,5 +1,6 @@
 """DPO training loop — platform-owned (astratune)."""
 from __future__ import annotations
+from dataclasses import asdict
 import json, random, sys, time
 from pathlib import Path
 from typing import Any
@@ -59,7 +60,7 @@ def run_dpo_train(args, hooks) -> None:
     print(f"Warm-start (reference): {loaded}\n")
 
     raw_cases     = hooks.load_training_cases(include_auto=not args.no_auto_cases)
-    stats = hooks.case_pool_stats(raw_cases, is_dynamic_mcp=is_dynamic_mcp_case)
+    stats = hooks.case_pool_stats(raw_cases, is_dynamic_mcp=hooks.is_dynamic_mcp_case)
     print(
         f"Case sources: golden={stats['golden']} auto={stats['auto']} "
         f"(auto trainable: {len(stats['auto_trainable_ids'])})"
@@ -94,7 +95,7 @@ def run_dpo_train(args, hooks) -> None:
     if args.load_pairs:
         print(f"Loading pairs from {args.load_pairs}...")
         with open(args.load_pairs) as f:
-            pairs = [DPOPair(**json.loads(line)) for line in f if line.strip()]
+            pairs = [hooks.DPOPair(**json.loads(line)) for line in f if line.strip()]
         if exclude_mcp:
             mcp_ids = {c["id"] for c in raw_cases
                        if c.get("mode") == "routing" and hooks.is_dynamic_mcp_case(c)}
@@ -110,7 +111,7 @@ def run_dpo_train(args, hooks) -> None:
         print(f"Loaded {len(pairs)} pairs\n")
     else:
         model.eval()
-        pairs = collect_pairs(
+        pairs = hooks.collect_pairs(
             model, tokenizer, pool_cases,
             K            = args.K_collect,
             max_tokens   = args.max_tokens,
@@ -135,7 +136,7 @@ def run_dpo_train(args, hooks) -> None:
 
     # ── Phase 2: Cache reference log-probs ────────────────────────────────────
     # Model weights are still at warm-start here — this is the reference policy.
-    ref_lps = cache_ref_log_probs(model, tokenizer, pairs)
+    ref_lps = hooks.cache_ref_log_probs(model, tokenizer, pairs)
 
     # ── Tokenise all pairs up-front (amortises cost across epochs) ────────────
     print("Tokenising pairs...")
@@ -255,7 +256,7 @@ def run_dpo_train(args, hooks) -> None:
 
         avg_epoch_loss = epoch_loss / len(tokenised)
         print(f"\n=== Epoch {epoch}/{args.epochs} done  avg_loss={avg_epoch_loss:.4f} ===\n")
-        save_checkpoint(model, save_dir, global_step)
+        hooks.save_checkpoint(model, save_dir, global_step)
 
     # ── Final save and eval ────────────────────────────────────────────────────
     hooks.save_final_adapter(model, save_dir, args)

@@ -106,6 +106,20 @@ def main(argv: list[str] | None = None) -> None:
         build_parser().print_help()
         sys.exit(2 if not known.command else 0)
 
+    if any(a in ("-h", "--help") for a in rest):
+        workspace = known.workspace or known.finetune_dir or ""
+        if workspace:
+            _ensure_workspace_on_path(workspace)
+        try:
+            plugin = load_use_case(known.use_case)
+            parse = getattr(plugin, "parse_args", None)
+            if callable(parse):
+                parse(known.command, rest)
+        except Exception:
+            print(f"usage: python -m astratune.cli {known.command} [learner flags…]")
+            print("(install Ensemble use-case on PYTHONPATH for full --help)")
+            sys.exit(0)
+
     workspace = known.workspace or known.finetune_dir or ""
     if workspace:
         os.chdir(workspace)

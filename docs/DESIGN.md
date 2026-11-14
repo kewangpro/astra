@@ -214,9 +214,9 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
   |  ASTRA_PKG_ROOT      |                  | 2. path+= finetune_dir           |
   +----------------------+                  | 3. path+= astra_pkg_root         |
                                             | 4. astratune|astrarl.make(…)     |
-                                            | 5. os.execv → *_train.py         |
+                                            | 5. os.execv → -m astrarl/astratune.cli |
                                             |                                  |
-                                            | ~/finetune     Ensemble CLI+data |
+                                            | ~/finetune     workspace+plugin  |
                                             | ~/astra-pkg    pip -e packages   |
                                             | ~/finetune-env MLX + site-pkgs   |
                                             +----------------------------------+
@@ -224,11 +224,11 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 | Knob | Typical Mini value | Role |
 |---|---|---|
-| `finetune_dir` | `/Users/kewang/finetune` | `os.chdir` + Ensemble imports / relative prompts & adapters |
+| `finetune_dir` | `/Users/kewang/finetune` | Workspace cwd + Ensemble product data / plugin on `PYTHONPATH` |
 | `python_bin` | `/Users/kewang/finetune-env/bin/python` | MLX + pip-installed platform packages (`os.execv` target) |
 | `astra_pkg_root` | `/Users/kewang/astra-pkg` | `sys.path.insert` before `import astrarl` / `astratune` |
 
-Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by Ensemble `*_train.py` (same pid). Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better. Smoke: `recipes/ensemble_dpo_astratune_smoke.yaml` (load-pairs, one epoch) validates the AstraTune facade path without pair collection.
+Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the Ensemble `ensemble_usecase` plugin. Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better. Smoke: `recipes/ensemble_dpo_astratune_smoke.yaml` (load-pairs, one epoch) validates the AstraTune facade path without pair collection.
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 

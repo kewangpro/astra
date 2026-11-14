@@ -1430,7 +1430,7 @@ The script must:
 _DPO_TEMPLATE = """\
 Generate a script that runs DPO via AstraTune MLXLearnerFacade — do NOT reimplement
 pair collection / preference loss and do NOT hand-build a long os.execv argv list.
-The facade maps kwargs to Ensemble dpo_train.py and uses os.execv so the
+The facade maps kwargs to ``python -m astratune.cli dpo`` and uses os.execv so the
 sandbox-tracked pid stays identical to the trainer. This script does NOT report
 telemetry; Astra tails "Pass rate" lines remotely. No network calls (no requests).
 
@@ -1487,7 +1487,7 @@ Emit EXACTLY this script shape (chdir/path triad before import):
        )
        learner.learn()
 
-   learn() with use_execv=True never returns (process image becomes dpo_train.py)."""
+   learn() with use_execv=True never returns (process image becomes astratune.cli dpo)."""
 
 # Canned remote GRPO wrapper (no coder LLM). Path/chdir before import astrarl so
 # Mini works with pip-installed astrarl (astra_pkg_root) even if launcher
@@ -1541,7 +1541,7 @@ learner.learn()
 _GRPO_TEMPLATE = """\
 Generate a script that runs GRPO via AstraRL MLXLearnerFacade — do NOT reimplement
 rollout/reward/PPO math and do NOT hand-build a long os.execv argv list for every
-flag. The facade maps kwargs to Ensemble grpo_train.py and uses os.execv so the
+flag. The facade maps kwargs to ``python -m astrarl.cli grpo`` and uses os.execv so the
 sandbox-tracked pid stays identical to the trainer. This script does NOT report
 telemetry; Astra tails "Pass rate" lines remotely. No network calls (no requests).
 
@@ -1607,7 +1607,7 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
        )
        learner.learn()
 
-   learn() with use_execv=True never returns (process image becomes grpo_train.py)."""
+   learn() with use_execv=True never returns (process image becomes astrarl.cli grpo)."""
 
 # Canned remote Agent GRPO wrapper (no coder LLM). Same triad + astrarl.make as GRPO.
 _AGRPO_REMOTE_WRAPPER = """\
@@ -1655,7 +1655,7 @@ _AGRPO_TEMPLATE = """\
 Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) via
 AstraRL MLXLearnerFacade — do NOT reimplement the rollout loop / reward / GRPO
 update and do NOT hand-build a long os.execv argv list. The facade maps kwargs
-to Ensemble agent_grpo_train.py (os.execv, same pid). No network calls; Astra
+to ``python -m astrarl.cli agrpo`` (os.execv, same pid). No network calls; Astra
 tails "Pass rate" remotely.
 
 Epoch 9+: AstraGym gym_id={gym_id} × AstraRL learner_id={learner_id}
@@ -1711,7 +1711,7 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
        )
        learner.learn()
 
-   learn() with use_execv=True never returns (process image becomes agent_grpo_train.py)."""
+   learn() with use_execv=True never returns (process image becomes astrarl.cli agrpo)."""
 
 # Prompt retained for healers / docs; live codegen uses _DISTILL_REMOTE_WRAPPER.
 _DISTILL_TEMPLATE = """\
