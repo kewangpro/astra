@@ -81,24 +81,21 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 **Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Do not treat SB3 envs, routing GRPO, Agent GRPO, or OPD as ad-hoc script islands — they share `astragym.make(gym_id)` and `astrarl.make(learner_id)`. **Astra = platform** (contracts + GRPO runtime); **Ensemble = use case** (routing rewards, cases, prompts, adapters, thin CLI). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
-```mermaid
-flowchart TB
-  subgraph astra [Astra platform]
-    orch[Mission loop recipes sandbox]
-    gym[AstraGym worlds]
-    rl[AstraRL Learner + rollout + GRPO runtime]
-  end
-  subgraph ensemble [Ensemble use case]
-    reward[score_completion case_pool]
-    prompts[conductor prompts eval_cases]
-    adapters[adapters bare_eval promote]
-    thin[Thin CLI wrappers]
-  end
-  orch --> rl
-  rl --> thin
-  thin --> reward
-  thin --> prompts
-  gym --> reward
+```
++--------------------------------+          +----------------------------------+
+|       Astra platform           |          |       Ensemble use case          |
++--------------------------------+          +----------------------------------+
+| Mission loop / recipes /       |          | Thin CLI (grpo_train.py)         |
+| sandbox (Orchestrator)         |          |   |                              |
+|            |                   |          |   +-- score_completion /         |
+|            v                   |  facade  |   |   case_pool                  |
+| AstraRL Learner + rollout +    |  execv   |   +-- conductor prompts /        |
+| GRPO runtime                   |--------->|   |   eval_cases                 |
+|            ^                   |          |   +-- adapters / bare_eval /     |
+|            |                   |          |       promote                    |
+| AstraGym worlds (gym_id)       |          |                                  |
+|   rewards / eval contract -----+--------->| RoutingRewardPlugin              |
++--------------------------------+          +----------------------------------+
 ```
 
 | Layer | Package / role | Owns |
