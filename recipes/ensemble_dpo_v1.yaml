@@ -2,15 +2,17 @@ name: ensemble_dpo_v1
 version: "1.0.0"
 created_at: "2026-07-03"
 task_type: dpo
+learner_id: mlx_dpo
 domain: NLP
 description: >
-  DPO (Direct Preference Optimization) fine-tuning for the Ensemble routing
-  model. Wraps the existing ensemble/finetune/dpo_train.py script rather than
-  reimplementing the training loop — astra only orchestrates dispatch,
-  telemetry, and pivoting. Runs on the Mac Mini, where ~/finetune holds the
-  script + adapters and ~/finetune-env has mlx_lm installed.
+  DPO (Direct Preference Optimization) for Ensemble routing. AstraTune owns
+  LoRA I/O + preference loss math; Ensemble dpo_train.py is a thin CLI +
+  PreferencePlugin (pair collect, oracle, prompts). Missions dispatch via
+  astratune.make("mlx_dpo", use_execv=True).learn() on the Mac Mini
+  (~/finetune + ~/finetune-env). Astra orchestrates telemetry and pivoting.
 
 hyperparameters:
+  # --- platform (AstraTune facade → dpo_train.py) ---
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to ensemble/finetune checkout
   python_bin: /Users/kewang/finetune-env/bin/python
@@ -21,7 +23,7 @@ hyperparameters:
   lora_rank: 8
   lora_scale: 20.0
   lora_dropout: 0.0
-  # Phase 1 — pair collection
+  # Phase 1 — pair collection (Ensemble plugin / case pool)
   k_collect: 8
   temp: 1.2
   max_tokens: 96

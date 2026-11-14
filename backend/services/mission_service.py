@@ -148,9 +148,16 @@ async def prepare_mission_params(payload: MissionCreate, db: AsyncSession) -> di
     task_type = (payload.task_type or inferred_task or "rl").lower()
 
     # Target metric resolution & normalization
-    target_metric = dict(payload.target_metric)
+    target_metric = dict(payload.target_metric or {})
     if not target_metric and recipe_content:
         target_metric = dict(recipe_content.get("target_metric") or {})
+    # Recipes often declare metric_ceiling (empirical max) without a separate
+    # target_metric — Recipes UI one-click dispatch used to leave {} and stall
+    # completion. Fall back to ceiling so Command Center and Recipes agree.
+    if not target_metric and recipe_content:
+        ceiling = recipe_content.get("metric_ceiling")
+        if isinstance(ceiling, dict) and ceiling:
+            target_metric = dict(ceiling)
 
     # Normalize old {"metric": "score", "target": 15.0} format if present
     if isinstance(target_metric, dict) and "metric" in target_metric and "target" in target_metric:

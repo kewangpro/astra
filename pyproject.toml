@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "astra-rl-gym"
 version = "0.1.0"
-description = "AstraGym worlds and AstraRL learners (SB3 + MLX facade / GRPO runtime)"
+description = "AstraGym worlds, AstraRL learners, and AstraTune offline LM post-training"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Proprietary" }
@@ -15,5 +15,5 @@ sb3 = ["stable-baselines3", "gymnasium"]
 # MLX stack is installed in the Mini finetune-env; not a hard pip dep here.
 
 [tool.setuptools.packages.find]
-include = ["astragym*", "astrarl*"]
+include = ["astragym*", "astrarl*", "astratune*"]
 exclude = ["backend*", "frontend*", "tests*", "recipes*", "docs*", "data*"]

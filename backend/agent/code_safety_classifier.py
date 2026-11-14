@@ -287,18 +287,22 @@ class CodeSafetyClassifier:
                 "with no network calls — auto-approved",
                 classifier="static",
             )
-        # AstraRL facade path (GRPO template): astrarl.make(..., use_execv=True).learn()
-        # — facade shells to grpo_train.py / peers without a literal os.execv in train.py.
+        # AstraRL / AstraTune facade path: *.make(..., use_execv=True).learn()
+        # — facade shells to Ensemble *_train.py without a literal os.execv in train.py.
         if (
             not has_any_request
-            and re.search(r"\bastrarl\.make\s*\(", code_only)
+            and re.search(r"\b(?:astrarl|astratune)\.make\s*\(", code_only)
             and re.search(r"use_execv\s*=\s*True", code_only)
-            and re.search(r"mlx_grpo_routing|mlx_grpo_traj|mlx_opd|grpo_train\.py", script)
+            and re.search(
+                r"mlx_grpo_routing|mlx_grpo_traj|mlx_opd|mlx_sft|mlx_dpo|mlx_distill|"
+                r"mlx_rft|mlx_star|mlx_rlcd|grpo_train\.py|dpo_train\.py|sft_train\.py",
+                script,
+            )
         ):
             return SafetyVerdict(
                 safe=True,
-                reason="astrarl.make(..., use_execv=True) facade dispatch to MLX "
-                "finetune CLI with no network calls — auto-approved",
+                reason="astrarl/astratune.make(..., use_execv=True) facade dispatch "
+                "to MLX finetune CLI with no network calls — auto-approved",
                 classifier="static",
             )
 

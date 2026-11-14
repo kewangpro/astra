@@ -1100,39 +1100,210 @@ if __name__ == "__main__":
 """
 
 _SFT_REMOTE_WRAPPER = """\
-import sys
 import os
+import sys
 
-# Change working directory to where sft_train.py is located
 os.chdir("{finetune_dir}")
-
-# Ensure checkpoint directory exists
+sys.path.insert(0, "{finetune_dir}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
-# Construct argv list for os.execv (zero-orphan process replacement)
-argv = [
-    "{python_bin}", "{finetune_dir}/sft_train.py",
-    "--model", "{base_model}",
-    "--data", "{dataset_path}",
-    "--save-dir", "{checkpoint_dir}",
-    "--num-layers", "{num_layers}",
-    "--lora-rank", "{lora_rank}",
-    "--lora-dropout", "{lora_dropout}",
-    "--lora-scale", "{lora_scale}",
-    "--batch-size", "{batch_size}",
-    "--learning-rate", "{learning_rate}",
-    "--iters", "{iters}",
-    "--val-split", "{val_split}",
-    "--val-batches", "{val_batches}",
-    "--steps-per-eval", "{steps_per_eval}",
-    "--steps-per-report", "{steps_per_report}",
-    "--save-every", "{save_every}",
-    "--max-seq-length", "{max_seq_length}",
-    {resume_adapter_arg}
-]
+import astratune
 
-# Execute sft_train.py
-os.execv("{python_bin}", argv)
+learner = astratune.make(
+    "mlx_sft",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    data="{dataset_path}",
+    save_dir="{checkpoint_dir}",
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_dropout={lora_dropout},
+    lora_scale={lora_scale},
+    batch_size={batch_size},
+    learning_rate={learning_rate},
+    iters={iters},
+    val_split={val_split},
+    val_batches={val_batches},
+    steps_per_eval={steps_per_eval},
+    steps_per_report={steps_per_report},
+    save_every={save_every},
+    max_seq_length={max_seq_length},
+    {resume_adapter_kwarg}
+)
+learner.learn()
+"""
+
+# Canned remote AstraTune facade wrappers (no coder LLM).
+# Path/chdir before import so Mini works with pip-installed astratune or mirrors.
+_DPO_REMOTE_WRAPPER = """\
+import os
+import sys
+
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+os.makedirs(os.path.dirname("{save_pairs_path}"), exist_ok=True)
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+import astratune
+
+learner = astratune.make(
+    "mlx_dpo",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    adapter="{adapter}",
+    save_dir="{checkpoint_dir}",
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_dropout={lora_dropout},
+    lora_scale={lora_scale},
+    k_collect={k_collect},
+    temp={temp},
+    max_tokens={max_tokens},
+    email_weight={email_weight},
+    routing_only={routing_only_bool},
+    {load_pairs_kwarg}
+    epochs={epochs},
+    beta={beta},
+    learning_rate={learning_rate},
+    max_grad_norm={max_grad_norm},
+    steps_per_eval={steps_per_eval},
+    eval_max_tokens={eval_max_tokens},
+    prompt_template="{prompt_template}",
+    save_pairs="{save_pairs_path}",
+)
+learner.learn()
+"""
+
+_DISTILL_REMOTE_WRAPPER = """\
+import os
+import sys
+
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+import astratune
+
+learner = astratune.make(
+    "mlx_distill",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    {adapter_kwarg}
+    save_dir="{checkpoint_dir}",
+    prompt_template="{prompt_template}",
+    teacher_model="{teacher_model}",
+    ollama_url="{ollama_url}",
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_scale={lora_scale},
+    lora_dropout={lora_dropout},
+    iters={iters},
+    batch_size={batch_size},
+    learning_rate={learning_rate},
+    steps_per_eval={steps_per_eval},
+    save_every={save_every},
+    max_seq_len={max_seq_len},
+    eval_max_tokens={eval_max_tokens},
+    mask_prompt={mask_prompt_bool},
+    routing_only={routing_only_bool},
+    {focus_cases_kwarg}
+)
+learner.learn()
+"""
+
+_RFT_REMOTE_WRAPPER = """\
+import os
+import sys
+
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+import astratune
+
+learner = astratune.make(
+    "mlx_rft",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    {adapter_kwarg}
+    save_dir="{checkpoint_dir}",
+    prompt_template="{prompt_template}",
+    k_samples={k_samples},
+    temp={temp},
+    max_tokens={max_tokens},
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_scale={lora_scale},
+    lora_dropout={lora_dropout},
+    iters={iters},
+    batch_size={batch_size},
+    learning_rate={learning_rate},
+    steps_per_eval={steps_per_eval},
+    save_every={save_every},
+    max_seq_len={max_seq_len},
+    eval_max_tokens={eval_max_tokens},
+    mask_prompt={mask_prompt_bool},
+    routing_only={routing_only_bool},
+    {focus_cases_kwarg}
+    {force_gold_cases_kwarg}
+)
+learner.learn()
+"""
+
+# OPD stays in AstraRL (online / gym-coupled) — canned execv via astrarl facade
+# is Phase-separate; keep a thin execv wrapper for dispatch stability.
+_OPD_REMOTE_WRAPPER = """\
+import os
+import sys
+
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+os.makedirs("{checkpoint_dir}", exist_ok=True)
+
+import astrarl
+
+learner = astrarl.make(
+    "mlx_opd",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    {adapter_kwarg}
+    save_dir="{checkpoint_dir}",
+    prompt_template="{prompt_template}",
+    teacher_model="{teacher_model}",
+    num_generations={num_generations},
+    temp={temp},
+    max_tokens={max_tokens},
+    kl_coef={kl_coef},
+    outcome_bonus={outcome_bonus},
+    clip_epsilon={clip_epsilon},
+    adv_clip={adv_clip},
+    reward_schema="{reward_schema}",
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_scale={lora_scale},
+    lora_dropout={lora_dropout},
+    iters={iters},
+    batch_size={batch_size},
+    learning_rate={learning_rate},
+    steps_per_eval={steps_per_eval},
+    save_every={save_every},
+    max_seq_len={max_seq_len},
+    eval_max_tokens={eval_max_tokens},
+    mask_prompt={mask_prompt_bool},
+    routing_only={routing_only_bool},
+    {focus_cases_kwarg}
+)
+learner.learn()
 """
 
 # Phase 6a — local sentence-transformers train (NOT Mac Mini MLX).
@@ -1722,65 +1893,72 @@ The script must:
 
 _RLCD_REMOTE_WRAPPER = """\
 import os
+import sys
 
 os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
-argv = [
-    "{python_bin}", "{finetune_dir}/rlcd_train.py",
-    "--model", "{base_model}",
-    {adapter_arg}
-    "--save-dir", "{checkpoint_dir}",
-    "--prompt-template", "{prompt_template}",
-    "--stage", "{stage}",
-    "--score", "{score}",
-    "--num-generations", "{num_generations}",
-    "--temp", "{temp}",
-    "--max-tokens", "{max_tokens}",
-    "--eval-max-tokens", "{eval_max_tokens}",
-    "--sf-coef", "{sf_coef}",
-    "--kl-beta", "{kl_beta}",
-    "--num-layers", "{num_layers}",
-    "--lora-rank", "{lora_rank}",
-    "--lora-scale", "{lora_scale}",
-    "--lora-dropout", "{lora_dropout}",
-    "--iters", "{iters}",
-    "--learning-rate", "{learning_rate}",
-    "--max-grad-norm", "{max_grad_norm}",
-    "--steps-per-eval", "{steps_per_eval}",
-    "--steps-per-report", "{steps_per_report}",
-    "--save-every", "{save_every}",
-    "--max-seq-len", "{max_seq_len}",
-    {focus_cases_flag}
-]
-if {cases_flag}:
-    argv.extend(["--cases", "{cases}"])
-if {routing_only}:
-    argv.append("--routing-only")
-if {focus_weight} != 10:
-    argv.extend(["--focus-weight", str({focus_weight})])
-if {empty_rationale}:
-    argv.append("--empty-rationale")
-if {eval_max_cases} > 0:
-    argv.extend(["--eval-max-cases", str({eval_max_cases})])
+import astratune
 
-os.execv("{python_bin}", argv)
+learner = astratune.make(
+    "mlx_rlcd",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    {adapter_kwarg}
+    save_dir="{checkpoint_dir}",
+    prompt_template="{prompt_template}",
+    stage="{stage}",
+    score="{score}",
+    num_generations={num_generations},
+    temp={temp},
+    max_tokens={max_tokens},
+    eval_max_tokens={eval_max_tokens},
+    sf_coef={sf_coef},
+    kl_beta={kl_beta},
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_scale={lora_scale},
+    lora_dropout={lora_dropout},
+    iters={iters},
+    learning_rate={learning_rate},
+    max_grad_norm={max_grad_norm},
+    steps_per_eval={steps_per_eval},
+    steps_per_report={steps_per_report},
+    save_every={save_every},
+    max_seq_len={max_seq_len},
+    routing_only={routing_only_bool},
+    empty_rationale={empty_rationale_bool},
+    focus_weight={focus_weight},
+    {cases_kwarg}
+    {focus_cases_kwarg}
+    {eval_max_cases_kwarg}
+)
+learner.learn()
 """
 
 
 def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
-    """Canned os.execv wrapper. The coder model does not write the RLCD loop."""
+    """Canned astratune.make facade. The coder model does not write the RLCD loop."""
     cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-    adapter_arg = '"--no-adapter",' if cold else '"--adapter", "%s",' % hp.get("adapter", "")
+    adapter_kwarg = (
+        "no_adapter=True," if cold
+        else 'adapter="%s",' % hp.get("adapter", "")
+    )
     cases = str(hp.get("cases") or "").strip()
     # Foundation / specialize recipes set cases; default routing-only when unset.
     routing_only = bool(hp["routing_only"]) if "routing_only" in hp else (not cases)
+    empty_rationale = bool(hp["empty_rationale"]) if "empty_rationale" in hp else True
+    focus = (hp.get("focus_cases") or "").strip()
+    eval_max = int(hp.get("eval_max_cases") or 0)
     return _RLCD_REMOTE_WRAPPER.format(
         finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
         python_bin=hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
         checkpoint_dir=checkpoint_dir,
         base_model=hp.get("base_model", ""),
-        adapter_arg=adapter_arg,
+        adapter_kwarg=adapter_kwarg,
         prompt_template=hp.get("prompt_template", "backend/prompts/conductor_min.md"),
         stage=hp.get("stage", "both"),
         score=hp.get("score", "brier"),
@@ -1801,57 +1979,53 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
         steps_per_report=hp.get("steps_per_report", 1),
         save_every=hp.get("save_every", 25),
         max_seq_len=hp.get("max_seq_len", 4096),
-        cases_flag=bool(cases),
-        cases=cases.replace('"', '\\"'),
-        routing_only=routing_only,
-        focus_cases_flag=_focus_cases_flag(hp),
+        routing_only_bool="True" if routing_only else "False",
+        empty_rationale_bool="True" if empty_rationale else "False",
         focus_weight=int(hp.get("focus_weight") or 10),
-        # Default True: live Choice uses empty rationale on /v1/rlcd/readout.
-        empty_rationale=bool(hp["empty_rationale"]) if "empty_rationale" in hp else True,
-        eval_max_cases=int(hp.get("eval_max_cases") or 0),
+        cases_kwarg=(f'cases="{cases.replace(chr(34), "")}",' if cases else ""),
+        focus_cases_kwarg=(f'focus_cases="{focus}",' if focus else ""),
+        eval_max_cases_kwarg=(f"eval_max_cases={eval_max}," if eval_max > 0 else ""),
     )
 
-
 _STAR_REMOTE_WRAPPER = """\
-import sys
 import os
+import sys
 
-# Change working directory to where star_train.py is located
 os.chdir("{finetune_dir}")
-
-# Ensure checkpoint directory exists
+sys.path.insert(0, "{finetune_dir}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
-# Construct argv list for os.execv (zero-orphan process replacement)
-argv = [
-    "{python_bin}", "{finetune_dir}/star_train.py",
-    "--model", "{base_model}",
-    {adapter_arg}
-    "--save-dir", "{checkpoint_dir}",
-    "--prompt-template", "{prompt_template}",
-    "--k-samples", "{k_samples}",
-    "--temp", "{temp}",
-    "--rationalize-temp", "{rationalize_temp}",
-    "--max-tokens", "{max_tokens}",
-    "--eval-max-tokens", "{eval_max_tokens}",
-    "--num-layers", "{num_layers}",
-    "--lora-rank", "{lora_rank}",
-    "--lora-scale", "{lora_scale}",
-    "--lora-dropout", "{lora_dropout}",
-    "--iters", "{iters}",
-    "--batch-size", "{batch_size}",
-    "--learning-rate", "{learning_rate}",
-    "--steps-per-eval", "{steps_per_eval}",
-    "--save-every", "{save_every}",
-    "--max-seq-len", "{max_seq_len}",
-    "--val-split", "{val_split}",
-    "--reward-schema", "{reward_schema}",
-]
-if {routing_only}:
-    argv.append("--routing-only")
+import astratune
 
-# Execute star_train.py
-os.execv("{python_bin}", argv)
+learner = astratune.make(
+    "mlx_star",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    {adapter_kwarg}
+    save_dir="{checkpoint_dir}",
+    prompt_template="{prompt_template}",
+    k_samples={k_samples},
+    temp={temp},
+    rationalize_temp={rationalize_temp},
+    max_tokens={max_tokens},
+    eval_max_tokens={eval_max_tokens},
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_scale={lora_scale},
+    lora_dropout={lora_dropout},
+    iters={iters},
+    batch_size={batch_size},
+    learning_rate={learning_rate},
+    steps_per_eval={steps_per_eval},
+    save_every={save_every},
+    max_seq_len={max_seq_len},
+    val_split={val_split},
+    reward_schema="{reward_schema}",
+    routing_only={routing_only_bool},
+)
+learner.learn()
 """
 
 _STAR_TEMPLATE = """\
@@ -2421,20 +2595,34 @@ def _force_gold_cases_flag(hp: dict) -> str:
     return _csv_cases_flag(hp, "force_gold_cases", "--force-gold-cases")
 
 
+def _sft_resume_adapter_file(adapter_path: str) -> str:
+    """Resolve a resume path for ``sft_train.py`` (dir or ``.safetensors``)."""
+    path = (adapter_path or "").strip().rstrip("/")
+    if not path:
+        return ""
+    if path.endswith(".safetensors"):
+        return path
+    return f"{path}/adapters.safetensors"
+
+
 def _sft_resume_adapter_arg(adapter_path: str) -> str:
     """Optional ``--resume-adapter-file`` argv fragment for ``sft_train.py``.
 
     Accepts a directory (``adapters/retrain_1b_v4`` or ``…/best``) or a direct
     ``.safetensors`` path. Empty → omit the flag (cold start).
     """
-    path = (adapter_path or "").strip().rstrip("/")
-    if not path:
+    resume_file = _sft_resume_adapter_file(adapter_path)
+    if not resume_file:
         return ""
-    if path.endswith(".safetensors"):
-        resume_file = path
-    else:
-        resume_file = f"{path}/adapters.safetensors"
     return f'"--resume-adapter-file", "{resume_file}",'
+
+
+def _sft_resume_adapter_kwarg(adapter_path: str) -> str:
+    """Optional ``resume_adapter_file=...`` kwarg for astratune.make(mlx_sft)."""
+    resume_file = _sft_resume_adapter_file(adapter_path)
+    if not resume_file:
+        return ""
+    return f'resume_adapter_file="{resume_file}",'
 
 
 def _resolve_hyperparams(
@@ -2647,6 +2835,34 @@ class CodeGenerator:
                     warm_start_adapter=warm_start_adapter,
                 )
             )
+        elif active_task == "dpo":
+            code = _DPO_REMOTE_WRAPPER.format(
+                **self._build_dpo_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                )
+            )
+        elif active_task == "distill":
+            code = _DISTILL_REMOTE_WRAPPER.format(
+                **self._build_distill_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                )
+            )
+        elif active_task == "rft":
+            code = _RFT_REMOTE_WRAPPER.format(
+                **self._build_rft_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                )
+            )
+        elif active_task == "opd":
+            code = _OPD_REMOTE_WRAPPER.format(
+                **self._build_opd_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                )
+            )
         elif active_task == "star":
             star_ctx = self._build_star_context(
                 mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
@@ -2834,6 +3050,218 @@ class CodeGenerator:
             "warmup_ratio": float(hp.get("warmup_ratio", 0.1)),
         }
 
+    def _build_dpo_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        """Hyperparams for _DPO_REMOTE_WRAPPER."""
+        recipe_key = plan.get("recipe") or "ensemble_dpo_v1"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
+        finetune_dir = hp.get("finetune_dir", "/Users/kewang/finetune")
+        load_pairs = hp.get("load_pairs", "") or ""
+        return {
+            "finetune_dir": finetune_dir,
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
+            "adapter": hp.get("adapter", "adapters/grpo_v9_min/best"),
+            "checkpoint_dir": checkpoint_dir,
+            "num_layers": hp.get("num_layers", 8),
+            "lora_rank": hp.get("lora_rank", 8),
+            "lora_dropout": hp.get("lora_dropout", 0.0),
+            "lora_scale": hp.get("lora_scale", 20.0),
+            "k_collect": hp.get("k_collect", 8),
+            "temp": hp.get("temp", 1.2),
+            "max_tokens": hp.get("max_tokens", 96),
+            "email_weight": hp.get("email_weight", 1),
+            "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
+            "load_pairs_kwarg": (
+                f'load_pairs="{load_pairs}",' if load_pairs else ""
+            ),
+            "epochs": hp.get("epochs", 1),
+            "beta": hp.get("beta", 0.1),
+            "learning_rate": hp.get("learning_rate", 3e-7),
+            "max_grad_norm": hp.get("max_grad_norm", 1.0),
+            "steps_per_eval": hp.get("steps_per_eval", 15),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+            "prompt_template": hp.get(
+                "prompt_template", "backend/prompts/conductor_min.md"
+            ),
+            "save_pairs_path": os.path.join(
+                finetune_dir, "logs", f"astra_{mission_id[:8]}_pairs.jsonl"
+            ),
+        }
+
+    def _build_distill_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        recipe_key = plan.get("recipe") or "ensemble_distill_v1"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
+            hp["no_adapter"] = False
+        _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
+        _focus = (hp.get("focus_cases") or "").strip()
+        return {
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-1b-it-4bit"),
+            "adapter_kwarg": (
+                "no_adapter=True," if _cold
+                else f'adapter="{hp.get("adapter", "")}",'
+            ),
+            "checkpoint_dir": checkpoint_dir,
+            "prompt_template": hp.get(
+                "prompt_template", "backend/prompts/conductor_min.md"
+            ),
+            "teacher_model": hp.get("teacher_model", "gemma3:12b"),
+            "ollama_url": hp.get("ollama_url", "http://127.0.0.1:11434"),
+            "num_layers": hp.get("num_layers", -1),
+            "lora_rank": hp.get("lora_rank", 16),
+            "lora_scale": hp.get("lora_scale", 20.0),
+            "lora_dropout": hp.get("lora_dropout", 0.0),
+            "iters": hp.get("iters", 600),
+            "batch_size": hp.get("batch_size", 1),
+            "learning_rate": hp.get("learning_rate", 1e-5),
+            "steps_per_eval": hp.get("steps_per_eval", 50),
+            "save_every": hp.get("save_every", 50),
+            "max_seq_len": hp.get("max_seq_len", 2048),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+            "mask_prompt_bool": "True" if hp.get("mask_prompt", True) else "False",
+            "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
+            "focus_cases_kwarg": (
+                f'focus_cases="{_focus}",' if _focus else ""
+            ),
+        }
+
+    def _build_rft_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        recipe_key = plan.get("recipe") or "ensemble_rft_v1"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
+            hp["no_adapter"] = False
+        _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
+        _focus = (hp.get("focus_cases") or "").strip()
+        _force = (hp.get("force_gold_cases") or "").strip()
+        return {
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
+            "adapter_kwarg": (
+                "no_adapter=True," if _cold
+                else f'adapter="{hp.get("adapter", "")}",'
+            ),
+            "checkpoint_dir": checkpoint_dir,
+            "prompt_template": hp.get(
+                "prompt_template", "backend/prompts/conductor_min.md"
+            ),
+            "k_samples": hp.get("k_samples", 4),
+            "temp": hp.get("temp", 0.8),
+            "max_tokens": hp.get("max_tokens", 256),
+            "num_layers": hp.get("num_layers", 8),
+            "lora_rank": hp.get("lora_rank", 8),
+            "lora_scale": hp.get("lora_scale", 20.0),
+            "lora_dropout": hp.get("lora_dropout", 0.0),
+            "iters": hp.get("iters", 100),
+            "batch_size": hp.get("batch_size", 1),
+            "learning_rate": hp.get("learning_rate", 1e-5),
+            "steps_per_eval": hp.get("steps_per_eval", 25),
+            "save_every": hp.get("save_every", 25),
+            "max_seq_len": hp.get("max_seq_len", 2048),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+            "mask_prompt_bool": "True" if hp.get("mask_prompt", True) else "False",
+            "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
+            "focus_cases_kwarg": (
+                f'focus_cases="{_focus}",' if _focus else ""
+            ),
+            "force_gold_cases_kwarg": (
+                f'force_gold_cases="{_force}",' if _force else ""
+            ),
+        }
+
+    def _build_opd_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        recipe_key = plan.get("recipe") or "ensemble_opd_v1"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
+            hp["no_adapter"] = False
+        _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
+        _focus = (hp.get("focus_cases") or "").strip()
+        return {
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
+            "adapter_kwarg": (
+                "no_adapter=True," if _cold
+                else f'adapter="{hp.get("adapter", "")}",'
+            ),
+            "checkpoint_dir": checkpoint_dir,
+            "prompt_template": hp.get(
+                "prompt_template", "backend/prompts/conductor_min.md"
+            ),
+            "teacher_model": hp.get("teacher_model", "mlx-community/gemma-3-12b-it-4bit"),
+            "num_generations": hp.get("num_generations", 2),
+            "temp": hp.get("temp", 0.8),
+            "max_tokens": hp.get("max_tokens", 96),
+            "kl_coef": hp.get("kl_coef", 0.1),
+            "outcome_bonus": hp.get("outcome_bonus", 0.0),
+            "clip_epsilon": hp.get("clip_epsilon", 0.2),
+            "adv_clip": hp.get("adv_clip", 5.0),
+            "reward_schema": hp.get("reward_schema", "v1"),
+            "num_layers": hp.get("num_layers", 8),
+            "lora_rank": hp.get("lora_rank", 8),
+            "lora_scale": hp.get("lora_scale", 20.0),
+            "lora_dropout": hp.get("lora_dropout", 0.0),
+            "iters": hp.get("iters", 100),
+            "batch_size": hp.get("batch_size", 1),
+            "learning_rate": hp.get("learning_rate", 1e-6),
+            "steps_per_eval": hp.get("steps_per_eval", 25),
+            "save_every": hp.get("save_every", 25),
+            "max_seq_len": hp.get("max_seq_len", 2048),
+            "eval_max_tokens": hp.get("eval_max_tokens", 256),
+            "mask_prompt_bool": "True" if hp.get("mask_prompt", True) else "False",
+            "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
+            "focus_cases_kwarg": (
+                f'focus_cases="{_focus}",' if _focus else ""
+            ),
+        }
+
     def _build_grpo_context(
         self,
         mission_id: str,
@@ -2931,6 +3359,7 @@ class CodeGenerator:
             or ""
         )
         resume_adapter_arg = _sft_resume_adapter_arg(str(resume_path))
+        resume_adapter_kwarg = _sft_resume_adapter_kwarg(str(resume_path))
         return {
             "base_model": base_model,
             "dataset_path": hp.get("dataset_path", "data/datasets/train.jsonl"),
@@ -2959,6 +3388,7 @@ class CodeGenerator:
             **base,
             # Must win over **hp (recipe may carry adapter path strings).
             "resume_adapter_arg": resume_adapter_arg,
+            "resume_adapter_kwarg": resume_adapter_kwarg,
         }
 
     def _build_star_context(
@@ -2987,12 +3417,18 @@ class CodeGenerator:
         adapter_val = hp.get("adapter", "") or warm_start_adapter or ""
         if _cold or not adapter_val:
             adapter_arg = '"--no-adapter",'
+            adapter_kwarg = "no_adapter=True,"
         else:
             adapter_arg = f'"--adapter", "{adapter_val}",'
+            adapter_kwarg = f'adapter="{adapter_val}",'
+        routing_only = bool(hp.get("routing_only", True))
 
         return {
             "base_model": base_model,
             "adapter_arg": adapter_arg,
+            "adapter_kwarg": adapter_kwarg,
+            "routing_only": routing_only,
+            "routing_only_bool": "True" if routing_only else "False",
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "prompt_template": hp.get("prompt_template", "backend/prompts/conductor_min.md"),

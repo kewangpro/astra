@@ -15,6 +15,7 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
 | **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split; MLX facade + DAPO-lite; platform GRPO runtime extracted from Ensemble | 101–113 | 13 | ✅ |
+| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini | 114–119 | 6 | ✅ |
 
 Epochs 7 and 9 are intentionally shorter **architecture** milestones (agent stack, then Gym×RL split); Epochs 3–6 absorb the former “continuity” band.
 
@@ -2913,3 +2914,41 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 - [x] `recipes/ensemble_grpo_v1.yaml` description + platform vs plugin hyperparameter comments.
 - [x] Ensemble `docs/FINETUNE.md` (Astra packages + VENDOR link), `docs/finetune/methods.md` Method E ownership / How it works / DAPO-lite, `finetune/VENDOR.md`, MARKETS §131 note.
 - [x] UX_SPEC `/docs` Epoch 9 framing.
+
+# Epoch 10: AstraTune (Phases 114–119)
+
+Offline / dataset LM post-training as a sibling platform package to AstraRL.
+Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` /
+`grpo` / `agrpo` in AstraRL.
+
+## Phase 114: Stabilize finetune dispatch (canned DPO+)
+
+- [x] Canned remote wrappers for DPO / distill / RFT / OPD (no coder LLM inventing gym).
+- [x] Recipe dispatch defaults empty `target_metric` from `metric_ceiling` / `target_metric`.
+- [x] Code-safety auto-approve for `astratune.make(..., use_execv=True)` facades.
+
+## Phase 115: Shared LoRA platform helpers
+
+- [x] `astratune/lora_io.py` — apply / warm-start / save / trainable counts.
+- [x] Ensemble `*_train.py` import helpers; `pyproject.toml` includes `astratune*`.
+
+## Phase 116: AstraTune math + plugins
+
+- [x] `sft_math` / `dpo_math` / `distill_math` / `rlcd_math` + `plugins.py` protocols.
+- [x] Pure-Python unit tests (`tests/unit/test_astratune_math.py`).
+
+## Phase 117: Facade-first codegen
+
+- [x] `astratune.make("mlx_dpo"|mlx_sft|…, use_execv=True).learn()` canned wrappers.
+- [x] Healer refuses rewriting astrarl/astratune facades on ModuleNotFoundError.
+
+## Phase 118: Packaging — pip-only Mini
+
+- [x] Delete transitional `finetune/astrarl` / `finetune/astragym` mirrors.
+- [x] `VENDOR.md` + `_platform_preflight.py`; sync script emergency-only (+ astratune).
+
+## Phase 119: Docs + product surface
+
+- [x] DESIGN §2.4 third platform column + AstraTune tables; README Epoch 10.
+- [x] Ensemble FINETUNE / methods cite `astratune` for Methods A–D/F/H.
+- [x] In-app `/docs` SFT/DPO families; recipe dispatch target default documented.

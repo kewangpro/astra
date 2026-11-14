@@ -56,17 +56,17 @@ const TASKS: Task[] = [
     id: "reinforcement-fine-tuning",
     task: "Reinforcement fine-tuning",
     summary:
-      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing (platform rollout / DAPO / loss in astrarl; Ensemble supplies the routing reward plugin + thin CLI). DPO is dataset preference learning (not AstraRL). The algorithm stays fixed for the mission. There is no language-model PPO trainer; PPO runs only under Environment RL.",
+      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing. Offline DPO uses AstraTune mlx_dpo (preference math in astratune; Ensemble thin CLI + pairs). There is no language-model PPO trainer; PPO runs only under Environment RL.",
     algorithms: [
       {
         name: "GRPO",
         taskType: "grpo",
-        body: "Online RL: AstraRL collect_group samples completions; Ensemble RoutingRewardPlugin scores with the oracle (skill match, partial credit, malformed JSON); astrarl.grpo_math applies EMA advantage + PPO-style clip (learner_id mlx_grpo_routing).",
+        body: "Online RL: AstraRL collect_group samples completions; Ensemble RoutingRewardPlugin scores with the oracle; astrarl.grpo_math applies EMA advantage + PPO-style clip (learner_id mlx_grpo_routing).",
       },
       {
         name: "DPO",
         taskType: "dpo",
-        body: "Offline preference learning: the same oracle labels one chosen and one rejected completion; the update is a preference loss on that dataset (pairs may be harvested earlier). Still teaches when every rollout in a GRPO group would have scored the same.",
+        body: "Offline preference learning via AstraTune (astratune.make mlx_dpo): oracle-labeled chosen/rejected pairs; summed-sequence DPO loss. Still teaches when every GRPO group would have scored the same.",
       },
     ],
   },
@@ -87,12 +87,12 @@ const TASKS: Task[] = [
     id: "supervised-fine-tuning",
     task: "Supervised fine-tuning",
     summary:
-      "Offline fitting of labeled completions (fixed JSONL or filtered survivors). There is no policy-gradient reward, and the algorithm stays fixed.",
+      "Offline fitting of labeled completions via AstraTune (astratune.make mlx_sft / mlx_distill / mlx_rft / mlx_star). There is no policy-gradient reward, and the algorithm stays fixed.",
     algorithms: [
       {
         name: "SFT",
         taskType: "sft",
-        body: "Offline remote MLX supervised fine-tune on routing demonstrations, with a held-out split.",
+        body: "Offline remote MLX SFT (AstraTune mlx_sft) on routing demonstrations, with a held-out split.",
       },
       {
         name: "SFT",
@@ -102,17 +102,17 @@ const TASKS: Task[] = [
       {
         name: "distillation",
         taskType: "distill",
-        body: "Offline: a stronger teacher writes the completions, then the student is trained with SFT. The ceiling is what the teacher already gets right.",
+        body: "Offline AstraTune mlx_distill: a stronger teacher writes completions, then the student is trained with SFT.",
       },
       {
         name: "rejection sampling",
         taskType: "rft",
-        body: "Mixed: sample K completions from the student (online collect), keep the ones the oracle marks correct, and run offline SFT on the survivors. No teacher. This is supervised fine-tuning, not reinforcement fine-tuning.",
+        body: "Mixed: sample K completions (online collect), keep oracle-correct survivors, offline SFT via AstraTune mlx_rft.",
       },
       {
         name: "STaR",
         taskType: "star",
-        body: "Mixed: roll out, write a hint-guided rationale for the misses, then offline LoRA on those traces.",
+        body: "Mixed: roll out, write a hint-guided rationale for misses, then offline LoRA via AstraTune mlx_star.",
       },
     ],
   },
@@ -138,7 +138,7 @@ const TASKS: Task[] = [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Offline cases + pathwise Brier on the option-string readout after Answer:. ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus (or one-shot ensemble_decision_from_scratch_v1) on generic decision_prompt JSONL. Product Choice is focus v8 c7b78b5d (A/B 68/74, hermetic 167/167 with RLCD_GENERIC_PROMPT + remap_decision_skill); bf94+conductor_min is rollback. Held-out pass_rate is not a promote gate; empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
+        body: "Offline cases via AstraTune mlx_rlcd (astratune.rlcd_math Brier/log). ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus on decision_prompt JSONL. Product Choice is focus v8 c7b78b5d; empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
       },
     ],
   },

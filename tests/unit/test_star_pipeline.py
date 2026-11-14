@@ -141,13 +141,14 @@ async def test_star_code_generation_remote_wrapper():
     with open(script_path) as f:
         code = f.read()
 
-    assert "star_train.py" in code
+    assert "astratune.make" in code
+    assert "mlx_star" in code
     assert 'os.chdir("/Users/kewang/finetune")' in code
-    assert 'os.execv("/Users/kewang/finetune-env/bin/python"' in code
-    assert '"--k-samples", "8"' in code
-    assert '"--rationalize-temp", "0.8"' in code
-    assert '"--adapter", "adapters/prior_best"' in code
-    assert '"--routing-only"' in code
+    assert "use_execv=True" in code
+    assert "k_samples=8" in code
+    assert "rationalize_temp=0.8" in code
+    assert 'adapter="adapters/prior_best"' in code
+    assert "routing_only=True" in code
 
 
 def test_star_code_safety_classifier():

@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -1856,7 +1858,11 @@ def test_build_user_prompt_grpo_no_telemetry_network_calls(tmp_path, monkeypatch
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "Do NOT import subprocess or requests" in prompt
+    # Healer/docs template still bans network; live canned facade uses astrarl.make.
+    assert (
+        "Do NOT import subprocess or requests" in prompt
+        or ("astrarl.make" in prompt and "use_execv=True" in prompt)
+    )
     assert "Telemetry URL" not in prompt
 
 
@@ -1998,7 +2004,11 @@ def test_generate_training_script_rl_uses_local_checkpoint_dir_even_with_sandbox
 def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_host(tmp_path, monkeypatch):
     """dpo (and grpo) save under finetune_dir/adapters/, matching where
     ensemble/finetune's own manual workflow keeps adapters (grpo_v<N>_min/,
-    retrain_best/, ...) — not the generic sandbox_data_path checkpoints path."""
+    retrain_best/, ...) — not the generic sandbox_data_path checkpoints path.
+
+    DPO is now a canned remote wrapper (no coder LLM) — assert the written
+    train.py carries the finetune adapters path.
+    """
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
@@ -2014,11 +2024,13 @@ def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_ho
         )
 
     assert str(tmp_path) in path   # train.py itself is still written locally
-    # The prompt sent to the LLM must carry the finetune_dir/adapters/ checkpoint_dir
-    sent_messages = provider.generate.call_args[0][0]
-    prompt_text = "\n".join(m.content for m in sent_messages)
-    assert "/Users/kewang/finetune/adapters/astra_mission-" in prompt_text
-    assert "/tmp/astra" not in prompt_text
+    text = Path(path).read_text()
+    assert "/Users/kewang/finetune/adapters/astra_mission-" in text
+    assert "/tmp/astra" not in text
+    assert "astratune.make" in text
+    assert "mlx_dpo" in text
+    assert "use_execv=True" in text
+    provider.generate.assert_not_called()
 
 
 def test_finetune_checkpoint_dir_uses_recipe_finetune_dir():
@@ -2526,17 +2538,17 @@ def test_rlcd_wrapper_execs_the_trainer(tmp_path, monkeypatch):
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "rlcd", "hyperparameters": {}, "target_metric": {"pass_rate": 0.5}}
     script = gen._build_user_prompt("rlcd", "test-id", plan, "/Users/kewang/finetune/adapters/astra_test_iter0")
-    assert "rlcd_train.py" in script
-    assert "os.execv(" in script
+    assert "astratune.make" in script
+    assert "mlx_rlcd" in script
+    assert "use_execv=True" in script
     assert "subprocess" not in script
     assert 'os.chdir("/Users/kewang/finetune")' in script
-    assert '"--stage", "1"' in script
-    assert '"--score", "brier"' in script
-    assert '"--sf-coef", "0.3"' in script
-    assert '"--kl-beta", "0.04"' in script
-    assert '"--no-adapter",' in script
-    assert 'argv.append("--empty-rationale")' in script
-    assert "if True:" in script
+    assert 'stage="1"' in script
+    assert 'score="brier"' in script
+    assert "sf_coef=0.3" in script
+    assert "kl_beta=0.04" in script
+    assert "no_adapter=True" in script
+    assert "empty_rationale=True" in script
 
 
 def test_rlcd_pivot_lever_is_num_generations_and_temp():
@@ -2597,9 +2609,9 @@ def test_rlcd_warm_start_clears_cold_start_and_emits_adapter():
     assert warm["adapter"] == "adapters/astra_ede50372_iter0/best"
 
     wrapped = _format_rlcd_wrapper(warm, "/Users/kewang/finetune/adapters/astra_ede50372_iter1")
-    assert "--no-adapter" not in wrapped
-    assert '"--adapter", "adapters/astra_ede50372_iter0/best"' in wrapped
-    assert 'argv.append("--empty-rationale")' in wrapped
+    assert "no_adapter=True" not in wrapped
+    assert 'adapter="adapters/astra_ede50372_iter0/best"' in wrapped
+    assert "empty_rationale=True" in wrapped
 
 
 def test_rlcd_wrapper_defaults_empty_rationale_when_hp_omits_it():
@@ -2609,7 +2621,7 @@ def test_rlcd_wrapper_defaults_empty_rationale_when_hp_omits_it():
         {"adapter": "adapters/x/best", "routing_only": True},
         "/Users/kewang/finetune/adapters/out",
     )
-    assert 'argv.append("--empty-rationale")' in wrapped
+    assert "empty_rationale=True" in wrapped
 
 
 def test_decision_foundation_wrapper_passes_cases_not_routing():
@@ -2619,10 +2631,10 @@ def test_decision_foundation_wrapper_passes_cases_not_routing():
     assert hp.get("cases")
     assert hp.get("routing_only") is False
     wrapped = _format_rlcd_wrapper(hp, "/Users/kewang/finetune/adapters/astra_found_iter0")
-    assert '"--cases"' in wrapped or "argv.extend([\"--cases\"" in wrapped
+    assert 'cases="' in wrapped
     # Recipe uses capped foundation_train.jsonl (~800); full foundation_mix (~4k) is expand-only.
     assert "foundation_train.jsonl" in wrapped
-    assert "argv.append(\"--routing-only\")" not in wrapped or "if False:" in wrapped
+    assert "routing_only=False" in wrapped
 
 
 def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
@@ -2783,10 +2795,11 @@ async def test_sft_generates_remote_wrapper_when_sandbox_host_configured(tmp_pat
         content = f.read()
 
     assert 'os.chdir("/Users/kewang/finetune")' in content
-    assert 'os.execv(' in content
-    assert '"/Users/kewang/finetune/sft_train.py"' in content
-    assert '"--model", "mlx-community/Llama-3.2-1B-Instruct-4bit"' in content
-    assert '"--iters", "150"' in content
+    assert "astratune.make" in content
+    assert "mlx_sft" in content
+    assert "use_execv=True" in content
+    assert 'model="mlx-community/Llama-3.2-1B-Instruct-4bit"' in content
+    assert "iters=150" in content
 
 
 @pytest.mark.asyncio
@@ -2810,10 +2823,10 @@ async def test_sft_generates_remote_wrapper_with_ensemble_sft_v1_recipe_locks_ba
         content = f.read()
 
     assert 'os.chdir("/Users/kewang/finetune")' in content
-    assert '"--data", "data_routing"' in content
-    assert '"--batch-size", "2"' in content  # Locked to recipe's 2, ignoring 32
-    assert '"--iters", "120"' in content    # Clamped within safe finetune pivot range
-    assert "--resume-adapter-file" not in content  # cold 12B SFT recipe
+    assert 'data="data_routing"' in content
+    assert "batch_size=2" in content  # Locked to recipe's 2, ignoring 32
+    assert "iters=120" in content    # Clamped within safe finetune pivot range
+    assert "resume_adapter_file" not in content  # cold 12B SFT recipe
 
 
 @pytest.mark.asyncio
@@ -2833,13 +2846,13 @@ async def test_sft_1b_v5_wrapper_resumes_retrain_1b_v4(tmp_path, monkeypatch):
     with open(script_path) as f:
         content = f.read()
 
-    assert '"--model", "mlx-community/gemma-3-1b-it-4bit"' in content
-    assert '"--data", "data_ft"' in content
-    assert '"--num-layers", "-1"' in content
-    assert '"--lora-rank", "16"' in content
-    assert '"--lora-scale", "20.0"' in content
-    assert '"--batch-size", "1"' in content
-    assert '"--iters", "200"' in content
-    assert '"--resume-adapter-file", "adapters/retrain_1b_v4/adapters.safetensors"' in content
+    assert 'model="mlx-community/gemma-3-1b-it-4bit"' in content
+    assert 'data="data_ft"' in content
+    assert "num_layers=-1" in content
+    assert "lora_rank=16" in content
+    assert "lora_scale=20.0" in content
+    assert "batch_size=1" in content
+    assert "iters=200" in content
+    assert 'resume_adapter_file="adapters/retrain_1b_v4/adapters.safetensors"' in content
 
 

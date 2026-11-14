@@ -135,6 +135,16 @@ class ErrorAnalyzer:
                     "finetune wrapper ModuleNotFoundError is an interpreter problem; "
                     "refusing to rewrite the os.execv script"
                 )
+            # Facade path: astrarl/astratune.make(..., use_execv=True) — never rewrite
+            # into SB3/gym scripts on ModuleNotFoundError (wrong interpreter / path).
+            if (
+                ("astrarl.make" in original_code or "astratune.make" in original_code)
+                and "use_execv" in original_code
+            ):
+                raise RuntimeError(
+                    "astrarl/astratune facade ModuleNotFoundError is an interpreter/path "
+                    "problem; refusing to rewrite the known-good facade wrapper"
+                )
 
         prior_context = ""
         if prior_errors:

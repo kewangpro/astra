@@ -207,9 +207,10 @@ async def test_codegen_sft_remote_wrapper_for_post_training_stage1(tmp_path):
         with open(script_path) as f:
             code = f.read()
 
-        assert "sft_train.py" in code
-        assert "os.execv" in code
-        assert "--model" in code
+        assert "astratune.make" in code
+        assert "mlx_sft" in code
+        assert "use_execv=True" in code
+        assert "model=" in code
         assert "astra_testmiss_stage1_sft_iter0" in code
 
 
