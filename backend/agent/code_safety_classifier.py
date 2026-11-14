@@ -254,19 +254,9 @@ class CodeSafetyClassifier:
                 classifier="static",
             )
 
-        # Static auto-approve for the finetune-remote dispatch wrapper: no requests
-        # calls (already the strictest "no network access" case established
-        # above) and an os.execv(...) targeting dpo_train.py / grpo_train.py /
-        # distill_train.py by name — this is exactly and only the shape the
-        # dpo/grpo/distill code-gen templates produce (code_generator.py's
-        # _DPO_TEMPLATE / _GRPO_TEMPLATE / _DISTILL_TEMPLATE).
-        # Matched loosely (os.execv anywhere + the script name anywhere) since
-        # code-gen doesn't always produce identical call-site formatting (e.g.
-        # args built as a separate list variable vs an inline list literal) —
-        # a real incident showed a syntactically-different-but-equally-safe
-        # variant fall through to the LLM classifier, which (a 4th time)
-        # incorrectly flagged legitimate os.execv process replacement as
-        # "could lead to arbitrary code execution," stalling a live mission.
+        # Static auto-approve for finetune-remote wrappers: no requests, and either
+        # a facade (astrarl/astratune.make use_execv — see below) or a legacy
+        # os.execv targeting *_train.py by name (healers / older scripts).
         _known_finetune_script = re.search(
             r"dpo_train\.py|grpo_train\.py|agent_grpo_train\.py|distill_train\.py|rft_train\.py|"
             r"opd_train\.py|rlcd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"

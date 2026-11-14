@@ -26,6 +26,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-4b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
 
   # Cold start — no 4B adapter lineage (same constraint as rft). opd_train.py
   # requires exactly one of --adapter / --no-adapter.
@@ -86,7 +87,7 @@ metric_ceiling:
 
 # RUNNABLE once deployed to the Mini's finetune_dir. Source of truth:
 #   ensemble/finetune/opd_train.py  (implemented 2026-10-05)
-# Astra dispatches {finetune_dir}/opd_train.py via os.execv; preflight warns until
+# Astra dispatches via astrarl.make("mlx_opd", use_execv=True); preflight warns until
 # that path exists on the remote host (rsync/scp from the ensemble checkout).
 # Shape:
 #   - Sample K=num_generations completions per case from the student (GRPO-like).

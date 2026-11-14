@@ -15,6 +15,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
   dataset_path: data_routing
   num_layers: 4
   lora_rank: 8

@@ -127,3 +127,51 @@ class TestPreflightCheckerRun:
                    {"bad_type": ["_pkg_that_does_not_exist_"]}):
             result = PreflightChecker().run("mission-fail", "bad_type")
         assert result.passed is False
+
+
+# ── _check_remote_platform_imports ────────────────────────────────────────────
+
+class TestCheckRemotePlatformImports:
+    def test_skipped_for_local_task_types(self):
+        out = PreflightChecker._check_remote_platform_imports("rl")
+        assert out["passed"] is True
+        assert "skipped" in out["detail"]
+
+    def test_skipped_without_sandbox_host(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "")
+        out = PreflightChecker._check_remote_platform_imports("dpo")
+        assert out["passed"] is True
+        assert "skipped" in out["detail"]
+
+    def test_passes_when_imports_ok(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_python", "")
+        with patch("backend.services.preflight.subprocess.run") as run:
+            run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            out = PreflightChecker._check_remote_platform_imports("dpo")
+        assert out["passed"] is True
+        assert out["name"] == "remote_platform_imports"
+        cmd = run.call_args.args[0][2]
+        assert "import astragym, astrarl, astratune" in cmd
+        assert "finetune-env" in cmd or "python" in cmd
+
+    def test_fails_with_vendor_hint(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
+        with patch("backend.services.preflight.subprocess.run") as run:
+            run.return_value = type(
+                "R", (),
+                {"returncode": 1, "stdout": "", "stderr": "ModuleNotFoundError: No module named 'astratune'"},
+            )()
+            out = PreflightChecker._check_remote_platform_imports("grpo")
+        assert out["passed"] is False
+        assert "VENDOR.md" in out["detail"]
+        assert "pip install -e" in out["detail"]
+        assert "astratune" in out["detail"]
+
+    def test_unreachable_host_does_not_block(self, monkeypatch):
+        monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
+        with patch("backend.services.preflight.subprocess.run",
+                   side_effect=RuntimeError("ssh timeout")):
+            out = PreflightChecker._check_remote_platform_imports("distill")
+        assert out["passed"] is True
+        assert "unreachable" in out["detail"]

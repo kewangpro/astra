@@ -18,6 +18,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to the ensemble/finetune checkout
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
   adapter: adapters/retrain_best                 # warm-start = the current best adapter. NOTE: retrain_best IS grpo_v9_min/best,
                                                  # byte-identical (MD5 f37512c9, 24,936,525 bytes, verified on both machines
                                                  # 2026-09-05) since the 2026-07-02 promotion — see FINETUNE.md:149 and :540.
@@ -68,7 +69,7 @@ metric_ceiling:
 
 # NOT YET RUNNABLE. ensemble/finetune/distill_train.py does not exist. astra's
 # distill task type is fully wired (Phase 42) and dispatches a
-# {finetune_dir}/distill_train.py os.execv wrapper with the args above — but a
+# astratune.make("mlx_distill", use_execv=True) → distill_train.py — but a
 # distill mission fails at launch until that script is authored on the Mac Mini
 # side. It is a thin chain of functions that already exist:
 #   - prepare_finetune_data.generate_teacher_completions(cases, ollama_url) +

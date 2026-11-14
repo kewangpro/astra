@@ -47,6 +47,7 @@ class PreflightChecker:
         checks.append(self._check_sandbox_python())
         checks += self._check_packages(task_type)
         checks += self._check_remote_script(task_type)
+        checks.append(self._check_remote_platform_imports(task_type))
 
         passed = all(c["passed"] for c in checks)
         result = PreflightResult(passed=passed, checks=checks)
@@ -87,11 +88,13 @@ class PreflightChecker:
         """For finetune-remote task types, confirm the training script actually
         exists at {finetune_dir}/{script} on the sandbox host.
 
-        astra dispatches an os.execv wrapper naming that path; if it is wrong the
-        run dies immediately after the SSH round-trip, having already generated a
-        script, launched a sandbox and burned an iteration — mission a8675c39
-        failed exactly this way. One `test -f` before dispatch turns a launch
-        failure into a preflight warning that names the path it looked for.
+        astra dispatches a facade wrapper that chdirs into finetune_dir and
+        invokes astratune/astrarl.make (or, for a few legacy paths, names that
+        script path); if it is wrong the run dies immediately after the SSH
+        round-trip, having already generated a script, launched a sandbox and
+        burned an iteration — mission a8675c39 failed exactly this way. One
+        `test -f` before dispatch turns a launch failure into a preflight
+        warning that names the path it looked for.
 
         This is a LAYOUT check, not just an existence check. The remote's
         ~/finetune IS the repo's finetune/ directory, while a checkout nests it
@@ -150,6 +153,58 @@ class PreflightChecker:
                                           f"check finetune_dir points at the DEPLOYED directory, "
                                           f"not a repo checkout (their layouts differ by one level)"})
         return results
+
+    @staticmethod
+    def _check_remote_platform_imports(task_type: str) -> dict:
+        """SSH import check for astragym/astrarl/astratune in Mini finetune-env.
+
+        Failures here become opaque ``ModuleNotFoundError`` mid-mission once the
+        facade wrapper runs. Surface a VENDOR-style install hint at preflight
+        instead. Unreachable host is non-blocking (same policy as remote_script).
+        """
+        from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
+        name = "remote_platform_imports"
+        if task_type not in _FINETUNE_REMOTE_TASK_TYPES:
+            return {"name": name, "passed": True, "detail": "not a finetune-remote task — skipped"}
+        if not settings.sandbox_host:
+            return {"name": name, "passed": True,
+                    "detail": "no sandbox_host configured — skipped"}
+
+        from backend.agent.code_generator import _resolve_hyperparams
+        hp = _resolve_hyperparams(task_type, {})
+        python_bin = (
+            (hp.get("python_bin") or "").strip()
+            or (settings.sandbox_python or "").strip()
+            or "/Users/kewang/finetune-env/bin/python"
+        )
+        remote_cmd = (
+            f'{python_bin} -c '
+            f'"import astragym, astrarl, astratune"'
+        )
+        try:
+            r = subprocess.run(
+                ["ssh", settings.sandbox_host, remote_cmd],
+                capture_output=True, text=True, timeout=60,
+            )
+        except Exception as exc:
+            return {"name": name, "passed": True,
+                    "detail": f"host unreachable, not blocking: {exc}"}
+
+        if r.returncode == 0:
+            return {"name": name, "passed": True,
+                    "detail": f"{python_bin}: astragym,astrarl,astratune ok"}
+
+        err = (r.stderr or r.stdout or "").strip() or f"exit {r.returncode}"
+        return {
+            "name": name,
+            "passed": False,
+            "detail": (
+                f"Astra platform packages missing on {settings.sandbox_host} "
+                f"({python_bin}). On Mini run: "
+                f"~/finetune-env/bin/pip install -e ~/astra-pkg "
+                f"(see Ensemble finetune/VENDOR.md). Original error: {err}"
+            ),
+        }
 
     @staticmethod
     def _check_packages(task_type: str) -> list:

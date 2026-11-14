@@ -1262,8 +1262,7 @@ learner = astratune.make(
 learner.learn()
 """
 
-# OPD stays in AstraRL (online / gym-coupled) — canned execv via astrarl facade
-# is Phase-separate; keep a thin execv wrapper for dispatch stability.
+# OPD stays in AstraRL (online / gym-coupled) — canned astrarl.make facade.
 _OPD_REMOTE_WRAPPER = """\
 import os
 import sys
@@ -1427,19 +1426,18 @@ The script must:
 5. After training, POST the final eval_loss.
 6. Exit 0 on success, 1 on error with full traceback."""
 
-# Legacy healer / approval-prompt shape (hand-built argv). Live codegen for
-# task_type=dpo uses _DPO_REMOTE_WRAPPER + astratune.make(..., use_execv=True).
+# Prompt retained for healers / docs; live codegen uses _DPO_REMOTE_WRAPPER.
 _DPO_TEMPLATE = """\
-Generate a script that runs DPO (Direct Preference Optimization) fine-tuning by
-invoking the EXISTING dpo_train.py script — do NOT reimplement the DPO training
-loop, pair collection, or loss math yourself. This script is a thin orchestration
-wrapper only — it does NOT report telemetry itself. Astra tails this process's
-own log remotely and parses "Pass rate" lines on its own; do not add any
-network calls (no requests, no HTTP) to this script.
+Generate a script that runs DPO via AstraTune MLXLearnerFacade — do NOT reimplement
+pair collection / preference loss and do NOT hand-build a long os.execv argv list.
+The facade maps kwargs to Ensemble dpo_train.py and uses os.execv so the
+sandbox-tracked pid stays identical to the trainer. This script does NOT report
+telemetry; Astra tails "Pass rate" lines remotely. No network calls (no requests).
 
 Mission ID: {mission_id}
-Finetune dir (remote host, dpo_train.py lives here): {finetune_dir}
-Python interpreter (has mlx_lm installed): {python_bin}
+Finetune dir (remote host): {finetune_dir}
+Python interpreter: {python_bin}
+Astra pkg root: {astra_pkg_root}
 Base model: {base_model}
 Warm-start / reference adapter: {adapter}
 Prompt template: {prompt_template}
@@ -1449,62 +1447,47 @@ Training: epochs={epochs}, beta={beta}, lr={learning_rate}, max_grad_norm={max_g
 steps_per_eval={steps_per_eval}, eval_max_tokens={eval_max_tokens}
 Adapter output: {checkpoint_dir}
 Save collected pairs to: {save_pairs_path}
+{load_pairs_kwarg}
 
-The script must:
-1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
-   sandbox tracks this wrapper process's own pid as "the training process." If
-   this script fork+execs dpo_train.py as a child (subprocess.run/Popen), the
-   child gets a DIFFERENT pid that astra never learns and can never clean up —
-   if this wrapper dies or is killed for any reason, the child is silently
-   orphaned, still running, invisible to astra. os.execv REPLACES this process's
-   image in place (no fork, same pid) so the wrapper's tracked pid and the
-   actual training process's pid are always identical, with zero orphan risk.
-2. First os.chdir("{finetune_dir}") — dpo_train.py resolves --prompt-template AND
-   its own hardcoded eval-cases path relative to the process's working directory,
-   not relative to the script's own location. Without this chdir, both of those
-   relative-path loads fail.
-3. Ensure the log directory exists: os.makedirs(os.path.dirname("{save_pairs_path}"), exist_ok=True).
-4. Then os.execv with this EXACT argv (note argv[0] repeats the interpreter path,
-   standard C-style exec convention) — this call does not return; the process
-   image becomes dpo_train.py from this point on, and its exit code becomes
-   this process's exit code automatically (no sys.exit needed, no return value
-   to check):
-       os.execv(
-           "{python_bin}",
-           [
-               "{python_bin}", "{finetune_dir}/dpo_train.py",
-               "--model", "{base_model}",
-               "--adapter", "{adapter}",
-               "--save-dir", "{checkpoint_dir}",
-               "--num-layers", "{num_layers}",
-               "--lora-rank", "{lora_rank}",
-               "--lora-dropout", "{lora_dropout}",
-               "--lora-scale", "{lora_scale}",
-               "--K-collect", "{k_collect}",
-               "--temp", "{temp}",
-               "--max-tokens", "{max_tokens}",
-               "--email-weight", "{email_weight}",
-               {routing_only_flag}
-               {load_pairs_flag}
-               "--epochs", "{epochs}",
-               "--beta", "{beta}",
-               "--learning-rate", "{learning_rate}",
-               "--max-grad-norm", "{max_grad_norm}",
-               "--steps-per-eval", "{steps_per_eval}",
-               "--eval-max-tokens", "{eval_max_tokens}",
-               "--prompt-template", "{prompt_template}",
-               "--save-pairs", "{save_pairs_path}",
-           ],
+Emit EXACTLY this script shape (chdir/path triad before import):
+
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       os.makedirs(os.path.dirname("{save_pairs_path}"), exist_ok=True)
+       os.makedirs("{checkpoint_dir}", exist_ok=True)
+       import astratune
+       learner = astratune.make(
+           "mlx_dpo",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           adapter="{adapter}",
+           save_dir="{checkpoint_dir}",
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_dropout={lora_dropout},
+           lora_scale={lora_scale},
+           k_collect={k_collect},
+           temp={temp},
+           max_tokens={max_tokens},
+           email_weight={email_weight},
+           routing_only={routing_only_bool},
+           {load_pairs_kwarg}
+           epochs={epochs},
+           beta={beta},
+           learning_rate={learning_rate},
+           max_grad_norm={max_grad_norm},
+           steps_per_eval={steps_per_eval},
+           eval_max_tokens={eval_max_tokens},
+           prompt_template="{prompt_template}",
+           save_pairs="{save_pairs_path}",
        )
-   ({routing_only_flag} is either the string "--routing-only", (with a trailing
-   comma, as its own list element) or omitted entirely if empty — do not insert
-   an empty string element in the list. {load_pairs_flag} is either "--load-pairs", "{load_pairs}",
-   or omitted entirely if empty.)
-   Always pass --save-pairs (do not make it conditional) — it persists the
-   collected (chosen, rejected) pairs to JSONL after the collection phase, so a
-   future run can pass --load-pairs to skip re-collection (the slowest phase,
-   ~30-60 min) when only retraining hyperparameters (beta/epochs) change."""
+       learner.learn()
+
+   learn() with use_execv=True never returns (process image becomes dpo_train.py)."""
 
 # Canned remote GRPO wrapper (no coder LLM). Path/chdir before import astrarl so
 # Mini works with pip-installed astrarl (astra_pkg_root) even if launcher
@@ -1691,214 +1674,180 @@ The script must:
    ({adapter_arg} is either '"--adapter", "{adapter}",' or '"--no-warmstart",' —
    never both. {e2e_cases_flag} is either '"--e2e-cases", "{e2e_cases}",' or empty.)"""
 
+# Prompt retained for healers / docs; live codegen uses _DISTILL_REMOTE_WRAPPER.
 _DISTILL_TEMPLATE = """\
-Generate a script that runs knowledge-distillation fine-tuning by invoking the
-EXISTING distill_train.py script — do NOT reimplement teacher generation, the
-mlx_lm.lora training, or the routing eval yourself. This script is a thin
-orchestration wrapper only — it does NOT report telemetry itself. Astra tails
-this process's own log remotely and parses "Pass rate" lines on its own; do not
-add any network calls (no requests, no HTTP) to this script.
+Generate a script that runs distillation via AstraTune MLXLearnerFacade — do NOT
+reimplement teacher generation / SFT and do NOT hand-build a long os.execv argv.
+The facade maps kwargs to Ensemble distill_train.py (os.execv, same pid).
+No network calls; Astra tails "Pass rate" remotely.
 
 Mission ID: {mission_id}
-Finetune dir (remote host, distill_train.py lives here): {finetune_dir}
-Python interpreter (has mlx_lm installed): {python_bin}
+Finetune dir: {finetune_dir}
+Python: {python_bin}
+Astra pkg root: {astra_pkg_root}
 Base model: {base_model}
-Warm-start: {warm_start_desc}
-Prompt template (student target): {prompt_template}
-Teacher: {teacher_model} via {ollama_url}
+Warm-start: {adapter_kwarg}
+Prompt: {prompt_template}
+Teacher: {teacher_model} @ {ollama_url}
 LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
-Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
-save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
+iters={iters}, batch={batch_size}, lr={learning_rate}
 Adapter output: {checkpoint_dir}
 
-The script must:
-1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
-   sandbox tracks this wrapper process's own pid as "the training process." If
-   this script fork+execs distill_train.py as a child (subprocess.run/Popen), the
-   child gets a DIFFERENT pid that astra never learns and can never clean up. os.execv
-   REPLACES this process's image in place (no fork, same pid) so the wrapper's
-   tracked pid and the actual training process's pid are always identical.
-2. First os.chdir("{finetune_dir}") — distill_train.py resolves --prompt-template
-   AND its own hardcoded eval-cases path relative to the process's working
-   directory. Without this chdir, both relative-path loads fail.
-3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path, C-style
-   exec convention) — this call does not return; the process image becomes
-   distill_train.py and its exit code becomes this process's exit code:
-       os.execv(
-           "{python_bin}",
-           [
-               "{python_bin}", "{finetune_dir}/distill_train.py",
-               "--model", "{base_model}",
-               {adapter_arg}
-               "--save-dir", "{checkpoint_dir}",
-               "--prompt-template", "{prompt_template}",
-               "--teacher-model", "{teacher_model}",
-               "--ollama-url", "{ollama_url}",
-               "--num-layers", "{num_layers}",
-               "--lora-rank", "{lora_rank}",
-               "--lora-scale", "{lora_scale}",
-               "--lora-dropout", "{lora_dropout}",
-               "--iters", "{iters}",
-               "--batch-size", "{batch_size}",
-               "--learning-rate", "{learning_rate}",
-               "--steps-per-eval", "{steps_per_eval}",
-               "--save-every", "{save_every}",
-               "--max-seq-len", "{max_seq_len}",
-               "--eval-max-tokens", "{eval_max_tokens}",
-               {mask_prompt_flag}
-               {routing_only_flag}
-               {focus_cases_flag}
-           ],
-       )
-   ({mask_prompt_flag}, {routing_only_flag}, and {focus_cases_flag} are each either
-   a single string list element ending in a comma — e.g. "--mask-prompt", /
-   "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
-   Do not insert an empty string element in the list.)"""
+Emit EXACTLY:
 
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       os.makedirs("{checkpoint_dir}", exist_ok=True)
+       import astratune
+       learner = astratune.make(
+           "mlx_distill",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           {adapter_kwarg}
+           save_dir="{checkpoint_dir}",
+           prompt_template="{prompt_template}",
+           teacher_model="{teacher_model}",
+           ollama_url="{ollama_url}",
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_scale={lora_scale},
+           lora_dropout={lora_dropout},
+           iters={iters},
+           batch_size={batch_size},
+           learning_rate={learning_rate},
+           steps_per_eval={steps_per_eval},
+           save_every={save_every},
+           max_seq_len={max_seq_len},
+           eval_max_tokens={eval_max_tokens},
+           mask_prompt={mask_prompt_bool},
+           routing_only={routing_only_bool},
+           {focus_cases_kwarg}
+       )
+       learner.learn()
+"""
+
+
+# Prompt retained for healers / docs; live codegen uses _RFT_REMOTE_WRAPPER.
 _RFT_TEMPLATE = """\
-Generate a script that runs rejection-sampling fine-tuning by invoking the
-EXISTING rft_train.py script — do NOT reimplement the sampling loop, the reward
-filtering, the mlx_lm.lora training, or the routing eval yourself. This script is
-a thin orchestration wrapper only — it does NOT report telemetry itself. Astra
-tails this process's own log remotely and parses "Pass rate" lines on its own; do
-not add any network calls (no requests, no HTTP) to this script.
+Generate a script that runs RFT via AstraTune MLXLearnerFacade — do NOT
+reimplement sampling/filter/SFT and do NOT hand-build a long os.execv argv.
+Facade → Ensemble rft_train.py via os.execv (same pid). No network calls.
 
 Mission ID: {mission_id}
-Finetune dir (remote host, rft_train.py lives here): {finetune_dir}
-Python interpreter (has mlx_lm installed): {python_bin}
+Finetune dir: {finetune_dir}
+Python: {python_bin}
+Astra pkg root: {astra_pkg_root}
 Base model: {base_model}
-Warm-start: {warm_start_desc}
-Prompt template: {prompt_template}
-Sampling: k_samples={k_samples}, temp={temp}, max_tokens={max_tokens}
+Warm-start: {adapter_kwarg}
+Prompt: {prompt_template}
+k_samples={k_samples}, temp={temp}, max_tokens={max_tokens}
 LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
-Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
-save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
 Adapter output: {checkpoint_dir}
 
-The script must:
-1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
-   sandbox tracks this wrapper process's own pid as "the training process." If
-   this script fork+execs rft_train.py as a child (subprocess.run/Popen), the
-   child gets a DIFFERENT pid that astra never learns and can never clean up. os.execv
-   REPLACES this process's image in place (no fork, same pid) so the wrapper's
-   tracked pid and the actual training process's pid are always identical.
-2. First os.chdir("{finetune_dir}") — rft_train.py resolves --prompt-template AND
-   its own eval-cases path relative to the process's working directory. Without
-   this chdir, both relative-path loads fail.
-3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path, C-style
-   exec convention) — this call does not return; the process image becomes
-   rft_train.py and its exit code becomes this process's exit code:
-       os.execv(
-           "{python_bin}",
-           [
-               "{python_bin}", "{finetune_dir}/rft_train.py",
-               "--model", "{base_model}",
-               {adapter_arg}
-               "--save-dir", "{checkpoint_dir}",
-               "--prompt-template", "{prompt_template}",
-               "--k-samples", "{k_samples}",
-               "--temp", "{temp}",
-               "--max-tokens", "{max_tokens}",
-               "--num-layers", "{num_layers}",
-               "--lora-rank", "{lora_rank}",
-               "--lora-scale", "{lora_scale}",
-               "--lora-dropout", "{lora_dropout}",
-               "--iters", "{iters}",
-               "--batch-size", "{batch_size}",
-               "--learning-rate", "{learning_rate}",
-               "--steps-per-eval", "{steps_per_eval}",
-               "--save-every", "{save_every}",
-               "--max-seq-len", "{max_seq_len}",
-               "--eval-max-tokens", "{eval_max_tokens}",
-               {mask_prompt_flag}
-               {routing_only_flag}
-               {focus_cases_flag}
-               {force_gold_cases_flag}
-           ],
-       )
-   ({mask_prompt_flag}, {routing_only_flag}, {focus_cases_flag}, and
-   {force_gold_cases_flag} are each either a single string list element ending in
-   a comma — e.g. "--mask-prompt", / "--routing-only", /
-   "--focus-cases", "id1,id2", / "--force-gold-cases", "id", — or omitted
-   entirely if empty. Do not insert an empty string element in the list.)"""
+Emit EXACTLY:
 
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       os.makedirs("{checkpoint_dir}", exist_ok=True)
+       import astratune
+       learner = astratune.make(
+           "mlx_rft",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           {adapter_kwarg}
+           save_dir="{checkpoint_dir}",
+           prompt_template="{prompt_template}",
+           k_samples={k_samples},
+           temp={temp},
+           max_tokens={max_tokens},
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_scale={lora_scale},
+           lora_dropout={lora_dropout},
+           iters={iters},
+           batch_size={batch_size},
+           learning_rate={learning_rate},
+           steps_per_eval={steps_per_eval},
+           save_every={save_every},
+           max_seq_len={max_seq_len},
+           eval_max_tokens={eval_max_tokens},
+           mask_prompt={mask_prompt_bool},
+           routing_only={routing_only_bool},
+           {focus_cases_kwarg}
+           {force_gold_cases_kwarg}
+       )
+       learner.learn()
+"""
+
+
+# Prompt retained for healers / docs; live codegen uses _OPD_REMOTE_WRAPPER.
 _OPD_TEMPLATE = """\
-Generate a script that runs on-policy distillation by invoking the
-EXISTING opd_train.py script — do NOT reimplement student sampling, teacher
-logprob scoring, reverse-KL advantages, LoRA updates, or the routing eval
-yourself. This script is a thin orchestration wrapper only — it does NOT report
-telemetry itself. Astra tails this process's own log remotely and parses
-"Pass rate" lines on its own; do not add any network calls (no requests, no HTTP)
-to this script.
+Generate a script that runs OPD via AstraRL MLXLearnerFacade — do NOT
+reimplement student/teacher KL and do NOT hand-build a long os.execv argv.
+Facade → Ensemble opd_train.py via os.execv (same pid). No network calls.
 
 Mission ID: {mission_id}
-Finetune dir (remote host, opd_train.py lives here): {finetune_dir}
-Python interpreter (has mlx_lm installed): {python_bin}
-Base model (student): {base_model}
-Warm-start: {warm_start_desc}
-Prompt template: {prompt_template}
-Teacher (logprob-capable, same family): {teacher_model}
-Sampling: num_generations={num_generations}, temp={temp}, max_tokens={max_tokens}
-KL: kl_coef={kl_coef}, outcome_bonus={outcome_bonus}, clip_epsilon={clip_epsilon}, adv_clip={adv_clip}
-Reward schema: {reward_schema}
-LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
-Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
-save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
+Finetune dir: {finetune_dir}
+Python: {python_bin}
+Astra pkg root: {astra_pkg_root}
+Base model: {base_model}
+Warm-start: {adapter_kwarg}
+Prompt: {prompt_template}
+Teacher: {teacher_model}
 Adapter output: {checkpoint_dir}
 
-The script must:
-1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
-   sandbox tracks this wrapper process's own pid as "the training process." If
-   this script fork+execs opd_train.py as a child (subprocess.run/Popen), the
-   child gets a DIFFERENT pid that astra never learns and can never clean up. os.execv
-   REPLACES this process's image in place (no fork, same pid) so the wrapper's
-   tracked pid and the actual training process's pid are always identical.
-2. First os.chdir("{finetune_dir}") — opd_train.py resolves --prompt-template AND
-   its own eval-cases path relative to the process's working directory. Without
-   this chdir, both relative-path loads fail.
-3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path, C-style
-   exec convention) — this call does not return; the process image becomes
-   opd_train.py and its exit code becomes this process's exit code:
-       os.execv(
-           "{python_bin}",
-           [
-               "{python_bin}", "{finetune_dir}/opd_train.py",
-               "--model", "{base_model}",
-               {adapter_arg}
-               "--save-dir", "{checkpoint_dir}",
-               "--prompt-template", "{prompt_template}",
-               "--teacher-model", "{teacher_model}",
-               "--num-generations", "{num_generations}",
-               "--temp", "{temp}",
-               "--max-tokens", "{max_tokens}",
-               "--kl-coef", "{kl_coef}",
-               "--outcome-bonus", "{outcome_bonus}",
-               "--clip-epsilon", "{clip_epsilon}",
-               "--adv-clip", "{adv_clip}",
-               "--reward-schema", "{reward_schema}",
-               "--num-layers", "{num_layers}",
-               "--lora-rank", "{lora_rank}",
-               "--lora-scale", "{lora_scale}",
-               "--lora-dropout", "{lora_dropout}",
-               "--iters", "{iters}",
-               "--batch-size", "{batch_size}",
-               "--learning-rate", "{learning_rate}",
-               "--steps-per-eval", "{steps_per_eval}",
-               "--save-every", "{save_every}",
-               "--max-seq-len", "{max_seq_len}",
-               "--eval-max-tokens", "{eval_max_tokens}",
-               {mask_prompt_flag}
-               {routing_only_flag}
-               {focus_cases_flag}
-           ],
+Emit EXACTLY:
+
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       os.makedirs("{checkpoint_dir}", exist_ok=True)
+       import astrarl
+       learner = astrarl.make(
+           "mlx_opd",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           {adapter_kwarg}
+           save_dir="{checkpoint_dir}",
+           prompt_template="{prompt_template}",
+           teacher_model="{teacher_model}",
+           num_generations={num_generations},
+           temp={temp},
+           max_tokens={max_tokens},
+           kl_coef={kl_coef},
+           outcome_bonus={outcome_bonus},
+           clip_epsilon={clip_epsilon},
+           adv_clip={adv_clip},
+           reward_schema="{reward_schema}",
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_scale={lora_scale},
+           lora_dropout={lora_dropout},
+           iters={iters},
+           batch_size={batch_size},
+           learning_rate={learning_rate},
+           steps_per_eval={steps_per_eval},
+           save_every={save_every},
+           max_seq_len={max_seq_len},
+           eval_max_tokens={eval_max_tokens},
+           mask_prompt={mask_prompt_bool},
+           routing_only={routing_only_bool},
+           {focus_cases_kwarg}
        )
-   ({mask_prompt_flag}, {routing_only_flag}, and {focus_cases_flag} are each either
-   a single string list element ending in a comma — e.g. "--mask-prompt", /
-   "--routing-only", / "--focus-cases", "id1,id2", — or omitted entirely if empty.
-   Do not insert an empty string element in the list.)"""
+       learner.learn()
+"""
+
 
 _RLCD_REMOTE_WRAPPER = """\
 import os
@@ -1961,7 +1910,7 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
     # Foundation / specialize recipes set cases; default routing-only when unset.
     routing_only = bool(hp["routing_only"]) if "routing_only" in hp else (not cases)
     empty_rationale = bool(hp["empty_rationale"]) if "empty_rationale" in hp else True
-    focus = (hp.get("focus_cases") or "").strip()
+    focus = _csv_cases(hp.get("focus_cases"))
     eval_max = int(hp.get("eval_max_cases") or 0)
     return _RLCD_REMOTE_WRAPPER.format(
         finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
@@ -2040,30 +1989,60 @@ learner = astratune.make(
 learner.learn()
 """
 
+# Prompt retained for healers / docs; live codegen uses _STAR_REMOTE_WRAPPER.
 _STAR_TEMPLATE = """\
-Generate a script that runs Self-Taught Reasoner (STaR) fine-tuning by invoking the
-EXISTING star_train.py script — do NOT reimplement the sampling, rationalization,
-filtering, LoRA training, or routing eval yourself. This script is a thin
-orchestration wrapper only — it does NOT report telemetry itself. Astra tails
-this process's log remotely and parses "Pass rate" lines on its own.
+Generate a script that runs STaR via AstraTune MLXLearnerFacade — do NOT
+reimplement rationalization/SFT and do NOT hand-build a long os.execv argv.
+Facade → Ensemble star_train.py via os.execv (same pid). No network calls.
 
 Mission ID: {mission_id}
-Finetune dir (remote host, star_train.py lives here): {finetune_dir}
-Python interpreter: {python_bin}
+Finetune dir: {finetune_dir}
+Python: {python_bin}
+Astra pkg root: {astra_pkg_root}
 Base model: {base_model}
-Warm-start: {warm_start_desc}
-Prompt template: {prompt_template}
-Sampling: k_samples={k_samples}, temp={temp}, rationalize_temp={rationalize_temp}, max_tokens={max_tokens}
-LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
-Training: iters={iters}, batch={batch_size}, lr={learning_rate}, steps_per_eval={steps_per_eval}
-save_every={save_every}, max_seq_len={max_seq_len}, eval_max_tokens={eval_max_tokens}
+Warm-start: {adapter_kwarg}
+Prompt: {prompt_template}
 Adapter output: {checkpoint_dir}
 
-The script must:
-1. Import sys, os only. Use os.execv, NOT subprocess.
-2. First os.chdir("{finetune_dir}").
-3. Then os.execv with the python interpreter and argv invoking star_train.py.
+Emit EXACTLY:
+
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       os.makedirs("{checkpoint_dir}", exist_ok=True)
+       import astratune
+       learner = astratune.make(
+           "mlx_star",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           {adapter_kwarg}
+           save_dir="{checkpoint_dir}",
+           prompt_template="{prompt_template}",
+           k_samples={k_samples},
+           temp={temp},
+           rationalize_temp={rationalize_temp},
+           max_tokens={max_tokens},
+           eval_max_tokens={eval_max_tokens},
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_scale={lora_scale},
+           lora_dropout={lora_dropout},
+           iters={iters},
+           batch_size={batch_size},
+           learning_rate={learning_rate},
+           steps_per_eval={steps_per_eval},
+           save_every={save_every},
+           max_seq_len={max_seq_len},
+           val_split={val_split},
+           reward_schema="{reward_schema}",
+           routing_only={routing_only_bool},
+       )
+       learner.learn()
 """
+
 
 _PROMPT_TEMPLATE = """\
 Generate a script that evaluates a CANDIDATE PROMPT VARIANT by invoking the
@@ -2593,6 +2572,16 @@ def _csv_cases_flag(hp: dict, key: str, cli_flag: str) -> str:
     return f'"{cli_flag}", "{csv}",'
 
 
+
+def _csv_cases(raw) -> str:
+    """Normalize recipe focus/force-gold cases to a CSV string for facade kwargs."""
+    if raw is None or raw is False:
+        return ""
+    if isinstance(raw, (list, tuple)):
+        return ",".join(str(x).strip() for x in raw if str(x).strip())
+    return str(raw).strip()
+
+
 def _focus_cases_flag(hp: dict) -> str:
     """Optional ``--focus-cases id,id,...`` argv fragment for Mini finetune CLIs."""
     return _csv_cases_flag(hp, "focus_cases", "--focus-cases")
@@ -2851,9 +2840,7 @@ class CodeGenerator:
                 **self._build_hstu_context(mission_id, plan, checkpoint_dir)
             )
         elif active_task == "sft":
-            # For SFT on remote Mac Mini (settings.sandbox_host), generate the thin
-            # os.execv wrapper invoking ~/finetune/sft_train.py (same pattern as DPO).
-            # Fall back to canonical SFT runner only if running locally without sandbox_host.
+            # Remote: canned astratune.make("mlx_sft") facade. Local: canonical runner.
             sft_ctx = self._build_sft_context(
                 mission_id, plan, checkpoint_dir, current_iteration, warm_start_adapter
             )
@@ -3098,7 +3085,7 @@ class CodeGenerator:
         warm_start_adapter: Optional[str] = None,
     ) -> dict:
         """Hyperparams for _DPO_REMOTE_WRAPPER."""
-        recipe_key = plan.get("recipe") or "ensemble_dpo_v1"
+        recipe_key = plan.get("recipe") or "dpo"
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}),
             warm_start_adapter=warm_start_adapter,
@@ -3148,7 +3135,7 @@ class CodeGenerator:
         current_iteration: int = 0,
         warm_start_adapter: Optional[str] = None,
     ) -> dict:
-        recipe_key = plan.get("recipe") or "ensemble_distill_v1"
+        recipe_key = plan.get("recipe") or "distill"
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}),
             warm_start_adapter=warm_start_adapter,
@@ -3157,7 +3144,7 @@ class CodeGenerator:
             hp["adapter"] = warm_start_adapter
             hp["no_adapter"] = False
         _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-        _focus = (hp.get("focus_cases") or "").strip()
+        _focus = _csv_cases(hp.get("focus_cases"))
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
@@ -3199,7 +3186,7 @@ class CodeGenerator:
         current_iteration: int = 0,
         warm_start_adapter: Optional[str] = None,
     ) -> dict:
-        recipe_key = plan.get("recipe") or "ensemble_rft_v1"
+        recipe_key = plan.get("recipe") or "rft"
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}),
             warm_start_adapter=warm_start_adapter,
@@ -3208,8 +3195,8 @@ class CodeGenerator:
             hp["adapter"] = warm_start_adapter
             hp["no_adapter"] = False
         _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-        _focus = (hp.get("focus_cases") or "").strip()
-        _force = (hp.get("force_gold_cases") or "").strip()
+        _focus = _csv_cases(hp.get("focus_cases"))
+        _force = _csv_cases(hp.get("force_gold_cases"))
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
@@ -3255,7 +3242,7 @@ class CodeGenerator:
         current_iteration: int = 0,
         warm_start_adapter: Optional[str] = None,
     ) -> dict:
-        recipe_key = plan.get("recipe") or "ensemble_opd_v1"
+        recipe_key = plan.get("recipe") or "opd"
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}),
             warm_start_adapter=warm_start_adapter,
@@ -3264,7 +3251,7 @@ class CodeGenerator:
             hp["adapter"] = warm_start_adapter
             hp["no_adapter"] = False
         _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-        _focus = (hp.get("focus_cases") or "").strip()
+        _focus = _csv_cases(hp.get("focus_cases"))
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
@@ -3314,7 +3301,7 @@ class CodeGenerator:
         warm_start_adapter: Optional[str] = None,
     ) -> dict:
         """Hyperparams + optional DAPO/rollout kwargs for _GRPO_REMOTE_WRAPPER."""
-        recipe_key = plan.get("recipe") or "ensemble_grpo_v1"
+        recipe_key = plan.get("recipe") or "grpo"
         hp = _resolve_hyperparams(
             recipe_key, plan.get("hyperparameters", {}),
             warm_start_adapter=warm_start_adapter,
@@ -3705,17 +3692,12 @@ class CodeGenerator:
             }
             return _MLX_LORA_TEMPLATE.format(**ctx)
         if effective_task_type == "dpo":
-            load_pairs = hp.get("load_pairs", "")
             ctx = {
-                **hp,
-                "load_pairs": load_pairs,
-                "load_pairs_flag": f'"--load-pairs", "{load_pairs}",' if load_pairs else "",
-                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
-                "save_pairs_path": os.path.join(
-                    hp.get("finetune_dir", ""), "logs", f"astra_{mission_id[:8]}_pairs.jsonl"
+                **self._build_dpo_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
                 ),
                 **base,
-                "astra_pkg_root": _resolve_astra_pkg_root(hp),
             }
             return _DPO_TEMPLATE.format(**ctx)
         if effective_task_type == "grpo":
@@ -3788,71 +3770,37 @@ class CodeGenerator:
             }
             return _AGRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "distill":
-            # Cold start: no warm-start adapter exists for this base model, so
-            # LoRA weights are freshly initialised and the run ESTABLISHES a
-            # baseline rather than testing against one. distill_train.py
-            # requires exactly one of --adapter / --no-adapter (ensemble
-            # 73c8fd2) and rejects both or neither, so this is a real fork in
-            # the emitted argv, not a value substitution.
-            _cold = bool(hp.get("no_adapter", False))
             ctx = {
-                **hp,
-                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
-                "warm_start_desc": (
-                    "NONE — cold start (--no-adapter); this run establishes a baseline"
-                    if _cold else hp.get("adapter", "")
+                **self._build_distill_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
                 ),
-                "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
-                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
-                "focus_cases_flag": _focus_cases_flag(hp),
                 **base,
             }
             return _DISTILL_TEMPLATE.format(**ctx)
         if effective_task_type == "rft":
-            # Same cold-start fork as distill: rft_train.py takes exactly one of
-            # --adapter / --no-adapter.
-            _cold = bool(hp.get("no_adapter", False))
             ctx = {
-                **hp,
-                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
-                "warm_start_desc": (
-                    "NONE — cold start (--no-adapter); this run establishes a baseline"
-                    if _cold else hp.get("adapter", "")
+                **self._build_rft_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
                 ),
-                "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
-                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
-                "focus_cases_flag": _focus_cases_flag(hp),
-                "force_gold_cases_flag": _force_gold_cases_flag(hp),
                 **base,
             }
             return _RFT_TEMPLATE.format(**ctx)
         if effective_task_type == "opd":
-            # Same cold-start fork as distill/rft: opd_train.py takes exactly one
-            # of --adapter / --no-adapter.
-            _cold = bool(hp.get("no_adapter", False))
             ctx = {
-                **hp,
-                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
-                "warm_start_desc": (
-                    "NONE — cold start (--no-adapter); this run establishes a baseline"
-                    if _cold else hp.get("adapter", "")
+                **self._build_opd_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
                 ),
-                "mask_prompt_flag": '"--mask-prompt",' if hp.get("mask_prompt", True) else "",
-                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
-                "focus_cases_flag": _focus_cases_flag(hp),
-                "gym_id": hp.get("gym_id") or "routing_prompt",
-                "learner_id": hp.get("learner_id") or "mlx_opd",
                 **base,
             }
             return _OPD_TEMPLATE.format(**ctx)
         if effective_task_type == "star":
-            _cold = bool(hp.get("no_adapter", False))
             ctx = {
-                **hp,
-                "adapter_arg": '"--no-adapter",' if _cold else '"--adapter", "%s",' % hp.get("adapter", ""),
-                "warm_start_desc": (
-                    "NONE — cold start (--no-adapter); this run establishes a baseline"
-                    if _cold else hp.get("adapter", "")
+                **self._build_star_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
                 ),
                 **base,
             }

@@ -1490,7 +1490,7 @@ def test_resolve_hyperparams_mlx_lora_uses_recipe_iters():
 # ── dpo template ──────────────────────────────────────────────────────────────
 
 def test_build_user_prompt_dpo_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):
-    """The DPO template must instruct wrapping dpo_train.py, not reimplementing DPO math."""
+    """DPO prompt must be facade-shaped (astratune.make), not hand-built argv."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1502,7 +1502,9 @@ def test_build_user_prompt_dpo_wraps_existing_script_not_reimplemented(tmp_path,
         "target_metric": {"pass_rate": 0.9},
     }
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "dpo_train.py" in prompt
+    assert "astratune.make" in prompt
+    assert "mlx_dpo" in prompt
+    assert "use_execv=True" in prompt
     assert "do NOT reimplement" in prompt
 
 
@@ -1532,12 +1534,11 @@ def test_build_user_prompt_dpo_routing_only_flag_default_true(tmp_path, monkeypa
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "--routing-only" in prompt
+    assert "routing_only=True" in prompt
 
 
 def test_build_user_prompt_dpo_no_telemetry_network_calls(tmp_path, monkeypatch):
-    """Astra tails the remote log itself — the wrapper script must not import
-    requests or POST telemetry (no network deps needed on the Mac Mini)."""
+    """Astra tails the remote log itself — facade prompt bans network calls."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1545,15 +1546,13 @@ def test_build_user_prompt_dpo_no_telemetry_network_calls(tmp_path, monkeypatch)
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "Do NOT import subprocess or requests" in prompt
+    assert "No network calls" in prompt or "no requests" in prompt.lower()
     assert "Telemetry URL" not in prompt
+    assert "astratune.make" in prompt
 
 
 def test_build_user_prompt_dpo_uses_execv_not_subprocess(tmp_path, monkeypatch):
-    """Must os.execv (replaces process image, same pid) instead of subprocess.run
-    (forks a child with a different pid astra can't track) — a subprocess.run
-    wrapper orphans the real training process if the wrapper ever dies, since
-    astra only tracks the wrapper's pid."""
+    """Facade must use_execv (zero-orphan) — no subprocess.run fork in the wrapper."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1561,7 +1560,8 @@ def test_build_user_prompt_dpo_uses_execv_not_subprocess(tmp_path, monkeypatch):
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "os.execv(" in prompt
+    assert "use_execv=True" in prompt
+    assert "astratune.make" in prompt
     assert "subprocess.run(" not in prompt
 
 
@@ -1836,8 +1836,7 @@ def test_resolve_hyperparams_grpo_chained_uses_dpo_champion():
 
 
 def test_build_user_prompt_dpo_includes_save_pairs(tmp_path, monkeypatch):
-    """--save-pairs must always be passed so a future pivot can reuse collected
-    pairs via --load-pairs instead of re-running the slowest phase (~30-60 min)."""
+    """save_pairs must always be passed so a future pivot can reuse collected pairs."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1845,8 +1844,7 @@ def test_build_user_prompt_dpo_includes_save_pairs(tmp_path, monkeypatch):
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id12345", plan, str(tmp_path / "ckpt"))
-    assert "--save-pairs" in prompt
-    assert "/Users/kewang/finetune/logs/astra_test-id1_pairs.jsonl" in prompt
+    assert 'save_pairs="/Users/kewang/finetune/logs/astra_test-id1_pairs.jsonl"' in prompt
 
 
 def test_build_user_prompt_grpo_no_telemetry_network_calls(tmp_path, monkeypatch):
@@ -1906,9 +1904,9 @@ def _distill_prompt(tmp_path, monkeypatch):
 
 def test_build_user_prompt_distill_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):
     prompt = _distill_prompt(tmp_path, monkeypatch)
-    assert "distill_train.py" in prompt
-    assert "do NOT reimplement" in prompt
-    assert "--teacher-model" in prompt and "--iters" in prompt
+    assert "astratune.make" in prompt and "mlx_distill" in prompt
+    assert "do NOT" in prompt and "reimplement" in prompt
+    assert "teacher_model=" in prompt and "iters=" in prompt
 
 
 def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
@@ -1927,7 +1925,7 @@ def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
     # holds a top-level adapters.safetensors, which is the iter500 save rather
     # than the iter400 checkpoint grpo_v9_min was GRPO-trained from — and the
     # directory form is still valid input, so it would load iter500 silently.
-    assert "adapters/retrain_v53_min/0000400_adapters.safetensors" in prompt
+    assert 'adapter="adapters/retrain_v53_min/0000400_adapters.safetensors"' in prompt or "adapters/retrain_v53_min/0000400_adapters.safetensors" in prompt
     # Guards the trap directly: the bare directory must never be what we pass.
     assert "adapters/retrain_v53_min\n" not in prompt
     # NOT the post-RL warm-start. retrain_best is byte-identical to
@@ -1940,15 +1938,15 @@ def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
 
 def test_build_user_prompt_distill_uses_execv_and_chdir(tmp_path, monkeypatch):
     prompt = _distill_prompt(tmp_path, monkeypatch)
-    assert "os.execv(" in prompt
+    assert "use_execv=True" in prompt
     assert "subprocess.run(" not in prompt
     assert 'os.chdir("/Users/kewang/finetune")' in prompt
 
 
 def test_build_user_prompt_distill_no_network_calls(tmp_path, monkeypatch):
     prompt = _distill_prompt(tmp_path, monkeypatch)
-    assert "do not\nadd any network calls" in prompt
-    assert "Do NOT import subprocess or requests" in prompt
+    assert "No network calls" in prompt or "no requests" in prompt.lower()
+    assert "astratune.make" in prompt
 
 
 def test_resolve_hyperparams_distill_recipe_authoritative(tmp_path, monkeypatch):
@@ -2331,13 +2329,11 @@ def _cold_recipe(monkeypatch):
 
 
 def test_cold_start_recipe_emits_no_adapter_not_adapter(tmp_path, monkeypatch):
-    """distill_train.py requires EXACTLY ONE of --adapter / --no-adapter and
-    rejects both or neither (ensemble 73c8fd2), so this is a fork in the emitted
-    argv rather than a value substitution."""
+    """Facade cold start emits no_adapter=True, not adapter=..."""
     _cold_recipe(monkeypatch)
     prompt = _distill_prompt(tmp_path, monkeypatch)
-    assert '"--no-adapter",' in prompt
-    assert '"--adapter"' not in prompt
+    assert "no_adapter=True" in prompt
+    assert 'adapter="' not in prompt
 
 
 def test_cold_start_recipe_passes_the_production_prompt_and_long_context(tmp_path, monkeypatch):
@@ -2380,33 +2376,23 @@ def _rft_prompt(tmp_path, monkeypatch):
 
 
 def test_rft_template_wraps_the_existing_script(tmp_path, monkeypatch):
-    """Same os.execv discipline as dpo/grpo/distill: astra tracks the wrapper's
-    own pid, so a fork+exec child would get a pid astra never learns."""
+    """Facade use_execv discipline — same pid as rft_train.py."""
     p = _rft_prompt(tmp_path, monkeypatch)
-    assert "rft_train.py" in p
-    assert "os.execv(" in p
+    assert "astratune.make" in p and "mlx_rft" in p
+    assert "use_execv=True" in p
     assert "subprocess.run(" not in p
     assert 'os.chdir("/Users/kewang/finetune")' in p
 
 
 def test_rft_passes_sampling_args(tmp_path, monkeypatch):
-    """k_samples and temp ARE the method — sampling K candidates and keeping the
-    ones that score correct. temp must be > 0 or every candidate is identical
-    and rejection sampling has nothing to reject."""
+    """k_samples and temp ARE the method — temp must be > 0."""
     p = _rft_prompt(tmp_path, monkeypatch)
-    # Assert the INVARIANT, not the tuned values — k_samples and temp are the
-    # recipe's two pivot levers and are expected to move (they were retuned
-    # 8/1.0 -> 4/0.8 on 2026-09-09). What must never change is that temp is
-    # ABOVE ZERO: at temp 0 all K samples are identical, rejection sampling has
-    # nothing to reject, and RFT silently degenerates into SFT on what the model
-    # already does — a failure that looks like a normal run.
-    m = re.search(r'"--temp", "([\d.]+)"', p)
-    assert m, "rft must pass --temp"
+    m = re.search(r"temp=([\d.]+)", p)
+    assert m, "rft must pass temp="
     assert float(m.group(1)) > 0.0, f"temp must be > 0, got {m.group(1)}"
-    k = re.search(r'"--k-samples", "(\d+)"', p)
+    k = re.search(r"k_samples=(\d+)", p)
     assert k and int(k.group(1)) >= 2, "rejection sampling needs at least 2 candidates"
-    assert "--no-adapter" in p          # cold start: no 4B lineage exists
-    assert '"--adapter"' not in p
+    assert "no_adapter=True" in p  # cold start
 
 
 def test_rft_uses_production_prompt_and_long_context(tmp_path, monkeypatch):
@@ -2462,13 +2448,13 @@ def test_rft_focus_recipe_emits_focus_cases_and_warm_start(tmp_path, monkeypatch
         "target_metric": {"pass_rate": 0.889},
     }
     p = gen._build_user_prompt("rft", "test-id", plan, str(tmp_path / "ckpt"))
-    assert '"--adapter", "adapters/astra_7b6c78a6_iter74/best",' in p
-    assert '"--no-adapter"' not in p
+    assert 'adapter="adapters/astra_7b6c78a6_iter74/best"' in p
+    assert "no_adapter=True" not in p
     assert "conductor_min.md" in p
-    assert '"--focus-cases", "' in p
+    assert "focus_cases=" in p
     assert "route_shell_git_status" in p
     assert "route_report_kpi_dashboard" in p
-    assert '"--k-samples", "8"' in p
+    assert "k_samples=8" in p
 
 
 # ── opd (on-policy distillation) ─────────────────────────────────────────────
@@ -2483,24 +2469,23 @@ def _opd_prompt(tmp_path, monkeypatch):
 
 
 def test_opd_template_wraps_the_existing_script(tmp_path, monkeypatch):
-    """Same os.execv discipline as distill/rft: astra tracks the wrapper's pid."""
+    """Facade use_execv discipline via astrarl.make mlx_opd."""
     p = _opd_prompt(tmp_path, monkeypatch)
-    assert "opd_train.py" in p
-    assert "os.execv(" in p
+    assert "astrarl.make" in p and "mlx_opd" in p
+    assert "use_execv=True" in p
     assert "subprocess.run(" not in p
     assert 'os.chdir("/Users/kewang/finetune")' in p
 
 
 def test_opd_passes_teacher_and_sampling_args(tmp_path, monkeypatch):
     p = _opd_prompt(tmp_path, monkeypatch)
-    assert "--teacher-model" in p
+    assert "teacher_model=" in p
     assert "gemma-3-12b-it-4bit" in p
-    m = re.search(r'"--temp", "([\d.]+)"', p)
+    m = re.search(r"temp=([\d.]+)", p)
     assert m and float(m.group(1)) > 0.0
-    assert re.search(r'"--num-generations", "(\d+)"', p)
-    assert re.search(r'"--kl-coef", "([\d.]+)"', p)
-    assert "--no-adapter" in p
-    # FT serve prompt — must NOT be conductor_gemma.md (c02028e1 regression).
+    assert re.search(r"num_generations=(\d+)", p)
+    assert re.search(r"kl_coef=([\d.]+)", p)
+    assert "no_adapter=True" in p
     assert "conductor_min.md" in p
     assert "conductor_gemma.md" not in p
     assert "6144" in p
@@ -2639,11 +2624,11 @@ def test_decision_foundation_wrapper_passes_cases_not_routing():
 
 def test_opd_passes_adv_clip_and_clip_epsilon(tmp_path, monkeypatch):
     p = _opd_prompt(tmp_path, monkeypatch)
-    assert '"--adv-clip", "5.0"' in p or '"--adv-clip", "5"' in p
-    assert '"--clip-epsilon", "0.2"' in p
-    assert '"--reward-schema", "v2"' in p
-    assert '"--kl-coef", "0.15"' in p
-    assert '"--outcome-bonus", "8.0"' in p or '"--outcome-bonus", "8"' in p
+    assert "adv_clip=5" in p
+    assert "clip_epsilon=0.2" in p
+    assert 'reward_schema="v2"' in p
+    assert "kl_coef=0.15" in p
+    assert "outcome_bonus=8" in p
 
 
 def test_prompt_pivot_lever_is_empty():

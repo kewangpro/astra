@@ -1,8 +1,7 @@
 """AgentGym text + e2e stub gyms for trajectory GRPO.
 
-On the Mini, Ensemble vendors ``agent_gym_env`` / ``trajectory_reward``.
-Locally we prefer those modules when importable, else fall back to Astra
-``envs.agent_gym`` text mode for reset/step compatibility tests.
+Uses Astra ``envs.agent_gym`` (shipped with the editable ``astra-rl-gym`` install).
+Ensemble no longer vendors ``finetune/agent_gym_env.py``.
 """
 from __future__ import annotations
 
@@ -36,22 +35,12 @@ class AgentTextGym:
                 return {"kind": "e2e", "cases": load_e2e_stub_cases(path)}
             except Exception as exc:  # noqa: BLE001
                 return {"kind": "e2e_unavailable", "error": str(exc)}
-        try:
-            from agent_gym_env import AgentToolGym
+        from envs.agent_gym import AgentToolGym
 
-            return {
-                "kind": "ensemble",
-                "env": AgentToolGym(tool_failure_prob=self.tool_failure_prob),
-            }
-        except Exception:
-            from astragym.agent_vector import make_agent_gym_text_env
-
-            return {
-                "kind": "astra",
-                "env": make_agent_gym_text_env(
-                    tool_failure_prob=self.tool_failure_prob,
-                ),
-            }
+        return {
+            "kind": "astra",
+            "env": AgentToolGym(tool_failure_prob=self.tool_failure_prob),
+        }
 
     def reset(self, *, seed: Optional[int] = None) -> tuple[Any, dict]:
         b = self._backend

@@ -25,6 +25,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-4b-it-4bit    # matches production; 4B and 12B measured identical (48 vs 47 model-routed)
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
 
   # Cold start — no 4B adapter lineage exists, and a 12B adapter cannot warm-start
   # a 4B (dims differ; the key-intersection guard rejects it). Iteration 0

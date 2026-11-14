@@ -16,6 +16,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-1b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
   prompt_template: backend/prompts/decision.md
   no_adapter: true
   adapter: ""

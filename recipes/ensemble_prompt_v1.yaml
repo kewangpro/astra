@@ -24,6 +24,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-4b-it-4bit    # production's model
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
   base_prompt: backend/prompts/conductor_gemma.md
   eval_max_tokens: 256
 

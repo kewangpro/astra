@@ -15,5 +15,7 @@ sb3 = ["stable-baselines3", "gymnasium"]
 # MLX stack is installed in the Mini finetune-env; not a hard pip dep here.
 
 [tool.setuptools.packages.find]
-include = ["astragym*", "astrarl*", "astratune*"]
+# ``envs`` is the Gymnasium AgentToolGym / register surface used by astragym
+# agent_* makers and Ensemble agent_grpo_train (pip-only; no finetune vendored gym).
+include = ["astragym*", "astrarl*", "astratune*", "envs*"]
 exclude = ["backend*", "frontend*", "tests*", "recipes*", "docs*", "data*"]

@@ -15,6 +15,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-4b-it-4bit   # production's model — see WHY 4B below
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
 
   # ── Cold start ─────────────────────────────────────────────────────────────
   # No 4B adapter lineage exists (the inventory holds 12B lineages plus a 1B

@@ -11,6 +11,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
   adapter: adapters/astra_b37c6b0a_iter0/best
   prompt_template: backend/prompts/conductor_min.md
   num_layers: 4

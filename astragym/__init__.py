@@ -11,7 +11,24 @@ __all__ = [
     "make",
     "infer_gym_id",
     "gymnasium_env_id",
+    "ACTION_NAMES",
+    "SCENARIOS",
+    "AgentToolGym",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy re-exports for Agent GRPO (``envs.agent_gym`` via pip ``envs``)."""
+    if name in ("ACTION_NAMES", "SCENARIOS", "AgentToolGym"):
+        from envs.agent_gym import ACTION_NAMES, AgentToolGym, SCENARIOS
+
+        mapping = {
+            "ACTION_NAMES": ACTION_NAMES,
+            "SCENARIOS": SCENARIOS,
+            "AgentToolGym": AgentToolGym,
+        }
+        return mapping[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def make(gym_id: str, **kwargs: Any) -> Any:

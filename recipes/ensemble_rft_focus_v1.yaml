@@ -31,6 +31,7 @@ hyperparameters:
   base_model: mlx-community/gemma-3-4b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
 
   # Harvest from stalled outcome-led OPD (Phase 89).
   no_adapter: false
@@ -86,7 +87,7 @@ target_metric:
 metric_ceiling:
   pass_rate: 0.93
 
-# RUNNABLE: Mini rft_train.py exists; astra emits os.execv with --focus-cases
+# RUNNABLE: Mini rft_train.py exists; astra emits astratune.make mlx_rft with focus_cases
 # when this recipe's focus_cases list is non-empty. Dispatch:
 #   POST /recipes/ensemble_rft_focus_v1/dispatch
 # with optional goal override. Eval remains full MODEL-ROUTED 54-case bare_eval
