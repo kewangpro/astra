@@ -50,6 +50,8 @@ hyperparameters:
   learning_rate: 0.000001       # 1e-6
   clip_epsilon: 0.1
   max_grad_norm: 1.0
+  # Platform knobs (Astra astrarl): rollout / DAPO-lite — Ensemble CLI forwards them.
+  # Plugin/use-case knobs: reward_schema, email_weight, focus_weight, prompt_template, cases.
   # DAPO-lite (defaults preserve classic GRPO; enable explicitly to experiment)
   # clip_epsilon_low: 0.2       # asymmetric floor 1-ε_low
   # clip_epsilon_high: 0.28     # DAPO clip-higher ceiling 1+ε_high

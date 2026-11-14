@@ -267,16 +267,17 @@ class CodeSafetyClassifier:
         # variant fall through to the LLM classifier, which (a 4th time)
         # incorrectly flagged legitimate os.execv process replacement as
         # "could lead to arbitrary code execution," stalling a live mission.
+        _known_finetune_script = re.search(
+            r"dpo_train\.py|grpo_train\.py|agent_grpo_train\.py|distill_train\.py|rft_train\.py|"
+            r"opd_train\.py|rlcd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"
+            r"train_embedding\.py|train_reranker\.py|"
+            r"backend\.trainers\.hstu_train|hstu_train",
+            script,
+        )
         if (
             not has_any_request
             and re.search(r"\bos\.execv\s*\(", code_only)
-            and re.search(
-                r"dpo_train\.py|grpo_train\.py|agent_grpo_train\.py|distill_train\.py|rft_train\.py|"
-                r"opd_train\.py|rlcd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"
-                r"train_embedding\.py|train_reranker\.py|"
-                r"backend\.trainers\.hstu_train|hstu_train",
-                script,
-            )
+            and _known_finetune_script
         ):
             return SafetyVerdict(
                 safe=True,
@@ -284,6 +285,20 @@ class CodeSafetyClassifier:
                 "(dpo/grpo/distill/rft/opd/sft/star_train.py, train_embedding.py, "
                 "train_reranker.py, hstu_train, bare_eval.py) "
                 "with no network calls — auto-approved",
+                classifier="static",
+            )
+        # AstraRL facade path (GRPO template): astrarl.make(..., use_execv=True).learn()
+        # — facade shells to grpo_train.py / peers without a literal os.execv in train.py.
+        if (
+            not has_any_request
+            and re.search(r"\bastrarl\.make\s*\(", code_only)
+            and re.search(r"use_execv\s*=\s*True", code_only)
+            and re.search(r"mlx_grpo_routing|mlx_grpo_traj|mlx_opd|grpo_train\.py", script)
+        ):
+            return SafetyVerdict(
+                safe=True,
+                reason="astrarl.make(..., use_execv=True) facade dispatch to MLX "
+                "finetune CLI with no network calls — auto-approved",
                 classifier="static",
             )
 

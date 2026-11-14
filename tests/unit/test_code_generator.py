@@ -1758,7 +1758,7 @@ def test_resolve_hyperparams_grpo_uses_recipe_clip_epsilon():
 
 
 def test_build_user_prompt_grpo_includes_dapo_rollout_flags(tmp_path, monkeypatch):
-    """Optional DAPO-lite / openai rollout kwargs appear in the execv argv list."""
+    """Optional DAPO-lite / openai rollout kwargs appear on astrarl.make(...)."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1775,12 +1775,11 @@ def test_build_user_prompt_grpo_includes_dapo_rollout_flags(tmp_path, monkeypatc
         "target_metric": {"pass_rate": 0.9},
     }
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "--clip-epsilon-high" in prompt
-    assert "0.28" in prompt
-    assert "--dynamic-sample-retries" in prompt
-    assert "--rollout-backend" in prompt
-    assert "openai" in prompt
-    assert "--rollout-base-url" in prompt
+    assert "astrarl.make" in prompt
+    assert "clip_epsilon_high=0.28" in prompt
+    assert "dynamic_sample_retries=2" in prompt
+    assert 'rollout_backend="openai"' in prompt
+    assert 'rollout_base_url="http://127.0.0.1:8081/v1"' in prompt
 
 
 def test_resolve_hyperparams_grpo_num_layers_matches_warm_start_adapter():
@@ -1862,7 +1861,7 @@ def test_build_user_prompt_grpo_no_telemetry_network_calls(tmp_path, monkeypatch
 
 
 def test_build_user_prompt_grpo_uses_execv_not_subprocess(tmp_path, monkeypatch):
-    """Same os.execv requirement as dpo — no orphan-prone subprocess.run fork."""
+    """Facade must use_execv (zero-orphan) — no subprocess.run fork in the wrapper."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1870,7 +1869,8 @@ def test_build_user_prompt_grpo_uses_execv_not_subprocess(tmp_path, monkeypatch)
     gen = CodeGenerator(_make_provider())
     plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "os.execv(" in prompt
+    assert "use_execv=True" in prompt
+    assert "astrarl.make" in prompt
     assert "subprocess.run(" not in prompt
 
 

@@ -99,9 +99,11 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 **AstraGym ids:** `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`.  
 **AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.
 
-**MLX learners** return an `MLXLearnerFacade` that implements the `Learner` protocol (`learn` shells to Ensemble `grpo_train.py` / `agent_grpo_train.py` / `opd_train.py`; `predict` is not used — inference stays on JEV/MLX servers). Use `.descriptor()` when only the entrypoint name is needed.
+**MLX learners** return an `MLXLearnerFacade` that implements the `Learner` protocol. Mission codegen for GRPO builds `astrarl.make("mlx_grpo_routing", …, use_execv=True)` then `learn()` — the facade maps kwargs to Ensemble’s thin `grpo_train.py` CLI (same pid via `os.execv`). `predict` is not used — inference stays on JEV/MLX servers. Use `.descriptor()` when only the entrypoint name is needed.
 
-**Routing GRPO rollout backends** (Ensemble `finetune/rollout_backend.py`): `--rollout-backend mlx` (default) or `openai` (OpenAI-compatible HTTP via `--rollout-base-url`). **DAPO-lite** on routing GRPO (default-off / backward compatible): asymmetric clip `--clip-epsilon-low` / `--clip-epsilon-high`, and `--dynamic-sample-retries` to resample flat reward groups.
+**Platform GRPO runtime** (Astra `astrarl/`): rollout backends (`astrarl.rollout`), DAPO-lite helpers, GRPO advantages/loss (`astrarl.grpo_math`), group collect (`astrarl.mlx_grpo_step`), and use-case `RewardPlugin` (`astrarl.plugins`). Ensemble owns routing rewards/cases/prompts (`RoutingRewardPlugin`, `case_pool`, conductor templates) and a thin CLI that wires those plugins into the platform step loop.
+
+**Rollout / DAPO-lite flags** (platform, forwarded by recipe → facade → CLI): `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low` / `--clip-epsilon-high`, `--dynamic-sample-retries` (default 0 = off).
 
 | AstraRL? | Scope |
 |---|---|

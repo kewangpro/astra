@@ -59,7 +59,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the san
 | Layer | Package | Id | Owns |
 |---|---|---|---|
 | **AstraGym** | [`astragym/`](astragym/) | `gym_id` | Worlds: `reset` / `step`, rewards, eval |
-| **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Gym-coupled learners / checkpoints (SB3 objects + `MLXLearnerFacade` over Ensemble GRPO/OPD CLIs; routing GRPO supports MLX or OpenAI-compat rollout + optional DAPO-lite) |
+| **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Gym-coupled learners + platform GRPO runtime (rollout / DAPO / loss); Ensemble is a thin use-case CLI + reward plugin |
 | **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD |
 
 | Gym-coupled worker | Typical `gym_id` | Typical `learner_id` |

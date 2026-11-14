@@ -1,7 +1,8 @@
-"""MLX learner facade — Learner protocol over Ensemble finetune CLI entrypoints.
+"""MLX learner facade — Learner protocol over finetune CLI entrypoints.
 
-Heavy GRPO / Agent-GRPO / OPD math stays in Ensemble ``*_train.py``. This object
-satisfies ``astrarl.protocol.Learner`` so ``astrarl.make(mlx_*)`` is not a bare dict.
+Platform owns rollout / DAPO / GRPO math under ``astrarl``; Ensemble CLIs are thin
+use-case wrappers (reward plugin + case pool). This facade maps recipe kwargs to
+CLI argv (``use_execv=True`` for zero-orphan mission sandboxes).
 """
 from __future__ import annotations
 
@@ -23,6 +24,10 @@ _FACADE_ONLY = frozenset({
     "env",
     "cwd",
     "check",
+    "gym_id",
+    "learner_id",
+    "task_type",
+    "algorithm",
 })
 
 

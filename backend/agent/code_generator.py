@@ -1329,16 +1329,17 @@ The script must:
    ~30-60 min) when only retraining hyperparameters (beta/epochs) change."""
 
 _GRPO_TEMPLATE = """\
-Generate a script that runs GRPO (Group Relative Policy Optimization) fine-tuning by
-invoking the EXISTING grpo_train.py script — do NOT reimplement the on-policy rollout,
-reward scoring, advantage computation, or PPO-clipped update yourself. This script is a
-thin orchestration wrapper only — it does NOT report telemetry itself. Astra tails this
-process's own log remotely and parses "Pass rate" lines on its own; do not add any
-network calls (no requests, no HTTP) to this script.
+Generate a script that runs GRPO via AstraRL MLXLearnerFacade — do NOT reimplement
+rollout/reward/PPO math and do NOT hand-build a long os.execv argv list for every
+flag. The facade maps kwargs to Ensemble grpo_train.py and uses os.execv so the
+sandbox-tracked pid stays identical to the trainer. This script does NOT report
+telemetry; Astra tails "Pass rate" lines remotely. No network calls (no requests).
 
 Mission ID: {mission_id}
-Finetune dir (remote host, grpo_train.py lives here): {finetune_dir}
-Python interpreter (has mlx_lm installed): {python_bin}
+Finetune dir (remote host): {finetune_dir}
+Python interpreter: {python_bin}
+learner_id: {learner_id}
+gym_id: {gym_id}
 Base model: {base_model}
 Warm-start adapter: {adapter}
 Prompt template: {prompt_template}
@@ -1353,62 +1354,59 @@ clip_epsilon_high={clip_epsilon_high}, dynamic_sample_retries={dynamic_sample_re
 rollout_backend={rollout_backend}, rollout_base_url={rollout_base_url}
 Logging: steps_per_report={steps_per_report}, steps_per_eval={steps_per_eval}, save_every={save_every}
 Adapter output: {checkpoint_dir}
+routing_only: {routing_only}
 
 The script must:
-1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
-   sandbox tracks this wrapper process's own pid as "the training process." If
-   this script fork+execs grpo_train.py as a child (subprocess.run/Popen), the
-   child gets a DIFFERENT pid that astra never learns and can never clean up —
-   if this wrapper dies or is killed for any reason, the child is silently
-   orphaned, still running, invisible to astra. os.execv REPLACES this process's
-   image in place (no fork, same pid) so the wrapper's tracked pid and the
-   actual training process's pid are always identical, with zero orphan risk.
-2. First os.chdir("{finetune_dir}") — grpo_train.py resolves --prompt-template AND
-   its own hardcoded eval-cases path relative to the process's working directory,
-   not relative to the script's own location. Without this chdir, both of those
-   relative-path loads fail.
-3. Then os.execv with this EXACT argv (note argv[0] repeats the interpreter path,
-   standard C-style exec convention) — this call does not return; the process
-   image becomes grpo_train.py from this point on, and its exit code becomes
-   this process's exit code automatically (no sys.exit needed, no return value
-   to check):
-       os.execv(
-           "{python_bin}",
-           [
-               "{python_bin}", "{finetune_dir}/grpo_train.py",
-               "--model", "{base_model}",
-               "--adapter", "{adapter}",
-               "--save-dir", "{checkpoint_dir}",
-               "--num-layers", "{num_layers}",
-               "--lora-rank", "{lora_rank}",
-               "--lora-dropout", "{lora_dropout}",
-               "--lora-scale", "{lora_scale}",
-               "--iters", "{iters}",
-               "--num-generations", "{num_generations}",
-               "--temp", "{temp}",
-               "--max-tokens", "{max_tokens}",
-               "--eval-max-tokens", "{eval_max_tokens}",
-               "--reward-schema", "{reward_schema}",
-               "--email-weight", "{email_weight}",
-               "--focus-weight", "{focus_weight}",
-               "--max-zero-steps", "{max_zero_steps}",
-               "--max-one-steps", "{max_one_steps}",
-               "--learning-rate", "{learning_rate}",
-               "--clip-epsilon", "{clip_epsilon}",
-               "--max-grad-norm", "{max_grad_norm}",
-               "--steps-per-report", "{steps_per_report}",
-               "--steps-per-eval", "{steps_per_eval}",
-               "--save-every", "{save_every}",
-               {routing_only_flag}
-               {dapo_rollout_flags}
-               "--prompt-template", "{prompt_template}",
-           ],
+1. Import os and sys only plus astrarl (available under finetune_dir or site-packages).
+   Do NOT import subprocess or requests.
+2. os.chdir("{finetune_dir}") so relative prompt/eval paths resolve.
+3. Ensure finetune_dir is on sys.path (insert 0) so `import astrarl` finds the
+   platform package (pip-installed or vendored under finetune/astrarl).
+4. Build the learner with astrarl.make and call learn(use_execv via kwargs) —
+   EXACT shape (fill values from the mission hyperparameters above; omit any
+   DAPO/rollout kwarg whose value is empty / None / default-off):
+
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       import astrarl
+       learner = astrarl.make(
+           "{learner_id}",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           adapter="{adapter}",
+           save_dir="{checkpoint_dir}",
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_dropout={lora_dropout},
+           lora_scale={lora_scale},
+           iters={iters},
+           num_generations={num_generations},
+           temp={temp},
+           max_tokens={max_tokens},
+           eval_max_tokens={eval_max_tokens},
+           reward_schema="{reward_schema}",
+           email_weight={email_weight},
+           focus_weight={focus_weight},
+           max_zero_steps={max_zero_steps},
+           max_one_steps={max_one_steps},
+           learning_rate={learning_rate},
+           clip_epsilon={clip_epsilon},
+           max_grad_norm={max_grad_norm},
+           steps_per_report={steps_per_report},
+           steps_per_eval={steps_per_eval},
+           save_every={save_every},
+           routing_only={routing_only_bool},
+           prompt_template="{prompt_template}",
+           {facade_dapo_kwargs}
        )
-   ({routing_only_flag} is either the string "--routing-only", (with a trailing
-   comma, as its own list element) or omitted entirely if empty — do not insert
-   an empty string element in the list. {dapo_rollout_flags} is pre-rendered
-   optional argv for DAPO-lite / rollout backend, or empty.)"""
+       learner.learn()
+
+   learn() with use_execv=True never returns (process image becomes grpo_train.py).
+   {facade_dapo_kwargs} is pre-rendered optional keyword args for DAPO-lite /
+   rollout (or empty). routing_only must be a Python bool True/False."""
 
 _AGRPO_TEMPLATE = """\
 Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) by
@@ -3123,33 +3121,35 @@ class CodeGenerator:
             }
             return _DPO_TEMPLATE.format(**ctx)
         if effective_task_type == "grpo":
-            _dapo_bits: list[str] = []
+            # Optional facade kwargs for DAPO-lite / rollout (omitted when default-off).
+            _facade_dapo: list[str] = []
             if hp.get("clip_epsilon_low") is not None:
-                _dapo_bits.append(f'"--clip-epsilon-low", "{hp["clip_epsilon_low"]}",')
+                _facade_dapo.append(f'clip_epsilon_low={hp["clip_epsilon_low"]},')
             if hp.get("clip_epsilon_high") is not None:
-                _dapo_bits.append(f'"--clip-epsilon-high", "{hp["clip_epsilon_high"]}",')
+                _facade_dapo.append(f'clip_epsilon_high={hp["clip_epsilon_high"]},')
             if int(hp.get("dynamic_sample_retries") or 0) > 0:
-                _dapo_bits.append(
-                    f'"--dynamic-sample-retries", "{int(hp["dynamic_sample_retries"])}",'
+                _facade_dapo.append(
+                    f'dynamic_sample_retries={int(hp["dynamic_sample_retries"])},'
                 )
             _rb = str(hp.get("rollout_backend") or "mlx").lower()
             if _rb and _rb != "mlx":
-                _dapo_bits.append(f'"--rollout-backend", "{_rb}",')
+                _facade_dapo.append(f'rollout_backend="{_rb}",')
                 if hp.get("rollout_base_url"):
-                    _dapo_bits.append(f'"--rollout-base-url", "{hp["rollout_base_url"]}",')
+                    _facade_dapo.append(f'rollout_base_url="{hp["rollout_base_url"]}",')
                 if hp.get("rollout_api_key"):
-                    _dapo_bits.append(f'"--rollout-api-key", "{hp["rollout_api_key"]}",')
+                    _facade_dapo.append(f'rollout_api_key="{hp["rollout_api_key"]}",')
                 if hp.get("rollout_model"):
-                    _dapo_bits.append(f'"--rollout-model", "{hp["rollout_model"]}",')
+                    _facade_dapo.append(f'rollout_model="{hp["rollout_model"]}",')
             ctx = {
                 **hp,
-                "routing_only_flag": '"--routing-only",' if hp.get("routing_only", True) else "",
-                "dapo_rollout_flags": "\n               ".join(_dapo_bits),
+                "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
+                "facade_dapo_kwargs": "\n           ".join(_facade_dapo),
                 "clip_epsilon_low": hp.get("clip_epsilon_low", ""),
                 "clip_epsilon_high": hp.get("clip_epsilon_high", ""),
                 "dynamic_sample_retries": hp.get("dynamic_sample_retries", 0),
                 "rollout_backend": hp.get("rollout_backend", "mlx"),
                 "rollout_base_url": hp.get("rollout_base_url", ""),
+                "routing_only": hp.get("routing_only", True),
                 "gym_id": hp.get("gym_id") or "routing_prompt",
                 "learner_id": hp.get("learner_id") or "mlx_grpo_routing",
                 **base,
