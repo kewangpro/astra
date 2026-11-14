@@ -29,10 +29,14 @@ class AgentTextGym:
     def _load_backend(self) -> Any:
         if self.gym_id == "e2e_stubs":
             try:
-                from trajectory_reward import load_e2e_stub_cases, DEFAULT_E2E_STUBS
+                from astragym.e2e_stubs import DEFAULT_E2E_STUBS, load_e2e_stub_cases
 
-                path = self.e2e_cases or DEFAULT_E2E_STUBS
-                return {"kind": "e2e", "cases": load_e2e_stub_cases(path)}
+                path = self.e2e_cases
+                if path:
+                    cases = load_e2e_stub_cases(path)
+                else:
+                    cases = list(DEFAULT_E2E_STUBS)
+                return {"kind": "e2e", "cases": cases}
             except Exception as exc:  # noqa: BLE001
                 return {"kind": "e2e_unavailable", "error": str(exc)}
         from envs.agent_gym import AgentToolGym

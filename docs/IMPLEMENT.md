@@ -2817,8 +2817,8 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 99: Agent GRPO worker (`agrpo`) on AgentGym bridge
 
-- [x] Ensemble `finetune/agent_grpo_train.py` + vendored `agent_gym_env.py` + `trajectory_reward.py`.
-- [x] Astra `task_type: agrpo` catalog group **Agentic RL**, `_AGRPO_TEMPLATE`, SSH pin, pivot safelist.
+- [x] Ensemble `finetune/agent_grpo_train.py` + `trajectory_reward.py` (vendored `agent_gym_env.py` deleted in Epoch 10 — use `astragym` / `envs.agent_gym`).
+- [x] Astra `task_type: agrpo` catalog group **Agentic RL**, `_AGRPO_TEMPLATE` (superseded by canned `_AGRPO_REMOTE_WRAPPER` / `astrarl.make("mlx_grpo_traj")` — DESIGN §2.5), SSH pin, pivot safelist.
 - [x] Recipe `recipes/agent_gym_agrpo_v1.yaml` (reward_mode=agent_gym).
 - [x] Smoke recipe `recipes/agent_gym_agrpo_smoke_v1.yaml` (1B / 2 iters) for Mini path checks.
 - [x] Preflight maps worker key `agrpo` → remote script `agent_grpo_train.py` (not `agrpo_train.py`).
@@ -2955,3 +2955,9 @@ Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` 
 - [x] DESIGN remote fine-tune path triad + `~/astra-pkg` packaging; README Hardware / Epoch 10; UX_SPEC `/docs` Epoch 9–10.
 - [x] Ensemble FINETUNE / methods cite `astratune` for Methods A–D/F/H (E/G stay `astrarl`); VENDOR pip-only; shared `lora_io` called out.
 - [x] In-app `/docs` SFT/DPO/RLCD families; recipe dispatch target default documented.
+
+## Phase 120: Boundary follow-up (agrpo facade + e2e stubs)
+
+- [x] Canned `_AGRPO_REMOTE_WRAPPER` + `generate_training_script` branch (`astrarl.make("mlx_grpo_traj", use_execv=True)`); heal `_AGRPO_TEMPLATE` facade-shaped.
+- [x] `astragym.e2e_stubs` owns `DEFAULT_E2E_STUBS` / `load_e2e_stub_cases`; Ensemble `trajectory_reward` re-exports; scoring stays Ensemble.
+- [x] Recipe triad (`astra_pkg_root`) on `agent_gym_agrpo_*` + `sft_llama_lora_v1`; Ensemble `sft_train` gets `_repo_paths` + `assert_platform_imports`.

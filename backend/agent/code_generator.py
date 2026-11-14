@@ -1609,70 +1609,109 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
 
    learn() with use_execv=True never returns (process image becomes grpo_train.py)."""
 
-_AGRPO_TEMPLATE = """\
-Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) by
-invoking the EXISTING agent_grpo_train.py script — do NOT reimplement the
-rollout loop, reward, or GRPO update yourself. This script is a thin
-orchestration wrapper only — it does NOT report telemetry itself. Astra tails
-this process's own log remotely and parses "Pass rate" lines on its own; do not
-add any network calls (no requests, no HTTP) to this script.
+# Canned remote Agent GRPO wrapper (no coder LLM). Same triad + astrarl.make as GRPO.
+_AGRPO_REMOTE_WRAPPER = """\
+import os
+import sys
 
-Epoch 9: AstraGym gym_id={gym_id} × AstraRL learner_id={learner_id}
-(reward_mode={reward_mode} maps to the gym; CLI entrypoint remains agent_grpo_train.py).
+os.chdir("{finetune_dir}")
+sys.path.insert(0, "{finetune_dir}")
+sys.path.insert(0, "{astra_pkg_root}")
+
+import astrarl
+
+learner = astrarl.make(
+    "{learner_id}",
+    finetune_dir="{finetune_dir}",
+    python_bin="{python_bin}",
+    use_execv=True,
+    model="{base_model}",
+    {adapter_kwarg}
+    save_dir="{checkpoint_dir}",
+    num_layers={num_layers},
+    lora_rank={lora_rank},
+    lora_dropout={lora_dropout},
+    lora_scale={lora_scale},
+    iters={iters},
+    num_generations={num_generations},
+    temp={temp},
+    max_tokens={max_tokens},
+    max_turns={max_turns},
+    tool_failure_prob={tool_failure_prob},
+    reward_mode="{reward_mode}",
+    {e2e_cases_kwarg}
+    learning_rate={learning_rate},
+    clip_epsilon={clip_epsilon},
+    max_grad_norm={max_grad_norm},
+    steps_per_report={steps_per_report},
+    steps_per_eval={steps_per_eval},
+    save_every={save_every},
+)
+learner.learn()
+"""
+
+# Prompt retained for healers / docs; live codegen uses _AGRPO_REMOTE_WRAPPER.
+_AGRPO_TEMPLATE = """\
+Generate a script that runs Agent GRPO (multi-turn tool trajectory RL) via
+AstraRL MLXLearnerFacade — do NOT reimplement the rollout loop / reward / GRPO
+update and do NOT hand-build a long os.execv argv list. The facade maps kwargs
+to Ensemble agent_grpo_train.py (os.execv, same pid). No network calls; Astra
+tails "Pass rate" remotely.
+
+Epoch 9+: AstraGym gym_id={gym_id} × AstraRL learner_id={learner_id}
+(reward_mode={reward_mode} selects agent_gym_text vs e2e_stubs).
 
 Mission ID: {mission_id}
-Finetune dir (remote host, agent_grpo_train.py lives here): {finetune_dir}
-Python interpreter (has mlx_lm installed): {python_bin}
+Finetune dir: {finetune_dir}
+Python: {python_bin}
+Astra pkg root: {astra_pkg_root}
 Base model: {base_model}
-Warm-start adapter: {adapter}
+Warm-start / cold: {adapter_kwarg}
 LoRA: rank={lora_rank}, scale={lora_scale}, dropout={lora_dropout}, layers={num_layers}
 Agent GRPO: iters={iters}, num_generations={num_generations}, temp={temp},
-max_tokens={max_tokens}, max_turns={max_turns}, reward_mode={reward_mode}
-tool_failure_prob={tool_failure_prob}
-e2e_cases={e2e_cases}
+max_tokens={max_tokens}, max_turns={max_turns}, reward_mode={reward_mode},
+tool_failure_prob={tool_failure_prob}, e2e_cases={e2e_cases}
 Optimizer: lr={learning_rate}, clip_epsilon={clip_epsilon}, max_grad_norm={max_grad_norm}
 Logging: steps_per_report={steps_per_report}, steps_per_eval={steps_per_eval}, save_every={save_every}
 Adapter output: {checkpoint_dir}
 
-The script must:
-1. Import sys, os only. Do NOT import subprocess or requests, and do NOT make any
-   network calls. Use os.execv, NOT subprocess.run — this is CRITICAL: astra's
-   sandbox tracks this wrapper process's own pid as "the training process." If
-   this script fork+execs agent_grpo_train.py as a child (subprocess.run/Popen),
-   the child gets a DIFFERENT pid that astra never learns and can never clean up.
-   os.execv REPLACES this process's image in place (no fork, same pid).
-2. First os.chdir("{finetune_dir}") — agent_grpo_train.py and its imports resolve
-   relative paths from the Ensemble repo root / finetune checkout cwd.
-3. Then os.execv with this EXACT argv (argv[0] repeats the interpreter path):
-       os.execv(
-           "{python_bin}",
-           [
-               "{python_bin}", "{finetune_dir}/agent_grpo_train.py",
-               "--model", "{base_model}",
-               {adapter_arg}
-               "--save-dir", "{checkpoint_dir}",
-               "--num-layers", "{num_layers}",
-               "--lora-rank", "{lora_rank}",
-               "--lora-dropout", "{lora_dropout}",
-               "--lora-scale", "{lora_scale}",
-               "--iters", "{iters}",
-               "--num-generations", "{num_generations}",
-               "--temp", "{temp}",
-               "--max-tokens", "{max_tokens}",
-               "--max-turns", "{max_turns}",
-               "--tool-failure-prob", "{tool_failure_prob}",
-               "--reward-mode", "{reward_mode}",
-               {e2e_cases_flag}
-               "--learning-rate", "{learning_rate}",
-               "--clip-epsilon", "{clip_epsilon}",
-               "--max-grad-norm", "{max_grad_norm}",
-               "--steps-per-report", "{steps_per_report}",
-               "--steps-per-eval", "{steps_per_eval}",
-               "--save-every", "{save_every}",
-           ],
+Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
+
+       import os, sys
+       os.chdir("{finetune_dir}")
+       sys.path.insert(0, "{finetune_dir}")
+       sys.path.insert(0, "{astra_pkg_root}")
+       import astrarl
+       learner = astrarl.make(
+           "{learner_id}",
+           finetune_dir="{finetune_dir}",
+           python_bin="{python_bin}",
+           use_execv=True,
+           model="{base_model}",
+           {adapter_kwarg}
+           save_dir="{checkpoint_dir}",
+           num_layers={num_layers},
+           lora_rank={lora_rank},
+           lora_dropout={lora_dropout},
+           lora_scale={lora_scale},
+           iters={iters},
+           num_generations={num_generations},
+           temp={temp},
+           max_tokens={max_tokens},
+           max_turns={max_turns},
+           tool_failure_prob={tool_failure_prob},
+           reward_mode="{reward_mode}",
+           {e2e_cases_kwarg}
+           learning_rate={learning_rate},
+           clip_epsilon={clip_epsilon},
+           max_grad_norm={max_grad_norm},
+           steps_per_report={steps_per_report},
+           steps_per_eval={steps_per_eval},
+           save_every={save_every},
        )
-   ({adapter_arg} is either '"--adapter", "{adapter}",' or '"--no-warmstart",' —
-   never both. {e2e_cases_flag} is either '"--e2e-cases", "{e2e_cases}",' or empty.)"""
+       learner.learn()
+
+   learn() with use_execv=True never returns (process image becomes agent_grpo_train.py)."""
 
 # Prompt retained for healers / docs; live codegen uses _DISTILL_REMOTE_WRAPPER.
 _DISTILL_TEMPLATE = """\
@@ -2861,6 +2900,13 @@ class CodeGenerator:
                     warm_start_adapter=warm_start_adapter,
                 )
             )
+        elif active_task == "agrpo":
+            code = _AGRPO_REMOTE_WRAPPER.format(
+                **self._build_agrpo_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                )
+            )
         elif active_task == "dpo":
             code = _DPO_REMOTE_WRAPPER.format(
                 **self._build_dpo_context(
@@ -3361,6 +3407,75 @@ class CodeGenerator:
             "facade_dapo_kwargs": "\n    ".join(_facade_dapo),
         }
 
+    def _build_agrpo_context(
+        self,
+        mission_id: str,
+        plan: dict,
+        checkpoint_dir: str,
+        current_iteration: int = 0,
+        warm_start_adapter: Optional[str] = None,
+    ) -> dict:
+        """Hyperparams for _AGRPO_REMOTE_WRAPPER / _AGRPO_TEMPLATE."""
+        recipe_key = plan.get("recipe") or "agrpo"
+        hp = _resolve_hyperparams(
+            recipe_key, plan.get("hyperparameters", {}),
+            warm_start_adapter=warm_start_adapter,
+        )
+        if warm_start_adapter:
+            hp["adapter"] = warm_start_adapter
+        _reward_mode = hp.get("reward_mode", "agent_gym")
+        try:
+            from astragym.resolve import infer_gym_id as _infer_gym_id
+            _agrpo_gym = _infer_gym_id(
+                task_type="agrpo",
+                reward_mode=_reward_mode,
+                gym_id=hp.get("gym_id") or plan.get("gym_id"),
+                hyperparams=hp,
+            )
+        except ValueError:
+            _agrpo_gym = (
+                "e2e_stubs" if _reward_mode in ("e2e", "ensemble_e2e") else "agent_gym_text"
+            )
+        _cold = bool(hp.get("no_adapter", False)) or bool(hp.get("no_warmstart", False))
+        adapter_val = (hp.get("adapter") or "").strip()
+        if _cold or not adapter_val:
+            adapter_kwarg = "no_warmstart=True,"
+        else:
+            adapter_kwarg = f'adapter="{adapter_val}",'
+        _e2e = (hp.get("e2e_cases") or "").strip()
+        e2e_cases_kwarg = f'e2e_cases="{_e2e}",' if _e2e else ""
+        return {
+            "mission_id": mission_id,
+            "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
+            "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
+            "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "learner_id": hp.get("learner_id") or plan.get("learner_id") or "mlx_grpo_traj",
+            "gym_id": _agrpo_gym,
+            "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
+            "adapter": adapter_val,
+            "adapter_kwarg": adapter_kwarg,
+            "checkpoint_dir": checkpoint_dir,
+            "num_layers": hp.get("num_layers", 8),
+            "lora_rank": hp.get("lora_rank", 8),
+            "lora_dropout": hp.get("lora_dropout", 0.0),
+            "lora_scale": hp.get("lora_scale", 20.0),
+            "iters": hp.get("iters", 50),
+            "num_generations": hp.get("num_generations", 2),
+            "temp": hp.get("temp", 1.0),
+            "max_tokens": hp.get("max_tokens", 64),
+            "max_turns": hp.get("max_turns", 8),
+            "tool_failure_prob": hp.get("tool_failure_prob", 0.0),
+            "reward_mode": _reward_mode,
+            "e2e_cases": _e2e,
+            "e2e_cases_kwarg": e2e_cases_kwarg,
+            "learning_rate": hp.get("learning_rate", 1e-6),
+            "clip_epsilon": hp.get("clip_epsilon", 0.1),
+            "max_grad_norm": hp.get("max_grad_norm", 1.0),
+            "steps_per_report": hp.get("steps_per_report", 1),
+            "steps_per_eval": hp.get("steps_per_eval", 10),
+            "save_every": hp.get("save_every", 25),
+        }
+
     def _build_sft_context(
         self,
         mission_id: str,
@@ -3737,34 +3852,10 @@ class CodeGenerator:
             }
             return _GRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "agrpo":
-            _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-            _e2e = hp.get("e2e_cases") or ""
-            _reward_mode = hp.get("reward_mode", "agent_gym")
-            try:
-                from astragym.resolve import infer_gym_id as _infer_gym_id
-                _agrpo_gym = _infer_gym_id(
-                    task_type="agrpo",
-                    reward_mode=_reward_mode,
-                    gym_id=hp.get("gym_id"),
-                    hyperparams=hp,
-                )
-            except ValueError:
-                _agrpo_gym = "e2e_stubs" if _reward_mode in ("e2e", "ensemble_e2e") else "agent_gym_text"
             ctx = {
-                **hp,
-                "adapter": hp.get("adapter", ""),
-                "adapter_arg": (
-                    '"--no-warmstart",' if _cold
-                    else '"--adapter", "%s",' % hp.get("adapter", "")
-                ),
-                "max_turns": hp.get("max_turns", 8),
-                "tool_failure_prob": hp.get("tool_failure_prob", 0.0),
-                "reward_mode": _reward_mode,
-                "gym_id": _agrpo_gym,
-                "learner_id": hp.get("learner_id") or "mlx_grpo_traj",
-                "e2e_cases": _e2e,
-                "e2e_cases_flag": (
-                    f'"--e2e-cases", "{_e2e}",' if _e2e else ""
+                **self._build_agrpo_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
                 ),
                 **base,
             }

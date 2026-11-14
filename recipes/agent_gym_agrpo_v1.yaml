@@ -20,6 +20,7 @@ metric_ceiling:
 hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune
+  astra_pkg_root: /Users/kewang/astra-pkg
   python_bin: /Users/kewang/finetune-env/bin/python
   adapter: ""
   no_adapter: true
