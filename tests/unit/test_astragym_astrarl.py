@@ -68,12 +68,13 @@ def test_mlx_learner_facade():
     learner = astrarl.make("mlx_grpo_traj", reward_mode="e2e")
     assert isinstance(learner, MLXLearnerFacade)
     assert isinstance(learner, Learner)
-    assert learner.entrypoint == "agent_grpo_train.py"
+    assert learner.entrypoint == "agrpo"
     assert learner.gym_id == "e2e_stubs"
     d = learner.descriptor()
-    assert d["entrypoint"] == "agent_grpo_train.py"
+    assert d["entrypoint"] == "agrpo"
+    assert d["cli_module"] == "astrarl.cli"
     assert d["gym_id"] == "e2e_stubs"
-    assert astrarl.entrypoint_for("mlx_grpo_routing") == "grpo_train.py"
+    assert astrarl.entrypoint_for("mlx_grpo_routing") == "grpo"
 
 
 def test_mlx_learner_learn_invokes_entrypoint(monkeypatch):
@@ -97,8 +98,10 @@ def test_mlx_learner_learn_invokes_entrypoint(monkeypatch):
     result = learner.learn(total_timesteps=5)
     assert result["returncode"] == 0
     assert calls and calls[0]["argv"][0] == "/usr/bin/python3"
-    assert calls[0]["argv"][1].endswith("grpo_train.py")
+    assert calls[0]["argv"][1:4] == ["-m", "astrarl.cli", "grpo"]
     assert "--iters" in calls[0]["argv"]
+    assert "--use-case" in calls[0]["argv"]
+    assert "--workspace" in calls[0]["argv"]
     assert calls[0]["cwd"] == "/tmp/finetune"
 
 

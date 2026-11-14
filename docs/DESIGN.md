@@ -81,44 +81,41 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 ### 2.4. AstraGym, AstraRL, AstraTune, and the Orchestrator (Epoch 9–10)
 
-**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **Astra = platform** (contracts + math + facades); **Ensemble = use case** (routing rewards, cases, prompts, adapters, thin CLI). Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades). **Ensemble = use case** (routing plugins, prompts, `eval_cases`, live product) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
 ```
-+--------------------------------+          +----------------------------------+
-|       Astra platform           |          |       Ensemble use case          |
-+--------------------------------+          +----------------------------------+
-| Mission loop / recipes /       |          | Thin CLIs (*_train.py)           |
-| sandbox (Orchestrator)         |          |   |                              |
-|            |                   |  facade  |   +-- score_completion /         |
-|   +--------+--------+          |  execv   |   |   case_pool / gold JSONL     |
-|   v                 v          |--------->|   +-- conductor prompts /        |
-| AstraRL             AstraTune  |          |   |   eval_cases                 |
-| (GRPO/OPD/agrpo)    (SFT/DPO/  |          |   +-- adapters / bare_eval /     |
-|  + rollout/DAPO)     distill/  |          |       promote                    |
-|            ^         RLCD…)    |          |                                  |
-|            |  lora_io (shared) |          | RoutingRewardPlugin /            |
-|            +------<------------+          | PreferencePlugin / DatasetPlugin |
-| AstraGym worlds (gym_id)       |          |                                  |
-|   (gym-coupled only)           |          |                                  |
-+--------------------------------+          +----------------------------------+
++----------------------------------+          +----------------------------------+
+|  Astra platform + training center |          |       Ensemble use case          |
++----------------------------------+          +----------------------------------+
+| Mission loop / recipes / sandbox |          | Use-case plugin (--use-case)     |
+|            |                     |  facade  |   score / case_pool / oracle     |
+|   +--------+--------+            |  execv   |   conductor prompts / eval_cases |
+|   v                 v            |  -m cli  |   adapters / bare_eval (product) |
+| AstraRL             AstraTune    |--------->|                                  |
+| cli + train_*       cli + train_*|          | RoutingRewardPlugin /            |
+| rollout/DAPO/math   losses/CE    |          | PreferencePlugin / DatasetPlugin |
+|            ^                     |          |                                  |
+|            |  lora_io (shared)   |          | (no mission *_train.py)          |
+| AstraGym worlds (gym_id)         |          |                                  |
++----------------------------------+          +----------------------------------+
 ```
 
 | Layer | Package / role | Owns |
 |---|---|---|
 | **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
-| **AstraRL** | `astrarl/` | Online / gym-coupled learners (`learner_id`: SB3 + MLX GRPO/OPD); rollout, DAPO-lite, `grpo_math`, `plugins` |
-| **AstraTune** | `astratune/` | Offline LM workers (`mlx_sft`, `mlx_dpo`, …); **shared** `lora_io` (also used by AstraRL MLX trainers); SFT/DPO/distill/RLCD math; Dataset/Preference plugins |
+| **AstraRL** | `astrarl/` | Online learners + **`python -m astrarl.cli`** train entrypoints; rollout, DAPO-lite, math, plugins |
+| **AstraTune** | `astratune/` | Offline LM + **`python -m astratune.cli`** train entrypoints; losses, `ce_loop`, shared `lora_io` |
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry, canned facade codegen |
-| **Ensemble (use case)** | thin `finetune/*_train.py` + plugins | Routing oracle, `case_pool`, conductor prompts, adapters, `bare_eval`; argv wrappers |
+| **Ensemble (use case)** | plugin + product data | Oracle / `case_pool` / prompts / `eval_cases` / adapters / `bare_eval` — **no** train CLIs |
 
 | Concern | Astra owns | Ensemble owns |
 |---|---|---|
-| **Contracts** | `Learner`, gym ids, AstraTune plugin protocols, recipe schema | Plugin implementations of reward / pairs / cases |
-| **Runtime** | AstraRL / AstraTune **MLX train loops** (`astrarl.train_*`, `astratune.train_*`, `ce_loop`) + math + `lora_io` | Thin `*_train.py` that parse argv and inject Ensemble hooks into platform `run_*` |
+| **Contracts** | `Learner`, gym ids, plugin protocols, recipe schema | Plugin implementations of reward / pairs / cases |
+| **Runtime** | Train CLIs (`-m astrarl.cli` / `-m astratune.cli`), `run_*` loops, math, `lora_io` | Hooks loaded via `--use-case ensemble` |
 | **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
-| **Product data** | — | Prompts, `eval_cases`, adapters, `bare_eval`, decision JSONL, `routing_oracle` |
+| **Product data** | — | Prompts, `eval_cases`, adapters, `bare_eval`, decision JSONL |
 
-**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator checkout with HUD/DB. Transitional `finetune/astrarl` / `finetune/astragym` mirrors are **removed** — see Ensemble `finetune/VENDOR.md`. `_platform_preflight` verifies the three packages import in finetune-env; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
+**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator checkout with HUD/DB. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Ensemble contributes an importable use-case plugin on `PYTHONPATH` / workspace. `_platform_preflight` verifies `import astragym, astrarl, astratune` (and the Ensemble plugin); mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
 
 Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
@@ -142,9 +139,9 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 **AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.  
 **AstraTune ids:** `mlx_sft`, `mlx_dpo`, `mlx_distill`, `mlx_rft`, `mlx_star`, `mlx_rlcd`.
 
-**MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both map kwargs to Ensemble thin `*_train.py` (same pid via `os.execv`); those CLIs call platform `run_*` loops. Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
+**MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both `os.execv` into `python -m astrarl.cli <cmd>` / `python -m astratune.cli <cmd>` (same pid). CLIs load the Ensemble use-case plugin and call platform `run_*` loops. Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
 
-**Platform GRPO runtime** (Astra `astrarl/`): train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`, `RewardPlugin`. **Platform AstraTune** (`astratune/`): train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses (`dpo_math` / `sft_math` / `rlcd_math` / …), Dataset/Preference/Decision plugins, and **`lora_io` shared with AstraRL MLX trainers**. Ensemble owns routing rewards/cases/prompts/`routing_oracle` and thin CLIs.
+**Platform GRPO runtime** (Astra `astrarl/`): CLI + train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`, `RewardPlugin`. **Platform AstraTune** (`astratune/`): CLI + train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses, Dataset/Preference/Decision plugins, and **`lora_io` shared with AstraRL MLX trainers**. Ensemble owns routing rewards/cases/prompts/`routing_oracle` as a **plugin**, not train entrypoints.
 
 **Rollout / DAPO-lite flags** (AstraRL only): `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low` / `--clip-epsilon-high`, `--dynamic-sample-retries` (default 0 = off).
 

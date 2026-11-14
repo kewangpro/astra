@@ -254,45 +254,41 @@ class CodeSafetyClassifier:
                 classifier="static",
             )
 
-        # Static auto-approve for finetune-remote wrappers: no requests, and either
-        # a facade (astrarl/astratune.make use_execv — see below) or a legacy
-        # os.execv targeting *_train.py by name (healers / older scripts).
-        _known_finetune_script = re.search(
-            r"dpo_train\.py|grpo_train\.py|agent_grpo_train\.py|distill_train\.py|rft_train\.py|"
-            r"opd_train\.py|rlcd_train\.py|bare_eval\.py|sft_train\.py|star_train\.py|"
-            r"train_embedding\.py|train_reranker\.py|"
+        # Static auto-approve for train/eval wrappers: Astra -m CLIs, bare_eval,
+        # or local specialist scripts — no network calls.
+        _known_train_dispatch = re.search(
+            r"astrarl\.cli|astratune\.cli|"
+            r"bare_eval\.py|train_embedding\.py|train_reranker\.py|"
             r"backend\.trainers\.hstu_train|hstu_train",
             script,
         )
         if (
             not has_any_request
             and re.search(r"\bos\.execv\s*\(", code_only)
-            and _known_finetune_script
+            and _known_train_dispatch
         ):
             return SafetyVerdict(
                 safe=True,
-                reason="os.execv dispatch to a known finetune/eval script "
-                "(dpo/grpo/distill/rft/opd/sft/star_train.py, train_embedding.py, "
-                "train_reranker.py, hstu_train, bare_eval.py) "
-                "with no network calls — auto-approved",
+                reason="os.execv dispatch to Astra train CLI (-m astrarl/astratune.cli) "
+                "or known eval/specialist script with no network calls — auto-approved",
                 classifier="static",
             )
-        # AstraRL / AstraTune facade path: *.make(..., use_execv=True).learn()
-        # — facade shells to Ensemble *_train.py without a literal os.execv in train.py.
+        # AstraRL / AstraTune facade: *.make(..., use_execv=True).learn()
+        # → python -m astrarl.cli / astratune.cli
         if (
             not has_any_request
             and re.search(r"\b(?:astrarl|astratune)\.make\s*\(", code_only)
             and re.search(r"use_execv\s*=\s*True", code_only)
             and re.search(
                 r"mlx_grpo_routing|mlx_grpo_traj|mlx_opd|mlx_sft|mlx_dpo|mlx_distill|"
-                r"mlx_rft|mlx_star|mlx_rlcd|grpo_train\.py|dpo_train\.py|sft_train\.py",
+                r"mlx_rft|mlx_star|mlx_rlcd|astrarl\.cli|astratune\.cli",
                 script,
             )
         ):
             return SafetyVerdict(
                 safe=True,
                 reason="astrarl/astratune.make(..., use_execv=True) facade dispatch "
-                "to MLX finetune CLI with no network calls — auto-approved",
+                "to Astra MLX train CLI with no network calls — auto-approved",
                 classifier="static",
             )
 

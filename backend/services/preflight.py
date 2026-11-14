@@ -86,29 +86,11 @@ class PreflightChecker:
 
     @staticmethod
     def _check_remote_script(task_type: str) -> list:
-        """For finetune-remote task types, confirm the training script actually
-        exists at {finetune_dir}/{script} on the sandbox host.
+        """Confirm Astra train CLIs (or bare_eval for prompt) on the sandbox host.
 
-        astra dispatches a facade wrapper that chdirs into finetune_dir and
-        invokes astratune/astrarl.make (or, for a few legacy paths, names that
-        script path); if it is wrong the run dies immediately after the SSH
-        round-trip, having already generated a script, launched a sandbox and
-        burned an iteration — mission a8675c39 failed exactly this way. One
-        `test -f` before dispatch turns a launch failure into a preflight
-        warning that names the path it looked for.
-
-        This is a LAYOUT check, not just an existence check. The remote's
-        ~/finetune IS the repo's finetune/ directory, while a checkout nests it
-        one level deeper — the mismatch that produced ensemble's doubled
-        finetune/finetune/data_ft/ path. astra builds remote paths as an absolute
-        finetune_dir plus a distinct suffix so it cannot double them itself, but
-        a recipe pointing finetune_dir at a repo root rather than the deployed
-        directory would still resolve to a script that isn't there, and this is
-        what catches that.
-
-        Non-fatal by design: preflight warns, it does not block. A transient SSH
-        failure must not stop a mission that would otherwise run, so an
-        unreachable host passes with the reason recorded rather than failing.
+        Missions execv ``python -m astrarl.cli`` / ``python -m astratune.cli`` —
+        not Ensemble ``*_train.py``. Prompt missions still need workspace
+        ``bare_eval.py``. Unreachable host is non-blocking.
         """
         from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
         if task_type not in _FINETUNE_REMOTE_TASK_TYPES:
@@ -116,26 +98,19 @@ class PreflightChecker:
         from backend.agent.code_generator import _resolve_hyperparams
         hp = _resolve_hyperparams(task_type, {})
         finetune_dir = hp.get("finetune_dir", "")
-        if task_type == "post-training":
-            scripts = ["sft_train.py", "dpo_train.py", "grpo_train.py"]
-        elif task_type == "prompt":
-            scripts = ["bare_eval.py"]
-        elif task_type == "agrpo":
-            # Worker key is agrpo; Ensemble script is agent_grpo_train.py
-            # (not agrpo_train.py — that false miss crashed nothing but
-            # poisoned preflight + HUD for every Agent GRPO mission).
-            scripts = ["agent_grpo_train.py"]
-        else:
-            scripts = [f"{task_type}_train.py"]
+        python_bin = (
+            (hp.get("python_bin") or "").strip()
+            or (settings.sandbox_python or "").strip()
+            or "/Users/kewang/finetune-env/bin/python"
+        )
 
-        results = []
-        for script in scripts:
-            name = f"remote_script_{script.removesuffix('.py')}"
+        # prompt: product scoring tool still lives under the workspace
+        if task_type == "prompt":
+            name = "remote_script_bare_eval"
             if not (finetune_dir and settings.sandbox_host):
-                results.append({"name": name, "passed": True,
-                                "detail": "no finetune_dir/sandbox_host configured — skipped"})
-                continue
-            remote_path = f"{finetune_dir}/{script}"
+                return [{"name": name, "passed": True,
+                         "detail": "no finetune_dir/sandbox_host configured — skipped"}]
+            remote_path = f"{finetune_dir}/bare_eval.py"
             try:
                 r = subprocess.run(
                     ["ssh", settings.sandbox_host,
@@ -143,17 +118,49 @@ class PreflightChecker:
                     capture_output=True, text=True, timeout=30,
                 )
             except Exception as exc:
-                results.append({"name": name, "passed": True,
-                                "detail": f"host unreachable, not blocking: {exc}"})
-                continue
+                return [{"name": name, "passed": True,
+                         "detail": f"host unreachable, not blocking: {exc}"}]
             if r.stdout.strip() == "yes":
-                results.append({"name": name, "passed": True, "detail": remote_path})
-            else:
-                results.append({"name": name, "passed": False,
-                                "detail": f"{remote_path} not found on {settings.sandbox_host} — "
-                                          f"check finetune_dir points at the DEPLOYED directory, "
-                                          f"not a repo checkout (their layouts differ by one level)"})
-        return results
+                return [{"name": name, "passed": True, "detail": remote_path}]
+            return [{"name": name, "passed": False,
+                     "detail": f"{remote_path} not found on {settings.sandbox_host}"}]
+
+        # Train missions: importable Astra CLI modules + Ensemble use-case plugin
+        name = "remote_train_cli"
+        if not settings.sandbox_host:
+            return [{"name": name, "passed": True,
+                     "detail": "no sandbox_host configured — skipped"}]
+        remote_cmd = (
+            f'{python_bin} -c '
+            f'"import astrarl.cli, astratune.cli, ensemble_usecase"'
+        )
+        if finetune_dir:
+            ws_parent = finetune_dir.rsplit("/", 1)[0] if "/" in finetune_dir else ""
+            if ws_parent:
+                remote_cmd = (
+                    f'PYTHONPATH="{ws_parent}:{finetune_dir}:$PYTHONPATH" {remote_cmd}'
+                )
+        try:
+            r = subprocess.run(
+                ["ssh", settings.sandbox_host, remote_cmd],
+                capture_output=True, text=True, timeout=60,
+            )
+        except Exception as exc:
+            return [{"name": name, "passed": True,
+                     "detail": f"host unreachable, not blocking: {exc}"}]
+        if r.returncode == 0:
+            return [{"name": name, "passed": True,
+                     "detail": f"astrarl.cli+astratune.cli+ensemble_usecase ok ({python_bin})"}]
+        err = (r.stderr or r.stdout or "").strip() or f"exit {r.returncode}"
+        return [{
+            "name": name,
+            "passed": False,
+            "detail": (
+                f"Astra train CLI / Ensemble plugin missing on {settings.sandbox_host}. "
+                f"pip install -e ~/astra-pkg and put Ensemble repo on PYTHONPATH "
+                f"(see finetune/VENDOR.md). Original: {err}"
+            ),
+        }]
 
     @staticmethod
     def _check_remote_platform_imports(task_type: str) -> dict:

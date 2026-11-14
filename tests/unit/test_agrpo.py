@@ -46,7 +46,7 @@ def test_agent_gym_agrpo_recipe_and_codegen():
     assert "astra_pkg_root" in prompt or "/Users/kewang/astra-pkg" in prompt
     assert "reward_mode" in prompt
     assert "agent_gym" in prompt
-    assert "agent_grpo_train.py" in prompt  # facade docs still name the CLI
+    assert "astrarl.cli" in prompt or "mlx_grpo_traj" in prompt
     # Live heal prompt must not teach a hand-built argv list.
     assert '"--reward-mode"' not in prompt
 

@@ -2219,38 +2219,31 @@ def _preflight():
 
 
 def test_remote_script_check_skipped_for_local_task_types():
-    """Only finetune-remote types dispatch a {finetune_dir}/{type}_train.py
-    wrapper. An rl/sft/ml mission has no remote script to check."""
+    """Only finetune-remote types need remote train-CLI / bare_eval checks."""
     for tt in ("rl", "ml", "mlx_lora"):
         assert _preflight()._check_remote_script(tt) == [], tt
 
 
-def test_remote_script_check_passes_when_present():
+def test_remote_train_cli_check_passes_when_imports_ok():
     with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
          patch("backend.services.preflight.subprocess.run") as run:
-        run.return_value = MagicMock(stdout="yes\n", stderr="")
+        run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         out = _preflight()._check_remote_script("distill")
     assert out[0]["passed"] is True
-    assert out[0]["detail"].endswith("/distill_train.py")
-    # It must probe the DEPLOYED path, not a repo-relative one.
+    assert out[0]["name"] == "remote_train_cli"
+    assert "ensemble_usecase" in out[0]["detail"]
     cmd = run.call_args_list[-1].args[0][2]
-    assert "test -f /Users/kewang/finetune/distill_train.py" in cmd
-    assert "finetune/finetune" not in cmd
+    assert "astrarl.cli" in cmd and "astratune.cli" in cmd
+    assert "ensemble_usecase" in cmd
 
 
-def test_remote_script_check_fails_when_missing_and_names_the_layout_trap():
-    """Mission a8675c39 died at launch on a missing remote script. The failure
-    detail must point at the actual cause — finetune_dir aimed at a repo
-    checkout rather than the deployed directory, whose layouts differ by one
-    level (the same mismatch that produced ensemble's finetune/finetune/ path)."""
+def test_remote_train_cli_check_fails_with_vendor_hint():
     with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
          patch("backend.services.preflight.subprocess.run") as run:
-        run.return_value = MagicMock(stdout="no\n", stderr="")
+        run.return_value = MagicMock(returncode=1, stdout="", stderr="No module named ensemble_usecase")
         out = _preflight()._check_remote_script("dpo")
     assert out[0]["passed"] is False
-    assert "not found" in out[0]["detail"]
-    assert "DEPLOYED" in out[0]["detail"]
-    assert "layouts differ" in out[0]["detail"]
+    assert "VENDOR.md" in out[0]["detail"] or "ensemble_usecase" in out[0]["detail"]
 
 
 def test_remote_script_check_does_not_block_on_unreachable_host():
@@ -2264,18 +2257,15 @@ def test_remote_script_check_does_not_block_on_unreachable_host():
     assert "unreachable" in out[0]["detail"]
 
 
-def test_remote_script_check_agrpo_uses_agent_grpo_train():
-    """agrpo worker key ≠ script basename — must probe agent_grpo_train.py."""
+def test_remote_script_check_prompt_still_probes_bare_eval():
     with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
          patch("backend.services.preflight.subprocess.run") as run:
         run.return_value = MagicMock(stdout="yes\n", stderr="")
-        out = _preflight()._check_remote_script("agrpo")
+        out = _preflight()._check_remote_script("prompt")
     assert out[0]["passed"] is True
-    assert out[0]["name"] == "remote_script_agent_grpo_train"
-    assert out[0]["detail"].endswith("/agent_grpo_train.py")
+    assert out[0]["name"] == "remote_script_bare_eval"
     cmd = run.call_args_list[-1].args[0][2]
-    assert "agent_grpo_train.py" in cmd
-    assert "agrpo_train.py" not in cmd
+    assert "bare_eval.py" in cmd
 
 
 # ── algo-switch env_kwargs + escalation reset ─────────────────────────────────

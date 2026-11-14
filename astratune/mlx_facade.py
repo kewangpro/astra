@@ -13,10 +13,10 @@ from astrarl.mlx_facade import (
     MLXLearnerFacade,
     kwargs_to_argv as _shared_kwargs_to_argv,
 )
-from astratune.mlx_learners import ENTRYPOINTS, entrypoint_for
+from astratune.mlx_learners import CLI_MODULE, ENTRYPOINTS, entrypoint_for
 
 _FACADE_ONLY = frozenset({
-    "finetune_dir",
+    "finetune_dir",  # aliased to --workspace before kwargs_to_argv
     "python_bin",
     "extra_argv",
     "use_execv",
@@ -48,6 +48,7 @@ ASTRATUNE_FACADE_CONFIG = FacadeConfig(
     entrypoints=ENTRYPOINTS,
     entrypoint_for=entrypoint_for,
     facade_only=_FACADE_ONLY,
+    cli_module=CLI_MODULE,
     flag_aliases=_FLAG_ALIASES,
     resolve_gym_id=None,
     map_total_timesteps=_astratune_map_timesteps,
