@@ -34,15 +34,16 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orch
                                                         |    Secure Sandbox     |
                                                         +-----------+-----------+
                                                                     |
-                              platform packages (under sandbox)          v
+                    platform pkgs (local .venv or Mini ~/astra-pkg)      v
                     +-------------+------------------+------------------+
                     |  AstraGym   |     AstraRL      |    AstraTune     |
                     |  (gym_id)   |  (learner_id)    |  (learner_id)    |
                     +------+------+--------+---------+--------+---------+
-                           |               |                  |
-                           v               v                  v
-                    worlds/rewards   SB3 + GRPO/OPD     SFT/DPO/distill/
-                                     (gym-coupled)      RFT/STAR/RLCD
+                           |               |     ^            |
+                           v               v     | lora_io    v
+                    worlds/rewards   SB3 + GRPO/OPD  (shared)  SFT/DPO/…
+                                     (gym-coupled)             distill/RFT/
+                                                               STAR/RLCD
 ```
 
 ---
@@ -95,8 +96,9 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | (GRPO/OPD/agrpo)    (SFT/DPO/  |          |   +-- adapters / bare_eval /     |
 |  + rollout/DAPO)     distill/  |          |       promote                    |
 |            ^         RLCD…)    |          |                                  |
-|            |                   |          | RoutingRewardPlugin /            |
-| AstraGym worlds (gym_id)       |          | PreferencePlugin / DatasetPlugin |
+|            |  lora_io (shared) |          | RoutingRewardPlugin /            |
+|            +------<------------+          | PreferencePlugin / DatasetPlugin |
+| AstraGym worlds (gym_id)       |          |                                  |
 |   (gym-coupled only)           |          |                                  |
 +--------------------------------+          +----------------------------------+
 ```
@@ -105,18 +107,18 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 |---|---|---|
 | **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
 | **AstraRL** | `astrarl/` | Online / gym-coupled learners (`learner_id`: SB3 + MLX GRPO/OPD); rollout, DAPO-lite, `grpo_math`, `plugins` |
-| **AstraTune** | `astratune/` | Offline LM workers (`mlx_sft`, `mlx_dpo`, …); shared `lora_io`; SFT/DPO/distill/RLCD math; Dataset/Preference plugins |
+| **AstraTune** | `astratune/` | Offline LM workers (`mlx_sft`, `mlx_dpo`, …); **shared** `lora_io` (also used by AstraRL MLX trainers); SFT/DPO/distill/RLCD math; Dataset/Preference plugins |
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry, canned facade codegen |
 | **Ensemble (use case)** | `finetune/*_train.py` + plugins | Routing oracle, `case_pool`, conductor prompts, adapters, `bare_eval`; thin CLIs |
 
 | Concern | Astra owns | Ensemble owns |
 |---|---|---|
 | **Contracts** | `Learner`, gym ids, AstraTune plugin protocols, recipe schema | Plugin implementations of reward / pairs / cases |
-| **Runtime** | AstraRL rollout/DAPO/GRPO; AstraTune LoRA I/O + offline losses | Thin `*_train.py` that wires plugin + argv |
+| **Runtime** | AstraRL rollout/DAPO/GRPO; AstraTune offline losses + shared `lora_io` | Thin `*_train.py` that wires plugin + argv |
 | **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
 | **Product data** | — | Prompts, `eval_cases`, adapters, `bare_eval`, decision JSONL |
 
-**Packaging:** `pip install -e` the Astra repo into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune`. Transitional `finetune/astrarl` / `finetune/astragym` mirrors are **removed** — see Ensemble `finetune/VENDOR.md`.
+**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator checkout with HUD/DB. Transitional `finetune/astrarl` / `finetune/astragym` mirrors are **removed** — see Ensemble `finetune/VENDOR.md`. `_platform_preflight` verifies the three packages import in finetune-env; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
 
 Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
@@ -142,7 +144,7 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 
 **MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both map kwargs to Ensemble `*_train.py` (same pid via `os.execv`). Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
 
-**Platform GRPO runtime** (Astra `astrarl/`): rollout backends, DAPO-lite, `grpo_math`, `mlx_grpo_step`, `RewardPlugin`. **Platform AstraTune** (`astratune/`): `lora_io`, `dpo_math` / `sft_math` / `rlcd_math`, Dataset/Preference/Decision plugins. Ensemble owns routing rewards/cases/prompts and thin CLIs.
+**Platform GRPO runtime** (Astra `astrarl/`): rollout backends, DAPO-lite, `grpo_math`, `mlx_grpo_step`, `RewardPlugin`. **Platform AstraTune** (`astratune/`): offline losses (`dpo_math` / `sft_math` / `rlcd_math` / …), Dataset/Preference/Decision plugins, and **`lora_io` shared with AstraRL MLX trainers** (GRPO/OPD import it — LoRA I/O is not offline-only). Ensemble owns routing rewards/cases/prompts and thin CLIs.
 
 **Rollout / DAPO-lite flags** (AstraRL only): `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low` / `--clip-epsilon-high`, `--dynamic-sample-retries` (default 0 = off).
 
@@ -203,7 +205,33 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 **Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or env construction, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. Gym-coupled SB3 scripts use `astragym.make(gym_id)` + `astrarl.make(learner_id, …)` (no bare `gym.make`); legacy `gym.make` is rewritten to AstraGym.
 
-**Remote fine-tune.** The training host has no git checkout of ASTRA. A thin `os.execv` wrapper replaces itself with the standalone trainer. Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
+**Remote fine-tune.** Mini holds Ensemble `~/finetune` plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen — same style as each other):
+
+```
+  MacBook (Orchestrator)                    Mini (training host)
+  +----------------------+                  +----------------------------------+
+  | recipes / .env       |   SSH train.py   | ~/finetune-env/bin/python        |
+  |  finetune_dir        | ---------------->|   (ASTRA_SANDBOX_PYTHON)         |
+  |  python_bin          |                  |                                  |
+  |  astra_pkg_root /    |                  | 1. chdir  finetune_dir           |
+  |  ASTRA_PKG_ROOT      |                  | 2. path+= finetune_dir           |
+  +----------------------+                  | 3. path+= astra_pkg_root         |
+                                            | 4. astratune|astrarl.make(…)     |
+                                            | 5. os.execv → *_train.py         |
+                                            |                                  |
+                                            | ~/finetune     Ensemble CLI+data |
+                                            | ~/astra-pkg    pip -e packages   |
+                                            | ~/finetune-env MLX + site-pkgs   |
+                                            +----------------------------------+
+```
+
+| Knob | Typical Mini value | Role |
+|---|---|---|
+| `finetune_dir` | `/Users/kewang/finetune` | `os.chdir` + Ensemble imports / relative prompts & adapters |
+| `python_bin` | `/Users/kewang/finetune-env/bin/python` | MLX + pip-installed platform packages (`os.execv` target) |
+| `astra_pkg_root` | `/Users/kewang/astra-pkg` | `sys.path.insert` before `import astrarl` / `astratune` |
+
+Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by Ensemble `*_train.py` (same pid). Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better. Smoke: `recipes/ensemble_dpo_astratune_smoke.yaml` (load-pairs, one epoch) validates the AstraTune facade path without pair collection.
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 

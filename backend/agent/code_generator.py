@@ -1427,6 +1427,8 @@ The script must:
 5. After training, POST the final eval_loss.
 6. Exit 0 on success, 1 on error with full traceback."""
 
+# Legacy healer / approval-prompt shape (hand-built argv). Live codegen for
+# task_type=dpo uses _DPO_REMOTE_WRAPPER + astratune.make(..., use_execv=True).
 _DPO_TEMPLATE = """\
 Generate a script that runs DPO (Direct Preference Optimization) fine-tuning by
 invoking the EXISTING dpo_train.py script — do NOT reimplement the DPO training

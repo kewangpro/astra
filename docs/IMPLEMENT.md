@@ -2904,7 +2904,7 @@ OPD plateaued; move **B** is failing-case work, not another same-recipe OPD pass
 
 ## Phase 112: Packaging + Mini vendor story
 
-- [x] Root `pyproject.toml` for installable `astragym`/`astrarl`; `scripts/sync_astrarl_astragym.sh`.
+- [x] Root `pyproject.toml` for installable `astragym`/`astrarl`/`astratune`; `scripts/sync_astrarl_astragym.sh` (emergency mirrors only).
 - [x] Ensemble `finetune/VENDOR.md` — prefer `pip install -e` Astra; mirrors transitional (removed in Epoch 10 / Phase 118).
 
 ## Phase 113: Boundary docs
@@ -2923,9 +2923,9 @@ Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` 
 
 ## Phase 114: Stabilize finetune dispatch (canned DPO+)
 
-- [x] Canned remote wrappers for DPO / distill / RFT / OPD (no coder LLM inventing gym).
+- [x] Canned remote wrappers: DPO/distill/RFT/STAR/RLCD/SFT → `astratune.make`; OPD/grpo/agrpo → `astrarl.make` (no coder LLM inventing gym).
 - [x] Recipe dispatch defaults empty `target_metric` from `metric_ceiling` / `target_metric`.
-- [x] Code-safety auto-approve for `astratune.make(..., use_execv=True)` facades.
+- [x] Code-safety auto-approve for `astratune.make` / `astrarl.make(..., use_execv=True)` facades.
 
 ## Phase 115: Shared LoRA platform helpers
 
@@ -2946,10 +2946,12 @@ Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` 
 
 - [x] Delete transitional `finetune/astrarl` / `finetune/astragym` mirrors.
 - [x] `VENDOR.md` + `_platform_preflight.py`; sync script emergency-only (+ astratune).
+- [x] Path triad on canned wrappers: `finetune_dir` / `python_bin` / `astra_pkg_root` (recipe HP → `ASTRA_PKG_ROOT` → default).
+- [x] `recipes/ensemble_dpo_astratune_smoke.yaml` — load-pairs one-epoch Mini smoke for `astratune.make("mlx_dpo")`.
 
 ## Phase 119: Docs + product surface
 
 - [x] DESIGN §2.4 third platform column + AstraTune tables; overview ASCII includes AstraTune; online/offline package column.
-- [x] README / IMPLEMENT Epoch 10 (ten thematic epochs); UX_SPEC `/docs` Epoch 9–10 framing.
-- [x] Ensemble FINETUNE / methods cite `astratune` for Methods A–D/F/H (E/G stay `astrarl`); VENDOR pip-only.
+- [x] DESIGN remote fine-tune path triad + `~/astra-pkg` packaging; README Hardware / Epoch 10; UX_SPEC `/docs` Epoch 9–10.
+- [x] Ensemble FINETUNE / methods cite `astratune` for Methods A–D/F/H (E/G stay `astrarl`); VENDOR pip-only; shared `lora_io` called out.
 - [x] In-app `/docs` SFT/DPO/RLCD families; recipe dispatch target default documented.

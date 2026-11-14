@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # EMERGENCY ONLY — prefer: pip install -e "$ASTRA_ROOT" into Mini finetune-env.
-# Transitional finetune/astrarl + finetune/astragym mirrors were removed (Phase 4).
+# Transitional finetune/astrarl + finetune/astragym mirrors were removed (Epoch 10 / Phase 118).
 # This script recreates them only if you explicitly need a cwd-relative fallback.
 set -euo pipefail
 ASTRA_ROOT="${ASTRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"

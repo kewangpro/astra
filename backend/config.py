@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     sandbox_data_path: str = "/tmp/astra"
     # Python executable on the sandbox host (empty = python3)
     sandbox_python: str = ""
-    # Editable Astra checkout on the sandbox host (astrarl/astratune via pip -e).
-    # Empty → recipe hyperparameter astra_pkg_root → /Users/kewang/astra-pkg.
+    # Editable Astra tree on the sandbox host (ASTRA_PKG_ROOT). Used by
+    # code_generator._resolve_astra_pkg_root after recipe HP astra_pkg_root;
+    # empty falls through to /Users/kewang/astra-pkg.
     pkg_root: str = ""
     # Hostname/IP the training script uses to POST telemetry back to this MacBook
     telemetry_host: str = "macbook.local"

@@ -49,6 +49,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 | [DESIGN.md](docs/DESIGN.md) | Technical architecture & component design |
 | [IMPLEMENT.md](docs/IMPLEMENT.md) | Phase-by-phase implementation roadmap |
 | [UX_SPEC.md](docs/UX_SPEC.md) | Dashboard UX specification |
+| Ensemble [FINETUNE.md](../ensemble/docs/FINETUNE.md) / [VENDOR.md](../ensemble/finetune/VENDOR.md) | Remote Mini finetune ops + pip-only Astra packages |
 
 ## Task and algorithm
 
@@ -60,7 +61,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the san
 |---|---|---|---|
 | **AstraGym** | [`astragym/`](astragym/) | `gym_id` | Worlds: `reset` / `step`, rewards, eval |
 | **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Gym-coupled learners + platform GRPO runtime (rollout / DAPO / loss) |
-| **AstraTune** | [`astratune/`](astratune/) | `learner_id` | Offline LM (SFT/DPO/…); `lora_io` + preference/decision math; Ensemble thin CLI + plugins |
+| **AstraTune** | [`astratune/`](astratune/) | `learner_id` | Offline LM (SFT/DPO/…); shared `lora_io` (+ AstraRL MLX); preference/decision math; Ensemble thin CLI + plugins |
 | **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD |
 
 | Gym-coupled worker | Typical `gym_id` | Typical `learner_id` |
@@ -170,7 +171,7 @@ ASTRA's architecture and capabilities are structured into ten thematic epochs (~
 | **Epoch 7: AgentGym & Agentic RL** (64, 98–100) | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs. | `AgentToolGym`, `agent_grpo_train.py`, `agrpo` | ✅ Complete |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** (87–97) | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78`. | `opd_train.py`, `rlcd_train.py`, decision recipes | ✅ Complete |
 | **Epoch 9: AstraGym + AstraRL** (101–113) | Gym×RL split; MLX facade + DAPO-lite; GRPO runtime extracted into AstraRL; Ensemble as reward-plugin use case. | `astragym/`, `astrarl/`, `MLXLearnerFacade` | ✅ Complete |
-| **Epoch 10: AstraTune** (114+) | Offline LM platform sibling; shared LoRA I/O; SFT/DPO/distill/RLCD math + facades; pip-only Mini; canned DPO/SFT dispatch. | `astratune/`, Ensemble thin CLIs | ✅ Complete |
+| **Epoch 10: AstraTune** (114+) | Offline LM platform sibling; shared LoRA I/O (also used by AstraRL MLX); SFT/DPO/distill/RFT/STAR/RLCD math + canned facades; pip-only Mini (`~/astra-pkg` + path triad). | `astratune/`, Ensemble thin CLIs | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 
@@ -181,11 +182,17 @@ ASTRA's architecture and capabilities are structured into ten thematic epochs (~
 
 Optimized for **Apple Silicon M4, 24 GB unified memory**.
 
-Training sandboxes run locally by default (subprocess using the project `.venv`). To offload training to a remote machine over SSH (supporting `sft`, `dpo`, `grpo`, `agrpo`, `distill`, `opd`, `rft`, `rlcd`, `star`), set `ASTRA_SANDBOX_HOST` and optionally `ASTRA_SANDBOX_PYTHON` in `.env`.
+Training sandboxes run locally by default (subprocess using the project `.venv`). To offload fine-tune / MLX missions to the Mini over SSH (`sft`, `dpo`, `grpo`, `agrpo`, `distill`, `opd`, `rft`, `rlcd`, `star`), set in `.env`:
+
+- `ASTRA_SANDBOX_HOST=mac-mini.local`
+- `ASTRA_SANDBOX_PYTHON=/Users/kewang/finetune-env/bin/python` (required so facades can `import astrarl` / `astratune`)
+- `ASTRA_PKG_ROOT=/Users/kewang/astra-pkg` (editable Astra tree on Mini; recipe `astra_pkg_root` overrides)
+
+Recipes also set `finetune_dir` / `python_bin` / `astra_pkg_root` — see [DESIGN.md § 2.5 Remote fine-tune](docs/DESIGN.md).
 
 | Machine | Role | Models / Load |
 |---|---|---|
 | MacBook M4 24 GB | MLX inference (Lead + Critic agents) + orchestration + local sandbox | Llama-3.1-8B-4bit (~4.5 GB) + Qwen2.5-Coder-7B-4bit (~4 GB) ≈ 8.5 GB |
-| mac-mini M4 24 GB (optional) | Remote training execution via SSH (`sft`, `dpo`, `grpo`, `agrpo`, `distill`, `opd`, `rft`, `rlcd`, `star`) | Full 24 GB available for training subprocess (Gemma-3-12B-it-4bit, etc.) |
+| mac-mini M4 24 GB (optional) | Remote training via SSH — `~/finetune` + `~/astra-pkg` + `~/finetune-env` | Full 24 GB for training (Gemma-3-12B-it-4bit, etc.) |
 
 GPU training runs as a restricted host subprocess (Metal is not accessible inside Docker on Apple Silicon). Docker is used for cloud/CUDA targets only.

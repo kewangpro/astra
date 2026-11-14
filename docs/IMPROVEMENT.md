@@ -32,7 +32,7 @@ Note: this is scoped to **RL mission concurrency only**. Fine-tune task types (`
 Before implementing, note the current state of both machines:
 
 - **`ray` is not installed** in astra's venv, nor in the Mac Mini's `~/finetune-env`. Needs installing in both places before any of this works.
-- **Astra's codebase is not checked out on the Mac Mini.** Free-scheduled RL dispatch via Ray means the remote worker needs to actually run `SubprocessSandbox`-equivalent training scripts — either astra needs to be present there, or the `ray.remote` task needs to be self-contained enough not to need it (plausible for simple `subprocess.run(["python", script])` dispatch, since Ray ships the function closure to the worker, but the training script itself may `sys.path.insert` against `settings.data_path`/project root in ways that assume an astra checkout exists locally).
+- **Full Astra Orchestrator repo is not required on the Mini for today's SSH fine-tune path** — Mini already uses `~/astra-pkg` (editable `astragym`/`astrarl`/`astratune`) + `~/finetune` for LM/GRPO missions. Free-scheduled **RL** dispatch via Ray is different: the remote worker must run `SubprocessSandbox`-equivalent scripts — either a fuller Astra tree / shared mission data, or a self-contained `ray.remote` payload (closures help, but scripts that `sys.path.insert` against `settings.data_path` still assume local layout).
 - Mission data (`data/missions/`) is not shared/mounted between machines — needed for RL missions' checkpoint/telemetry file access if they run on the Mac Mini (see Implementation Plan step 5 below).
 
 ### Architecture

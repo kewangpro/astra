@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Phase 86 complete
+**Status:** Epoch 10 (AstraTune) complete — see DESIGN § 2.4  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -121,9 +121,11 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - **Comprehensive Telemetry & Checkpointing**: Emits live `train_loss`, `eval_loss`, and `perplexity` (`exp(eval_loss)`) metrics to the dashboard, with peak checkpoint tracking in `checkpoints/best`.
 - **AST-Guarded Code Generation & Self-Healing**: Resilient code generation and error analyzer self-healing that validate script syntax via Python's `ast` parser and fall back to canonical execution scripts against autoregressive coder degeneration. Gym-coupled RL scripts are post-patched so `astragym.make(gym_id)` / `env = _astra_gym.raw_env` cannot be omitted or swapped (legacy `gym.make` is rewritten; Pac-Man `9b49aa78` healed into Space Invaders after `NameError: env`).
 
-### 4.19. Remote SFT Training via MLX on Apple Silicon Cluster
-- Apple Silicon Mac Mini compute offload utilizing standalone MLX training runner (`sft_train.py`) without requiring git checkout on remote worker nodes.
-- **Zero-Orphan Process Execution**: `CodeGenerator` wraps remote training commands in an `os.execv` wrapper replacing the wrapper process image in place, guaranteeing clean PID tracking and signal termination.
+### 4.19. Remote MLX Fine-Tune on Apple Silicon Cluster
+- Apple Silicon Mac Mini compute offload for MLX workers (`sft` / `dpo` / `grpo` / …). Mini layout: Ensemble `~/finetune` + editable Astra packages at `~/astra-pkg` (`pip install -e`) + `~/finetune-env` — not a full Orchestrator HUD/DB checkout.
+- **Platform split (Epoch 9–10)**: gym-coupled RL → **AstraGym × AstraRL**; offline LM (SFT/DPO/distill/RFT/STAR/RLCD) → **AstraTune**; Ensemble stays thin CLI + plugins. Shared `lora_io` lives in AstraTune and is used by AstraRL MLX trainers too.
+- **Facade dispatch**: canned `astratune.make` / `astrarl.make(..., use_execv=True)` wrappers bake `finetune_dir` / `python_bin` / `astra_pkg_root` and replace the process image with Ensemble `*_train.py`.
+- **Zero-Orphan Process Execution**: `os.execv` keeps SSHSandbox PID tracking on the real trainer.
 - **Dynamic Validation Batch-Clamping**: Automatically adjusts validation batch sizes so `effective_batch_size <= min(train_size, val_size)`, preventing MLX batch underflow exceptions on small datasets.
 - **Live SSH Telemetry Tailing**: Real-time parsing of remote training logs over SSH, streaming loss curves directly to the dashboard HUD.
 
