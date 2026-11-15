@@ -55,7 +55,7 @@ Important clarifications — these are ALL SAFE, do NOT flag them:
   concatenation or eval'd input) pointing at a specific `.py` file, since it is equivalent to
   running that script directly, not arbitrary/dynamic code execution
 - Some scripts are fine-tuning training scripts for a SEPARATE, related project (e.g. paths
-  containing "finetune", "ensemble"), not this one — reading/writing model checkpoints,
+  containing "finetune", product workspace names), not this one — reading/writing model checkpoints,
   LoRA adapters, and logs UNDER THAT PROJECT's own directory (e.g. ~/finetune/adapters/...,
   ~/finetune/logs/...) is the intended, expected purpose of such a script and is SAFE, even
   though the path is outside THIS project's own directory. "Outside the project directory"
@@ -165,7 +165,7 @@ class CodeSafetyClassifier:
         sent to the LLM — it's documentation about how to invoke the script
         from a shell, not code that runs, but an LLM shown only that slice
         can mistake it for real dangerous actions (confirmed via a live
-        incident on a long Ensemble trainer module docstring). Uses `ast` (not
+        incident on a long product trainer module docstring). Uses `ast` (not
         the tokenizer) since only the AST distinguishes "first statement is a
         bare string expression" (a docstring) from any other string literal.
         Falls back to the raw script if parsing fails."""
@@ -258,7 +258,7 @@ class CodeSafetyClassifier:
         # or local specialist scripts — no network calls.
         _known_train_dispatch = re.search(
             r"astrarl\.cli|astratune\.cli|"
-            # Legacy Ensemble script names (pre–training-center); still auto-approve
+            # Legacy product script names (pre–training-center); still auto-approve
             # if an old wrapper is healed/replayed from disk.
             r"(?:dpo|grpo|agent_grpo|distill|rft|opd|rlcd|sft|star)_train\.py|"
             r"bare_eval\.py|train_embedding\.py|train_reranker\.py|"

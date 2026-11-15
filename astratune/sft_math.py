@@ -1,6 +1,6 @@
 """SFT / distillation cross-entropy helpers (platform-owned).
 
-Masked completion-only CE matches ``mlx_lm.lora --mask-prompt`` and Ensemble
+Masked completion-only CE matches ``mlx_lm.lora --mask-prompt`` and product
 ``distill_train`` / ``rft_train``: mean negative log-likelihood over the
 selected token positions.
 """

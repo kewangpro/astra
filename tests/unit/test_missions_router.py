@@ -170,9 +170,9 @@ def test_infer_task_type_from_goal():
     from backend.routers.missions import _infer_task_type_from_goal
     assert _infer_task_type_from_goal("Rejection-sampling fine-tuning to reach 90% pass rate") == "rft"
     assert _infer_task_type_from_goal("Train a scikit-learn classifier on iris to 95% accuracy") == "ml"
-    assert _infer_task_type_from_goal("Fine-tune the Ensemble routing model with DPO") == "dpo"
+    assert _infer_task_type_from_goal("Fine-tune the routing model with DPO") == "dpo"
     assert _infer_task_type_from_goal("Distill conductor_gemma to 82% pass rate") == "distill"
-    assert _infer_task_type_from_goal("On-policy distillation for Ensemble routing to 90% pass rate") == "opd"
+    assert _infer_task_type_from_goal("On-policy distillation for routing to 90% pass rate") == "opd"
     assert _infer_task_type_from_goal("OPD student rollouts with teacher reverse KL") == "opd"
     assert _infer_task_type_from_goal("RLCD calibrated decision model for routing") == "rlcd"
     assert _infer_task_type_from_goal("Train a decision foundation LoRA for Noul Choice Score") == "rlcd"

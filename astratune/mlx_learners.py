@@ -1,6 +1,6 @@
 """AstraTune MLX offline learner ids — facades execv ``python -m astratune.cli <cmd>``.
 
-Training loops live in ``astratune.train_*`` / ``ce_loop``. Ensemble supplies
+Training loops live in ``astratune.train_*`` / ``ce_loop``. Use-case plugins supply
 hooks via ``--use-case`` (plugin), not train scripts.
 """
 from __future__ import annotations

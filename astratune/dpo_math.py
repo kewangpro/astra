@@ -1,7 +1,7 @@
 """DPO preference loss math (platform-owned, summed sequence log-likelihood).
 
 log π(y|x) is the **summed** completion-token log-prob (sequence log-likelihood),
-not the mean reduction GRPO uses. That matches Rafailov et al. and Ensemble
+not the mean reduction GRPO uses. That matches Rafailov et al. and product
 ``dpo_train`` / ``astrarl.grpo_math.seq_log_prob_sum``.
 """
 from __future__ import annotations

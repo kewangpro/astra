@@ -88,10 +88,11 @@ class PreflightChecker:
     def _check_remote_script(task_type: str) -> list:
         """Confirm Astra train CLIs (or bare_eval for prompt) on the sandbox host.
 
-        Missions execv ``python -m astrarl.cli`` / ``python -m astratune.cli`` —
-        not Ensemble ``*_train.py``. Prompt missions still need workspace
-        ``bare_eval.py``. Unreachable host is non-blocking.
+        Missions execv ``python -m astrarl.cli`` / ``python -m astratune.cli``.
+        Prompt missions may need workspace ``bare_eval.py``. Unreachable host
+        is non-blocking.
         """
+        import os
         from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
         if task_type not in _FINETUNE_REMOTE_TASK_TYPES:
             return []
@@ -125,18 +126,23 @@ class PreflightChecker:
             return [{"name": name, "passed": False,
                      "detail": f"{remote_path} not found on {settings.sandbox_host}"}]
 
-        # Train missions: importable Astra CLI modules + Ensemble use-case plugin
+        # Train missions: platform CLIs + astra_plugin (+ optional use-case module)
         name = "remote_train_cli"
         if not settings.sandbox_host:
             return [{"name": name, "passed": True,
                      "detail": "no sandbox_host configured — skipped"}]
-        # Train CLIs + astra_plugin + Ensemble finetune (or flat usecase).
+        use_case = (
+            str(hp.get("use_case") or "").strip()
+            or os.environ.get("ASTRA_USE_CASE", "").strip()
+        )
         remote_cmd = (
             f"{python_bin} -c "
-            f"\"import astrarl.cli, astratune.cli, astra_plugin\\n"
-            f"try:\\n import finetune\\n"
-            f"except ImportError:\\n import usecase\""
+            f"\"import astrarl.cli, astratune.cli, astra_plugin"
         )
+        if use_case:
+            # Import the configured product plugin module (no hardcoded product).
+            remote_cmd += f"; __import__({use_case!r})"
+        remote_cmd += "\""
         if finetune_dir:
             ws_parent = finetune_dir.rsplit("/", 1)[0] if "/" in finetune_dir else ""
             if ws_parent:
@@ -152,20 +158,20 @@ class PreflightChecker:
             return [{"name": name, "passed": True,
                      "detail": f"host unreachable, not blocking: {exc}"}]
         if r.returncode == 0:
-            return [{"name": name, "passed": True,
-                     "detail": f"astrarl.cli+astratune.cli+astra_plugin+finetune ok ({python_bin})"}]
+            detail = f"astrarl.cli+astratune.cli+astra_plugin ok ({python_bin})"
+            if use_case:
+                detail = f"astrarl.cli+astratune.cli+astra_plugin+{use_case} ok ({python_bin})"
+            return [{"name": name, "passed": True, "detail": detail}]
         err = (r.stderr or r.stdout or "").strip() or f"exit {r.returncode}"
         return [{
             "name": name,
             "passed": False,
             "detail": (
-                f"Astra train CLI / astra_plugin / Ensemble finetune missing on "
-                f"{settings.sandbox_host}. "
-                f"pip install -e ~/astra-pkg; PYTHONPATH must include Ensemble repo root "
-                f"(see finetune/VENDOR.md). Original: {err}"
+                f"Astra train CLI / astra_plugin missing on {settings.sandbox_host}. "
+                f"pip install -e ~/astra-pkg; set ASTRA_USE_CASE / recipe use_case "
+                f"to an importable UseCasePlugin module. Original: {err}"
             ),
         }]
-
     @staticmethod
     def _check_remote_platform_imports(task_type: str) -> dict:
         """SSH import check for astragym/astrarl/astratune in Mini finetune-env.
@@ -214,7 +220,7 @@ class PreflightChecker:
                 f"Astra platform packages missing on {settings.sandbox_host} "
                 f"({python_bin}). On Mini run: "
                 f"~/finetune-env/bin/pip install -e ~/astra-pkg "
-                f"(see Ensemble finetune/VENDOR.md). Original error: {err}"
+                f"(see product VENDOR.md). Original error: {err}"
             ),
         }
 
@@ -264,7 +270,7 @@ class PreflightChecker:
             "detail": (
                 f"{root} not found on {settings.sandbox_host} — "
                 f"check recipe astra_pkg_root / ASTRA_PKG_ROOT, or rsync the "
-                f"Astra tree to Mini (see Ensemble finetune/VENDOR.md)"
+                f"Astra tree to Mini (see product VENDOR.md)"
             ),
         }
 

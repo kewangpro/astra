@@ -64,7 +64,7 @@ def run_grpo_traj_train(args, hooks) -> None:
     print(f"Pass rate: {base_rate:.1%} ({n_pass}/{n_total})")
     print(
         "Note: agent GRPO pass rate is AgentGym task_success "
-        "(≠ Ensemble routing hermetic suite)."
+        "(≠ product routing hermetic suite)."
     )
     best_pass_rate = base_rate
     best_path = save_dir / "best"

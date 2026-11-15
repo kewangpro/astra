@@ -52,7 +52,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m astrarl.cli", description="AstraRL train CLI")
     p.add_argument("command", choices=sorted(_COMMANDS), help="Learner subcommand")
-    p.add_argument("--use-case", default="ensemble", help="Use-case plugin (default: ensemble → finetune)")
+    p.add_argument("--use-case", default="", help="Use-case plugin module (or ASTRA_USE_CASE env)")
     p.add_argument(
         "--workspace",
         default=os.environ.get("ASTRA_WORKSPACE") or os.environ.get("ASTRA_FINETUNE_DIR") or "",
@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("command", nargs="?", default=None)
-    pre.add_argument("--use-case", default="ensemble")
+    pre.add_argument("--use-case", default="")
     pre.add_argument("--workspace", default="")
     pre.add_argument("--finetune-dir", default="", dest="finetune_dir")
     known, rest = pre.parse_known_args(argv)

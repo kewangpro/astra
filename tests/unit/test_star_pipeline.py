@@ -48,7 +48,7 @@ def test_star_task_type_registered():
 
 def test_star_task_type_inferred_from_goal():
     """Verify _infer_task_type_from_goal identifies STaR keywords."""
-    assert _infer_task_type_from_goal("STaR autonomous reasoning flywheel for Ensemble") == "star"
+    assert _infer_task_type_from_goal("STaR autonomous reasoning flywheel for routing") == "star"
     assert _infer_task_type_from_goal("Train a self-taught reasoner for conductor routing") == "star"
     assert _infer_task_type_from_goal("Apply rationalization fine-tuning to reach 85% pass rate") == "star"
 
@@ -165,15 +165,15 @@ def test_star_code_safety_classifier():
 
 
 def test_star_preflight_check():
-    """Verify PreflightChecker queries star_train.py for star task type."""
+    """Star preflight checks Astra train CLIs + astra_plugin (not legacy star_train.py)."""
     with patch("backend.config.settings.sandbox_host", "mac-mini.local"), \
          patch("backend.agent.code_generator._resolve_hyperparams", return_value={"finetune_dir": "/Users/kewang/finetune"}), \
          patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(stdout="yes\n", returncode=0)
+        mock_run.return_value = MagicMock(stdout="", returncode=0)
         results = PreflightChecker._check_remote_script("star")
 
     assert len(results) == 1
-    assert results[0]["name"] == "remote_script_star_train"
+    assert results[0]["name"] == "remote_train_cli"
     assert results[0]["passed"] is True
 
 

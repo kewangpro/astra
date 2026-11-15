@@ -166,19 +166,17 @@ def test_code_safety_classifier_auto_approves_sft_dpo_grpo():
 
 
 def test_preflight_checks_all_post_training_scripts():
-    """Verify PreflightChecker._check_remote_script checks sft, dpo, and grpo train scripts."""
+    """Post-training preflight checks Astra train CLIs + astra_plugin (one import)."""
     with patch("backend.config.settings.sandbox_host", "mac-mini.local"), \
          patch("backend.agent.code_generator._resolve_hyperparams", return_value={"finetune_dir": "/Users/kewang/finetune"}), \
          patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(stdout="yes\n", returncode=0)
+        mock_run.return_value = MagicMock(stdout="", returncode=0)
         results = PreflightChecker._check_remote_script("post-training")
 
-        assert len(results) == 3
-        script_names = [r["name"] for r in results]
-        assert "remote_script_sft_train" in script_names
-        assert "remote_script_dpo_train" in script_names
-        assert "remote_script_grpo_train" in script_names
-        assert all(r["passed"] for r in results)
+        assert len(results) == 1
+        assert results[0]["name"] == "remote_train_cli"
+        assert results[0]["passed"] is True
+        assert "astra_plugin" in results[0]["detail"]
 
 
 @pytest.mark.asyncio

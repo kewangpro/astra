@@ -271,7 +271,7 @@ def test_system_prompt_clarifies_finetune_project_paths_are_safe():
 
 def test_strip_strings_and_comments_ignores_english_text_in_print_string():
     """'--- Baseline eval (step 0) ---' inside a print string must not trip
-    the eval() danger pattern — that was a real false positive on ensemble's
+    the eval() danger pattern — that was a real false positive on a product
     actual dpo_train.py/grpo_train.py."""
     script = 'print("--- Baseline eval (step 0) ---")\n'
     v = _check(script)

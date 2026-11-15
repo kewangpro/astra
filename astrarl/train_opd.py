@@ -1,7 +1,6 @@
 """OPD training loop — platform-owned (astrarl).
 
-Missions execv ``python -m astrarl.cli opd``. Ensemble ``finetune.opd``
-supplies hooks for routing oracle / case helpers via ``--use-case``.
+Missions execv ``python -m astrarl.cli opd``. Use-case hooks for routing oracle / case helpers via ``--use-case``.
 """
 from __future__ import annotations
 

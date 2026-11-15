@@ -56,12 +56,12 @@ const TASKS: Task[] = [
     id: "reinforcement-fine-tuning",
     task: "Reinforcement fine-tuning",
     summary:
-      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing. Offline DPO uses AstraTune mlx_dpo (preference math in astratune; Ensemble thin CLI + pairs). There is no language-model PPO trainer; PPO runs only under Environment RL.",
+      "A language-model policy is updated from the routing oracle in eval_cases.yaml. Online GRPO uses AstraGym routing_prompt × AstraRL mlx_grpo_routing. Offline DPO uses AstraTune mlx_dpo (preference math in astratune; product plugin supplies pairs). There is no language-model PPO trainer; PPO runs only under Environment RL.",
     algorithms: [
       {
         name: "GRPO",
         taskType: "grpo",
-        body: "Online RL: AstraRL collect_group samples completions; Ensemble RoutingRewardPlugin scores with the oracle; astrarl.grpo_math applies EMA advantage + PPO-style clip (learner_id mlx_grpo_routing).",
+        body: "Online RL: AstraRL collect_group samples completions; the product UseCasePlugin scores with the oracle; astrarl.grpo_math applies EMA advantage + PPO-style clip (learner_id mlx_grpo_routing).",
       },
       {
         name: "DPO",
@@ -74,7 +74,7 @@ const TASKS: Task[] = [
     id: "agentic-rl",
     task: "Agentic RL",
     summary:
-      "Online multi-turn tool trajectories (AstraGym agent_gym_text or e2e_stubs × AstraRL mlx_grpo_traj). Distinct from single-turn routing GRPO and from Environment RL PPO on AgentGym’s MLP policy. Stage 2 scores AgentGym milestones; Stage 3 uses Ensemble e2e stub graders. Pass rate is AgentGym task_success, not the hermetic routing suite.",
+      "Online multi-turn tool trajectories (AstraGym agent_gym_text or e2e_stubs × AstraRL mlx_grpo_traj). Distinct from single-turn routing GRPO and from Environment RL PPO on AgentGym’s MLP policy. Stage 2 scores AgentGym milestones; Stage 3 uses e2e stub graders. Pass rate is AgentGym task_success, not the hermetic routing suite.",
     algorithms: [
       {
         name: "Agent GRPO",
@@ -138,7 +138,7 @@ const TASKS: Task[] = [
       {
         name: "RLCD",
         taskType: "rlcd",
-        body: "Offline cases via AstraTune mlx_rlcd (astratune.rlcd_math Brier/log). ensemble_rlcd_* trains Ensemble routing (--routing-only). Foundation → specialize → focus on decision_prompt JSONL. Product Choice is focus v8 c7b78b5d; empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
+        body: "Offline cases via AstraTune mlx_rlcd (astratune.rlcd_math Brier/log). Routing-only or foundation → specialize → focus on decision_prompt JSONL via product recipes. empty_rationale pivots are no-ops. Dispatch only via Astra missions.",
       },
     ],
   },

@@ -1,7 +1,7 @@
 """Astra use-case plugin contract — shared by astrarl / astratune train CLIs.
 
-Products (e.g. Ensemble ``finetune``) implement :class:`UseCasePlugin`.
-Train loops consume attribute bags validated by :func:`validate_hooks`.
+Products implement :class:`UseCasePlugin` and are loaded by module path via
+``--use-case`` / ``ASTRA_USE_CASE`` (no built-in product aliases).
 """
 from __future__ import annotations
 

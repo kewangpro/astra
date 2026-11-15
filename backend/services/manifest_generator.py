@@ -30,7 +30,7 @@ _CHECKPOINT_PATTERNS: dict = {
     "opd": "checkpoints/best/",
     "rlcd": "checkpoints/best/",
     # A prompt mission's artifact is a candidate PROMPT FILE, not an adapter —
-    # astra never edits ensemble's committed conductor prompt, so a winning
+    # astra never edits the product's committed conductor prompt, so a winning
     # variant is a proposal a human promotes, not a change astra makes.
     "prompt": "checkpoints/conductor_variant.md",
     "post-training": "checkpoints/*/",

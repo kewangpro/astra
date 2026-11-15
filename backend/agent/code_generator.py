@@ -1113,6 +1113,7 @@ import astratune
 learner = astratune.make(
     "mlx_sft",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1153,6 +1154,7 @@ import astratune
 learner = astratune.make(
     "mlx_dpo",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1194,6 +1196,7 @@ import astratune
 learner = astratune.make(
     "mlx_distill",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1234,6 +1237,7 @@ import astratune
 learner = astratune.make(
     "mlx_rft",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1277,6 +1281,7 @@ import astrarl
 learner = astrarl.make(
     "mlx_opd",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1311,11 +1316,11 @@ learner.learn()
 """
 
 # Phase 6a — local sentence-transformers train (NOT Mac Mini MLX).
-# Runs on the Astra host via SubprocessSandbox; ensemble_root + .venv required.
+# Runs on the Astra host via SubprocessSandbox; product_root + .venv required.
 _EMBED_LOCAL_WRAPPER = """\
 import os
 
-os.chdir("{ensemble_root}")
+os.chdir("{product_root}")
 os.makedirs("{checkpoint_dir}", exist_ok=True)
 
 argv = [
@@ -1461,6 +1466,7 @@ Emit EXACTLY this script shape (chdir/path triad before import):
        learner = astratune.make(
            "mlx_dpo",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -1505,6 +1511,7 @@ import astrarl
 learner = astrarl.make(
     "{learner_id}",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1576,6 +1583,7 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
        learner = astrarl.make(
            "{learner_id}",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -1623,6 +1631,7 @@ import astrarl
 learner = astrarl.make(
     "{learner_id}",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1685,6 +1694,7 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
        learner = astrarl.make(
            "{learner_id}",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -1717,7 +1727,7 @@ Emit EXACTLY this script shape (no astragym.make; chdir/path before import):
 _DISTILL_TEMPLATE = """\
 Generate a script that runs distillation via AstraTune MLXLearnerFacade — do NOT
 reimplement teacher generation / SFT and do NOT hand-build a long os.execv argv.
-The facade maps kwargs to Ensemble distill_train.py (os.execv, same pid).
+The facade maps kwargs to astratune.cli distill (os.execv, same pid).
 No network calls; Astra tails "Pass rate" remotely.
 
 Mission ID: {mission_id}
@@ -1743,6 +1753,7 @@ Emit EXACTLY:
        learner = astratune.make(
            "mlx_distill",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -1798,6 +1809,7 @@ Emit EXACTLY:
        learner = astratune.make(
            "mlx_rft",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -1831,7 +1843,7 @@ Emit EXACTLY:
 _OPD_TEMPLATE = """\
 Generate a script that runs OPD via AstraRL MLXLearnerFacade — do NOT
 reimplement student/teacher KL and do NOT hand-build a long os.execv argv.
-Facade → Ensemble opd_train.py via os.execv (same pid). No network calls.
+Facade → astrarl.cli opd via os.execv (same pid). No network calls.
 
 Mission ID: {mission_id}
 Finetune dir: {finetune_dir}
@@ -1854,6 +1866,7 @@ Emit EXACTLY:
        learner = astrarl.make(
            "mlx_opd",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -1902,6 +1915,7 @@ import astratune
 learner = astratune.make(
     "mlx_rlcd",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -1953,6 +1967,7 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
     eval_max = int(hp.get("eval_max_cases") or 0)
     return _RLCD_REMOTE_WRAPPER.format(
         finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
+        use_case=_resolve_use_case(hp),
         python_bin=hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
         astra_pkg_root=_resolve_astra_pkg_root(hp),
         checkpoint_dir=checkpoint_dir,
@@ -2000,6 +2015,7 @@ import astratune
 learner = astratune.make(
     "mlx_star",
     finetune_dir="{finetune_dir}",
+    use_case="{use_case}",
     python_bin="{python_bin}",
     use_execv=True,
     model="{base_model}",
@@ -2032,7 +2048,7 @@ learner.learn()
 _STAR_TEMPLATE = """\
 Generate a script that runs STaR via AstraTune MLXLearnerFacade — do NOT
 reimplement rationalization/SFT and do NOT hand-build a long os.execv argv.
-Facade → Ensemble star_train.py via os.execv (same pid). No network calls.
+Facade → astratune.cli star via os.execv (same pid). No network calls.
 
 Mission ID: {mission_id}
 Finetune dir: {finetune_dir}
@@ -2054,6 +2070,7 @@ Emit EXACTLY:
        learner = astratune.make(
            "mlx_star",
            finetune_dir="{finetune_dir}",
+           use_case="{use_case}",
            python_bin="{python_bin}",
            use_execv=True,
            model="{base_model}",
@@ -2115,7 +2132,7 @@ os.execv(
 
 # LLM prompt: emit only the appended EXTRA_RULES text (no Python).
 _PROMPT_RULES_PROMPT = """\
-Propose additional Ensemble routing rules that raise model-routed accuracy.
+Propose additional product routing rules that raise model-routed accuracy.
 Emit ONLY the appended rules block as plain text (markdown / examples OK).
 Do NOT emit Python, imports, os.execv, or a full script.
 
@@ -2164,7 +2181,7 @@ eval_max_tokens: {eval_max_tokens}
 
 You are NOT rewriting the base prompt — you cannot see it and must not try to reproduce it.
 It is ~5,100 tokens of existing rules. Read-then-append ONLY —
-never open the base prompt for writing; it is ensemble's committed file.
+never open the base prompt for writing; it is the product's committed file.
 
 Target skills: "Market Analysis", "Business Reporting", "Data Services",
 "System Admin", "Programming", "Travel Planning", "General Chat", "Calendar",
@@ -2558,7 +2575,7 @@ def recipe_metric_ceiling(env_id: str, algorithm: str = "") -> dict:
 # from the original incident this lockout exists to prevent). Bounds keep collection cost/shape
 # sane: k_collect/num_generations too high blows up wall-clock per case; too low starves DPO/GRPO
 # of contrast. num_generations capped at 4 specifically because K=4 regressed in grpo_v10_min
-# per ensemble_grpo_v1.yaml's own changelog.
+# per the product GRPO recipe changelog.
 # distill has no sampling phase — its one safe pivot knob is `iters` (train longer/shorter).
 # Scoped per task type so a dpo recipe never picks up a distill key (or vice versa).
 _FINETUNE_PIVOT_RANGES_BY_TASK = {
@@ -2749,7 +2766,7 @@ def _resolve_hyperparams(
             # iteration has produced a checkpoint, later iterations chain from
             # it and are ordinary warm starts — leaving no_adapter set would
             # emit --no-adapter alongside a real adapter path, which
-            # distill_train.py rejects as mutually exclusive (ensemble 73c8fd2),
+            # distill rejects adapter + no_adapter as mutually exclusive,
             # and would silently discard every iteration's progress if it
             # didn't. Clearing it here rather than in the template keeps the
             # rule with the value it depends on.
@@ -2761,7 +2778,7 @@ def _resolve_hyperparams(
     fill = recipe_hp if matching_hp is not None else default_sb3_hyperparameters(algorithm)
     for k, v in fill.items():
         hp.setdefault(k, v)
-    # If plan provided a placeholder for base_model (e.g. "Ensemble" or "Ensemble model")
+    # If plan provided a placeholder for base_model (e.g. "model" or product name)
     # that is neither an HF repo ID with a slash nor an existing local path, fall back to recipe's base_model
     base_m = str(hp.get("base_model", ""))
     if base_m and "/" not in base_m and not os.path.exists(base_m) and "base_model" in recipe_hp:
@@ -2796,10 +2813,25 @@ def _resolve_astra_pkg_root(hp: Optional[dict] = None) -> str:
     return os.path.expanduser(raw)
 
 
+
+def _resolve_use_case(hp: Optional[dict] = None) -> str:
+    """Importable UseCasePlugin module from recipe HP or ASTRA_USE_CASE.
+
+    Empty string means facades omit ``--use-case`` and the CLI must get the
+    module from the environment on the train host.
+    """
+    import os
+    if hp:
+        raw = str(hp.get("use_case") or "").strip()
+        if raw:
+            return raw
+    return os.environ.get("ASTRA_USE_CASE", "").strip()
+
+
 def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iteration: int) -> str:
     """Remote checkpoint/adapter output dir for dpo/grpo missions — under
-    finetune_dir/adapters/, the same directory ensemble/finetune's own manual
-    workflow uses (grpo_v<N>_min/, dpo_v<N>_min/, retrain_best/, ...), so
+    finetune_dir/adapters/, alongside the product workspace adapter inventory
+    (grpo_v<N>_min/, dpo_v<N>_min/, retrain_best/, ...), so
     astra-produced adapters are part of the normal inventory rather than a
     separate mission-scoped location. Shared by CodeGenerator.generate_training_script
     (to bake --save-dir into the wrapper script) and SandboxManager.launch (to know
@@ -2910,7 +2942,7 @@ class CodeGenerator:
 
         active_task = plan.get("active_task_type", "sft") if task_type == "post-training" else task_type
         if active_task in ("embed", "rerank"):
-            # Local-only: sentence-transformers on the Astra host (ensemble .venv).
+            # Local-only: sentence-transformers on the Astra host (product .venv).
             # Never SSH to the Mini — Mini finetune-env is MLX, not ST.
             code = _EMBED_LOCAL_WRAPPER.format(
                 **self._build_embed_context(mission_id, plan, checkpoint_dir)
@@ -2957,7 +2989,7 @@ class CodeGenerator:
             rules_prompt = _PROMPT_RULES_PROMPT.format(**prompt_ctx)
             messages = [
                 Message(role="system", content=(
-                    "You propose Ensemble routing EXTRA_RULES only. "
+                    "You propose product routing EXTRA_RULES only. "
                     "No Python, no scripts, no os.execv."
                 )),
                 Message(role="user", content=rules_prompt),
@@ -3148,7 +3180,10 @@ class CodeGenerator:
     ) -> dict:
         recipe_key = plan.get("recipe") or plan.get("task_type") or "embed"
         hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
-        ensemble_root = str(hp.get("ensemble_root", "/Users/kewang/PyProjects/ensemble"))
+        # Recipe may use product_root or legacy ensemble_root key.
+        product_root = str(
+            hp.get("product_root") or hp.get("ensemble_root") or ""
+        ).strip()
         default_script = (
             "finetune/train_reranker.py"
             if (plan.get("task_type") == "rerank" or "rerank" in str(recipe_key))
@@ -3165,22 +3200,23 @@ class CodeGenerator:
             else "sentence-transformers/all-MiniLM-L6-v2"
         )
         train_script = str(hp.get("train_script", default_script))
-        train_abs = train_script if os.path.isabs(train_script) else os.path.join(
-            ensemble_root, train_script
+        train_abs = train_script if os.path.isabs(train_script) else (
+            os.path.join(product_root, train_script) if product_root else train_script
         )
         data_dir = str(hp.get("data_dir", default_data))
-        if not os.path.isabs(data_dir):
-            data_dir = os.path.join(ensemble_root, data_dir)
-        # Must be absolute: wrapper chdirs into ensemble_root before exec.
+        if not os.path.isabs(data_dir) and product_root:
+            data_dir = os.path.join(product_root, data_dir)
+        # Must be absolute: wrapper chdirs into product_root before exec.
         ckpt = os.path.abspath(checkpoint_dir)
+        default_py = (
+            os.path.join(product_root, ".venv", "bin", "python")
+            if product_root else "python3"
+        )
         return {
             "mission_id": mission_id,
             "checkpoint_dir": ckpt,
-            "ensemble_root": ensemble_root,
-            "python_bin": str(hp.get(
-                "python_bin",
-                os.path.join(ensemble_root, ".venv", "bin", "python"),
-            )),
+            "product_root": product_root,
+            "python_bin": str(hp.get("python_bin", default_py)),
             "train_script_abs": train_abs,
             "data_dir": data_dir,
             "base_model": str(hp.get("base_model", default_model)),
@@ -3212,6 +3248,7 @@ class CodeGenerator:
             "finetune_dir": finetune_dir,
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter": hp.get("adapter", "adapters/grpo_v9_min/best"),
             "checkpoint_dir": checkpoint_dir,
@@ -3263,6 +3300,7 @@ class CodeGenerator:
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-1b-it-4bit"),
             "adapter_kwarg": (
                 "no_adapter=True," if _cold
@@ -3315,6 +3353,7 @@ class CodeGenerator:
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter_kwarg": (
                 "no_adapter=True," if _cold
@@ -3370,6 +3409,7 @@ class CodeGenerator:
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter_kwarg": (
                 "no_adapter=True," if _cold
@@ -3444,6 +3484,7 @@ class CodeGenerator:
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "learner_id": hp.get("learner_id") or plan.get("learner_id") or "mlx_grpo_routing",
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
             "adapter": hp.get("adapter", "adapters/grpo_v9_min/best"),
@@ -3494,6 +3535,7 @@ class CodeGenerator:
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "base_model": hp.get("base_model", "mlx-community/gemma-3-4b-it-4bit"),
             "base_prompt": hp.get("base_prompt", "backend/prompts/conductor_gemma.md"),
             "variant_path": f"{checkpoint_dir}/conductor_variant.md",
@@ -3543,6 +3585,7 @@ class CodeGenerator:
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             "learner_id": hp.get("learner_id") or plan.get("learner_id") or "mlx_grpo_traj",
             "gym_id": _agrpo_gym,
             "base_model": hp.get("base_model", "mlx-community/gemma-3-12b-it-4bit"),
@@ -3630,6 +3673,7 @@ class CodeGenerator:
             "resume_adapter_arg": resume_adapter_arg,
             "resume_adapter_kwarg": resume_adapter_kwarg,
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
         }
 
     def _build_star_context(
@@ -3694,6 +3738,7 @@ class CodeGenerator:
             **hp,
             **base,
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
         }
 
     def _build_user_prompt(
@@ -3943,6 +3988,7 @@ class CodeGenerator:
                 "learner_id": hp.get("learner_id") or "mlx_grpo_routing",
                 **base,
                 "astra_pkg_root": _resolve_astra_pkg_root(hp),
+            "use_case": _resolve_use_case(hp),
             }
             return _GRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "agrpo":

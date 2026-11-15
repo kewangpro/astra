@@ -1,7 +1,7 @@
 """AgentGym text + e2e stub gyms for trajectory GRPO.
 
 Uses Astra ``envs.agent_gym`` (shipped with the editable ``astra-rl-gym`` install).
-Ensemble no longer vendors ``finetune/agent_gym_env.py``.
+Products no longer vendor ``agent_gym_env.py``; use AstraGym.
 """
 from __future__ import annotations
 

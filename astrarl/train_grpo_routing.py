@@ -1,7 +1,6 @@
 """MLX routing GRPO training loop — platform-owned.
 
-Missions execv ``python -m astrarl.cli grpo``. Ensemble ``finetune.grpo``
-supplies hooks (oracle, case pool, adapter I/O wrappers) via ``--use-case``.
+Missions execv ``python -m astrarl.cli grpo``. Use-case hooks (oracle, case pool, adapter I/O wrappers) via ``--use-case``.
 """
 from __future__ import annotations
 

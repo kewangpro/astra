@@ -37,7 +37,7 @@ def _detect_backend() -> str:
     return "container"
 
 
-# Fine-tune task types that wrap ensemble/finetune scripts living only on the
+# Fine-tune task types that wrap remote train facades living only on the
 # Mac Mini — these always dispatch via SSH to settings.sandbox_host, never
 # falling back to a local backend if it isn't configured.
 # "prompt" trains nothing, but it still runs remotely: scoring a prompt variant

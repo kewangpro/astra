@@ -1,9 +1,9 @@
 """Pluggable trajectory rewards for Agent GRPO (pip ``astragym``).
 
 Stage 2 (default): AgentGym milestone / task_success return.
-Stage 3: Ensemble e2e stub graders on curated cases (no live network).
+Stage 3: e2e stub graders on curated cases (no live network).
 
-Stub case loading: ``astragym.e2e_stubs``. Ensemble ``trajectory_reward``
+Stub case loading: ``astragym.e2e_stubs``. Product ``trajectory_reward``
 re-exports this module for ``agent_grpo_train``.
 """
 from __future__ import annotations

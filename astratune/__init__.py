@@ -2,8 +2,7 @@
 
 Sibling to AstraGym (worlds) and AstraRL (online / gym-coupled learners).
 Training center entrypoint: ``python -m astratune.cli``. Owns shared MLX LoRA I/O
-and SFT/DPO/distill/RLCD math. Ensemble supplies ``finetune`` hooks (``--use-case
-ensemble``) — not a second train host.
+and SFT/DPO/distill/RLCD math. Use-case plugins supply hooks via ``astra_plugin`` — products are not a second train host.
 """
 from __future__ import annotations
 

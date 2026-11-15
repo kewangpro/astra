@@ -1719,7 +1719,7 @@ def test_clamp_finetune_pivot_hp_is_task_scoped():
 # ── grpo template ─────────────────────────────────────────────────────────────
 
 def test_build_user_prompt_grpo_wraps_existing_script_not_reimplemented(tmp_path, monkeypatch):
-    """The GRPO template must instruct wrapping grpo_train.py, not reimplementing GRPO math."""
+    """The GRPO template must instruct the AstraRL facade, not reimplementing GRPO math."""
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
@@ -1731,7 +1731,7 @@ def test_build_user_prompt_grpo_wraps_existing_script_not_reimplemented(tmp_path
         "target_metric": {"pass_rate": 0.9},
     }
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
-    assert "grpo_train.py" in prompt
+    assert "astrarl.cli" in prompt or "astrarl.make" in prompt
     assert "do NOT reimplement" in prompt
 
 
@@ -2001,7 +2001,7 @@ def test_generate_training_script_rl_uses_local_checkpoint_dir_even_with_sandbox
 
 def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_host(tmp_path, monkeypatch):
     """dpo (and grpo) save under finetune_dir/adapters/, matching where
-    ensemble/finetune's own manual workflow keeps adapters (grpo_v<N>_min/,
+    the product workspace adapter inventory keeps adapters (grpo_v<N>_min/,
     retrain_best/, ...) — not the generic sandbox_data_path checkpoints path.
 
     DPO is now a canned remote wrapper (no coder LLM) — assert the written
@@ -2648,7 +2648,7 @@ def _prompt_prompt(tmp_path, monkeypatch):
 
 
 def test_prompt_template_never_rewrites_the_base_prompt(tmp_path, monkeypatch):
-    """astra must not edit ensemble's committed conductor prompt. A mission
+    """astra must not edit the product's committed conductor prompt. A mission
     reads it and appends to a COPY written into its own checkpoint dir; a
     winning variant is a proposal a human promotes."""
     p = _prompt_prompt(tmp_path, monkeypatch)
@@ -2675,7 +2675,7 @@ def test_prompt_template_guides_concrete_rules_and_forbids_meta(tmp_path, monkey
 
 
 def test_prompt_template_freezes_the_clock(tmp_path, monkeypatch):
-    """bare_eval does NOT freeze its own clock — only ensemble's two eval entry
+    """bare_eval does NOT freeze its own clock — only the product's two eval entry
     points do, and this dispatches bare_eval directly. Without the env var the
     prompt carries a live date and iterations are not comparable: five cases
     produced 4 distinct outputs across 4 dates at temperature 0."""

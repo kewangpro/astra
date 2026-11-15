@@ -1,6 +1,6 @@
 """Generic GRPO math — advantages and PPO-clipped loss (platform-owned).
 
-Ensemble use cases supply rewards via a reward plugin; this module owns the
+Use-case plugins supply rewards via a reward plugin; this module owns the
 update math shared across routing GRPO / agent GRPO.
 """
 from __future__ import annotations

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Export Ensemble scenarios into generic §167 decision JSONL.
+"""Export product scenarios into generic §167 decision JSONL.
 
 Writes Choice (routing), Noul (cascade / grounding-shaped), and Score
 (ordered rubric) rows that train under ``rlcd_train.py --cases``.
 
-Usage (from Ensemble repo root)::
+Usage (from product repo root)::
 
-    .venv/bin/python finetune/export_ensemble_decisions.py \\
-        --out finetune/data/decision/ensemble/specialize.jsonl
+    .venv/bin/python scripts/train_ops/export_ensemble_decisions.py \\
+        --out data/decision/specialize.jsonl
 """
 
 from __future__ import annotations

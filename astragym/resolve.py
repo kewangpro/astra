@@ -23,6 +23,7 @@ def infer_gym_id(
     mode = (reward_mode or hp.get("reward_mode") or "").lower()
     eid = env_id or hp.get("env_id")
 
+    # ensemble_e2e: legacy alias for e2e (kept for old recipes)
     if tt == "agrpo" or mode in ("agent_gym", "e2e", "ensemble_e2e"):
         if mode in ("e2e", "ensemble_e2e"):
             return "e2e_stubs"

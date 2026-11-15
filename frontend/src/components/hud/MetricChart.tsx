@@ -55,7 +55,7 @@ export function MetricChart({ events, targetMetric }: Props) {
   // Real bug: a step-decrease boundary assumes each run's step counter climbs
   // from a low value and resets at the next run's start — true for RL's
   // per-timestep counter, but false for dpo/grpo's `loss`, which is logged
-  // once per epoch. With the epochs=1 recipe (see recipes/ensemble_dpo_v1.yaml),
+  // once per epoch. With the epochs=1 DPO recipe,
   // every single iteration's one loss point sits at step=1, so `curr < prev`
   // (1 < 1) never fires — every iteration was silently treated as the same
   // run, each one overwriting the last at the same x-coordinate, collapsing

@@ -1,4 +1,4 @@
-"""Discover and import use-case plugins."""
+"""Discover and import use-case plugins (product-agnostic)."""
 from __future__ import annotations
 
 import importlib
@@ -6,24 +6,25 @@ import os
 import sys
 from typing import Any
 
-# Built-in product aliases → candidate module names (tried in order).
-# CLIs should pass the alias (e.g. ``ensemble``); hardcoding product imports
-# belongs here, not in astrarl/astratune CLI modules.
-_USE_CASE_ALIASES: dict[str, tuple[str, ...]] = {
-    "ensemble": ("finetune", "usecase"),
-    "finetune": ("finetune", "usecase"),
-    # Legacy name from the transitional ensemble_usecase package.
-    "ensemble_usecase": ("finetune", "usecase", "ensemble_usecase"),
-}
-
 
 def ensure_workspace_on_path(workspace: str | None) -> None:
-    """Put workspace (+ parent / nested finetune) on ``sys.path`` for plugin imports."""
+    """Put workspace (+ parent + optional ``.astra_plugins``) on ``sys.path``.
+
+    Products may ship branded plugin packages under ``<repo>/.astra_plugins/``
+    (prepended first) so ``--use-case <brand>`` imports cleanly without
+    colliding with other top-level modules in the product repo.
+    """
     if not workspace:
         return
     ws = os.path.abspath(workspace)
     parent = os.path.dirname(ws)
-    for p in (parent, ws, os.path.join(ws, "finetune")):
+    # .astra_plugins first so branded names win over other top-level modules.
+    for p in (
+        os.path.join(parent, ".astra_plugins"),
+        os.path.join(ws, ".astra_plugins"),
+        parent,
+        ws,
+    ):
         if os.path.isdir(p) and p not in sys.path:
             sys.path.insert(0, p)
 
@@ -35,55 +36,57 @@ def _looks_like_plugin(mod: Any) -> bool:
 
 
 def load_use_case(name: str | None = None) -> Any:
-    """Import a use-case plugin module.
+    """Import a use-case plugin by **module path**.
 
-    Resolution order
-    ----------------
-    1. ``name`` or ``ASTRA_USE_CASE`` env (default ``ensemble``)
-    2. If ``name`` is an alias in ``_USE_CASE_ALIASES``, try each candidate module
-    3. Else ``importlib.import_module(name)`` (dotted path allowed)
+    Resolution
+    ----------
+    1. Explicit ``name`` (CLI ``--use-case``)
+    2. Else ``ASTRA_USE_CASE`` environment variable
+    3. Import that dotted/top-level module name
+    4. If the module lacks ``make_hooks``, try ``{name}.usecase``
+
+    No product aliases — pass an importable module that implements
+    :class:`~astra_plugin.api.UseCasePlugin`. Products that want a short
+    branded name (e.g. Ensemble's ``--use-case ensemble``) ship that module
+    themselves on ``PYTHONPATH``.
 
     Raises
     ------
+    ValueError
+        When neither ``name`` nor ``ASTRA_USE_CASE`` is set.
     ModuleNotFoundError
-        When no candidate imports, with a short install hint.
+        When the module cannot be imported.
     TypeError
-        When the module imports but lacks ``make_hooks`` / ``parse_args``.
+        When the module lacks ``make_hooks`` / ``parse_args``.
     """
-    raw = (name or os.environ.get("ASTRA_USE_CASE") or "ensemble").strip()
-    key = raw.lower().replace("-", "_")
-    candidates = list(_USE_CASE_ALIASES.get(key, (raw,)))
+    raw = (name or os.environ.get("ASTRA_USE_CASE") or "").strip()
+    if not raw:
+        raise ValueError(
+            "use-case plugin not specified: pass --use-case <module> "
+            "or set ASTRA_USE_CASE to an importable UseCasePlugin module"
+        )
 
-    errors: list[str] = []
-    for mod_name in candidates:
-        try:
-            mod = importlib.import_module(mod_name)
-        except ImportError as exc:
-            errors.append(f"{mod_name}: {exc}")
-            continue
-        if not _looks_like_plugin(mod):
-            # Package root may re-export; try ``.usecase`` submodule.
-            try:
-                sub = importlib.import_module(f"{mod_name}.usecase")
-            except ImportError:
-                errors.append(
-                    f"{mod_name}: imported but missing make_hooks/parse_args"
-                )
-                continue
-            if _looks_like_plugin(sub):
-                return sub
-            errors.append(
-                f"{mod_name}.usecase: missing make_hooks/parse_args"
-            )
-            continue
+    try:
+        mod = importlib.import_module(raw)
+    except ImportError as exc:
+        raise ModuleNotFoundError(
+            f"use-case module {raw!r} not found. Put the product package on "
+            f"PYTHONPATH. Original: {exc}"
+        ) from exc
+
+    if _looks_like_plugin(mod):
         return mod
 
-    hint = (
-        "Install the product package on PYTHONPATH "
-        "(Ensemble: repo root so `import finetune` works; "
-        "see finetune/VENDOR.md)."
-    )
-    raise ModuleNotFoundError(
-        f"use-case {raw!r} not found (tried {candidates}). {hint} "
-        f"Details: {'; '.join(errors)}"
+    try:
+        sub = importlib.import_module(f"{raw}.usecase")
+    except ImportError as exc:
+        raise TypeError(
+            f"{raw!r} imported but has no make_hooks/parse_args, and "
+            f"{raw}.usecase is missing ({exc})"
+        ) from exc
+    if _looks_like_plugin(sub):
+        return sub
+    raise TypeError(
+        f"{raw!r} / {raw}.usecase must define make_hooks and parse_args "
+        f"(astra_plugin.UseCasePlugin)"
     )

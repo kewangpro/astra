@@ -81,21 +81,21 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 ### 2.4. AstraGym, AstraRL, AstraTune, and the Orchestrator (Epoch 9–10)
 
-**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades). **Ensemble = use case** (routing plugins, prompts, `eval_cases`, live product) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
 ```
 +----------------------------------+          +----------------------------------+
-|  Astra platform + training center |          |       Ensemble use case          |
+|  Astra platform + training center |          |         Product use case         |
 +----------------------------------+          +----------------------------------+
 | Mission loop / recipes / sandbox |          | Use-case plugin (--use-case)     |
 |            |                     |  facade  |   score / case_pool / oracle     |
-|   +--------+--------+            |  execv   |   conductor prompts / eval_cases |
+|   +--------+--------+            |  execv   |   prompts / eval cases           |
 |   v                 v            |  -m cli  |   adapters / bare_eval (product) |
 | AstraRL             AstraTune    |--------->|                                  |
-| cli + train_*       cli + train_*|          | RoutingRewardPlugin /            |
-| rollout/DAPO/math   losses/CE    |          | PreferencePlugin / DatasetPlugin |
+| cli + train_*       cli + train_*|          | Reward / Preference / Dataset    |
+| rollout/DAPO/math   losses/CE    |          | hooks via UseCasePlugin          |
 |            ^                     |          |                                  |
-|            |  lora_io (shared)   |          | (no mission *_train.py)          |
+|            |  lora_io (shared)   |          | (no product train CLIs)          |
 | AstraGym worlds (gym_id)         |          |                                  |
 +----------------------------------+          +----------------------------------+
 ```
@@ -107,19 +107,18 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | **AstraTune** | `astratune/` | Offline LM + **`python -m astratune.cli`** train entrypoints; losses, `ce_loop`, shared `lora_io` |
 | **astra_plugin** | `astra_plugin/` | Use-case contract: `UseCasePlugin`, `load_use_case`, per-learner hook attrs, `validate_hooks` |
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry, canned facade codegen |
-| **Ensemble (use case)** | `finetune/` package | Implements `UseCasePlugin`; oracle / `case_pool` / prompts / adapters / `bare_eval` — **no** train CLIs |
+| **Product (use case)** | importable plugin module | Implements `UseCasePlugin`; oracle / cases / prompts / adapters / `bare_eval` — **no** train CLIs |
 
-| Concern | Astra owns | Ensemble owns |
+| Concern | Astra owns | Product owns |
 |---|---|---|
-| **Contracts** | `Learner`, gym ids, **`astra_plugin`**, recipe schema | `finetune` implements `UseCasePlugin` + hook bags |
-| **Runtime** | Train CLIs, `run_*` loops, math, `lora_io` | Hooks via `--use-case ensemble` → `astra_plugin.load_use_case` |
+| **Contracts** | `Learner`, gym ids, **`astra_plugin`**, recipe schema | Plugin module implements `UseCasePlugin` + hook bags |
+| **Runtime** | Train CLIs, `run_*` loops, math, `lora_io` | Hooks via `--use-case <module>` / `ASTRA_USE_CASE` → `astra_plugin.load_use_case` |
 | **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
-| **Product data** | — | Prompts, `eval_cases`, adapters, `bare_eval`, decision JSONL |
+| **Product data** | — | Prompts, eval cases, adapters, `bare_eval`, decision JSONL |
 
-**Use-case plugin contract (`astra_plugin`).** Products do not own train entrypoints. They export a module satisfying `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). `--use-case ensemble` is an alias resolved by `load_use_case` to `finetune` (then flat `usecase`). Before `run_*`, CLIs call `validate_hooks(command, hooks)` against the attribute set each loop requires (`GRPO_HOOK_ATTRS`, `DpoHooks`, …). Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop / data-only helpers — not the CLI contract.
+**Use-case plugin contract (`astra_plugin`).** Products do not own train entrypoints. They export a module satisfying `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). Pass an **importable module path** via `--use-case` or `ASTRA_USE_CASE` (no product aliases). If the top-level package lacks hooks, `load_use_case` tries `{name}.usecase`. Before `run_*`, CLIs call `validate_hooks(command, hooks)` against the attribute set each loop requires (`GRPO_HOOK_ATTRS`, `DpoHooks`, …). Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop / data-only helpers — not the CLI contract.
 
-**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Ensemble’s `finetune` package must be importable (`PYTHONPATH` = Ensemble repo root). Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin, finetune`; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
-
+**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. The product plugin module must be importable (`PYTHONPATH` includes the product package root). Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set); mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
 Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
 | Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
@@ -144,8 +143,7 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 
 **MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both `os.execv` into `python -m astrarl.cli <cmd>` / `python -m astratune.cli <cmd>` (same pid). CLIs use `astra_plugin.load_use_case` + `validate_hooks` then platform `run_*`. Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
 
-**Platform GRPO runtime** (Astra `astrarl/`): CLI + train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`. **Platform AstraTune** (`astratune/`): CLI + train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses, and **`lora_io` shared with AstraRL MLX trainers**. Ensemble owns routing rewards/cases/prompts/`routing_oracle` behind `finetune` / `astra_plugin`, not train entrypoints.
-
+**Platform GRPO runtime** (Astra `astrarl/`): CLI + train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`. **Platform AstraTune** (`astratune/`): CLI + train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses, and **`lora_io` shared with AstraRL MLX trainers**. Products own rewards/cases/prompts/oracles behind their `UseCasePlugin` module — not train entrypoints.
 **Rollout / DAPO-lite flags** (AstraRL only): `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low` / `--clip-epsilon-high`, `--dynamic-sample-retries` (default 0 = off).
 
 | Package? | Scope |
@@ -180,14 +178,14 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | **Offline** | LM: DPO, SFT, distill, RFT survivors, STaR JSONL, RLCD `--cases` | AstraTune | Fixed preference pairs / labeled JSONL; no AstraGym |
 | **Mixed** | DPO can *harvest* pairs online then optimize offline; RFT samples then SFT | AstraTune | Collection ≠ the loss; workers stay dataset-family |
 
-Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL (including the AgentGym MLP policy). Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy **single-turn** rollouts with the routing oracle and a group-relative advantage. Agent GRPO (`agrpo`) is **online multi-turn** tool RL: K trajectories in AgentGym text (or e2e stubs), trajectory-level reward, GRPO over assistant turns — not routing `score_completion`. DPO is **offline** preference learning via AstraTune (`mlx_dpo`): the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD (AstraTune `mlx_rlcd`) trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Ensemble Choice posts an empty rationale, so Choice-facing recipes default `empty_rationale: true`.
+Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL (including the AgentGym MLP policy). Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy **single-turn** rollouts with the routing oracle and a group-relative advantage. Agent GRPO (`agrpo`) is **online multi-turn** tool RL: K trajectories in AgentGym text (or e2e stubs), trajectory-level reward, GRPO over assistant turns — not routing `score_completion`. DPO is **offline** preference learning via AstraTune (`mlx_dpo`): the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD (AstraTune `mlx_rlcd`) trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Choice endpoints that post an empty rationale should use recipes with `empty_rationale: true`.
 
-**Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA (public Noul/Choice/Score) → Ensemble specialize/focus → live `:8082` readout. One-shot replay: `ensemble_decision_from_scratch_v1`. Staged: `ensemble_decision_foundation_v1` → `continue_v1` → `specialize_v1` → `specialize_focus_v1`. Legacy routing: `ensemble_rlcd_*` (`--routing-only`). Diagram + promote rules live in Ensemble [`finetune/data/decision/README.md`](../../ensemble/finetune/data/decision/README.md#locked-approach) and Ensemble DESIGN §3.15b.
+**Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA → product specialize/focus → live readout. Product recipes may stage foundation → continue → specialize → focus, or one-shot from-scratch / routing-only RLCD. Diagram + promote rules live in the product’s decision data docs.
 
 ```
   Public_Noul_Choice_Score ──┐
                              v
-  Ensemble_exporters ──> decision_cases_jsonl
+  Product_exporters ──> decision_cases_jsonl
                              |
                              v
                        Foundation_LoRA
@@ -196,16 +194,15 @@ Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only a
                        Specialize_LoRA
                              |
                              v
-                      :8082_rlcd_readout
+                      live_rlcd_readout
 ```
 
-The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare `rlcd_train.py` outside a mission. Empty-rationale pivots on `temp`/`num_generations` are no-ops (mission `2235f69e`). **Outcome:** product Choice `c7b78b5d` (**68/74** A/B + hermetic **167/167** with `RLCD_GENERIC_PROMPT` + `remap_decision_skill`). Absolute BoolQ/ARC **0.65** and contaminated specialize held-out are not gates. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
-
+The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare product train scripts outside a mission. Empty-rationale pivots on `temp`/`num_generations` are no-ops. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
 **Environments.** Arcade envs are 10×10 NumPy Gym wrappers. Seaquest, Asterix, and Grid Pac-Man follow their source rules closely enough that play and checkpoints stay honest (oxygen/surface, spawn/ramp, leftover ghosts chase, mouth faces movement). Env classes load lazily so importing the package does not load every game.
 
 **Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or env construction, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. Gym-coupled SB3 scripts use `astragym.make(gym_id)` + `astrarl.make(learner_id, …)` (no bare `gym.make`); legacy `gym.make` is rewritten to AstraGym.
 
-**Remote fine-tune.** Mini holds Ensemble `~/finetune` plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen — same style as each other):
+**Remote fine-tune.** Mini holds a product **workspace** (e.g. `~/finetune`) plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen — same style as each other):
 
 ```
   MacBook (Orchestrator)                    Mini (training host)
@@ -227,11 +224,12 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 | Knob | Typical Mini value | Role |
 |---|---|---|
-| `finetune_dir` | `/Users/kewang/finetune` | Workspace cwd + Ensemble product data / plugin on `PYTHONPATH` |
+| `finetune_dir` | `/Users/kewang/finetune` | Workspace cwd + product data; parent often on `PYTHONPATH` for the plugin |
 | `python_bin` | `/Users/kewang/finetune-env/bin/python` | MLX + pip-installed platform packages (`os.execv` target) |
 | `astra_pkg_root` | `/Users/kewang/astra-pkg` | `sys.path.insert` before `import astrarl` / `astratune` |
+| `use_case` / `ASTRA_USE_CASE` | importable module | Product `UseCasePlugin` loaded by train CLIs |
 
-Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the Ensemble `finetune` plugin (`--use-case ensemble`). Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better. Smoke: `recipes/ensemble_dpo_astratune_smoke.yaml` (load-pairs, one epoch) validates the AstraTune facade path without pair collection.
+Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the product plugin via `--use-case` / `ASTRA_USE_CASE`. Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 

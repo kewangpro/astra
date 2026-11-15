@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# EMERGENCY ONLY — prefer: pip install -e "$ASTRA_ROOT" into Mini finetune-env.
-# Transitional finetune/astrarl + finetune/astragym mirrors were removed (Epoch 10 / Phase 118).
-# This script recreates them only if you explicitly need a cwd-relative fallback.
+# Emergency: mirror astrarl/astragym/astratune into a product workspace.
+# Prefer pip install -e ~/astra-pkg. Set PRODUCT_ROOT to the product repo root.
 set -euo pipefail
-ASTRA_ROOT="${ASTRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ENSEMBLE_ROOT="${ENSEMBLE_ROOT:-$(cd "$ASTRA_ROOT/../ensemble" && pwd)}"
-DEST_RL="$ENSEMBLE_ROOT/finetune/astrarl"
-DEST_GYM="$ENSEMBLE_ROOT/finetune/astragym"
-DEST_TUNE="$ENSEMBLE_ROOT/finetune/astratune"
+ASTRA_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -z "${PRODUCT_ROOT:-}" ]]; then
+  echo "Set PRODUCT_ROOT to the product repository root" >&2
+  exit 1
+fi
+DEST_RL="$PRODUCT_ROOT/finetune/astrarl"
+DEST_GYM="$PRODUCT_ROOT/finetune/astragym"
+DEST_TUNE="$PRODUCT_ROOT/finetune/astratune"
 
-echo "WARNING: recreating transitional mirrors under $ENSEMBLE_ROOT/finetune/"
-echo "Preferred path: ~/finetune-env/bin/pip install -e \"$ASTRA_ROOT\""
+echo "WARNING: recreating transitional mirrors under $PRODUCT_ROOT/finetune/"
 echo "ASTRA_ROOT=$ASTRA_ROOT"
-echo "ENSEMBLE_ROOT=$ENSEMBLE_ROOT"
-
+echo "PRODUCT_ROOT=$PRODUCT_ROOT"
 rsync -a --delete \
   --exclude '__pycache__' --exclude '*.pyc' \
   "$ASTRA_ROOT/astrarl/" "$DEST_RL/"

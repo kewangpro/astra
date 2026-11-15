@@ -4,7 +4,7 @@
 Reports skill-argmax accuracy and abstain rate on closed routing cases.
 Not bare_eval JSON — matches IMPROVEMENTS §167 Step 5 eval order.
 
-Usage (from Ensemble repo root, both hosts up)::
+Usage (from product repo root, both hosts up)::
 
     JEV_MLX_BASE_URL=http://mac-mini.local:8082/v1 \\
     JEV_BASE_MLX_BASE_URL=http://mac-mini.local:8081/v1 \\

@@ -1,6 +1,6 @@
 """OPD (on-policy distillation) advantage math — platform-owned.
 
-Ensemble ``opd_train`` wires student/teacher logprobs + routing rewards;
+Use-case OPD hooks wire student/teacher logprobs + routing rewards;
 this module owns reverse-KL → advantage reductions (no MLX weights).
 """
 from __future__ import annotations

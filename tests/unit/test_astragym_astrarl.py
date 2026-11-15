@@ -89,11 +89,13 @@ def test_mlx_learner_learn_invokes_entrypoint(monkeypatch):
         return R()
 
     monkeypatch.setattr("astrarl.mlx_facade.subprocess.run", fake_run)
+    monkeypatch.delenv("ASTRA_USE_CASE", raising=False)
     learner = astrarl.make(
         "mlx_grpo_routing",
         finetune_dir="/tmp/finetune",
         python_bin="/usr/bin/python3",
         iters=2,
+        use_case="ensemble",
     )
     result = learner.learn(total_timesteps=5)
     assert result["returncode"] == 0
@@ -101,6 +103,7 @@ def test_mlx_learner_learn_invokes_entrypoint(monkeypatch):
     assert calls[0]["argv"][1:4] == ["-m", "astrarl.cli", "grpo"]
     assert "--iters" in calls[0]["argv"]
     assert "--use-case" in calls[0]["argv"]
+    assert "ensemble" in calls[0]["argv"]
     assert "--workspace" in calls[0]["argv"]
     assert calls[0]["cwd"] == "/tmp/finetune"
 

@@ -16,6 +16,6 @@ sb3 = ["stable-baselines3", "gymnasium"]
 
 [tool.setuptools.packages.find]
 # ``envs`` is the Gymnasium AgentToolGym / register surface used by astragym
-# agent_* makers and Ensemble agent_grpo_train (pip-only; no finetune vendored gym).
+# agent_* makers and product agrpo facades (pip-only; no vendored gym in the product tree).
 include = ["astragym*", "astrarl*", "astratune*", "astra_plugin*", "envs*"]
 exclude = ["backend*", "frontend*", "tests*", "recipes*", "docs*", "data*"]

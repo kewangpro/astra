@@ -1,6 +1,6 @@
 """MLX online-RL learner ids — facades execv ``python -m astrarl.cli <cmd>``.
 
-Training loops live in ``astrarl.train_*``. Ensemble supplies hooks via
+Training loops live in ``astrarl.train_*``. the product supplies hooks via
 ``--use-case`` (plugin), not train scripts.
 """
 from __future__ import annotations

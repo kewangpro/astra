@@ -1,6 +1,6 @@
 """Shared MLX LoRA apply / warm-start / save helpers (AstraTune platform).
 
-Used by AstraRL/AstraTune ``run_*`` loops and Ensemble use-case hooks so adapter
+Used by AstraRL/AstraTune ``run_*`` loops and use-case hooks so adapter
 I/O is not duplicated. Requires ``mlx`` / ``mlx_lm`` at call time (Mini finetune-env).
 """
 from __future__ import annotations

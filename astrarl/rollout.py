@@ -1,6 +1,6 @@
 """Pluggable rollout backends for online LM RL (MLX local | OpenAI-compatible HTTP).
 
-Platform-owned: Ensemble (and other use cases) import from ``astrarl.rollout``.
+Platform-owned: Use cases import from ``astrarl.rollout``.
 """
 from __future__ import annotations
 

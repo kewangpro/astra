@@ -43,12 +43,10 @@ leave "hyperparameters" as {}. The recipe supplies epochs/batch_size/d_model/etc
 LSTM recommender — local Astra .venv, auto-downloads ML-1M. Prefer hstu for HSTU / MovieLens /
 sequential recommendation goals.
 
-For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/star/prompt tasks (Ensemble routing / agentic RL fine-tuning or prompt optimization via existing scripts in
-ensemble/finetune/ — sft_train.py, dpo_train.py, grpo_train.py, agent_grpo_train.py, distill_train.py, rft_train.py, opd_train.py, rlcd_train.py, star_train.py, bare_eval.py): leave "hyperparameters"
+For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/star/prompt tasks (product routing / agentic RL fine-tuning or prompt optimization via Astra train CLIs + product UseCasePlugin): leave "hyperparameters"
 as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
-finetune_dir/python_bin paths, LoRA config, and all training/eval hyperparameters are supplied
-entirely by the recipe (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml
-/ ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_rlcd_v1.yaml / ensemble_prompt_v1.yaml) and are known-good, verified values. A guessed adapter path or
+finetune_dir/python_bin/use_case paths, LoRA config, and all training/eval hyperparameters are supplied
+entirely by the recipe YAML and are known-good, verified values. A guessed adapter path or
 mismatched num_layers will crash the run. The only fields you should set are "task_type" (the worker key from the pairs above), "algorithm" (the algorithm name: "PPO", "DQN", "A2C", "SAC", "TD3", "GRPO", "DPO", "SFT", "MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization", "HSTU"), and "reasoning".
   - "sft": supervised fine-tuning on routing demonstrations. Learns schema and basic task assignment via MLX on Apple Silicon GPU.
   - "prompt": optimize routing instructions by proposing additional routing rules appended to the conductor prompt. Evaluated on model-routed accuracy via bare_eval.
@@ -65,7 +63,7 @@ mismatched num_layers will crash the run. The only fields you should set are "ta
     model can produce at least once", which is strictly higher than "what a 12B gets right
     first try". Prefer rft over distill/opd when the failing cases are ones the teacher also gets
     wrong, or when a case is answered correctly only sometimes.
-  - "rlcd": calibrated decision (arXiv:2609.38850). Read the distribution over declared option strings after Answer:, train with Brier (empty-rationale stage 1 matches live /v1/rlcd/readout). Pass rate is readout accuracy, not JSON-plan accuracy. Recipes: ensemble_rlcd_* (Ensemble routing); decision foundation one-shot ensemble_decision_from_scratch_v1 (cold start); or staged ensemble_decision_foundation_v1 → continue → specialize → focus. Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
+  - "rlcd": calibrated decision (arXiv:2609.38850). Read the distribution over declared option strings after Answer:, train with Brier (empty-rationale stage 1 matches live readout). Pass rate is readout accuracy, not JSON-plan accuracy. Use product RLCD recipes (routing-only or foundation → specialize → focus). Prefer rlcd when the goal is a calibrated decision; prefer grpo/rft when the goal is JSON routing pass rate.
   - "dpo"/"grpo": preference / single-turn RL fine-tuning.
   - "agrpo": Agent GRPO — multi-turn tool trajectory RL (AgentGym / e2e stubs).
   - "hstu": HSTU generative recommender training (MovieLens public config).
@@ -104,11 +102,9 @@ You are ASTRA's Lead Agent analyzing a training run that has stalled or plateaue
 Given the current metrics, training history, and escalation level, propose a strategic pivot.
 Respond with valid JSON.
 
-For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/prompt tasks (Ensemble routing / agentic RL fine-tuning or prompt optimization): almost every hyperparameter is
+For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/prompt tasks (product routing / agentic RL fine-tuning or prompt optimization): almost every hyperparameter is
 recipe-locked and CANNOT be changed by a pivot — the warm-start adapter path, LoRA config,
-learning_rate, beta, epochs, and everything else are known-good values tuned against a specific
-adapter (ensemble_sft_v1.yaml / ensemble_dpo_v1.yaml / ensemble_grpo_v1.yaml / ensemble_distill_v1.yaml /
-ensemble_rft_v1.yaml / ensemble_rft_focus_v1.yaml / ensemble_opd_v1.yaml / ensemble_rlcd_v1.yaml / ensemble_prompt_v1.yaml); any other
+learning_rate, beta, epochs, and everything else are known-good values from the recipe YAML; any other
 value you propose for them is silently ignored, and so is any algorithm switch (task type is
 locked). The PPO/DQN ranges and escalation-level guidance below do NOT apply to these. The ONLY
 hyperparameters one of these pivots can actually affect, within these bounds:

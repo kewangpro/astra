@@ -34,7 +34,7 @@ class FacadeConfig:
     map_total_timesteps: Optional[Callable[[str, dict[str, Any], int], None]] = None
     unknown_learner_fmt: str = "not an MLX learner_id: {learner_id!r}"
     predict_msg_fmt: str = (
-        "{learner_id}: inference is served by Ensemble/JEV MLX endpoints, "
+        "{learner_id}: inference is served by product MLX endpoints, "
         "not MLXLearnerFacade.predict()"
     )
 
@@ -94,6 +94,9 @@ def kwargs_to_argv(
         if key in only or val is None:
             continue
         if cold and key == "adapter":
+            continue
+        # Skip empty strings (e.g. unset use_case) so CLI falls back to env.
+        if isinstance(val, str) and not val.strip():
             continue
         flag = _flagize(key, aliases)
         if isinstance(val, bool):
@@ -161,8 +164,10 @@ class MLXLearnerFacade:
         # Prefer explicit use-case/workspace; keep finetune_dir as workspace alias.
         if "workspace" not in merged and merged.get("finetune_dir"):
             merged["workspace"] = merged["finetune_dir"]
-        if "use_case" not in merged:
-            merged["use_case"] = "ensemble"
+        if not merged.get("use_case"):
+            env_uc = __import__("os").environ.get("ASTRA_USE_CASE", "").strip()
+            if env_uc:
+                merged["use_case"] = env_uc
 
         argv = [
             str(python_bin),

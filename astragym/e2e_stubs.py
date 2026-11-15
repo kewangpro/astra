@@ -1,8 +1,8 @@
 """Curated e2e stub cases for Agent GRPO (``gym_id=e2e_stubs``).
 
-Shipped with the pip ``astragym`` package so Mini does not need Ensemble
+Shipped with the pip ``astragym`` package so Mini does not need the product tree
 ``finetune/`` on ``sys.path`` for stub loading. Trajectory scoring lives in
-``astragym.agent_rewards`` (re-exported by Ensemble ``trajectory_reward``).
+``astragym.agent_rewards`` (re-exported by product ``trajectory_reward`` hooks).
 """
 from __future__ import annotations
 

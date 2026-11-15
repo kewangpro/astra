@@ -21,13 +21,26 @@ def test_facade_build_argv_uses_module_form() -> None:
         finetune_dir="/tmp/ws",
         python_bin="/usr/bin/python3",
         iters=3,
+        use_case="my_product",
     )
     argv = learner.build_argv()
     assert argv[:4] == ["/usr/bin/python3", "-m", "astrarl.cli", "grpo"]
     assert "--workspace" in argv
     assert "/tmp/ws" in argv
     assert "--use-case" in argv
-    assert "ensemble" in argv
+    assert "my_product" in argv
+
+
+def test_facade_omits_use_case_when_unset(monkeypatch) -> None:
+    monkeypatch.delenv("ASTRA_USE_CASE", raising=False)
+    learner = MLXLearnerFacade(
+        "mlx_grpo_routing",
+        finetune_dir="/tmp/ws",
+        python_bin="/usr/bin/python3",
+        iters=3,
+    )
+    argv = learner.build_argv()
+    assert "--use-case" not in argv
 
 
 def test_astratune_facade_build_argv() -> None:
@@ -36,7 +49,10 @@ def test_astratune_facade_build_argv() -> None:
         finetune_dir="/tmp/ws",
         python_bin="/usr/bin/python3",
         epochs=2,
+        use_case="my_product",
     )
     assert learner.config is ASTRATUNE_FACADE_CONFIG
     argv = learner.build_argv()
     assert argv[:4] == ["/usr/bin/python3", "-m", "astratune.cli", "dpo"]
+    assert "--use-case" in argv
+    assert "my_product" in argv

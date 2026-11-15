@@ -5,7 +5,7 @@ Letter uses ``JEV_BASE_MLX_BASE_URL`` / ``FAST_MLX_BASE_URL`` (Fast :8081)
 with ``RLCD_GENERIC_PROMPT`` off. RLCD uses ``JEV_MLX_BASE_URL`` (:8082) via
 ``rlcd_noul`` / ``rlcd_choice`` / ``rlcd_score`` (generic decision frame).
 
-Usage (from Ensemble repo root)::
+Usage (from product repo root)::
 
     JEV_MLX_BASE_URL=http://mac-mini.local:8082/v1 \\
     JEV_BASE_MLX_BASE_URL=http://mac-mini.local:8081/v1 \\

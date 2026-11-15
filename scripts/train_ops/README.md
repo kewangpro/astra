@@ -1,10 +1,9 @@
-Train-ops scripts relocated from Ensemble (Astra is the training center).
+# Train-ops scripts
 
-Mission training uses:
+Helpers for decision JSONL / RLCD A-B checks. Astra is the training center;
+products supply the UseCasePlugin and workspace data.
 
 ```bash
-python -m astrarl.cli <grpo|agrpo|opd> --use-case ensemble --workspace …
-python -m astratune.cli <sft|dpo|distill|rft|star|rlcd> --use-case ensemble --workspace …
+python -m astrarl.cli <grpo|agrpo|opd> --use-case <module> --workspace …
+python -m astratune.cli <sft|dpo|distill|rft|star|rlcd> --use-case <module> --workspace …
 ```
-
-These scripts are manual operator helpers only.

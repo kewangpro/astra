@@ -158,7 +158,7 @@ def _parse_bare_eval_report(stdout: str) -> BareEvalReport:
     blended = float(bm.group(3)) / 100.0 if bm else None
     mr = _BARE_EVAL_MODEL_ROUTED_RE.search(stdout)
 
-    # The MODEL-ROUTED line is the goal (ensemble c565034). It counts only cases
+    # The MODEL-ROUTED line is the goal. It counts only cases
     # the pipeline actually asks the model to route. The blended 78-case
     # denominator it replaced included 17 cases resolved BEFORE the LLM — a
     # shortcut in _create_plan answers them and the model is never consulted —
@@ -193,7 +193,7 @@ def _parse_bare_eval_report(stdout: str) -> BareEvalReport:
 # both leaks training cases and reports a different number (~0.89 vs a held-out
 # 1.0), which floored every iteration and doom-looped mission b790c69d for ~9h.
 # distill_train.py's headline "Baseline:" / "Pass rate:" lines carry the STATIC
-# numbers (that anchor is a documented contract — see ensemble docs/FINETUNE.md
+# numbers (that anchor is a documented contract — see product finetune docs
 # Method D — because _PASS_RATE_RE and _DPO_BASELINE_RE key on the colon sitting
 # immediately after the phrase). The static/MCP/blended breakdown goes on
 # indented follow-up lines beneath each anchor:
@@ -242,7 +242,7 @@ _EVAL_CASE_FAILURE_RE = re.compile(r"^\s*\[\d+/\d+\]\s+\S+:\s+FAILED\s*\(")
 # way dpo's shrinking pair count does. Its training-example count can: a run left
 # with a handful of usable teacher labels memorises them and reports a fake-high
 # held-out score. Heuristic floor — below this the run is definitely degenerate;
-# above it, the held-out set size (ensemble-side) is what governs trust.
+# above it, the held-out set size (product-side) is what governs trust.
 #
 # Focused runs (`focus_cases` in the recipe) are an exception: a deliberate
 # 9-case focus legitimately yields ≤9 examples. Applying the absolute floor of
@@ -289,7 +289,7 @@ def _min_train_examples_for_run(focus_case_count: Optional[int] = None) -> int:
 # distill's held-out split is a function of the input case list, not just the
 # per-mission seed: removing or adding a single case in eval_cases.yaml reshuffles
 # which cases land in the held-out set even at an identical seed (verified
-# ensemble-side). That file is actively edited — 14 cases were added mid-project —
+# product-side). That file is actively edited — 14 cases were added mid-project —
 # so a multi-hour mission can silently end up comparing iteration N's held-out
 # score against iteration N-1's baseline measured on a *different* population:
 # exactly the apples-to-oranges bug the _distill_held_out_metric fix closed,
@@ -297,7 +297,7 @@ def _min_train_examples_for_run(focus_case_count: Optional[int] = None) -> int:
 # gives a free per-iteration fingerprint (A+B) with no extra remote call; when it
 # moves mid-mission the baseline comparison is suppressed rather than trusted.
 # Count-only for now — upgrade to hashing the held-out ids once distill_train.py
-# logs them (requested ensemble-side).
+# logs them (requested product-side).
 _DISTILL_CASE_SPLIT_RE = re.compile(r"Case split:\s*(\d+)\s+train\s*/\s*(\d+)\s+held-out")
 
 # Training-signal metric ("loss") shown continuously in MetricChart's history,
@@ -3553,7 +3553,7 @@ class LoopStateMachine:
     ) -> Optional[float]:
         """Post-training authoritative pass_rate check for finetune-remote
         missions,
-        via ensemble/finetune/bare_eval.py — the real adapter-discriminating
+        via product bare_eval.py — the real adapter-discriminating
         eval tool (docs/FINETUNE.md: run_eval.py is saturated and doesn't
         distinguish between adapters; bare_eval.py is the one that does).
 

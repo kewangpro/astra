@@ -1,8 +1,8 @@
 """Routing prompt gym — single-turn case + oracle score (GRPO / OPD).
 
-Heavy scoring lives in Ensemble (`score_completion` / case pool). This module
+Heavy scoring lives in the product plugin (`score_completion` / case pool). This module
 exposes a stable ``gym_id`` and a light facade so AstraRL can depend on
-AstraGym without importing Ensemble at package import time.
+AstraGym without importing the product at package import time.
 """
 from __future__ import annotations
 
@@ -25,14 +25,14 @@ class RoutingPromptGym:
         self._idx = 0
 
     def load_cases(self) -> list[Any]:
-        """Lazy-load cases via Ensemble helpers when available."""
+        """Lazy-load cases via product helpers when available."""
         if self._cases:
             return self._cases
         if not self.cases_path:
             self._cases = []
             return self._cases
         try:
-            from case_pool import load_cases  # Ensemble finetune/
+            from case_pool import load_cases  # product workspace
 
             self._cases = list(load_cases(self.cases_path))
         except Exception:
@@ -71,7 +71,7 @@ class RoutingPromptGym:
             info["scored"] = True
         else:
             info["scored"] = False
-            info["detail"] = "no score_fn bound — bind Ensemble oracle in learner"
+            info["detail"] = "no score_fn bound — bind product oracle in learner"
         # advance
         cases = self.load_cases()
         if cases:

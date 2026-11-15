@@ -1,6 +1,6 @@
 """Shared masked-CE LoRA microbatch loop (distill / rft / star).
 
-Platform-owned train step + best-checkpoint selection. Ensemble CLIs prepare
+Platform-owned train step + best-checkpoint selection. Use-case runners prepare
 tokenised ``(prompt_ids, comp_ids)`` pairs and supply ``report_eval`` /
 adapter save callbacks (routing oracle stays use-case).
 """

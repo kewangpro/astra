@@ -54,14 +54,14 @@ ASTRATUNE_FACADE_CONFIG = FacadeConfig(
     map_total_timesteps=_astratune_map_timesteps,
     unknown_learner_fmt="not an AstraTune MLX learner_id: {learner_id!r}",
     predict_msg_fmt=(
-        "{learner_id}: inference is served by Ensemble/JEV MLX endpoints, "
+        "{learner_id}: inference is served by product MLX endpoints, "
         "not astratune.MLXLearnerFacade.predict()"
     ),
 )
 
 
 def kwargs_to_argv(kwargs: dict[str, Any]) -> list[str]:
-    """Map AstraTune facade/recipe kwargs to Ensemble CLI argv."""
+    """Map AstraTune facade/recipe kwargs to train-CLI argv."""
     return _shared_kwargs_to_argv(
         kwargs,
         facade_only=_FACADE_ONLY,

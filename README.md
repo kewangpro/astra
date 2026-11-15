@@ -7,7 +7,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 ## Feature Highlights
 
 - **End-to-End Autonomous Loop** — Plan → Critique → Implement → Sandbox → Train → Evaluate → Refine. Integrates GAN-style plan critique, automatic error recovery, and convergence guards that prevent runaway compute.
-- **AstraGym × AstraRL × AstraTune (Epoch 9–10)** — **Gym-coupled** RL is **AstraGym** × **AstraRL** (SB3 + MLX GRPO/OPD). **Offline LM** post-training is **AstraTune** (SFT/DPO/distill/RFT/STAR/RLCD + shared LoRA I/O). Ensemble stays a thin use-case CLI + plugins. Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/), [`astratune/`](astratune/). See [DESIGN.md § 2.4](docs/DESIGN.md).
+- **AstraGym × AstraRL × AstraTune (Epoch 9–10)** — **Gym-coupled** RL is **AstraGym** × **AstraRL** (SB3 + MLX GRPO/OPD). **Offline LM** post-training is **AstraTune** (SFT/DPO/distill/RFT/STAR/RLCD + shared LoRA I/O). Products plug in via [`astra_plugin`](astra_plugin/) (`--use-case` / `ASTRA_USE_CASE`). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/), [`astratune/`](astratune/). See [DESIGN.md § 2.4](docs/DESIGN.md).
 - **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts. Goals that name a trainer stay on it; unnamed "RL agent" goals seed the env recipe algorithm and, once plateaued, switch to a *different* trainer (`SB3 PPO` → `PPO` is not a switch).
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), each in its own `train_config` env (same table as `/models/{id}` play). Tracks score distributions and tie-split win rates; crowning a champion is exclusive per environment.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
@@ -49,7 +49,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 | [DESIGN.md](docs/DESIGN.md) | Technical architecture & component design |
 | [IMPLEMENT.md](docs/IMPLEMENT.md) | Phase-by-phase implementation roadmap |
 | [UX_SPEC.md](docs/UX_SPEC.md) | Dashboard UX specification |
-| Ensemble [FINETUNE.md](../ensemble/docs/FINETUNE.md) / [VENDOR.md](../ensemble/finetune/VENDOR.md) | Remote Mini finetune ops + pip-only Astra packages |
+| Product VENDOR / finetune ops docs | Remote Mini workspace + pip-only Astra packages (per product repo) |
 
 ## Task and algorithm
 
@@ -61,7 +61,8 @@ A task is the objective. An algorithm is the update rule. `task_type` is the san
 |---|---|---|---|
 | **AstraGym** | [`astragym/`](astragym/) | `gym_id` | Worlds: `reset` / `step`, rewards, eval |
 | **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Gym-coupled learners + platform GRPO runtime (rollout / DAPO / loss) |
-| **AstraTune** | [`astratune/`](astratune/) | `learner_id` | Offline LM (SFT/DPO/…); shared `lora_io` (+ AstraRL MLX); preference/decision math; Ensemble thin CLI + plugins |
+| **AstraTune** | [`astratune/`](astratune/) | `learner_id` | Offline LM (SFT/DPO/…); shared `lora_io` (+ AstraRL MLX); preference/decision math |
+| **astra_plugin** | [`astra_plugin/`](astra_plugin/) | `--use-case` | Product `UseCasePlugin` contract + loader |
 | **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD |
 
 | Gym-coupled worker | Typical `gym_id` | Typical `learner_id` |
@@ -81,7 +82,7 @@ Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred.
 | Agentic RL | Agent GRPO (`agrpo`, **online** → AstraRL `mlx_grpo_traj`) |
 | Supervised fine-tuning | SFT (`sft`, `mlx_lora`), distillation (`distill`), rejection sampling (`rft`), STaR (`star`) |
 | On-policy distillation | OPD (`opd`) — AstraGym `routing_prompt` × AstraRL `mlx_opd` |
-| Calibrated decision | RLCD (`rlcd`) — routing `ensemble_rlcd_*`; one-shot `ensemble_decision_from_scratch_v1` (cold start); or staged foundation → specialize → focus. Product `:8082` = **c7b78b5d** + `decision_prompt` (A/B **68/74**, hermetic **167/167** + remap); bf94 = rollback |
+| Calibrated decision | RLCD (`rlcd`) — routing-only or foundation → specialize → focus via product recipes + `decision_prompt` |
 | Prompt edit | rule append (`prompt`) |
 | Classical ML | random forest (`ml`) |
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
@@ -170,8 +171,8 @@ ASTRA's architecture and capabilities are structured into ten thematic epochs (~
 | **Epoch 6: Registry, Multi-Stage FT & STaR** (55–63, 66, 78, 80, 86) | Model registry & tournaments; SFT→DPO→GRPO conductor; STaR; recipe lineage. | `ModelRegistry`, conductor pipeline, `star_train.py` | ✅ Complete |
 | **Epoch 7: AgentGym & Agentic RL** (64, 98–100) | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs. | `AgentToolGym`, `agent_grpo_train.py`, `agrpo` | ✅ Complete |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** (87–97) | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78`. | `opd_train.py`, `rlcd_train.py`, decision recipes | ✅ Complete |
-| **Epoch 9: AstraGym + AstraRL** (101–113) | Gym×RL split; MLX facade + DAPO-lite; GRPO runtime extracted into AstraRL; Ensemble as reward-plugin use case. | `astragym/`, `astrarl/`, `MLXLearnerFacade` | ✅ Complete |
-| **Epoch 10: AstraTune** (114+) | Offline LM platform sibling; shared LoRA I/O (also used by AstraRL MLX); SFT/DPO/distill/RFT/STAR/RLCD math + canned facades; pip-only Mini (`~/astra-pkg` + path triad). | `astratune/`, Ensemble thin CLIs | ✅ Complete |
+| **Epoch 9: AstraGym + AstraRL** (101–113) | Gym×RL split; MLX facade + DAPO-lite; GRPO runtime extracted into AstraRL; products as reward-plugin use cases. | `astragym/`, `astrarl/`, `MLXLearnerFacade` | ✅ Complete |
+| **Epoch 10: AstraTune** (114+) | Offline LM platform sibling; shared LoRA I/O (also used by AstraRL MLX); SFT/DPO/distill/RFT/STAR/RLCD math + canned facades; pip-only Mini (`~/astra-pkg` + path triad); `astra_plugin` contract. | `astratune/`, `astra_plugin/` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

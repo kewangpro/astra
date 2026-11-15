@@ -7,9 +7,9 @@ learner_id: mlx_grpo_traj
 domain: AgentGym
 description: >
   Agent GRPO (multi-turn tool trajectory RL) on MultiTurnAgentGym text observations.
-  Wraps ensemble/finetune/agent_grpo_train.py with reward_mode=agent_gym. Runs on the
+  AstraRL agrpo facade with reward_mode=agent_gym. Runs on the
   Mac Mini via SSH like other fine-tune-remote workers. Pass rate is AgentGym
-  task_success over the 8 scenarios — not Ensemble routing hermetic suite.
+  task_success over the 8 scenarios — not product routing hermetic suite.
 
 target_metric:
   pass_rate: 0.50
