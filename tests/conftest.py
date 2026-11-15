@@ -18,6 +18,23 @@ from sqlalchemy.pool import StaticPool
 import backend.models  # noqa: F401 — registers all ORM models with Base.metadata
 from backend.database import Base
 from backend.models.mission import Mission, MissionStatus
+from backend.config import settings
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_ensemble_product_recipes():
+    """Point tests at the Ensemble astra_recipes pack when present.
+
+    Product YAML no longer ships in Astra ``recipes/``. Local ``.env`` usually
+    sets ``ASTRA_PRODUCT_RECIPES``; CI / bare checkouts get a sibling-path fallback.
+    """
+    if (settings.product_recipes or "").strip():
+        return
+    pack = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "ensemble", "astra_recipes")
+    )
+    if os.path.isdir(pack):
+        settings.product_recipes = f"ensemble:{pack}"
 
 
 @pytest_asyncio.fixture

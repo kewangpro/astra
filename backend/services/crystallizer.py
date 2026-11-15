@@ -268,8 +268,12 @@ async def crystallize(
         content["name"] = name
         content["version"] = f"{version}.0.0"
 
-        # Persist YAML to disk
-        recipes_dir = settings.recipes_path
+        # Persist YAML: product use_case → that pack dir; else platform recipes/
+        from backend.services.recipe_paths import parse_product_recipes
+        _hp = resolved_plan.get("hyperparameters") if isinstance(resolved_plan.get("hyperparameters"), dict) else {}
+        _uc = str((_hp or {}).get("use_case") or "").strip()
+        _packs = parse_product_recipes()
+        recipes_dir = _packs[_uc] if _uc and _uc in _packs else settings.recipes_path
         os.makedirs(recipes_dir, exist_ok=True)
         yaml_path = os.path.join(recipes_dir, f"{name}.yaml")
         with open(yaml_path, "w") as f:

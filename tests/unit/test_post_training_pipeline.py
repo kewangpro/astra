@@ -45,8 +45,12 @@ def test_post_training_task_type_registered():
 
 def test_ensemble_post_training_v1_recipe_structure():
     """Verify canonical ensemble_post_training_v1.yaml recipe structure and stages."""
-    recipe_path = os.path.join(settings.recipes_path, "ensemble_post_training_v1.yaml")
-    assert os.path.isfile(recipe_path), f"Recipe file missing: {recipe_path}"
+    from backend.services.recipe_paths import find_recipe_file
+
+    recipe_path = find_recipe_file("ensemble_post_training_v1")
+    assert recipe_path and os.path.isfile(recipe_path), (
+        "ensemble_post_training_v1 missing (set ASTRA_PRODUCT_RECIPES)"
+    )
 
     with open(recipe_path) as f:
         data = yaml.safe_load(f)
