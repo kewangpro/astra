@@ -6,11 +6,12 @@ learner_id: mlx_sft
 domain: NLP
 description: >
   Supervised Fine-Tuning for Ensemble routing via AstraTune. Platform owns
-  LoRA I/O + SFT math; Ensemble sft_train.py is a thin CLI over gold JSONL.
+  LoRA I/O + SFT math; Ensemble finetune.sft supplies data over gold JSONL.
   Missions dispatch astratune.make("mlx_sft", use_execv=True).learn() on the
   Mac Mini (~/finetune + ~/finetune-env).
 
 hyperparameters:
+  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   # --- platform (AstraTune facade → sft_train.py) ---
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune

@@ -13,6 +13,7 @@ description: >
   what that means for reading the result.
 
 hyperparameters:
+  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   # ── Remote host block ──────────────────────────────────────────────────────
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune

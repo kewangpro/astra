@@ -12,6 +12,7 @@ description: >
   ensemble/finetune/adapters/ensemble_embed_v1 and set ENSEMBLE_EMBEDDING_MODEL.
 
 hyperparameters:
+  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   ensemble_root: /Users/kewang/PyProjects/ensemble
   python_bin: /Users/kewang/PyProjects/ensemble/.venv/bin/python
   train_script: finetune/train_embedding.py

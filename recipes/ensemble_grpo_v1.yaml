@@ -7,12 +7,13 @@ learner_id: mlx_grpo_routing
 domain: NLP
 description: >
   GRPO fine-tuning for the Ensemble routing model. AstraRL owns rollout /
-  DAPO / GRPO math; Ensemble grpo_train.py is a thin CLI + RoutingRewardPlugin
+  DAPO / GRPO math; Ensemble finetune.grpo is a thin plugin + RoutingRewardPlugin
   (cases, score_completion, prompts). Missions dispatch via
   astrarl.make("mlx_grpo_routing", use_execv=True).learn() on the Mac Mini
   (~/finetune + ~/finetune-env). Astra orchestrates telemetry and pivoting.
 
 hyperparameters:
+  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to ensemble/finetune checkout
   python_bin: /Users/kewang/finetune-env/bin/python

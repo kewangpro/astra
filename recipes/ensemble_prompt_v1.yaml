@@ -21,6 +21,7 @@ description: >
   human to promote, not a change astra makes.
 
 hyperparameters:
+  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   base_model: mlx-community/gemma-3-4b-it-4bit    # production's model
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python
