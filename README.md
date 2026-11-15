@@ -74,7 +74,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the san
 | Agent GRPO (`agrpo`) | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
 | OPD (`opd`) | `routing_prompt` | `mlx_opd` |
 
-Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. **AstraRL:** gym-coupled learners. **AstraTune:** `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. **Neither:** `prompt`, `embed`, `rerank`, `hstu`, `ml`. Full contract: [DESIGN.md § 2.4–2.6](docs/DESIGN.md).
+Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. **AstraRL:** gym-coupled learners. **AstraTune:** `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. **Neither:** `prompt`, `embed`, `rerank`, `hstu`, `ml`. Overview: [DESIGN.md § 2.4–2.6](docs/DESIGN.md). Maps / facades / packs: [IMPLEMENT.md](docs/IMPLEMENT.md#platform-and-product-contracts).
 
 | Task | Algorithms |
 |---|---|
@@ -152,7 +152,7 @@ astra/
 
 Product fine-tune recipes (e.g. Ensemble `ensemble_*.yaml`) live in the product repo
 (`ensemble/astra_recipes/`). Point the Orchestrator at them with
-`ASTRA_PRODUCT_RECIPES=ensemble:/path/to/ensemble/astra_recipes` — see [DESIGN.md §2.5–§3](docs/DESIGN.md).
+`ASTRA_PRODUCT_RECIPES=ensemble:/path/to/ensemble/astra_recipes` — see [DESIGN.md §2.5](docs/DESIGN.md) / [IMPLEMENT packs](docs/IMPLEMENT.md#platform-and-product-contracts).
 The Recipes page (`/recipes`) filters by **Astra built-in** vs each configured product
 (from `GET /recipes/packs`, not a hardcoded list) and shows recipe counts per source.
 

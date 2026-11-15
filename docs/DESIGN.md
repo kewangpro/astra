@@ -125,81 +125,24 @@ Platform packages, product plugins, and recipe packs are § 2.5 — not part of 
 
 ### 2.5. Platform and product
 
-**Astra = platform and training center** (contracts + math + train CLIs/loops + facades + Data/Eval). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers. Every **interactive / gym-coupled** RL path is AstraGym × AstraRL (including off-policy SB3). Every **offline / dataset LM** path is AstraTune — do not fold DPO/SFT into AstraRL.
-
-Train path / plugin boundary:
+**Astra** is the platform and training center. **Products** are use cases (plugin + prompts / cases / adapters) — not a second training host. Gym-coupled RL → AstraGym × AstraRL; offline LM → AstraTune; fuel/truth → AstraData × AstraEval. Inspired by Gym×RL splits; **not** NVIDIA NeMo / HTTP env servers.
 
 ```
 +----------------------------------+          +----------------------------------+
 |  Astra platform + training center |          |         Product use case         |
 +----------------------------------+          +----------------------------------+
-| Mission loop / recipes / sandbox |          | Use-case plugin (--use-case)     |
-| AstraData / AstraEval            |  facade  |   score / case_pool / oracle     |
-|   +--------+--------+            |  execv   |   prompts / eval cases           |
-|   v                 v            |  -m cli  |   adapters / bare_eval (product) |
-| AstraRL             AstraTune    |--------->|                                  |
-| cli + train_*       cli + train_*|          | Reward / Preference / Dataset    |
-| rollout/DAPO/math   losses/CE    |          | hooks via UseCasePlugin          |
-|            ^                     |          |                                  |
-|            |  lora_io (shared)   |          | (no product train CLIs)          |
-| AstraGym worlds (gym_id)         |          |                                  |
+| Orchestrator / recipes / sandbox |  facade  | UseCasePlugin (--use-case)       |
+| Data / Eval / Gym / RL / Tune    |  -m cli  | oracle · cases · prompts         |
+|                                  |--------->| (no product train CLIs)          |
 +----------------------------------+          +----------------------------------+
 ```
 
-| Layer | Package / role | Owns |
-|---|---|---|
-| **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
-| **AstraRL** | `astrarl/` | Online learners + **`python -m astrarl.cli`** train entrypoints; rollout, DAPO-lite, math |
-| **AstraTune** | `astratune/` | Offline LM + **`python -m astratune.cli`** train entrypoints; losses, `ce_loop`, shared `lora_io` |
-| **AstraData** | `astradata/` | Fuel: `dataset_id@rev` registry, hash/freeze, splits, FailSlice bank, HSTU builders |
-| **AstraEval** | `astraeval/` | Truth: `suite.run(ckpt) → {primary, case_ids}`, ceilings, FailSlice emit, tournament seeds |
-| **astra_plugin** | `astra_plugin/` | Use-case contract: `UseCasePlugin`, `load_use_case`, per-learner hook attrs, `validate_hooks` |
-| **Orchestrator** | Astra loop / platform `recipes/` + product packs / sandbox / HUD | Missions, pivots, `task_type` worker keys, stamp `dataset_*`/`suite_*`, suite gate, telemetry, canned facade codegen |
-| **Product (use case)** | importable plugin module | Implements `UseCasePlugin`; oracle / cases / prompts / adapters / `bare_eval` — **no** train CLIs; does **not** own suite IDs or dataset revs |
-
-| Concern | Astra owns | Product owns |
-|---|---|---|
-| **Contracts** | `Learner`, gym ids, **`astra_plugin`**, recipe schema | Plugin module implements `UseCasePlugin` + hook bags |
-| **Runtime** | Train CLIs, `run_*` loops, math, `lora_io` | Hooks via mission-create / plan `--use-case <module>` (env `ASTRA_USE_CASE` last resort) → `astra_plugin.load_use_case` |
-| **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
-| **Product data** | — | Prompts, eval cases, adapters, `bare_eval`, decision JSONL |
-
-**Use-case plugin contract (`astra_plugin`).** Products do not own train entrypoints. They export a module satisfying `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). Missions bind the product at **create** time: `MissionCreate.use_case`, an explicit marker in the goal (`use_case: …` / `--use-case …`), or the Lead Agent reading the product named in the goal — not recipe HP. Create/goal binding **always wins** over a Lead Agent value; `learner_id`-shaped strings (`mlx_dpo`, …) are rejected as `use_case` (they are workers, not product modules). Train CLIs load that importable module via `--use-case`; `ASTRA_USE_CASE` is only a bare-CLI fallback when the flag is omitted (no product aliases). If the top-level package lacks hooks, `load_use_case` tries `{name}.usecase`. Before `run_*`, CLIs call `validate_hooks(command, hooks)` against the attribute set each loop requires (`GRPO_HOOK_ATTRS`, `DpoHooks`, …). Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop / data-only helpers — not the CLI contract.
-
-**Recipe packs.** Astra `recipes/` holds **platform** YAML only (Snake/Tetris/MinAtar/2048/Pac-Man/AgentGym/hstu/`mlx_lora`/…). Product training knobs (e.g. Ensemble `ensemble_*.yaml`) live in the product repo (`ensemble/astra_recipes/`) and are discovered by the Orchestrator via `ASTRA_PRODUCT_RECIPES=use_case:/abs/path` (comma-separated for multiple products). Search order: platform dir, then configured packs (`backend/services/recipe_paths.py`). List/detail APIs annotate each recipe with `source` (`platform` | `product`) and `product` (the config use_case key when from a pack). `GET /recipes/packs` returns the platform path plus configured product keys for the Recipes UI source checkboxes (dynamic — not a fixed brand list). When `plan.recipe` is omitted but `use_case` is bound, the default stem is `{use_case}_{task}_v1` (`default_recipe_for_task`); `distill` has no silent default. Generic LM `task_type` keys are **not** mapped to Ensemble filenames in `_ENV_RECIPE`.
-
-**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin` + `astradata` + `astraeval`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Products may ship branded plugin packages under `<workspace>/.astra_plugins/` (prepended by `ensure_workspace_on_path`) so `--use-case <brand>` imports cleanly. The product plugin module must be importable. Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set) plus local `astradata` / `astraeval`; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import. Recipes may declare `gym_id` + `learner_id` + `dataset_id`/`dataset_rev` + `eval_suite`/`suite_rev`; when omitted gym/learner are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Create rejects targets above the **suite** ceiling when `eval_suite` is set (else recipe `metric_ceiling`). Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
-
-| Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
-|---|---|---|
-| `rl` | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_{ppo,dqn,a2c,sac,td3}` |
-| `grpo` | `routing_prompt` | `mlx_grpo_routing` |
-| `agrpo` | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
-| `opd` | `routing_prompt` | `mlx_opd` |
-
-| Offline `task_type` | AstraTune `learner_id` |
+| Astra owns | Product owns |
 |---|---|
-| `sft` / `mlx_lora` | `mlx_sft` |
-| `dpo` | `mlx_dpo` |
-| `distill` | `mlx_distill` |
-| `rft` | `mlx_rft` |
-| `star` | `mlx_star` |
-| `rlcd` | `mlx_rlcd` |
+| Train CLIs, `run_*`, math, `lora_io`, missions, suite/dataset stamps | `UseCasePlugin` hooks, prompts, eval cases, adapters, `bare_eval` |
+| Platform `recipes/` + pack discovery (`ASTRA_PRODUCT_RECIPES`) | Product recipe YAML under the product repo |
 
-**AstraGym ids:** `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`.  
-**AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.  
-**AstraTune ids:** `mlx_sft`, `mlx_dpo`, `mlx_distill`, `mlx_rft`, `mlx_star`, `mlx_rlcd`.
-
-**MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both `os.execv` into `python -m astrarl.cli <cmd>` / `python -m astratune.cli <cmd>` (same pid). CLIs use `astra_plugin.load_use_case` + `validate_hooks` then platform `run_*`. Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
-
-**Platform GRPO runtime** (Astra `astrarl/`): CLI + train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`. **Platform AstraTune** (`astratune/`): CLI + train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses, and **`lora_io` shared with AstraRL MLX trainers**. Products own rewards/cases/prompts/oracles behind their `UseCasePlugin` module — not train entrypoints.
-**Rollout / DAPO-lite flags** (AstraRL only): `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low` / `--clip-epsilon-high`, `--dynamic-sample-retries` (default 0 = off).
-
-| Package? | Scope |
-|---|---|
-| **AstraRL In** | Interactive / gym-coupled: `sb3_*`, `mlx_grpo_*`, `mlx_opd` |
-| **AstraTune In** | Offline LM: `dpo`, `sft`, `mlx_lora`, `distill`, `rft`, `star`, `rlcd` |
-| **Neither** | Different stacks: `prompt`, `embed`, `rerank`, `hstu`, `ml` |
+Contracts, `gym_id`/`learner_id` maps, facade/`os.execv` wiring, Mini path triad, pack search order, and plugin bind rules: [IMPLEMENT.md — Platform and product](IMPLEMENT.md#platform-and-product-contracts).
 
 ### 2.6. Specialist trainers
 

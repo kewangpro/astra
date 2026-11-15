@@ -20,7 +20,68 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 
 Epochs 7, 9, 10, and 11 are intentionally shorter **architecture** milestones (agent stack, Gym×RL, AstraTune, then Data/Eval); Epochs 3–6 absorb the former “continuity” band.
 
-**Current ownership:** Astra is the **platform and training center** (`python -m astrarl.cli` / `astratune.cli`, `run_*` loops, facades, `astra_plugin`, `astradata`, `astraeval`). Products are **use cases** (plugin module + prompts / eval cases / `bare_eval`). Historical phase notes below may still name a specific product or obsolete `*_train.py` execv targets — see `docs/DESIGN.md` §2.4.
+**Current ownership:** Astra is the **platform and training center** (`python -m astrarl.cli` / `astratune.cli`, `run_*` loops, facades, `astra_plugin`, `astradata`, `astraeval`). Products are **use cases** (plugin module + prompts / eval cases / `bare_eval`). Historical phase notes below may still name a specific product or obsolete `*_train.py` execv targets — architecture overview: [DESIGN.md §2.4–§2.5](DESIGN.md).
+
+---
+
+## Platform and product (contracts)
+
+Living detail for DESIGN §2.5. Phase history below may still cite pre-cutover paths.
+
+### Packages
+
+| Layer | Package | Owns |
+|---|---|---|
+| **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
+| **AstraRL** | `astrarl/` | Online learners + `python -m astrarl.cli`; rollout, DAPO-lite, math |
+| **AstraTune** | `astratune/` | Offline LM + `python -m astratune.cli`; losses, `ce_loop`, shared `lora_io` |
+| **AstraData** | `astradata/` | `dataset_id@rev` registry, FailSlice bank, HSTU builders |
+| **AstraEval** | `astraeval/` | `suite.run(ckpt) → {primary, case_ids}`, ceilings, FailSlice emit, `tournament_seed` |
+| **astra_plugin** | `astra_plugin/` | `UseCasePlugin`, `load_use_case`, `validate_hooks` |
+| **Orchestrator** | loop / `recipes/` + packs / sandbox / HUD | Missions, pivots, `task_type`, Data/Eval stamps, suite gate, canned facades |
+| **Product** | importable module | Oracle / cases / prompts / adapters / `bare_eval` — **no** train CLIs; does **not** own suite IDs or dataset revs |
+
+| Package? | Scope |
+|---|---|
+| **AstraRL In** | `sb3_*`, `mlx_grpo_*`, `mlx_opd` |
+| **AstraTune In** | `dpo`, `sft`, `mlx_lora`, `distill`, `rft`, `star`, `rlcd` |
+| **Neither** | `prompt`, `embed`, `rerank`, `hstu`, `ml` |
+
+### `gym_id` × `learner_id`
+
+| Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
+|---|---|---|
+| `rl` | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_{ppo,dqn,a2c,sac,td3}` |
+| `grpo` | `routing_prompt` | `mlx_grpo_routing` |
+| `agrpo` | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
+| `opd` | `routing_prompt` | `mlx_opd` |
+
+| Offline `task_type` | AstraTune `learner_id` |
+|---|---|
+| `sft` / `mlx_lora` | `mlx_sft` |
+| `dpo` | `mlx_dpo` |
+| `distill` | `mlx_distill` |
+| `rft` | `mlx_rft` |
+| `star` | `mlx_star` |
+| `rlcd` | `mlx_rlcd` |
+
+**Ids.** Gym: `gymnasium:<env_id>`, `agent_gym_vector`, `agent_gym_text`, `e2e_stubs`, `routing_prompt`. RL: `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`. Tune: `mlx_sft`, `mlx_dpo`, `mlx_distill`, `mlx_rft`, `mlx_star`, `mlx_rlcd`.
+
+### Plugin bind (`astra_plugin`)
+
+Products do not own train entrypoints. They export `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). Bind at **mission create**: `MissionCreate.use_case`, goal marker `use_case: …` / `--use-case …`, or Lead Agent from the product named in the goal — **not** recipe HP. Create/goal **always wins** over Lead Agent; reject `learner_id`-shaped strings (`mlx_dpo`, …) as `use_case`. CLIs load via `--use-case`; `ASTRA_USE_CASE` is bare-CLI fallback only. If the top-level package lacks hooks, `load_use_case` tries `{name}.usecase`. Before `run_*`, `validate_hooks(command, hooks)` against `GRPO_HOOK_ATTRS` / `DpoHooks` / …. Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop helpers — not the CLI contract.
+
+### Recipe packs
+
+Astra `recipes/` is **platform-only**. Product YAML (e.g. Ensemble `astra_recipes/`) via `ASTRA_PRODUCT_RECIPES=use_case:/path` (comma-separated). Search: platform dir, then packs (`backend/services/recipe_paths.py`). APIs annotate `source` (`platform` \| `product`) and `product`. `GET /recipes/packs` feeds Recipes UI source filters. Default stem when plan omits recipe but `use_case` is bound: `{use_case}_{task}_v1` (`default_recipe_for_task`); `distill` has no silent default. Generic LM `task_type` keys are **not** in `_ENV_RECIPE` as Ensemble filenames. Pack inference for empty HP lives only in `_resolve_hyperparams` (not inside `default_recipe_for_task`).
+
+### Facades and Mini packaging
+
+Gym-coupled: `astrarl.make(..., use_execv=True).learn()`. Offline LM: `astratune.make(..., use_execv=True).learn()`. Both `os.execv` into `python -m astrarl.cli` / `astratune.cli` (same pid) → `load_use_case` + `validate_hooks` → `run_*`. Healer must not rewrite facades into SB3/gym scripts on `ModuleNotFoundError`.
+
+AstraRL runtime: `train_grpo_routing` / `train_grpo_traj` / `train_opd`, rollout, DAPO-lite, `grpo_math` / `opd_math`. Flags: `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low`/`high`, `--dynamic-sample-retries` (0 = off). AstraTune: `train_dpo` / `train_sft` / `train_rlcd`, `ce_loop`, **`lora_io` shared with AstraRL MLX**.
+
+**Mini triad:** `~/astra-pkg` (editable `pip install -e` tree: gym/rl/tune/plugin/data/eval) + workspace `~/finetune` (cwd, product plugin) + `~/finetune-env` (MLX Python). Not a full Orchestrator HUD/DB checkout. Path knobs: `finetune_dir` / `python_bin` / `astra_pkg_root` (recipe → `ASTRA_PKG_ROOT` → `/Users/kewang/astra-pkg`). Preflight: `import astrarl.cli, astratune.cli, astra_plugin` (+ use-case module) and local `astradata` / `astraeval`. Recipes may set `gym_id` + `learner_id` + `dataset_id`/`dataset_rev` + `eval_suite`/`suite_rev`; else infer gym/learner from `task_type` / `env_id` / algorithm. Create rejects over-**suite**-ceiling targets when `eval_suite` is set (else recipe `metric_ceiling`).
 
 ---
 
