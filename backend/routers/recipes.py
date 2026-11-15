@@ -280,11 +280,13 @@ async def dispatch_recipe(
     clean_name = recipe_name.removesuffix(".yaml").removesuffix(".yml")
     target_metric = payload.target_metric if payload and payload.target_metric else {}
     goal = payload.goal if payload and payload.goal else None
+    use_case = payload.use_case if payload and payload.use_case else None
 
     mission_create = MissionCreate(
         recipe=clean_name,
         target_metric=target_metric,
         goal=goal,
+        use_case=use_case,
         auto_start=True,
     )
 

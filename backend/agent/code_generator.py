@@ -2742,6 +2742,12 @@ def _resolve_hyperparams(
             task_type, plan_hp,
             empty_rationale=bool(recipe_hp.get("empty_rationale")),
         ))
+        # Product plugin binds at mission create / Lead Agent plan — not recipe HP.
+        # Plan use_case wins; strip stale recipe-stamped use_case when plan omits it
+        # only if plan explicitly set empty? Prefer plan when present.
+        _plan_uc = str((plan_hp or {}).get("use_case") or "").strip()
+        if _plan_uc:
+            hp["use_case"] = _plan_uc
         # DAPO-lite / rollout backend: recipe defaults + explicit plan overrides
         # (not in the temp/num_generations pivot safelist — they are opt-in experiment knobs).
         if (task_type or env_id) in ("grpo", "ensemble_grpo_1b_v1") or env_id in (
@@ -2815,7 +2821,11 @@ def _resolve_astra_pkg_root(hp: Optional[dict] = None) -> str:
 
 
 def _resolve_use_case(hp: Optional[dict] = None) -> str:
-    """Importable UseCasePlugin module from recipe HP or ASTRA_USE_CASE.
+    """Importable UseCasePlugin module for codegen facades.
+
+    Resolution order:
+    1. Plan / mission-create hyperparameters ``use_case`` (source of truth)
+    2. ``ASTRA_USE_CASE`` env — last-resort bare-CLI fallback only, not mission binding
 
     Empty string means facades omit ``--use-case`` and the CLI must get the
     module from the environment on the train host.

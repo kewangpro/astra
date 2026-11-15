@@ -102,10 +102,24 @@ export default function RecipesPage() {
     fetchRecipes();
   }, []);
 
-  const handleDispatch = async (recipeName: string) => {
+  const handleDispatch = async (recipeName: string, taskType?: string) => {
     try {
       setDispatching(recipeName);
-      const res = await api.dispatchRecipe(recipeName);
+      const tt = (taskType || "").toLowerCase();
+      const needsPlugin = tt && !["rl", "ml", "hstu", "embed", "rerank", "mlx_lora"].includes(tt);
+      let opts: { use_case?: string } | undefined;
+      if (needsPlugin) {
+        const uc = window.prompt(
+          "Product use-case plugin module for this mission (e.g. ensemble):",
+          "",
+        );
+        if (uc === null) {
+          setDispatching(null);
+          return;
+        }
+        if (uc.trim()) opts = { use_case: uc.trim() };
+      }
+      const res = await api.dispatchRecipe(recipeName, opts);
       if (res.mission_id) {
         router.push(`/missions/${res.mission_id}`);
       }
@@ -298,7 +312,12 @@ export default function RecipesPage() {
                   </div>
 
                   <button
-                    onClick={() => handleDispatch(r.name)}
+                    onClick={() =>
+                      handleDispatch(
+                        r.name,
+                        (r.content as any)?.task_type || dbMatch?.task_type,
+                      )
+                    }
                     disabled={isDispatchingThis}
                     className={`px-3 py-1.5 rounded text-xs font-semibold tracking-wider transition-all flex items-center gap-1.5 ${
                       isDispatchingThis
@@ -375,8 +394,11 @@ export default function RecipesPage() {
               <button
                 onClick={() => {
                   const name = selectedRecipe.name;
+                  const tt =
+                    (selectedRecipe.content as any)?.task_type ||
+                    dbRecipes.find((d) => d.name === name)?.task_type;
                   setSelectedRecipe(null);
-                  handleDispatch(name);
+                  handleDispatch(name, tt);
                 }}
                 className="px-4 py-2 rounded text-xs font-semibold bg-[#14b8a6] hover:bg-[#0d9488] text-[#0f172a] flex items-center gap-1.5"
               >

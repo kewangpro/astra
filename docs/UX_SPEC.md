@@ -12,7 +12,7 @@
 ## 2. Core Views
 
 ### 2.1. The "Command Center" (Home)
-- **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200") paired with an algorithm selector grouped by task: Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), Agentic RL (Agent GRPO), supervised fine-tuning (SFT, local LoRA, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decision (RLCD), prompt edit (rule append), classical ML (random forest), retrieval (embedding, reranker), and generative recommendation (HSTU), plus `auto (detect)`. In `auto` mode, the worker is inferred from keywords in the goal text (`rlcd` or "calibrated decision" / "decision foundation" selects RLCD; `hstu` / MovieLens / generative recommend selects the from-scratch HSTU trainer), and backend reconciliation ensures that submitted defaults never misdirect fine-tuning or distillation missions into RL. RLCD uses product recipes (routing-only or foundation → specialize → focus); Mini trains dispatch only via Astra recipe missions. Held-out pass_rate is not the promote gate.
+- **Goal Input**: A plain-text input bar for the training goal (e.g. "Train a Snake-v0 PPO agent to achieve mean_reward of 200") paired with an algorithm selector grouped by task: Environment RL (PPO, DQN, A2C, SAC, TD3), reinforcement fine-tuning (GRPO, DPO), Agentic RL (Agent GRPO), supervised fine-tuning (SFT, local LoRA, distillation, rejection sampling, STaR), on-policy distillation (OPD), calibrated decision (RLCD), prompt edit (rule append), classical ML (random forest), retrieval (embedding, reranker), and generative recommendation (HSTU), plus `auto (detect)`. In `auto` mode, the worker is inferred from keywords in the goal text (`rlcd` or "calibrated decision" / "decision foundation" selects RLCD; `hstu` / MovieLens / generative recommend selects the from-scratch HSTU trainer), and backend reconciliation ensures that submitted defaults never misdirect fine-tuning or distillation missions into RL. **Product fine-tunes:** name the product in the prompt or include `use_case: <module>` (e.g. Ensemble → `use_case: ensemble`); that binds the `UseCasePlugin` at mission create — recipes supply training HPs only. Full create ↔ recipe ↔ product wiring: [DESIGN.md §3](DESIGN.md). RLCD uses product recipes (routing-only or foundation → specialize → focus); Mini trains dispatch only via Astra recipe missions. Held-out pass_rate is not the promote gate.
 - **Operational Board**: A row-based layout of active training-loop cards organized into full-width horizontal sections in workflow priority order:
   - **Running / Active** (teal indicator with live pulse animation when runs are active; displays a subtle compact indicator when 0 runs are in-flight).
   - **Stalled / Paused** (orange indicator; rendered dynamically when stalled runs exist, hidden when 0). Stalled cards show `error_log` and **do not** offer Resume — the search is finished; start a new mission. Paused cards still offer Resume.
@@ -30,7 +30,7 @@
 ### 2.3. The Recipe Library (`/recipes`)
 - **Gallery View**: Grid of training recipes (both disk-based YAML and DB records) featuring target metric pills, an algorithm tag (embedding, HSTU, GRPO, DQN, PPO, …), and quick YAML inspection modals. Tabs are `All Recipes` plus each task group. A recipe stays on a tab when its YAML `task_type` is one of that task’s workers, so Snake, MinAtar, 2048, and AgentGym share Environment RL.
 - **Lineage DAG Visualizer**: Interactive drawer tracing the evolutionary chain (Gen 0 → Gen 1 → Gen 2) for crystallized and mutated recipes, displaying score progressions and hyperparameter deltas.
-- **One-Click Dispatch**: Single-click "Dispatch" button on any recipe card or inspection modal to instantly spin up an autonomous mission loop without manual configuration.
+- **One-Click Dispatch**: "Dispatch" on a recipe card/modal calls the same `MissionCreate` pipeline as the goal bar (`POST /recipes/{name}/dispatch`). Goal text is canonicalized from the recipe description + target when omitted; recipe YAML seeds `task_type` and training HPs. For product fine-tune recipes the UI prompts for the **use-case plugin module** (e.g. `ensemble`) and sends it as `use_case` on create — not baked into recipe HP. See [DESIGN.md §3](DESIGN.md).
 - **Delete**: Auto-crystallized recipes (not hand-crafted YAML) have a Delete control on the card and in the YAML modal.
 
 ### 2.4. Models (`/models`)
@@ -70,10 +70,16 @@ Epoch 9–10: gym-coupled RL is **AstraGym** (`gym_id`) × **AstraRL** (`learner
 | **Real-time** | **FastAPI + WebSockets** | Lightweight, high-speed bidirectional communication for the HUD. |
 
 ## 4. User Interaction Flow
-1. **User**: Input goal: "Master Tetris with 200 lines."
-2. **Dashboard**: Shows the Lead Agent "Thinking..." (Planning phase).
-3. **Dashboard**: Prompts for `EXECUTE_CODE` approval with a preview of the generated PyTorch script.
-4. **User**: Clicks "Approve & Start."
-5. **Dashboard**: Switches to HUD. Gauge shows "0/200." Curves start plotting.
-6. **Dashboard**: Gauge hits "205/200." Screen flashes "Goal Achieved."
-7. **Dashboard**: Prompts to "Crystallize as Tetris-Expert Recipe."
+
+**Goal-first (Command Center)**  
+1. **User**: Input goal (and optional algorithm). For product LM runs, name the product or `use_case: <module>`.
+2. **Dashboard**: Lead Agent plans from the goal (recipe library may warm-start knobs).
+3. **Dashboard**: `EXECUTE_CODE` approval with script preview (autonomy mode dependent).
+4. **User**: Approves when required → HUD streams metrics until target or stall/pivot.
+
+**Recipe-first (`/recipes`)**  
+1. **User**: Dispatch a recipe; for fine-tunes, enter the product plugin module when prompted.
+2. Same create → plan/seed → codegen → sandbox loop as goal-first ([DESIGN.md §3](DESIGN.md)).
+
+**Example (RL)**  
+1. Goal: "Master Tetris with 200 lines." → plan → approve → HUD 0/200 → goal achieved → optional crystallize.

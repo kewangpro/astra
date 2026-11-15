@@ -77,6 +77,55 @@ def _metric_val_in_text(val: Any, text: str) -> bool:
     return False
 
 
+_USE_CASE_IN_GOAL_RE = re.compile(
+    r"(?:"
+    r"--use-case\s+([A-Za-z_][\w.]*)"
+    r"|use[_-]?case\s*[:=]\s*([A-Za-z_][\w.]*)"
+    r"|use[_-]?case\s+module\s+([A-Za-z_][\w.]*)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def infer_use_case_from_goal(goal: Optional[str]) -> Optional[str]:
+    """Extract an explicit UseCasePlugin module from mission creation goal text.
+
+    Matches markers such as ``--use-case ensemble``, ``use_case: ensemble``,
+    or ``use-case module ensemble``. Does not maintain a product alias table —
+    free-form product names are resolved by the Lead Agent at plan time.
+    """
+    if not goal:
+        return None
+    m = _USE_CASE_IN_GOAL_RE.search(goal)
+    if not m:
+        return None
+    return next((g for g in m.groups() if g), None)
+
+
+def resolve_mission_use_case(
+    payload_use_case: Optional[str],
+    goal: Optional[str],
+) -> Optional[str]:
+    """Mission-create binding: explicit field, else marker in the goal prompt."""
+    raw = (payload_use_case or "").strip() or infer_use_case_from_goal(goal) or ""
+    return raw or None
+
+
+def _inject_use_case_into_plan(plan: dict[str, Any], use_case: str) -> None:
+    """Put use_case on plan hyperparameters (and staged HPs) without clobbering other keys."""
+    hp = dict(plan.get("hyperparameters") or {})
+    hp["use_case"] = use_case
+    plan["hyperparameters"] = hp
+    stages = plan.get("stages")
+    if isinstance(stages, list):
+        for stage in stages:
+            if not isinstance(stage, dict):
+                continue
+            shp = dict(stage.get("hyperparameters") or {})
+            shp["use_case"] = use_case
+            stage["hyperparameters"] = shp
+
+
 def format_canonical_goal(
     goal: Optional[str],
     recipe_content: Optional[dict[str, Any]],
@@ -187,7 +236,29 @@ async def prepare_mission_params(payload: MissionCreate, db: AsyncSession) -> di
             if first_stage.get("recipe"):
                 current_plan["recipe"] = first_stage["recipe"]
             if first_stage.get("hyperparameters"):
-                current_plan["hyperparameters"] = first_stage["hyperparameters"]
+                current_plan["hyperparameters"] = dict(first_stage["hyperparameters"])
+
+    # Product plugin binds at mission create (field or goal marker), not recipe HP.
+    use_case = resolve_mission_use_case(payload.use_case, goal)
+    if use_case:
+        if current_plan is None:
+            current_plan = {"hyperparameters": {"use_case": use_case}}
+        else:
+            _inject_use_case_into_plan(current_plan, use_case)
+    elif current_plan is not None:
+        # Drop any recipe-stamped use_case so it cannot masquerade as create binding.
+        hp = dict(current_plan.get("hyperparameters") or {})
+        if "use_case" in hp:
+            hp.pop("use_case", None)
+            if hp:
+                current_plan["hyperparameters"] = hp
+            else:
+                current_plan.pop("hyperparameters", None)
+        for stage in current_plan.get("stages") or []:
+            if isinstance(stage, dict) and isinstance(stage.get("hyperparameters"), dict):
+                stage["hyperparameters"] = {
+                    k: v for k, v in stage["hyperparameters"].items() if k != "use_case"
+                }
 
     return {
         "goal": goal,

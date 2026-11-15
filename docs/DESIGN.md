@@ -112,11 +112,11 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | Concern | Astra owns | Product owns |
 |---|---|---|
 | **Contracts** | `Learner`, gym ids, **`astra_plugin`**, recipe schema | Plugin module implements `UseCasePlugin` + hook bags |
-| **Runtime** | Train CLIs, `run_*` loops, math, `lora_io` | Hooks via `--use-case <module>` / `ASTRA_USE_CASE` → `astra_plugin.load_use_case` |
+| **Runtime** | Train CLIs, `run_*` loops, math, `lora_io` | Hooks via mission-create / plan `--use-case <module>` (env `ASTRA_USE_CASE` last resort) → `astra_plugin.load_use_case` |
 | **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
 | **Product data** | — | Prompts, eval cases, adapters, `bare_eval`, decision JSONL |
 
-**Use-case plugin contract (`astra_plugin`).** Products do not own train entrypoints. They export a module satisfying `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). Pass an **importable module path** via `--use-case` or `ASTRA_USE_CASE` (no product aliases). If the top-level package lacks hooks, `load_use_case` tries `{name}.usecase`. Before `run_*`, CLIs call `validate_hooks(command, hooks)` against the attribute set each loop requires (`GRPO_HOOK_ATTRS`, `DpoHooks`, …). Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop / data-only helpers — not the CLI contract.
+**Use-case plugin contract (`astra_plugin`).** Products do not own train entrypoints. They export a module satisfying `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). Missions bind the product at **create** time: `MissionCreate.use_case`, an explicit marker in the goal (`use_case: …` / `--use-case …`), or the Lead Agent reading the product named in the goal — not recipe HP. Train CLIs load that importable module via `--use-case`; `ASTRA_USE_CASE` is only a bare-CLI fallback when the flag is omitted (no product aliases). If the top-level package lacks hooks, `load_use_case` tries `{name}.usecase`. Before `run_*`, CLIs call `validate_hooks(command, hooks)` against the attribute set each loop requires (`GRPO_HOOK_ATTRS`, `DpoHooks`, …). Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop / data-only helpers — not the CLI contract.
 
 **Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Products may ship branded plugin packages under `<workspace>/.astra_plugins/` (prepended by `ensure_workspace_on_path`) so `--use-case <brand>` imports cleanly. The product plugin module must be importable. Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set); mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
@@ -226,9 +226,10 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 | `finetune_dir` | `/Users/kewang/finetune` | Workspace cwd + product data; parent often on `PYTHONPATH` for the plugin |
 | `python_bin` | `/Users/kewang/finetune-env/bin/python` | MLX + pip-installed platform packages (`os.execv` target) |
 | `astra_pkg_root` | `/Users/kewang/astra-pkg` | `sys.path.insert` before `import astrarl` / `astratune` |
-| `use_case` / `ASTRA_USE_CASE` | importable module | Product `UseCasePlugin` loaded by train CLIs |
+| `use_case` | importable module | Product `UseCasePlugin` — bound at **mission create** (`MissionCreate.use_case`, goal marker `use_case: …` / `--use-case …`, or Lead Agent from the product named in the goal). Not recipe HP. |
+| `ASTRA_USE_CASE` | env (optional) | Last-resort bare-CLI fallback when `--use-case` was omitted; **not** the mission product binding. |
 
-Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the product plugin via `--use-case` / `ASTRA_USE_CASE`. Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
+Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the product plugin via plan-baked `--use-case` (or `ASTRA_USE_CASE` only if unset). Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 
@@ -252,16 +253,82 @@ A **benchmark suite** (golden challenges) and **stress** cases sit outside the t
 
 ---
 
-## 3. Data flow
+## 3. Starting a mission (goal ↔ recipe ↔ product ↔ train)
 
-1. User (or recipe dispatch) states a goal and target.
-2. Lead Agent warm-starts from the recipe library when a close match exists.
-3. Critic approves or sends the plan back.
-4. Codegen writes a sandbox script; autonomy gates may pause for execute-code approval.
-5. Sandbox trains; telemetry streams to the HUD.
-6. Evaluator scores the checkpoint against the goal metric.
-7. Loop pivots, completes, or stalls. Successful **RL** (and similar) runs may crystallize a recipe; fine-tune-remote types do not.
-8. Registry and model page pick up the checkpoint for play and tournaments (same env table).
+Both entry points share one pipeline: **`POST /missions`** (Command Center goal bar) and **`POST /recipes/{name}/dispatch`** (Recipes one-click → same `MissionCreate`). `prepare_mission_params` builds the stored mission fields; the loop then plans, codegens, and trains.
+
+### 3.1. What each piece is
+
+| Piece | Where it lives | Role at mission start |
+|---|---|---|
+| **Goal (mission prompt)** | `Mission.goal` (from create body or canonicalized from recipe description + target) | Human intent: env/product, algorithm, target. Lead Agent reads this. Explicit `use_case: <module>` / `--use-case <module>` markers bind the product without a separate field. |
+| **Recipe** | Disk YAML / DB record (`recipes/*.yaml`) | Known-good **training knobs** for a worker: `task_type`, adapter paths, LoRA, `finetune_dir` / `python_bin` / `astra_pkg_root`, epochs, ceilings. Optional multi-`stages`. Does **not** own the product plugin name. |
+| **`task_type`** | Create body, recipe, or inferred from goal keywords | Worker key (`rl`, `dpo`, `grpo`, …) → sandbox / preflight / which facade CLI. |
+| **`use_case` (product)** | Bound at **create** → `plan.hyperparameters.use_case` → baked `--use-case` | Importable `UseCasePlugin` module (e.g. Ensemble → `ensemble`). See resolution order below. |
+| **`current_plan`** | Seeded at create when a recipe is present; refreshed by Lead Agent / stages | What the loop executes: recipe name, algorithm, hyperparameters, stages. |
+| **Target metric** | Create override → recipe `target_metric` / `metric_ceiling` → parsed from goal | Completion gate for the HUD / evaluator. |
+
+```
+  Command Center goal bar          Recipes "Dispatch"
+           |                                |
+           |  goal [+ task_type]            |  recipe [+ optional goal / use_case]
+           v                                v
+                    MissionCreate
+                         |
+                         v
+              prepare_mission_params
+                 |  resolve recipe (if any)
+                 |  format_canonical_goal
+                 |  seed current_plan (recipe / stages)
+                 |  bind use_case → plan.hyperparameters
+                         |
+                         v
+                    Mission row (DB)
+                         |
+                         v
+              LoopStateMachine (PLANNING)
+                 |  stages / saved plan → reuse
+                 |  else Lead Agent.plan(goal)  (+ use_case from goal/product name)
+                 |  _ensure_plan_use_case (create/goal backfill)
+                 |  Critic review
+                         |
+                         v
+              Codegen + sandbox
+                 |  _resolve_hyperparams: recipe HP + plan pivot safelist
+                 |                      + plan use_case (wins)
+                 |  facade → python -m astrarl|astratune.cli --use-case …
+                         v
+                    train host (local / Mini)
+```
+
+### 3.2. Two ways to start
+
+**A. Goal-first (Command Center)**  
+User types a prompt (and optional algorithm dropdown). Backend may infer `task_type` from keywords. If no recipe is attached, the Lead Agent chooses algorithm / `task_type` and may warm-start knobs from a close recipe-library match. For product fine-tunes, name the product in the prompt or write `use_case: <module>` so the plugin is bound before codegen.
+
+**B. Recipe-first (one-click dispatch)**  
+`dispatch` builds `MissionCreate(recipe=…, goal?=…, use_case?=…)`. Goal text is canonicalized from the recipe description + target when omitted. `current_plan` is seeded with the recipe name (and stage-0 HPs for multi-stage). Finetune recipes still need a product: pass `use_case` on the dispatch body, put a marker in `goal`, or let the Lead Agent set it when the goal names the product. Recipe YAML must not hardcode `use_case` as a training HP.
+
+### 3.3. Product (`use_case`) resolution
+
+Order used when baking the train wrapper:
+
+1. **`MissionCreate.use_case`** (API / Recipes prompt / dispatch JSON)
+2. **Explicit marker in the goal** — `use_case: ensemble` or `--use-case ensemble`
+3. **Lead Agent** — sets `hyperparameters.use_case` from the product named in the goal (e.g. “Ensemble routing” → `ensemble`)
+4. **`ASTRA_USE_CASE` env** — last-resort bare-CLI fallback only when `--use-case` was omitted; **not** the mission product binding
+
+Recipe hyperparameters supply paths and LoRA settings; they are not the place to stamp the product module.
+
+### 3.4. After create (same for A and B)
+
+1. Critic approves or revises the plan.
+2. Codegen writes the sandbox script (canned facade for remote LM workers).
+3. Autonomy gates may pause for execute-code approval.
+4. Sandbox trains; telemetry streams to the HUD.
+5. Evaluator scores the checkpoint against the goal metric.
+6. Loop pivots, completes, or stalls. Successful **RL** (and similar) runs may crystallize a recipe; fine-tune-remote types do not.
+7. Registry and model page pick up the checkpoint for play and tournaments (same env table).
 
 ---
 

@@ -13,7 +13,6 @@ description: >
   (~/finetune + ~/finetune-env). Astra orchestrates telemetry and pivoting.
 
 hyperparameters:
-  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to ensemble/finetune checkout
   python_bin: /Users/kewang/finetune-env/bin/python

@@ -134,7 +134,7 @@ export function GoalInput() {
           onChange={(e) => setGoal(e.target.value.slice(0, MAX))}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="define training objective — e.g. ResNet-18 achieving >92% on CIFAR-10 in 20 iterations"
+          placeholder="define training objective — name the product (or use_case: module) for fine-tunes; e.g. Ensemble DPO use_case: ensemble to 0.93 pass_rate"
           rows={2}
           className="flex-1 bg-transparent text-sm text-[#e2e8f0] placeholder-[#2d3748]
                      resize-none focus:outline-none leading-relaxed"

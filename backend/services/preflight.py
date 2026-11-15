@@ -168,7 +168,7 @@ class PreflightChecker:
             "passed": False,
             "detail": (
                 f"Astra train CLI / astra_plugin missing on {settings.sandbox_host}. "
-                f"pip install -e ~/astra-pkg; set ASTRA_USE_CASE / recipe use_case "
+                f"pip install -e ~/astra-pkg; pass MissionCreate.use_case / goal use_case "
                 f"to an importable UseCasePlugin module. Original: {err}"
             ),
         }]

@@ -9,7 +9,6 @@ description: >
   plus the prior 15 99b91b5a ids to prevent regression. Stage 1 only.
   Warm-start from astra_46624d8c_iter0/best.
 hyperparameters:
-  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   base_model: mlx-community/gemma-3-1b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python

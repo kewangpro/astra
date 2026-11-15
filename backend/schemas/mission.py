@@ -10,6 +10,9 @@ class MissionCreate(BaseModel):
     goal: Optional[str] = None
     recipe: Optional[str] = None
     task_type: Optional[str] = None
+    #: Importable UseCasePlugin module (product). Prefer this or naming the
+    #: product / ``use_case: <module>`` in ``goal`` — not recipe HP hardcoding.
+    use_case: Optional[str] = None
     target_metric: dict = Field(default_factory=dict)
     autonomy_mode: str = "supervised"
     auto_start: bool = False

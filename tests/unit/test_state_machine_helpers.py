@@ -2245,7 +2245,7 @@ def test_remote_train_cli_check_fails_with_vendor_hint():
         run.return_value = MagicMock(returncode=1, stdout="", stderr="No module named astrarl")
         out = _preflight()._check_remote_script("dpo")
     assert out[0]["passed"] is False
-    assert "astra_plugin" in out[0]["detail"] or "ASTRA_USE_CASE" in out[0]["detail"]
+    assert "astra_plugin" in out[0]["detail"] or "MissionCreate.use_case" in out[0]["detail"]
 
 
 def test_remote_script_check_does_not_block_on_unreachable_host():

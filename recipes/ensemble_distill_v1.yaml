@@ -14,7 +14,6 @@ description: >
   teacher is served by the mini's own Ollama on :11434).
 
 hyperparameters:
-  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   # ── Remote host block ──────────────────────────────────────────────────────
   base_model: mlx-community/gemma-3-12b-it-4bit
   finetune_dir: /Users/kewang/finetune          # remote host path to the ensemble/finetune checkout

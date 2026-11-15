@@ -61,6 +61,8 @@ class RecipeSearchHit(BaseModel):
 class RecipeDispatchRequest(BaseModel):
     target_metric: Optional[dict] = None
     goal: Optional[str] = None
+    #: Product UseCasePlugin module; forwarded to MissionCreate.use_case.
+    use_case: Optional[str] = None
 
 
 class RecipeDispatchResponse(BaseModel):

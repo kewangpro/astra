@@ -23,7 +23,6 @@ stages:
     target_metric:
       eval_loss: 0.80
     hyperparameters:
-      use_case: ensemble
       base_model: mlx-community/gemma-3-12b-it-4bit
       finetune_dir: /Users/kewang/finetune
       python_bin: /Users/kewang/finetune-env/bin/python
@@ -51,7 +50,6 @@ stages:
     target_metric:
       pass_rate: 0.70
     hyperparameters:
-      use_case: ensemble
       base_model: mlx-community/gemma-3-12b-it-4bit
       finetune_dir: /Users/kewang/finetune
       python_bin: /Users/kewang/finetune-env/bin/python
@@ -79,7 +77,6 @@ stages:
     target_metric:
       pass_rate: 0.80
     hyperparameters:
-      use_case: ensemble
       base_model: mlx-community/gemma-3-12b-it-4bit
       finetune_dir: /Users/kewang/finetune
       python_bin: /Users/kewang/finetune-env/bin/python

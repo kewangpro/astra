@@ -44,10 +44,15 @@ LSTM recommender — local Astra .venv, auto-downloads ML-1M. Prefer hstu for HS
 sequential recommendation goals.
 
 For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/star/prompt tasks (product routing / agentic RL fine-tuning or prompt optimization via Astra train CLIs + product UseCasePlugin): leave "hyperparameters"
-as an empty object {}. Do NOT invent or guess values — the warm-start adapter path, base model, remote
-finetune_dir/python_bin/use_case paths, LoRA config, and all training/eval hyperparameters are supplied
-entirely by the recipe YAML and are known-good, verified values. A guessed adapter path or
-mismatched num_layers will crash the run. The only fields you should set are "task_type" (the worker key from the pairs above), "algorithm" (the algorithm name: "PPO", "DQN", "A2C", "SAC", "TD3", "GRPO", "DPO", "SFT", "MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization", "HSTU"), and "reasoning".
+nearly empty. Do NOT invent adapter paths, base model, finetune_dir, python_bin, LoRA ranks, or
+other training/eval values — those come from the recipe YAML. The ONE hyperparameter you MUST set
+from the mission creation goal is "use_case": the importable UseCasePlugin module for the product
+named in the goal (e.g. goal mentions Ensemble / Ensemble routing → "ensemble"; goal says
+"use_case: my_product" → "my_product"). If the goal already contains an explicit use_case /
+--use-case marker, copy that module name. Never leave use_case empty for these task types when
+the goal names a product. Set "task_type" (worker key), "algorithm" ("GRPO", "DPO", "SFT",
+"MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization", …), "reasoning", and
+hyperparameters.use_case only.
   - "sft": supervised fine-tuning on routing demonstrations. Learns schema and basic task assignment via MLX on Apple Silicon GPU.
   - "prompt": optimize routing instructions by proposing additional routing rules appended to the conductor prompt. Evaluated on model-routed accuracy via bare_eval.
   - "distill": teach correct decisions from a STRONGER TEACHER model (off-policy: teacher completions → SFT). Capped by the teacher:

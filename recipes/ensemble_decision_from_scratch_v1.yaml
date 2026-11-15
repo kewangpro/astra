@@ -20,7 +20,6 @@ description: >
   See Ensemble finetune/data/decision/README.md.
 
 hyperparameters:
-  use_case: ensemble                 # Ensemble branded plugin (.astra_plugins/ensemble)
   base_model: mlx-community/gemma-3-1b-it-4bit
   finetune_dir: /Users/kewang/finetune
   python_bin: /Users/kewang/finetune-env/bin/python

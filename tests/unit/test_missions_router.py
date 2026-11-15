@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.routers.missions import _parse_target_metric
 
@@ -260,6 +261,53 @@ def test_format_canonical_goal_appends_target_if_missing():
         target_metric={"lines_cleared": 200.0},
     )
     assert goal == "Train a Tetris-v0 agent to achieve 200.0 lines_cleared"
+
+
+def test_infer_use_case_from_goal_markers():
+    from backend.services.mission_service import infer_use_case_from_goal, resolve_mission_use_case
+
+    assert infer_use_case_from_goal("DPO on Ensemble routing use_case: ensemble") == "ensemble"
+    assert infer_use_case_from_goal("Train with --use-case my_product for routing") == "my_product"
+    assert infer_use_case_from_goal("Improve Ensemble routing pass rate") is None
+    assert resolve_mission_use_case("explicit_mod", "use_case: ignored") == "explicit_mod"
+    assert resolve_mission_use_case(None, "goal with use_case: from_goal") == "from_goal"
+
+
+@pytest.mark.asyncio
+async def test_prepare_mission_params_binds_use_case_from_create():
+    from backend.schemas.mission import MissionCreate
+    from backend.services.mission_service import prepare_mission_params
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+    scalars = MagicMock()
+    scalars.first = MagicMock(return_value=None)
+    result = MagicMock()
+    result.scalars = MagicMock(return_value=scalars)
+    db.execute = AsyncMock(return_value=result)
+
+    payload = MissionCreate(
+        recipe="ensemble_dpo_astratune_smoke",
+        use_case="ensemble",
+        auto_start=False,
+    )
+    out = await prepare_mission_params(payload, db)
+    assert out["current_plan"]["hyperparameters"]["use_case"] == "ensemble"
+
+
+@pytest.mark.asyncio
+async def test_prepare_mission_params_binds_use_case_from_goal_marker():
+    from backend.schemas.mission import MissionCreate
+    from backend.services.mission_service import prepare_mission_params
+
+    db = AsyncMock()
+    payload = MissionCreate(
+        goal="Run DPO smoke use_case: ensemble to achieve 0.93 pass_rate",
+        task_type="dpo",
+        target_metric={"pass_rate": 0.93},
+    )
+    out = await prepare_mission_params(payload, db)
+    assert out["current_plan"]["hyperparameters"]["use_case"] == "ensemble"
 
 
 # ── PATCH status coercion ─────────────────────────────────────────────────────

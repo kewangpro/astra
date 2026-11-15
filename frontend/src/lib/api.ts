@@ -256,9 +256,13 @@ export const api = {
     req<{ child: RecipeRecord; parent_id: string }>(`/recipes/${id}/evolve`, {
       method: "POST",
     }),
-  dispatchRecipe: (recipeName: string) =>
+  dispatchRecipe: (recipeName: string, opts?: { use_case?: string; goal?: string }) =>
     req<RecipeDispatchResponse>(`/recipes/${recipeName}/dispatch`, {
       method: "POST",
+      body: JSON.stringify({
+        ...(opts?.use_case ? { use_case: opts.use_case } : {}),
+        ...(opts?.goal ? { goal: opts.goal } : {}),
+      }),
     }),
   deleteRecipe: async (id: string) => {
     const res = await fetch(`${BASE}/recipes/${id}`, { method: "DELETE" });

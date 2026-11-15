@@ -398,6 +398,19 @@ def test_resolve_hyperparams_snake_recipe_sets_lr_schedule_linear():
     assert result.get("lr_schedule") == "linear"
 
 
+def test_resolve_hyperparams_finetune_plan_use_case_wins():
+    """Mission-create / plan use_case is the product binding (not recipe HP)."""
+    from backend.agent.code_generator import _resolve_hyperparams, _resolve_use_case
+
+    result = _resolve_hyperparams(
+        "ensemble_dpo_astratune_smoke", {"use_case": "ensemble"}
+    )
+    assert result["use_case"] == "ensemble"
+    assert _resolve_use_case(result) == "ensemble"
+    bare = _resolve_hyperparams("ensemble_dpo_astratune_smoke", {})
+    assert not bare.get("use_case")
+
+
 def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)

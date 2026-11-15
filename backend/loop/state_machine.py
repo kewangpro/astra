@@ -790,6 +790,10 @@ class LoopStateMachine:
                     plan["recipe"] = "ensemble_grpo_v1"
                 if mission.task_type == "dpo" and not plan.get("recipe"):
                     plan["recipe"] = "ensemble_sft_dpo_v1"
+                # Product UseCasePlugin: mission-create field / goal marker / Lead Agent.
+                # Prefer plan HP, else seed from prepare_mission_params, else goal markers.
+                self._ensure_plan_use_case(plan, mission)
+
                 # Inject trainer_type for envs that use a custom training loop.
                 if self._should_force_actor_critic(
                     plan.get("env_id", ""), plan.get("algorithm", ""),
@@ -2281,6 +2285,40 @@ class LoopStateMachine:
             if re.search(pattern, goal, re.IGNORECASE):
                 return canon
         return None
+
+    @staticmethod
+    def _ensure_plan_use_case(plan: dict, mission) -> None:
+        """Bind product plugin from create/goal onto plan.hyperparameters before codegen.
+
+        Order: existing plan HP → mission.current_plan (prepare_mission_params) →
+        explicit markers in mission.goal. Lead Agent should set use_case for
+        finetune goals; this backfills when the planner omitted it.
+        """
+        from backend.services.mission_service import (
+            infer_use_case_from_goal,
+            _inject_use_case_into_plan,
+        )
+
+        hp = plan.get("hyperparameters") if isinstance(plan.get("hyperparameters"), dict) else {}
+        if str(hp.get("use_case") or "").strip():
+            return
+        seeded = None
+        cp = mission.current_plan if isinstance(getattr(mission, "current_plan", None), dict) else None
+        if cp:
+            cp_hp = cp.get("hyperparameters") if isinstance(cp.get("hyperparameters"), dict) else {}
+            seeded = str(cp_hp.get("use_case") or "").strip() or None
+            if not seeded:
+                for stage in cp.get("stages") or []:
+                    if not isinstance(stage, dict):
+                        continue
+                    shp = stage.get("hyperparameters") if isinstance(stage.get("hyperparameters"), dict) else {}
+                    seeded = str(shp.get("use_case") or "").strip() or None
+                    if seeded:
+                        break
+        if not seeded:
+            seeded = infer_use_case_from_goal(getattr(mission, "goal", None) or "")
+        if seeded:
+            _inject_use_case_into_plan(plan, seeded)
 
     @classmethod
     def _seed_plan_algorithm(cls, plan: dict, goal: str) -> dict:
