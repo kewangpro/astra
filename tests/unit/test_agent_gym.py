@@ -152,7 +152,7 @@ def test_agent_gym_recipe_and_codegen():
     """Verify recipe loading and setup preamble injection for MultiTurnAgentGym-v0."""
     recipe = _load_recipe_for_env("MultiTurnAgentGym-v0", "PPO")
     assert recipe["name"] == "agent_gym_ppo_v1"
-    assert recipe["task_type"] == "RL"
+    assert recipe["task_type"] == "rl"
     assert recipe["target_metric"] == {"task_success": 0.85}
 
     generator = CodeGenerator(provider=MagicMock())

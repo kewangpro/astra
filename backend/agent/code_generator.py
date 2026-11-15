@@ -2486,15 +2486,58 @@ _TASK_RECIPE_SUFFIX: dict[str, str] = {
 }
 
 
+def _product_task_stems(task_type: str, use_case: str) -> list[str]:
+    """Candidate ``{use_case}_…`` recipe stems for a product LM worker."""
+    tt = (task_type or "").strip().lower()
+    uc = (use_case or "").strip()
+    if not tt or not uc:
+        return []
+    suffix = _TASK_RECIPE_SUFFIX.get(tt)
+    if suffix:
+        return [f"{uc}_{suffix}"]
+    # distill has several product variants; prefer the canonical ``*_distill_v1``.
+    if tt == "distill":
+        return [
+            f"{uc}_distill_v1",
+            f"{uc}_distill_prerl_v1",
+            f"{uc}_distill_gemma4b_v1",
+        ]
+    return []
+
+
+def _infer_use_case_for_task(task_type: str) -> Optional[str]:
+    """Pick a configured product pack that owns a default recipe for ``task_type``.
+
+    Used when plan HP omit ``use_case`` but ``ASTRA_PRODUCT_RECIPES`` is set —
+    bare_eval / crystallizer / preflight resolve ``dpo``/``grpo``/``distill``/…
+    against pack YAML without hardcoding a brand into ``_ENV_RECIPE``.
+    """
+    from backend.services.recipe_paths import find_recipe_file, parse_product_recipes
+
+    tt = (task_type or "").strip().lower()
+    packs = parse_product_recipes()
+    if not packs or not tt:
+        return None
+    for uc in packs:
+        for stem in _product_task_stems(tt, uc):
+            if find_recipe_file(stem, use_case=uc):
+                return uc
+    if len(packs) == 1:
+        return next(iter(packs))
+    return None
+
+
 def default_recipe_for_task(
     task_type: str, use_case: Optional[str] = None,
 ) -> Optional[str]:
     """Resolve a default recipe stem when plan.recipe is unset.
 
     Platform workers (agrpo/hstu/mlx_lora) use _ENV_RECIPE. Product LM workers
-    need ``use_case`` and become ``{use_case}_{suffix}`` (e.g. ensemble + dpo
-    → ensemble_dpo_v1). distill returns None — multiple product variants; pick
-    a recipe by name. Never hardcodes a product brand into the platform.
+    need an explicit ``use_case`` and become ``{use_case}_{suffix}`` (e.g.
+    ensemble + dpo → ensemble_dpo_v1). distill returns None — multiple product
+    variants; pick a recipe by name. Never infers a brand from
+    ``ASTRA_PRODUCT_RECIPES`` (callers that need pack fallback use
+    ``_infer_use_case_for_task`` + ``_product_task_stems``).
     """
     tt = (task_type or "").strip().lower()
     if not tt:
@@ -2780,8 +2823,19 @@ def _resolve_hyperparams(
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe = _load_recipe_for_env(env_id, algorithm)
     if not recipe:
+        from backend.services.recipe_paths import find_recipe_file
+
         _uc = str((plan_hp or {}).get("use_case") or "").strip()
+        if not _uc:
+            _uc = _infer_use_case_for_task(env_id) or ""
         _stem = default_recipe_for_task(env_id, _uc or None)
+        # distill (and other multi-variant tasks) have no default_recipe stem —
+        # walk pack candidates when a use_case is known.
+        if not _stem and _uc:
+            for cand in _product_task_stems(env_id, _uc):
+                if find_recipe_file(cand, use_case=_uc):
+                    _stem = cand
+                    break
         if _stem:
             recipe = _load_recipe_for_env(_stem, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
