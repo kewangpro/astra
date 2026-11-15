@@ -303,15 +303,19 @@ _DISTILL_CASE_SPLIT_RE = re.compile(r"Case split:\s*(\d+)\s+train\s*/\s*(\d+)\s+
 # Training-signal metric ("loss") shown continuously in MetricChart's history,
 # same relationship pass_rate has to mean_reward for RL, or eval_loss doubling
 # as both signal and goal metric for ml/sft. grpo_train.py prints loss every
-# --steps-per-report steps (a real, frequent signal); dpo_train.py only prints
-# it once per epoch (sparse — 3 points for the default 3 epochs — but it's what
-# the script provides, same as SFT tracking eval_loss at whatever cadence
-# --save-steps allows).
+# --steps-per-report steps; dpo_train.py prints per-step
+# ``Step N/M  epoch=…  loss=…`` (same shape as distill/rft/opd) plus an epoch
+# ``avg_loss`` summary. SFT tracks train/val loss at ``--save-steps`` cadence.
 _GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
 # Optional leading minus — OPD reverse-KL loss can be negative when the student
-# is sharper than the teacher on its own tokens. Distill/RFT stay non-negative.
+# is sharper than the teacher on its own tokens. Distill/RFT/DPO stay non-negative.
+# Also matches DPO ``Step N/M  epoch=…  loss=…`` (``.*?`` spans the epoch field).
 _DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=(-?[\d.]+)")
+# HUD progress status (LogStream): last Step N/M + loss in a tail chunk.
+# Covers distill/DPO spaced form and GRPO/RLCD ``| loss=`` form.
+_TRAIN_STEP_PROGRESS_RE = re.compile(r"Step\s+(\d+)/(\d+)\s+.*?loss=(-?[\d.]+)")
+_DPO_NEW_BEST_RE = re.compile(r"New best:\s*([\d.]+)%")
 _MLX_TRAIN_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Train loss\s+([\d.]+)")
 _MLX_VAL_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
 
@@ -3902,11 +3906,10 @@ class LoopStateMachine:
           - "loss": training signal shown continuously in MetricChart's history
             — same relationship pass_rate has to mean_reward for RL, or eval_loss
             doubling as both signal and goal for ml/sft. GRPO prints it every
-            --steps-per-report steps (a real, frequent signal); DPO only once
-            per epoch (sparse — 3 points for the default 3 epochs, but it's
-            what the script provides). "step" is the script's own reported
-            step/epoch number (meaningful on its own for the chart x-axis);
-            "iteration" is still the real mission iteration, for consistency.
+            --steps-per-report steps; DPO prints per-step loss (distill-shaped
+            line) plus epoch avg_loss. "step" is the script's own reported
+            step/epoch number (chart x-axis); "iteration" is the real mission
+            iteration. Also emits LogStream status for the latest Step N/M.
         No-op (returns pass_rate_step unchanged) for backends that don't
         support live tailing, or if nothing new was written."""
         try:
@@ -3986,11 +3989,39 @@ class LoopStateMachine:
                 "opd": _DISTILL_LOSS_RE,
                 # rlcd_train.py prints "Step N/M | loss=<brier>" — same shape as GRPO.
                 "rlcd": _GRPO_LOSS_RE,
+                # dpo_train.py per-step lines match distill; epoch avg_loss below.
+                "dpo": _DISTILL_LOSS_RE,
             }.get(active_t, _DPO_LOSS_RE)
             for match in loss_re.finditer(new_output):
                 step_num = int(match.group(1))
                 loss_val = float(match.group(2))
                 await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=current_iteration)
+            # DPO also prints epoch avg_loss summaries — same metric name, epoch as step.
+            if active_t == "dpo":
+                for match in _DPO_LOSS_RE.finditer(new_output):
+                    step_num = int(match.group(1))
+                    loss_val = float(match.group(2))
+                    await emit_metric(
+                        mission_id, "loss", loss_val, step=step_num, iteration=current_iteration,
+                    )
+
+        step_prog = list(_TRAIN_STEP_PROGRESS_RE.finditer(new_output))
+        if step_prog:
+            step_i, step_total, step_loss = step_prog[-1].groups()
+            await emit_status(
+                mission_id,
+                f"Training: step {step_i}/{step_total} (loss={float(step_loss):.2f})",
+                event_type="info",
+            )
+
+        new_best = list(_DPO_NEW_BEST_RE.finditer(new_output))
+        if new_best:
+            pct = new_best[-1].group(1)
+            await emit_status(
+                mission_id,
+                f"New best pass rate: {pct}%",
+                event_type="success",
+            )
 
         collect_matches = list(_COLLECT_PROGRESS_RE.finditer(new_output))
         if collect_matches:

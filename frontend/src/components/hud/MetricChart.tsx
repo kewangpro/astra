@@ -19,18 +19,21 @@ interface Props {
 
 const COLORS = ["#14b8a6", "#60a5fa", "#a78bfa", "#fbbf24", "#4ade80"];
 
-// Training-signal metric names — shown continuously in history, separate from
-// the goal metric (shown in MetricGap instead). mean_reward for RL; loss for
-// dpo/grpo (grpo_train.py prints it every --steps-per-report steps, dpo_train.py
-// once per epoch — same relationship pass_rate has to mean_reward).
+// Training-signal metric names — shown continuously in history.
+// mean_reward for RL; loss for dpo/grpo/distill (per-step on Mini stdout).
 const TRAINING_SIGNAL_NAMES = ["mean_reward", "loss"];
 
+function isFinetuneRateGoal(name: string | null): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "pass_rate" || n.endsWith("_rate");
+}
+
 export function MetricChart({ events, targetMetric }: Props) {
-  // MetricHistory shows the training signal only.
-  // For RL tasks the training signal is mean_reward; for dpo/grpo it's loss;
-  // the goal metric (food_eaten, lines_cleared, pass_rate, etc.) is a separate
-  // series shown in MetricGap — exclude it here. For ML/SFT tasks the goal
-  // metric (accuracy, eval_loss) IS the training signal, so we keep everything.
+  // MetricHistory shows the training signal; for remote LM fine-tunes also
+  // chart mid-run pass_rate evals alongside loss (Metric Gap stays the
+  // iteration-level DB arc). RL still excludes food_eaten/lines_cleared when
+  // mean_reward is the training signal (different scale / role).
   const goalMetricName = targetMetric && Object.keys(targetMetric).length > 0
     ? Object.keys(targetMetric)[0]
     : null;
@@ -38,10 +41,17 @@ export function MetricChart({ events, targetMetric }: Props) {
     (e) => (e.type === "metric" || e.type === "backfill") && TRAINING_SIGNAL_NAMES.includes(e.name ?? "")
   );
   const hasTrainingSignal = trainingSignalEvent != null;
-  // Only exclude goal metric when a training signal is present and the goal
-  // metric differs from it (i.e. it is a secondary eval metric, not the signal).
+  const showGoalWithLoss =
+    hasTrainingSignal &&
+    trainingSignalEvent!.name === "loss" &&
+    isFinetuneRateGoal(goalMetricName);
+  // Exclude goal when it differs from the training signal — unless we are
+  // deliberately dual-charting loss + pass_rate for fine-tunes.
   const excludeGoalMetric =
-    hasTrainingSignal && goalMetricName && goalMetricName !== trainingSignalEvent!.name;
+    hasTrainingSignal &&
+    !!goalMetricName &&
+    goalMetricName !== trainingSignalEvent!.name &&
+    !showGoalWithLoss;
   const metricEvents = events.filter(
     (e) =>
       (e.type === "metric" || e.type === "backfill") &&
@@ -52,17 +62,8 @@ export function MetricChart({ events, targetMetric }: Props) {
 
   // Find all run-reset boundaries — prefer the `iteration` field (present on
   // every backend-emitted metric event) over the old step-decrease heuristic.
-  // Real bug: a step-decrease boundary assumes each run's step counter climbs
-  // from a low value and resets at the next run's start — true for RL's
-  // per-timestep counter, but false for dpo/grpo's `loss`, which is logged
-  // once per epoch. With the epochs=1 DPO recipe,
-  // every single iteration's one loss point sits at step=1, so `curr < prev`
-  // (1 < 1) never fires — every iteration was silently treated as the same
-  // run, each one overwriting the last at the same x-coordinate, collapsing
-  // the whole "Metric History" chart down to one lone point no matter how
-  // many iterations had actually run. `iteration` differing is a direct,
-  // reliable signal of a new run in every task type, not an inference from
-  // step-pattern shape.
+  // DPO/GRPO loss steps can reset or collide across iterations; `iteration`
+  // differing is the reliable run boundary.
   const resetIndices: number[] = [0];
   for (let i = 1; i < metricEvents.length; i++) {
     const prevEvent = metricEvents[i - 1];
@@ -168,23 +169,32 @@ export function MetricChart({ events, targetMetric }: Props) {
     ? `target ${targetValue.toFixed(0)}`
     : `target ${(targetValue * 100).toFixed(0)}%`;
 
-  if (!data.length) {
-    // No pass_rate/loss data yet doesn't necessarily mean nothing is happening —
-    // dpo's collect_pairs() phase can run 1hr+ before the first metric exists.
-    // Surface the latest "Collecting preference pairs: ..." status event (same
-    // event stream as "Sandbox running" etc.) instead of a bare placeholder.
-    const collectingEvent = [...events]
-      .reverse()
-      .find((e) => e.type === "info" && (e.name ?? "").startsWith("Collecting preference pairs"));
+  const progressStatus = [...events]
+    .reverse()
+    .find(
+      (e) =>
+        (e.type === "info" || e.type === "success") &&
+        typeof e.name === "string" &&
+        (e.name.startsWith("Collecting preference pairs") ||
+          e.name.startsWith("Training: step") ||
+          e.name.startsWith("Rejection sampling") ||
+          e.name.startsWith("On-policy sampling") ||
+          e.name.startsWith("New best pass rate")),
+    );
 
+  if (!data.length) {
+    // No pass_rate/loss yet — collection or early train can run a long time.
+    // Surface the latest progress status instead of a bare placeholder.
     return (
       <div
         className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5 h-56
                       flex flex-col items-center justify-center gap-2"
       >
         <div className="w-8 h-px bg-[rgba(20,184,166,0.2)]" />
-        <span className="text-[#64748b] text-xs tracking-widest">
-          {collectingEvent ? collectingEvent.name!.toUpperCase() : "NO METRICS YET"}
+        <span className="text-[#64748b] text-xs tracking-widest text-center px-4">
+          {progressStatus?.name
+            ? progressStatus.name.toUpperCase()
+            : "NO METRICS YET"}
         </span>
         <div className="w-8 h-px bg-[rgba(20,184,166,0.2)]" />
       </div>
@@ -198,6 +208,11 @@ export function MetricChart({ events, targetMetric }: Props) {
           Metric History
         </span>
         <div className="flex items-center gap-4">
+          {progressStatus?.name?.startsWith("Training: step") && (
+            <span className="text-[10px] text-[#64748b] tabular-nums">
+              {progressStatus.name.replace(/^Training:\s*/i, "")}
+            </span>
+          )}
           {hasLive && (
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-px" style={{ background: COLORS[0] }} />

@@ -2975,3 +2975,12 @@ Recipe audit + product-agnostic defaults + pack cutover. Historical IMPLEMENT li
 - [x] Create-time `use_case` wins over Lead Agent; reject `mlx_*` learner_id as `use_case` (e81bc959 / smoke `8000d1ac`).
 - [x] Recipes UI source filters: `RecipeRead.source`/`product`, `GET /recipes/packs`, checkboxes (Astra built-in + dynamic product keys) with per-source and filtered counts; dispatch prompt defaults `use_case` from `recipe.product`.
 - [x] DESIGN §2.4–§3, PRD, UX, README, `.env.example`, Ensemble VENDOR/FINETUNE + pack README.
+
+## Phase 122: Remote MLX / DPO training HUD observability (2026-11-14)
+
+Phase 26 tailed `Pass rate:` and epoch `avg_loss` for DPO, but `dpo_train.py` already prints per-step `Step N/M epoch=… loss=…` and mid-run evals — the HUD looked empty because the parser ignored step loss and MetricChart hid `pass_rate` whenever `loss` existed.
+
+- [x] `_tail_remote_metrics`: map `dpo` → `_DISTILL_LOSS_RE` (per-step) + keep `_DPO_LOSS_RE` epoch summaries; emit `Training: step N/M (loss=…)` and `New best pass rate: …%` status for LogStream (`_TRAIN_STEP_PROGRESS_RE`, `_DPO_NEW_BEST_RE`).
+- [x] `MetricChart`: dual-series for fine-tunes (`loss` + `pass_rate`); empty/header surfaces collect/training status.
+- [x] `MetricGap`: while `running`, show live eval subtitle from latest WS `pass_rate` (arc still DB-only).
+- [x] `astratune/stdout_contract.py` notes DPO step/loss + `New best:`; unit tests in `test_remote_telemetry_tail.py`.

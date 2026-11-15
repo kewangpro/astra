@@ -7,7 +7,9 @@ Contracts
 ---------
 * ``Baseline: X.X% (n/total)`` — pre-update static routing pass rate
 * ``Pass rate: X.X% (n/total)`` — post-step / final static routing pass rate
-* ``Step {i}/{n} loss={float}`` — per-step CE / distill / rft / star loss
+* ``Step {i}/{n} loss={float}`` — per-step CE / distill / rft / star / DPO loss
+  (DPO may insert ``epoch=…`` between step and ``loss=``; HUD ``.*?loss=`` still matches)
+* ``New best: X.X%`` — DPO checkpoint improved (HUD status only)
 * ``Iter {i}: Train loss {float}`` — mlx_lm.lora / SFT style (`astratune.cli sft`)
 * ``Case split:`` — train/valid case counts (informational)
 

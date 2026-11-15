@@ -170,13 +170,39 @@ export function MetricGap({ mission, events = [] }: Props) {
 
   const hasSparkData = sparkData.length >= 1;
 
+  // Mid-run live eval from WS/telemetry — does not move the arc (DB still owns
+  // best/current until iteration bookkeeping). Hint only while running.
+  const liveEval = (() => {
+    if (mission.status !== "running") return null;
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (
+        (e.type === "metric" || e.type === "backfill") &&
+        e.name === metricName &&
+        e.value != null
+      ) {
+        return { value: e.value as number, step: e.step ?? null };
+      }
+    }
+    if (current != null && Number.isFinite(current)) {
+      return { value: current, step: null as number | null };
+    }
+    return null;
+  })();
+
   return (
     <div className="bg-[#1e293b] border border-[rgba(20,184,166,0.15)] rounded-lg p-5">
       {/* Header */}
-      <div className="flex items-baseline justify-between mb-3">
+      <div className="flex items-baseline justify-between mb-3 gap-2">
         <span className="text-xs text-[#94a3b8] tracking-widest uppercase">Metric Gap</span>
-        <span className="text-[#94a3b8] text-[10px]">
+        <span className="text-[#94a3b8] text-[10px] text-right">
           {metricName} · target {formatTarget}
+          {liveEval && (
+            <span className="block text-[#64748b] mt-0.5 tabular-nums">
+              live eval {fmt(liveEval.value)}
+              {liveEval.step != null ? ` @ step ${liveEval.step}` : ""}
+            </span>
+          )}
         </span>
       </div>
 

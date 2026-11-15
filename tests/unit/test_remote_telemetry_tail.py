@@ -10,7 +10,7 @@ import pytest
 
 from backend.loop.state_machine import (
     LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE, _DISTILL_LOSS_RE,
-    _COLLECT_PROGRESS_RE,
+    _COLLECT_PROGRESS_RE, _TRAIN_STEP_PROGRESS_RE, _DPO_NEW_BEST_RE,
 )
 
 
@@ -59,6 +59,23 @@ def test_distill_loss_regex_matches_step_line():
     assert match is not None
     assert match.group(1) == "40"
     assert match.group(2) == "0.4210"
+
+
+def test_train_step_progress_regex_captures_step_total_loss():
+    m = _TRAIN_STEP_PROGRESS_RE.search("Step   52/59  epoch=1  loss=0.4681  5083s")
+    assert m is not None
+    assert m.groups() == ("52", "59", "0.4681")
+    m2 = _TRAIN_STEP_PROGRESS_RE.search(
+        "Step   25/300 | loss=0.6421 | baseline=0.812 | rewards=[1.0] | case | 120s"
+    )
+    assert m2 is not None
+    assert m2.groups()[:2] == ("25", "300")
+
+
+def test_dpo_new_best_regex():
+    m = _DPO_NEW_BEST_RE.search("New best: 88.2% → saved to /tmp/best")
+    assert m is not None
+    assert m.group(1) == "88.2"
 
 
 def test_distill_loss_regex_matches_opd_negative_and_rkl():
@@ -200,12 +217,62 @@ class TestTailRemoteMetrics:
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "\n=== Epoch 2/3 done  avg_loss=0.5891 ===\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=3)
             )
 
         mock_emit.assert_awaited_once_with("mission-1", "loss", 0.5891, step=2, iteration=3)
+
+    def test_dpo_per_step_loss_lines_emit_multiple_loss_metrics_and_training_status(self):
+        """dpo_train.py prints Step N/M epoch=… loss=… every step — must be
+        tailed into MetricChart (not only epoch avg_loss) plus a LogStream
+        progress status from the latest step in the chunk."""
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = (
+            "Step   50/59  epoch=1  loss=0.5120  4800s\n"
+            "Step   51/59  epoch=1  loss=0.4981  4830s\n"
+            "Step   52/59  epoch=1  loss=0.4681  5083s\n"
+            "\n--- Eval at step 45 ---\n"
+            "Pass rate: 88.2% (60/68)\n"
+            "New best: 88.2% → saved to /tmp/best\n"
+        )
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=1)
+            )
+
+        loss_calls = [c for c in mock_emit.await_args_list if c.args[1] == "loss"]
+        assert len(loss_calls) == 3
+        assert loss_calls[-1].args == ("mission-1", "loss", 0.4681)
+        assert loss_calls[-1].kwargs == {"step": 52, "iteration": 1}
+        pr_calls = [c for c in mock_emit.await_args_list if c.args[1] == "pass_rate"]
+        assert len(pr_calls) == 1
+        assert pr_calls[0].args[2] == pytest.approx(0.882)
+
+        status_msgs = [c.args[1] for c in mock_status.await_args_list]
+        assert any(m.startswith("Training: step 52/59") for m in status_msgs)
+        assert any("New best pass rate: 88.2%" in m for m in status_msgs)
+
+    def test_dpo_step_and_epoch_loss_both_emitted(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = (
+            "Step   59/59  epoch=1  loss=0.5324  5303s\n"
+            "\n=== Epoch 1/1 done  avg_loss=0.5971 ===\n"
+        )
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock):
+            asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=0)
+            )
+
+        loss_vals = [(c.args[2], c.kwargs["step"]) for c in mock_emit.await_args_list if c.args[1] == "loss"]
+        assert (0.5324, 59) in loss_vals
+        assert (0.5971, 1) in loss_vals
 
     def test_grpo_task_type_does_not_match_dpo_style_loss_line(self):
         """Wrong regex for the task type must not accidentally match."""
