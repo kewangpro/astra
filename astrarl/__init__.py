@@ -1,7 +1,7 @@
 """AstraRL — learners for interactive / gym-coupled RL (incl. off-policy SB3).
 
-Platform also owns rollout backends, DAPO-lite helpers, and GRPO math used by
-Ensemble (and other) use-case CLIs.
+Training center entrypoint: ``python -m astrarl.cli``. Also owns rollout backends,
+DAPO-lite helpers, and GRPO math loaded by use-case plugins (e.g. Ensemble).
 """
 from __future__ import annotations
 

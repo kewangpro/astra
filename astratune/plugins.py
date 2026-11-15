@@ -1,7 +1,7 @@
 """Use-case plugin contracts for AstraTune offline LM post-training.
 
-Ensemble (and future products) implement these; thin ``*_train.py`` CLIs load
-data through plugins without duplicating platform math.
+Ensemble (and future products) implement these; ``python -m astratune.cli``
+loads hooks via ``--use-case`` without duplicating platform math.
 """
 from __future__ import annotations
 

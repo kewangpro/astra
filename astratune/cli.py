@@ -24,8 +24,14 @@ def _ensure_workspace_on_path(workspace: str | None) -> None:
 
 def load_use_case(name: str) -> Any:
     name = (name or "ensemble").strip().lower()
-    if name in ("ensemble", "ensemble_usecase"):
-        import ensemble_usecase as plugin  # type: ignore
+    if name in ("ensemble", "finetune", "ensemble_usecase"):
+        try:
+            import finetune as plugin  # type: ignore
+            if hasattr(plugin, "make_hooks"):
+                return plugin
+        except ImportError:
+            pass
+        import usecase as plugin  # type: ignore
         return plugin
     return __import__(name, fromlist=["*"])
 

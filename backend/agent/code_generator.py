@@ -1774,7 +1774,7 @@ Emit EXACTLY:
 _RFT_TEMPLATE = """\
 Generate a script that runs RFT via AstraTune MLXLearnerFacade — do NOT
 reimplement sampling/filter/SFT and do NOT hand-build a long os.execv argv.
-Facade → Ensemble rft_train.py via os.execv (same pid). No network calls.
+Facade → ``python -m astratune.cli rft`` via os.execv (same pid). No network calls.
 
 Mission ID: {mission_id}
 Finetune dir: {finetune_dir}
@@ -2827,14 +2827,14 @@ def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iterati
 
 
 def finetune_checkpoint_dir_relative(mission_id: str, iteration: int, stage_index: Optional[int] = None, active_task_type: Optional[str] = None) -> str:
-    """The --adapter-compatible /best CANDIDATE path (dpo_train.py resolves it
+    """The --adapter-compatible /best CANDIDATE path (DPO trainer resolves it
     relative to the process's cwd, which the generated wrapper script chdir's
     to finetune_dir before exec'ing) for chaining a dpo/grpo mission's own
     prior-best adapter into the next iteration's --adapter, instead of always
     re-reading the recipe's static warm-start adapter. Iteration-scoped — see
     finetune_checkpoint_dir()'s docstring for why.
 
-    NOT guaranteed to exist: dpo_train.py writes <save-dir>/best/ only when it
+    NOT guaranteed to exist: the DPO trainer writes <save-dir>/best/ only when it
     tracks a best-during-training checkpoint that beats the final epoch's own
     output — when the final epoch's checkpoint is itself the best seen, no
     best/ subdir is written at all (confirmed ~50% of runs via filesystem
@@ -2842,11 +2842,11 @@ def finetune_checkpoint_dir_relative(mission_id: str, iteration: int, stage_inde
     an actual --adapter warm-start; LoopStateMachine._resolve_adapter_or_bare()
     checks the remote host and falls back to finetune_checkpoint_dir()'s bare
     iteration directory when best/ doesn't exist. Skipping that check crashes
-    dpo_train.py instantly with FileNotFoundError (real incident: silently
+    the trainer instantly with FileNotFoundError (real incident: silently
     looped a mission for ~7h/558 iterations with no checkpoint ever produced).
 
     Still preferred over the bare directory whenever best/ does exist, though:
-    dpo_train.py's <save-dir>/adapters.safetensors is the raw final-epoch
+    The trainer's <save-dir>/adapters.safetensors is the raw final-epoch
     output, while <save-dir>/best/adapters.safetensors is the actual best
     checkpoint seen at any point during that run — training within an
     iteration has repeatedly been observed to degrade from its own starting
@@ -3080,7 +3080,7 @@ class CodeGenerator:
             code = self._fix_checkpoint_paths(code, checkpoint_dir)
             # Fix os.execv(*argv) star-unpacking, which crashes instantly at runtime (see docstring)
             code = self._fix_execv_unpacking(code)
-            # os.execv(sys.executable) runs rft_train.py under the sandbox launcher
+            # os.execv(sys.executable) would run the train CLI under the sandbox launcher
             # (often plain python3), which has no mlx. Pin the finetune interpreter.
             code = self._pin_finetune_exec_python(code)
 
@@ -4248,7 +4248,7 @@ class CodeGenerator:
         (2 arguments — see _DPO_TEMPLATE/_GRPO_TEMPLATE) but the LLM occasionally
         writes os.execv(*argv) instead, star-unpacking a ~40-element argv list
         into that many positional arguments. os.execv() only accepts 2 — this
-        raises TypeError immediately, before dpo_train.py/grpo_train.py ever
+        raises TypeError immediately, before the Astra train CLI ever
         runs. The wrapper process then exits near-instantly; SandboxManager
         sees it as "done" and the evaluator falls back to re-scoring the
         previous iteration's stale checkpoint — silently wasting a full
@@ -4271,17 +4271,20 @@ class CodeGenerator:
 
         Real incident (bdd6e532): the code model emitted os.execv(sys.executable, argv)
         for an RFT wrapper. The SSH sandbox launches train.py with plain python3, so
-        sys.executable has no mlx and rft_train.py dies with ModuleNotFoundError. The
+        sys.executable has no mlx and the train CLI dies with ModuleNotFoundError. The
         error healer then treated that as a missing import and rewrote the wrapper into
         a gym/PPO script, exhausting sandbox retries. argv[0] already names
         finetune-env/bin/python; exec that path, not the launcher.
         """
         import re
-        trainers = (
-            "rft_train.py", "distill_train.py", "opd_train.py", "rlcd_train.py", "grpo_train.py",
-            "dpo_train.py", "sft_train.py", "star_train.py",
+        # Match Astra -m train CLIs (and legacy *_train.py strings if an old
+        # wrapper is still on disk).
+        markers = (
+            "astrarl.cli", "astratune.cli",
+            "rft_train.py", "distill_train.py", "opd_train.py", "rlcd_train.py",
+            "grpo_train.py", "dpo_train.py", "sft_train.py", "star_train.py",
         )
-        if not code or not any(name in code for name in trainers):
+        if not code or not any(name in code for name in markers):
             return code
         match = re.search(r'["\'](/[^"\']+/python(?:\d+(?:\.\d+)*)?)["\']', code)
         if not match:

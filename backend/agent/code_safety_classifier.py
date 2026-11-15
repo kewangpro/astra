@@ -89,11 +89,11 @@ class CodeSafetyClassifier:
             return static
 
         # Strip a leading module docstring before truncating to 2000 chars —
-        # a "Usage: nohup python -u dpo_train.py ..." example in a docstring
+        # a "Usage: nohup python -u ..." example in a docstring
         # is documentation, not code, but a naive [:2000] slice on a script
         # with a long header docstring sends the LLM nothing BUT that
         # documentation, and it can misread example CLI invocations as real
-        # dangerous actions (confirmed via a live incident on dpo_train.py).
+        # dangerous actions (confirmed via a live incident on a trainer docstring).
         llm_view = self._strip_leading_docstring(script)
         messages = [
             Message(role="system", content=_SYSTEM),
@@ -165,8 +165,8 @@ class CodeSafetyClassifier:
         sent to the LLM — it's documentation about how to invoke the script
         from a shell, not code that runs, but an LLM shown only that slice
         can mistake it for real dangerous actions (confirmed via a live
-        incident on ensemble/finetune/dpo_train.py). Uses `ast` (not the
-        tokenizer) since only the AST distinguishes "first statement is a
+        incident on a long Ensemble trainer module docstring). Uses `ast` (not
+        the tokenizer) since only the AST distinguishes "first statement is a
         bare string expression" (a docstring) from any other string literal.
         Falls back to the raw script if parsing fails."""
         try:
@@ -258,6 +258,9 @@ class CodeSafetyClassifier:
         # or local specialist scripts — no network calls.
         _known_train_dispatch = re.search(
             r"astrarl\.cli|astratune\.cli|"
+            # Legacy Ensemble script names (pre–training-center); still auto-approve
+            # if an old wrapper is healed/replayed from disk.
+            r"(?:dpo|grpo|agent_grpo|distill|rft|opd|rlcd|sft|star)_train\.py|"
             r"bare_eval\.py|train_embedding\.py|train_reranker\.py|"
             r"backend\.trainers\.hstu_train|hstu_train",
             script,

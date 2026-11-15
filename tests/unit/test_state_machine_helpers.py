@@ -2211,7 +2211,7 @@ def test_ordinary_script_errors_are_still_healable():
         assert not _ENVIRONMENTAL_ERROR_RE.search(line), line
 
 
-# ── preflight: remote training script exists ─────────────────────────────────
+# ── preflight: remote Astra train CLI + Ensemble plugin importable ────────────
 
 def _preflight():
     from backend.services.preflight import PreflightChecker
@@ -2231,19 +2231,19 @@ def test_remote_train_cli_check_passes_when_imports_ok():
         out = _preflight()._check_remote_script("distill")
     assert out[0]["passed"] is True
     assert out[0]["name"] == "remote_train_cli"
-    assert "ensemble_usecase" in out[0]["detail"]
+    assert "finetune" in out[0]["detail"]
     cmd = run.call_args_list[-1].args[0][2]
     assert "astrarl.cli" in cmd and "astratune.cli" in cmd
-    assert "ensemble_usecase" in cmd
+    assert "finetune" in cmd or "usecase" in cmd
 
 
 def test_remote_train_cli_check_fails_with_vendor_hint():
     with patch("backend.services.preflight.settings.sandbox_host", "mac-mini.local"), \
          patch("backend.services.preflight.subprocess.run") as run:
-        run.return_value = MagicMock(returncode=1, stdout="", stderr="No module named ensemble_usecase")
+        run.return_value = MagicMock(returncode=1, stdout="", stderr="No module named finetune")
         out = _preflight()._check_remote_script("dpo")
     assert out[0]["passed"] is False
-    assert "VENDOR.md" in out[0]["detail"] or "ensemble_usecase" in out[0]["detail"]
+    assert "VENDOR.md" in out[0]["detail"] or "finetune" in out[0]["detail"]
 
 
 def test_remote_script_check_does_not_block_on_unreachable_host():

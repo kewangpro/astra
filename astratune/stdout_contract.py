@@ -1,14 +1,14 @@
 """Astra Orchestrator SSH-log contracts for Mini MLX trainers.
 
 ``LoopStateMachine`` / HUD parsers expect these literal prefixes on stdout.
-Platform ``run_*`` loops and Ensemble thin CLIs must preserve them.
+Platform ``run_*`` loops (and use-case runners they call) must preserve them.
 
 Contracts
 ---------
 * ``Baseline: X.X% (n/total)`` — pre-update static routing pass rate
 * ``Pass rate: X.X% (n/total)`` — post-step / final static routing pass rate
 * ``Step {i}/{n} loss={float}`` — per-step CE / distill / rft / star loss
-* ``Iter {i}: Train loss {float}`` — mlx_lm.lora / SFT style (sft_train)
+* ``Iter {i}: Train loss {float}`` — mlx_lm.lora / SFT style (`astratune.cli sft`)
 * ``Case split:`` — train/valid case counts (informational)
 
 Blended / MCP breakdown lines are indented follow-ups and must not replace the

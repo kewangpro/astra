@@ -208,9 +208,21 @@ def test_execv_opd_dispatch_is_safe():
     assert v.classifier == "static"
 
 
+def test_execv_astra_cli_module_dispatch_is_safe():
+    """Current training-center shape: python -m astrarl.cli / astratune.cli."""
+    for mod in ("astrarl.cli", "astratune.cli"):
+        script = (
+            "import os\n"
+            f"os.execv('/x/bin/python', ['/x/bin/python', '-m', '{mod}', 'grpo', '--workspace', '/w'])\n"
+        )
+        v = _check(script)
+        assert v.safe, mod
+        assert v.classifier == "static", mod
+
+
 def test_execv_to_unrelated_script_is_static_ambiguous():
-    """os.execv alone isn't enough — must target dpo_train.py/grpo_train.py by
-    name specifically, not any arbitrary script. Falls through to the LLM."""
+    """os.execv alone isn't enough — must target Astra -m CLIs or known
+    train/eval scripts, not any arbitrary script. Falls through to the LLM."""
     script = "import os\nos.execv('/usr/bin/python3', ['/usr/bin/python3', 'some_other_script.py'])\n"
     v = _check(script)
     assert v.safe

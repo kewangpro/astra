@@ -19,6 +19,8 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 
 Epochs 7, 9, and 10 are intentionally shorter **architecture** milestones (agent stack, Gym×RL split, then offline AstraTune); Epochs 3–6 absorb the former “continuity” band.
 
+**Current ownership (post–training-center cleanup):** Astra is the **platform and training center** (`python -m astrarl.cli` / `astratune.cli`, `run_*` loops, facades). Ensemble is a **product use case** (`finetune/` plugin + prompts / `eval_cases` / `bare_eval`). Historical phase notes below may still say `finetune/*_train.py` as the Mini execv target — that is obsolete; see `docs/DESIGN.md` §2.4 and Ensemble `finetune/VENDOR.md`.
+
 ---
 
 # Epoch 1: Core Autonomous Engine & Resilience (Phases 1–16)

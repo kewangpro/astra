@@ -1,7 +1,7 @@
 """Shared MLX LoRA apply / warm-start / save helpers (AstraTune platform).
 
-Used by Ensemble ``*_train.py`` and AstraRL GRPO/OPD loops so adapter I/O is
-not duplicated. Requires ``mlx`` / ``mlx_lm`` at call time (Mini finetune-env).
+Used by AstraRL/AstraTune ``run_*`` loops and Ensemble use-case hooks so adapter
+I/O is not duplicated. Requires ``mlx`` / ``mlx_lm`` at call time (Mini finetune-env).
 """
 from __future__ import annotations
 

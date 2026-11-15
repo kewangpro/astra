@@ -16,7 +16,7 @@ def _ensure_workspace_on_path(workspace: str | None) -> None:
     if not workspace:
         return
     ws = os.path.abspath(workspace)
-    # Repo root (parent of finetune/) so ``import ensemble_usecase`` works.
+    # Repo root (parent of finetune/) so ``import finetune`` works.
     parent = os.path.dirname(ws)
     for p in (parent, ws, os.path.join(ws, "finetune")):
         if os.path.isdir(p) and p not in sys.path:
@@ -24,13 +24,19 @@ def _ensure_workspace_on_path(workspace: str | None) -> None:
 
 
 def load_use_case(name: str) -> Any:
-    """Import use-case plugin. Default ``ensemble`` → ``ensemble_usecase``."""
+    """Import use-case plugin. Default ``ensemble`` → Ensemble ``finetune`` package."""
     name = (name or "ensemble").strip().lower()
-    if name in ("ensemble", "ensemble_usecase"):
-        import ensemble_usecase as plugin  # type: ignore
+    if name in ("ensemble", "finetune", "ensemble_usecase"):
+        try:
+            import finetune as plugin  # type: ignore
+            if hasattr(plugin, "make_hooks"):
+                return plugin
+        except ImportError:
+            pass
+        # Mini-flat: ``finetune/`` directory itself is on ``sys.path``.
+        import usecase as plugin  # type: ignore
         return plugin
-    mod = __import__(name, fromlist=["*"])
-    return mod
+    return __import__(name, fromlist=["*"])
 
 
 def _ns_from_args(args: argparse.Namespace) -> SimpleNamespace:

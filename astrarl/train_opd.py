@@ -1,7 +1,7 @@
 """OPD training loop — platform-owned (astrarl).
 
-Ensemble ``opd_train.py`` is the thin Mini execv entrypoint and supplies hooks
-for routing oracle / case helpers that live in Ensemble.
+Missions execv ``python -m astrarl.cli opd``. Ensemble ``finetune.opd``
+supplies hooks for routing oracle / case helpers via ``--use-case``.
 """
 from __future__ import annotations
 

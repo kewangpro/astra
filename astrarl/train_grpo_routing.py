@@ -1,7 +1,7 @@
 """MLX routing GRPO training loop — platform-owned.
 
-Ensemble ``grpo_train.py`` supplies hooks (oracle, case pool, adapter I/O wrappers)
-and remains the Mini ``os.execv`` entrypoint.
+Missions execv ``python -m astrarl.cli grpo``. Ensemble ``finetune.grpo``
+supplies hooks (oracle, case pool, adapter I/O wrappers) via ``--use-case``.
 """
 from __future__ import annotations
 
