@@ -9,41 +9,40 @@ Phase-level incidents and code contracts live in [IMPLEMENT.md](IMPLEMENT.md).
 
 ## 1. System Overview
 
-ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orchestrator**, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
+ASTRA is a modular system: a **Lead Agent** plans, a **LoopStateMachine** runs as **Orchestrator**, **CodeGenerator** writes sandbox scripts that call platform packages (AstraGym / AstraRL / AstraTune / …), and a **Next.js HUD** observes. Missions train; models play.
 
 **Interactive / gym-coupled RL** uses **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) under that Orchestrator (§ 2.4–2.5). That includes off-policy SB3 (DQN/SAC/TD3 replay). **Offline / dataset LM post-training** (SFT, DPO, distill, RFT, STAR, RLCD) uses the sibling **AstraTune** package — not AstraRL. **AstraData** + **AstraEval** close the complete flywheel (fuel → train → truth → FailSlice → fuel).
 
 ```mermaid
-flowchart TB
+flowchart LR
   UI[Next.js_Web_UI]
   HUD[Live_Training_HUD]
-  Orch[FastAPI_Orchestrator]
+  API[FastAPI_API]
+  Loop[LoopStateMachine]
   Mem[Memory_Registry]
-  Lead[Lead_Agent_Planner]
-  Trainer[Specialist_Trainer]
+  Lead[Lead_Agent]
+  Codegen[CodeGenerator]
   Sandbox[Secure_Sandbox]
-  Gym[AstraGym_gym_id]
-  RL[AstraRL_learner]
-  Tune[AstraTune_learner]
-  Data[AstraData_data_rev]
-  Eval[AstraEval_suite_rev]
+  Gym[AstraGym]
+  RL[AstraRL]
+  Tune[AstraTune]
+  Data[AstraData]
+  Eval[AstraEval]
 
-  UI -->|"HTTP_WebSocket"| Orch
-  HUD <--> Orch
-  Orch <--> Mem
-  Orch --> Lead
-  Orch --> Trainer
-  Trainer --> Sandbox
+  UI -->|"HTTP"| API
+  HUD <-->|"WebSocket_telemetry"| API
+  API --> Loop
+  Loop <--> Mem
+  Loop --> Lead
+  Loop --> Codegen --> Sandbox
   Sandbox --> Gym
   Sandbox --> RL
   Sandbox --> Tune
-  Sandbox --> Data
-  Sandbox --> Eval
   Gym -->|"worlds_rewards"| RL
-  RL -->|"SB3_GRPO_gym"| Eval
-  Tune -->|"SFT_DPO_distill"| Eval
   RL -.->|"lora_io"| Tune
-  Eval -->|"suite_gate_FailSlice"| Orch
+  Loop -->|"suite.run"| Eval
+  Eval -->|"FailSlice"| Data
+  Eval -->|"suite_gate"| Loop
 ```
 
 ---
@@ -87,28 +86,31 @@ Fuel → train → truth → FailSlice → fuel. **AstraData** versions fuel (`d
 
 ```mermaid
 flowchart LR
-  Orch[Orchestrator]
+  Orch[Orchestrator_Loop]
+  Sandbox[Sandbox_train_py]
   Plugin[astra_plugin]
-  Packs[Product_packs]
+  Packs[ASTRA_PRODUCT_RECIPES]
   Data[AstraData]
   Gym[AstraGym]
   RL[AstraRL]
   Tune[AstraTune]
+  Neither[Neither_hstu_embed_ml_prompt]
   Eval[AstraEval]
-  Neither[Neither_hstu_embed]
-  Orch --> Gym
-  Orch --> RL
-  Orch --> Tune
-  Orch --> Neither
-  Orch --> Plugin
-  Packs --> Plugin
-  Data --> RL
-  Data --> Tune
-  Data --> Neither
+
+  Packs -->|"recipe_YAML"| Orch
+  Orch -->|"stamp_dataset_suite"| Data
+  Orch -->|"codegen_use_case"| Sandbox
+  Sandbox --> Gym
+  Sandbox --> RL
+  Sandbox --> Tune
+  Sandbox --> Neither
+  Sandbox -->|"execv_-m_cli"| Plugin
+  Data -->|"dataset_id_rev"| Neither
+  Data -->|"fuel"| RL
+  Data -->|"fuel"| Tune
   Gym --> RL
-  RL --> Eval
-  Tune --> Eval
-  Neither --> Eval
+  Sandbox -->|"checkpoints"| Orch
+  Orch -->|"suite.run"| Eval
   Eval -->|"FailSlice"| Data
   Eval -->|"suite_gate"| Orch
 ```
@@ -135,10 +137,10 @@ flowchart LR
     Pkgs[Data_Eval_Gym_RL_Tune]
   end
   subgraph product [Product_use_case]
-    Plugin[UseCasePlugin_use_case]
-    Assets[oracle_cases_prompts]
+    Plugin[UseCasePlugin]
+    Assets[oracle_cases_prompts_adapters]
   end
-  platform -->|"facade_-m_cli"| product
+  platform -->|"python_-m_astrarl_or_astratune.cli_--use-case"| product
 ```
 
 | Astra owns | Product owns |
@@ -176,21 +178,20 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 
 Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only as environment RL (including the AgentGym MLP policy). Rejection sampling (`rft`) keeps oracle-correct student completions and runs SFT on them. GRPO is **online** RL: scores on-policy **single-turn** rollouts with the routing oracle and a group-relative advantage. Agent GRPO (`agrpo`) is **online multi-turn** tool RL: K trajectories in AgentGym text (or e2e stubs), trajectory-level reward, GRPO over assistant turns — not routing `score_completion`. DPO is **offline** preference learning via AstraTune (`mlx_dpo`): the same oracle labels chosen/rejected pairs, then a preference loss trains on that set (no policy-gradient step on live rollouts). RLCD (AstraTune `mlx_rlcd`) trains a calibrated distribution over declared option strings after `Answer:` with a Brier (or log) score; Choice-facing runs use fixed `--cases` JSONL (offline data) with empty-rationale stage 1 to match live readout. Live Choice endpoints that post an empty rationale should use recipes with `empty_rationale: true`.
 
-**Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA → product specialize/focus → live readout. Product recipes may stage foundation → continue → specialize → focus, or one-shot from-scratch / routing-only RLCD. Diagram + promote rules live in the product’s decision data docs.
+**Decision foundation approach** (Astra recipes dispatch only): public HF cases and/or product exporters → `decision_cases` JSONL → foundation LoRA → optional continue → specialize/focus → live RLCD readout. Product recipes may also one-shot from-scratch or routing-only RLCD. Promote rules live in the product’s decision data docs.
 
 ```mermaid
-flowchart TB
-  Public[Public_Noul_Choice_Score]
-  Exporters[Product_exporters]
+flowchart LR
+  PublicHF[Public_datasets_BoolQ_ARC_Likert]
+  Exporters[Product_export_ensemble_decisions]
   Cases[decision_cases_jsonl]
   Foundation[Foundation_LoRA]
-  Specialize[Specialize_LoRA]
+  Continue[Foundation_Continue_LoRA]
+  Specialize[Specialize_or_Focus_LoRA]
   Live[live_rlcd_readout]
-  Public --> Cases
+  PublicHF --> Cases
   Exporters --> Cases
-  Cases --> Foundation
-  Foundation --> Specialize
-  Specialize --> Live
+  Cases --> Foundation --> Continue --> Specialize --> Live
 ```
 
 The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare product train scripts outside a mission. Empty-rationale pivots on `temp`/`num_generations` are no-ops. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
@@ -264,23 +265,25 @@ Both entry points share one pipeline: **`POST /missions`** (Command Center goal 
 | **Target metric** | Create override → **suite ceiling** when suite stamped, else recipe `target_metric` / `metric_ceiling` → parsed from goal | Completion gate for the HUD / evaluator. |
 
 ```mermaid
-flowchart TB
+flowchart LR
   GoalBar[Command_Center_goal_bar]
   Dispatch[Recipes_Dispatch]
   Create[MissionCreate]
   Prep[prepare_mission_params]
   Mission[Mission_row_DB]
-  Loop[LoopStateMachine_PLANNING]
-  Codegen[Codegen_and_sandbox]
+  Run[POST_agent_missions_run]
+  Loop[LoopStateMachine]
+  Codegen[CodeGenerator_plus_Sandbox]
   Host[train_host_local_or_Mini]
 
   GoalBar -->|"goal_plus_task_type"| Create
-  Dispatch -->|"recipe_plus_optional_goal_use_case"| Create
-  Create --> Prep
-  Prep -->|"resolve_recipe_canonical_goal_seed_plan_bind_use_case"| Mission
-  Mission --> Loop
-  Loop -->|"reuse_plan_or_LeadAgent_ensure_use_case_Critic"| Codegen
-  Codegen -->|"recipe_paths_HPs_facade_cli"| Host
+  Dispatch -->|"recipe_use_case_auto_start"| Create
+  Create --> Prep --> Mission
+  GoalBar -->|"then_run"| Run
+  Mission --> Run
+  Dispatch -->|"auto_start"| Loop
+  Run --> Loop
+  Loop --> Codegen --> Host
 ```
 
 ### 3.2. Two ways to start
