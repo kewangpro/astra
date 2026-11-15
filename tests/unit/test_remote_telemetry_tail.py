@@ -213,7 +213,9 @@ class TestTailRemoteMetrics:
         # "iteration" is the real mission iteration, not the step number.
         mock_emit.assert_awaited_once_with("mission-1", "loss", 0.6421, step=25, iteration=3)
 
-    def test_dpo_epoch_line_emits_loss_metric_with_epoch_number(self):
+    def test_dpo_epoch_line_emits_avg_loss_not_loss(self):
+        """Epoch avg must not reuse the ``loss`` series (would collide with
+        per-step loss at step=epoch on the Metric History x-axis)."""
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "\n=== Epoch 2/3 done  avg_loss=0.5891 ===\n"
 
@@ -223,7 +225,7 @@ class TestTailRemoteMetrics:
                 sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=3)
             )
 
-        mock_emit.assert_awaited_once_with("mission-1", "loss", 0.5891, step=2, iteration=3)
+        mock_emit.assert_awaited_once_with("mission-1", "avg_loss", 0.5891, step=2, iteration=3)
 
     def test_dpo_per_step_loss_lines_emit_multiple_loss_metrics_and_training_status(self):
         """dpo_train.py prints Step N/M epoch=… loss=… every step — must be
@@ -257,7 +259,7 @@ class TestTailRemoteMetrics:
         assert any(m.startswith("Training: step 52/59") for m in status_msgs)
         assert any("New best pass rate: 88.2%" in m for m in status_msgs)
 
-    def test_dpo_step_and_epoch_loss_both_emitted(self):
+    def test_dpo_step_and_epoch_emit_distinct_metric_names(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
             "Step   59/59  epoch=1  loss=0.5324  5303s\n"
@@ -271,8 +273,9 @@ class TestTailRemoteMetrics:
             )
 
         loss_vals = [(c.args[2], c.kwargs["step"]) for c in mock_emit.await_args_list if c.args[1] == "loss"]
+        avg_vals = [(c.args[2], c.kwargs["step"]) for c in mock_emit.await_args_list if c.args[1] == "avg_loss"]
         assert (0.5324, 59) in loss_vals
-        assert (0.5971, 1) in loss_vals
+        assert (0.5971, 1) in avg_vals
 
     def test_grpo_task_type_does_not_match_dpo_style_loss_line(self):
         """Wrong regex for the task type must not accidentally match."""

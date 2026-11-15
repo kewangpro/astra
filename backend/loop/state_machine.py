@@ -3777,12 +3777,18 @@ class LoopStateMachine:
         import json as _json
         from backend.services.connection_manager import manager
 
+        # Step used to be ``iteration * 500000`` so MetricChart could order
+        # end-of-iter points on RL runs. MetricGap buckets by ``iteration`` now,
+        # and dual-charting loss + pass_rate for fine-tunes treated those
+        # synthetic millions as real x values (ghost points near 3.5M). Use the
+        # mission iteration as step; mid-run tailed pass_rate keeps its own
+        # 0..N counter via emit_metric.
         payload = {
             "type": "metric",
             "mission_id": mission_id,
             "name": name,
             "value": value,
-            "step": iteration * 500000,  # synthetic step so sparkline orders correctly
+            "step": iteration,
             "iteration": iteration,
         }
         path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
@@ -4265,13 +4271,16 @@ class LoopStateMachine:
                 step_num = int(match.group(1))
                 loss_val = float(match.group(2))
                 await emit_metric(mission_id, "loss", loss_val, step=step_num, iteration=current_iteration)
-            # DPO also prints epoch avg_loss summaries — same metric name, epoch as step.
+            # DPO epoch ``avg_loss`` used to be emitted as ``loss`` with
+            # step=epoch (1, 2, …), which overwrote per-step loss at the same
+            # x and looked like a duplicate. Per-step lines are the chart
+            # signal; keep epoch avg as a distinct series for diagnostics.
             if active_t == "dpo":
                 for match in _DPO_LOSS_RE.finditer(new_output):
                     step_num = int(match.group(1))
                     loss_val = float(match.group(2))
                     await emit_metric(
-                        mission_id, "loss", loss_val, step=step_num, iteration=current_iteration,
+                        mission_id, "avg_loss", loss_val, step=step_num, iteration=current_iteration,
                     )
 
         step_prog = list(_TRAIN_STEP_PROGRESS_RE.finditer(new_output))

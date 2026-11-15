@@ -52,13 +52,30 @@ export function MetricChart({ events, targetMetric }: Props) {
     !!goalMetricName &&
     goalMetricName !== trainingSignalEvent!.name &&
     !showGoalWithLoss;
-  const metricEvents = events.filter(
-    (e) =>
-      (e.type === "metric" || e.type === "backfill") &&
-      e.name != null &&
-      e.value != null &&
-      !(excludeGoalMetric && e.name === goalMetricName)
-  );
+  // End-of-iter summaries historically used step = iteration * 500000 (RL
+  // sparkline ordering). On dual loss+pass_rate charts those become ghost
+  // points at ~0.5M–3.5M with a couple of pass_rate dots. Drop them from the
+  // history chart; MetricGap still buckets by iteration.
+  const SYNTHETIC_ITER_STEP = 500_000;
+  const metricEvents = events.filter((e) => {
+    if (
+      (e.type !== "metric" && e.type !== "backfill") ||
+      e.name == null ||
+      e.value == null ||
+      (excludeGoalMetric && e.name === goalMetricName)
+    ) {
+      return false;
+    }
+    const step = e.step ?? 0;
+    if (
+      showGoalWithLoss &&
+      e.name === goalMetricName &&
+      step >= SYNTHETIC_ITER_STEP
+    ) {
+      return false;
+    }
+    return true;
+  });
 
   // Find all run-reset boundaries — prefer the `iteration` field (present on
   // every backend-emitted metric event) over the old step-decrease heuristic.
@@ -87,24 +104,31 @@ export function MetricChart({ events, targetMetric }: Props) {
     : 0;
 
   // Assign a unique x key per run to avoid step-number collisions across runs.
+  // Advance by the max step *in the completed run*, not the previous event's
+  // step — the last event is often a pass_rate with step 0..3, which used to
+  // leave runs almost fully overlapped (two/three loss curves at x=30, 42, …).
   let runOffset = 0;
+  let maxStepInRun = 0;
   const chartEvents: Array<{ x: number; name: string; value: number; isLive: boolean }> = [];
   for (let i = 0; i < visibleEvents.length; i++) {
     const globalIdx = startIdx + i;
     const e = visibleEvents[i];
+    const step = e.step ?? 0;
     if (i > 0) {
       const prevEvent = visibleEvents[i - 1];
       const prev = prevEvent.step ?? 0;
-      const curr = e.step ?? 0;
-      // Same boundary rule as the resetIndices pass above — see its comment.
       const boundary =
         prevEvent.iteration != null && e.iteration != null
           ? e.iteration !== prevEvent.iteration
-          : curr < prev;
-      if (boundary) runOffset += prev;
+          : step < prev;
+      if (boundary) {
+        runOffset += maxStepInRun;
+        maxStepInRun = 0;
+      }
     }
+    maxStepInRun = Math.max(maxStepInRun, step);
     chartEvents.push({
-      x: (e.step ?? 0) + runOffset,
+      x: step + runOffset,
       name: e.name!,
       value: e.value as number,
       isLive: globalIdx >= lastResetIdx,
