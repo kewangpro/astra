@@ -13,36 +13,37 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orch
 
 **Interactive / gym-coupled RL** uses **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) under that Orchestrator (§ 2.4–2.5). That includes off-policy SB3 (DQN/SAC/TD3 replay). **Offline / dataset LM post-training** (SFT, DPO, distill, RFT, STAR, RLCD) uses the sibling **AstraTune** package — not AstraRL. **AstraData** + **AstraEval** close the complete flywheel (fuel → train → truth → FailSlice → fuel).
 
-```
-                    +-----------------------+
-                    |    Next.js Web UI     |
-                    +-----------+-----------+
-                                |
-                                | HTTP / WebSocket
-                                v
-+-------------------+       +-----------+-----------+       +-----------------------+
-| Live Training HUD |<----->|  FastAPI Orchestrator | <---> |    Memory / Registry  |
-+-------------------+       +-----------+-----------+       +-----------------------+
-                                |           |
-                                v           v
-                    +-----------------------+     +-----------------------+
-                    |  Lead Agent / Planner |     |  Specialist Trainer   |
-                    +-----------------------+     +-----------+-----------+
-                                                                    |
-                                                                    v
-                                                        +-----------------------+
-                                                        |    Secure Sandbox     |
-                                                        +-----------+-----------+
-                                                                    |
-                    platform pkgs (local .venv or Mini ~/astra-pkg)      v
-          +--------+--------+----------+----------+----------+
-          | AstraGym | AstraRL | AstraTune | AstraData | AstraEval |
-          |  gym_id  | learner |  learner  | dataset@rev| suite@rev |
-          +----+-----+---+----+----+-----+-----+----+----+--+
-               |         |     ^     |           |
-               v         v     |lora |           v
-        worlds/rewards SB3/GRPO| I/O  SFT/DPO/…  suite gate +
-                       (gym)   |     distill/…   FailSlice bank
+```mermaid
+flowchart TB
+  UI[Next.js_Web_UI]
+  HUD[Live_Training_HUD]
+  Orch[FastAPI_Orchestrator]
+  Mem[Memory_Registry]
+  Lead[Lead_Agent_Planner]
+  Trainer[Specialist_Trainer]
+  Sandbox[Secure_Sandbox]
+  Gym[AstraGym_gym_id]
+  RL[AstraRL_learner]
+  Tune[AstraTune_learner]
+  Data[AstraData_data_rev]
+  Eval[AstraEval_suite_rev]
+
+  UI -->|"HTTP_WebSocket"| Orch
+  HUD <--> Orch
+  Orch <--> Mem
+  Orch --> Lead
+  Orch --> Trainer
+  Trainer --> Sandbox
+  Sandbox --> Gym
+  Sandbox --> RL
+  Sandbox --> Tune
+  Sandbox --> Data
+  Sandbox --> Eval
+  Gym -->|"worlds_rewards"| RL
+  RL -->|"SB3_GRPO_gym"| Eval
+  Tune -->|"SFT_DPO_distill"| Eval
+  RL -.->|"lora_io"| Tune
+  Eval -->|"suite_gate_FailSlice"| Orch
 ```
 
 ---
@@ -127,14 +128,17 @@ Platform packages, product plugins, and recipe packs are § 2.5 — not part of 
 
 **Astra** is the platform and training center. **Products** are use cases (plugin + prompts / cases / adapters) — not a second training host. Gym-coupled RL → AstraGym × AstraRL; offline LM → AstraTune; fuel/truth → AstraData × AstraEval. Inspired by Gym×RL splits; **not** NVIDIA NeMo / HTTP env servers.
 
-```
-+----------------------------------+          +----------------------------------+
-|  Astra platform + training center |          |         Product use case         |
-+----------------------------------+          +----------------------------------+
-| Orchestrator / recipes / sandbox |  facade  | UseCasePlugin (--use-case)       |
-| Data / Eval / Gym / RL / Tune    |  -m cli  | oracle · cases · prompts         |
-|                                  |--------->| (no product train CLIs)          |
-+----------------------------------+          +----------------------------------+
+```mermaid
+flowchart LR
+  subgraph platform [Astra_platform_training_center]
+    Orch[Orchestrator_recipes_sandbox]
+    Pkgs[Data_Eval_Gym_RL_Tune]
+  end
+  subgraph product [Product_use_case]
+    Plugin[UseCasePlugin_use_case]
+    Assets[oracle_cases_prompts]
+  end
+  platform -->|"facade_-m_cli"| product
 ```
 
 | Astra owns | Product owns |
@@ -174,19 +178,19 @@ Language-model PPO is not a reinforcement fine-tuning algorithm. PPO runs only a
 
 **Decision foundation approach** (Astra recipes dispatch only): generic `decision_prompt` JSONL → foundation LoRA → product specialize/focus → live readout. Product recipes may stage foundation → continue → specialize → focus, or one-shot from-scratch / routing-only RLCD. Diagram + promote rules live in the product’s decision data docs.
 
-```
-  Public_Noul_Choice_Score ──┐
-                             v
-  Product_exporters ──> decision_cases_jsonl
-                             |
-                             v
-                       Foundation_LoRA
-                             |
-                             v
-                       Specialize_LoRA
-                             |
-                             v
-                      live_rlcd_readout
+```mermaid
+flowchart TB
+  Public[Public_Noul_Choice_Score]
+  Exporters[Product_exporters]
+  Cases[decision_cases_jsonl]
+  Foundation[Foundation_LoRA]
+  Specialize[Specialize_LoRA]
+  Live[live_rlcd_readout]
+  Public --> Cases
+  Exporters --> Cases
+  Cases --> Foundation
+  Foundation --> Specialize
+  Specialize --> Live
 ```
 
 The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routing-only` when `routing_only: false`, and passes `--eval-max-cases` when `eval_max_cases` > 0. Dispatch Mini RLCD **only** through Astra missions (`POST /recipes/{name}/dispatch`) — never bare product train scripts outside a mission. Empty-rationale pivots on `temp`/`num_generations` are no-ops. HSTU (`hstu`) trains a from-scratch PyTorch Hierarchical Sequential Transduction Unit on MovieLens-1M next-item prediction (same loop shape as a small LSTM recommender); local like `embed`/`rerank`, not Mini MLX, and scores Hit Rate@10.
@@ -196,22 +200,18 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 **Remote fine-tune.** Mini holds a product **workspace** (e.g. `~/finetune`) plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen — same style as each other):
 
-```
-  MacBook (Orchestrator)                    Mini (training host)
-  +----------------------+                  +----------------------------------+
-  | recipes / .env       |   SSH train.py   | ~/finetune-env/bin/python        |
-  |  finetune_dir        | ---------------->|   (ASTRA_SANDBOX_PYTHON)         |
-  |  python_bin          |                  |                                  |
-  |  astra_pkg_root /    |                  | 1. chdir  finetune_dir           |
-  |  ASTRA_PKG_ROOT      |                  | 2. path+= finetune_dir           |
-  +----------------------+                  | 3. path+= astra_pkg_root         |
-                                            | 4. astratune|astrarl.make(…)     |
-                                            | 5. os.execv → -m astrarl/astratune.cli |
-                                            |                                  |
-                                            | ~/finetune     workspace+plugin  |
-                                            | ~/astra-pkg    pip -e packages   |
-                                            | ~/finetune-env MLX + site-pkgs   |
-                                            +----------------------------------+
+```mermaid
+flowchart LR
+  subgraph macbook [MacBook_Orchestrator]
+    Recipes[recipes_and_env]
+    Paths["finetune_dir / python_bin / astra_pkg_root"]
+  end
+  subgraph mini [Mini_training_host]
+    Py["finetune-env python"]
+    Steps["chdir → path+= → make → os.execv -m cli"]
+    Layout["~/finetune workspace · ~/astra-pkg · ~/finetune-env"]
+  end
+  macbook -->|"SSH_train.py"| mini
 ```
 
 | Knob | Typical Mini value | Role |
@@ -263,38 +263,24 @@ Both entry points share one pipeline: **`POST /missions`** (Command Center goal 
 | **`current_plan`** | Seeded at create when a recipe is present; refreshed by Lead Agent / stages | What the loop executes: recipe name, algorithm, hyperparameters, stages, Data/Eval axes. |
 | **Target metric** | Create override → **suite ceiling** when suite stamped, else recipe `target_metric` / `metric_ceiling` → parsed from goal | Completion gate for the HUD / evaluator. |
 
-```
-  Command Center goal bar          Recipes "Dispatch"
-           |                                |
-           |  goal [+ task_type]            |  recipe [+ optional goal / use_case]
-           v                                v
-                    MissionCreate
-                         |
-                         v
-              prepare_mission_params
-                 |  resolve recipe (if any)
-                 |  format_canonical_goal
-                 |  seed current_plan (recipe / stages)
-                 |  bind use_case → plan.hyperparameters
-                         |
-                         v
-                    Mission row (DB)
-                         |
-                         v
-              LoopStateMachine (PLANNING)
-                 |  stages / saved plan → reuse
-                 |  else Lead Agent.plan(goal)  (+ use_case from goal/product name)
-                 |  _ensure_plan_use_case (create/goal wins; strip mlx_* hallucinations)
-                 |  Critic review
-                         |
-                         v
-              Codegen + sandbox
-                 |  resolve recipe YAML via platform + ASTRA_PRODUCT_RECIPES
-                 |  _resolve_hyperparams: recipe HP + plan pivot safelist
-                 |                      + plan use_case (wins; not learner_id)
-                 |  facade → python -m astrarl|astratune.cli --use-case …
-                         v
-                    train host (local / Mini)
+```mermaid
+flowchart TB
+  GoalBar[Command_Center_goal_bar]
+  Dispatch[Recipes_Dispatch]
+  Create[MissionCreate]
+  Prep[prepare_mission_params]
+  Mission[Mission_row_DB]
+  Loop[LoopStateMachine_PLANNING]
+  Codegen[Codegen_and_sandbox]
+  Host[train_host_local_or_Mini]
+
+  GoalBar -->|"goal_plus_task_type"| Create
+  Dispatch -->|"recipe_plus_optional_goal_use_case"| Create
+  Create --> Prep
+  Prep -->|"resolve_recipe_canonical_goal_seed_plan_bind_use_case"| Mission
+  Mission --> Loop
+  Loop -->|"reuse_plan_or_LeadAgent_ensure_use_case_Critic"| Codegen
+  Codegen -->|"recipe_paths_HPs_facade_cli"| Host
 ```
 
 ### 3.2. Two ways to start
