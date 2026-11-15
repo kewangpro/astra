@@ -103,19 +103,22 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | Layer | Package / role | Owns |
 |---|---|---|
 | **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
-| **AstraRL** | `astrarl/` | Online learners + **`python -m astrarl.cli`** train entrypoints; rollout, DAPO-lite, math, plugins |
+| **AstraRL** | `astrarl/` | Online learners + **`python -m astrarl.cli`** train entrypoints; rollout, DAPO-lite, math |
 | **AstraTune** | `astratune/` | Offline LM + **`python -m astratune.cli`** train entrypoints; losses, `ce_loop`, shared `lora_io` |
+| **astra_plugin** | `astra_plugin/` | Use-case contract: `UseCasePlugin`, `load_use_case`, per-learner hook attrs, `validate_hooks` |
 | **Orchestrator** | Astra loop / recipes / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry, canned facade codegen |
-| **Ensemble (use case)** | `finetune/` package | Oracle / `case_pool` / prompts / `eval_cases` / adapters / `bare_eval` / hooks — **no** train CLIs |
+| **Ensemble (use case)** | `finetune/` package | Implements `UseCasePlugin`; oracle / `case_pool` / prompts / adapters / `bare_eval` — **no** train CLIs |
 
 | Concern | Astra owns | Ensemble owns |
 |---|---|---|
-| **Contracts** | `Learner`, gym ids, plugin protocols, recipe schema | Plugin implementations of reward / pairs / cases |
-| **Runtime** | Train CLIs (`-m astrarl.cli` / `-m astratune.cli`), `run_*` loops, math, `lora_io` | Hooks loaded via `--use-case ensemble` |
+| **Contracts** | `Learner`, gym ids, **`astra_plugin`**, recipe schema | `finetune` implements `UseCasePlugin` + hook bags |
+| **Runtime** | Train CLIs, `run_*` loops, math, `lora_io` | Hooks via `--use-case ensemble` → `astra_plugin.load_use_case` |
 | **Orchestration** | Missions, SSH, telemetry, pivots, facade dispatch | Consume platform (no parallel mission loop) |
 | **Product data** | — | Prompts, `eval_cases`, adapters, `bare_eval`, decision JSONL |
 
-**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator checkout with HUD/DB. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Ensemble contributes an importable use-case plugin on `PYTHONPATH` / workspace. `_platform_preflight` verifies `import astragym, astrarl, astratune` (and the Ensemble plugin); mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
+**Use-case plugin contract (`astra_plugin`).** Products do not own train entrypoints. They export a module satisfying `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). `--use-case ensemble` is an alias resolved by `load_use_case` to `finetune` (then flat `usecase`). Before `run_*`, CLIs call `validate_hooks(command, hooks)` against the attribute set each loop requires (`GRPO_HOOK_ATTRS`, `DpoHooks`, …). Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop / data-only helpers — not the CLI contract.
+
+**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Ensemble’s `finetune` package must be importable (`PYTHONPATH` = Ensemble repo root). Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin, finetune`; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import.
 
 Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
@@ -139,9 +142,9 @@ Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from
 **AstraRL ids:** `sb3_{ppo,dqn,a2c,sac,td3}`, `mlx_grpo_routing`, `mlx_grpo_traj`, `mlx_opd`.  
 **AstraTune ids:** `mlx_sft`, `mlx_dpo`, `mlx_distill`, `mlx_rft`, `mlx_star`, `mlx_rlcd`.
 
-**MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both `os.execv` into `python -m astrarl.cli <cmd>` / `python -m astratune.cli <cmd>` (same pid). CLIs load the Ensemble use-case plugin and call platform `run_*` loops. Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
+**MLX facades.** Gym-coupled missions use `astrarl.make(..., use_execv=True).learn()`; offline LM missions use `astratune.make(..., use_execv=True).learn()`. Both `os.execv` into `python -m astrarl.cli <cmd>` / `python -m astratune.cli <cmd>` (same pid). CLIs use `astra_plugin.load_use_case` + `validate_hooks` then platform `run_*`. Healer must not rewrite these facades into SB3/gym scripts on `ModuleNotFoundError`.
 
-**Platform GRPO runtime** (Astra `astrarl/`): CLI + train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`, `RewardPlugin`. **Platform AstraTune** (`astratune/`): CLI + train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses, Dataset/Preference/Decision plugins, and **`lora_io` shared with AstraRL MLX trainers**. Ensemble owns routing rewards/cases/prompts/`routing_oracle` as a **plugin**, not train entrypoints.
+**Platform GRPO runtime** (Astra `astrarl/`): CLI + train loops (`train_grpo_routing`, `train_grpo_traj`, `train_opd`), rollout backends, DAPO-lite, `grpo_math` / `opd_math`, `mlx_grpo_step`. **Platform AstraTune** (`astratune/`): CLI + train loops (`train_dpo`, `train_sft`, `train_rlcd`, shared `ce_loop`), offline losses, and **`lora_io` shared with AstraRL MLX trainers**. Ensemble owns routing rewards/cases/prompts/`routing_oracle` behind `finetune` / `astra_plugin`, not train entrypoints.
 
 **Rollout / DAPO-lite flags** (AstraRL only): `--rollout-backend mlx|openai`, `--rollout-base-url`, `--clip-epsilon-low` / `--clip-epsilon-high`, `--dynamic-sample-retries` (default 0 = off).
 

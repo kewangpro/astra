@@ -1,7 +1,7 @@
 """AstraTune training center CLI — ``python -m astratune.cli <sft|dpo|...>``.
 
-Loads an Ensemble (or other) use-case plugin for hooks, then runs platform
-``run_*`` loops. Mission facades ``os.execv`` into this module.
+Loads a use-case plugin via :mod:`astra_plugin`, validates hooks where
+applicable, then runs platform ``run_*`` (or CE ``get_runner``).
 """
 from __future__ import annotations
 
@@ -11,29 +11,7 @@ import sys
 from types import SimpleNamespace
 from typing import Any, Callable
 
-
-def _ensure_workspace_on_path(workspace: str | None) -> None:
-    if not workspace:
-        return
-    ws = os.path.abspath(workspace)
-    parent = os.path.dirname(ws)
-    for p in (parent, ws, os.path.join(ws, "finetune")):
-        if os.path.isdir(p) and p not in sys.path:
-            sys.path.insert(0, p)
-
-
-def load_use_case(name: str) -> Any:
-    name = (name or "ensemble").strip().lower()
-    if name in ("ensemble", "finetune", "ensemble_usecase"):
-        try:
-            import finetune as plugin  # type: ignore
-            if hasattr(plugin, "make_hooks"):
-                return plugin
-        except ImportError:
-            pass
-        import usecase as plugin  # type: ignore
-        return plugin
-    return __import__(name, fromlist=["*"])
+from astra_plugin import ensure_workspace_on_path, load_use_case, validate_hooks
 
 
 def _ns_from_args(args: argparse.Namespace) -> SimpleNamespace:
@@ -50,7 +28,7 @@ def cmd_dpo(args: argparse.Namespace) -> None:
     from astratune.train_dpo import run_dpo_train
 
     plugin = load_use_case(args.use_case)
-    hooks = plugin.make_hooks("dpo")
+    hooks = validate_hooks("dpo", plugin.make_hooks("dpo"))
     run_dpo_train(_ns_from_args(args), hooks)
 
 
@@ -58,13 +36,12 @@ def cmd_rlcd(args: argparse.Namespace) -> None:
     from astratune.train_rlcd import run_rlcd_train
 
     plugin = load_use_case(args.use_case)
-    hooks = plugin.make_hooks("rlcd")
+    hooks = validate_hooks("rlcd", plugin.make_hooks("rlcd"))
     run_rlcd_train(_ns_from_args(args), hooks)
 
 
 def cmd_distill(args: argparse.Namespace) -> None:
     plugin = load_use_case(args.use_case)
-    # Platform CE loop + Ensemble prep via plugin runner
     runner = plugin.get_runner("distill")
     runner(args)
 
@@ -94,7 +71,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m astratune.cli", description="AstraTune train CLI")
     p.add_argument("command", choices=sorted(_COMMANDS), help="Learner subcommand")
-    p.add_argument("--use-case", default="ensemble")
+    p.add_argument("--use-case", default="ensemble", help="Use-case plugin (default: ensemble → finetune)")
     p.add_argument("--workspace", default="")
     return p
 
@@ -115,7 +92,7 @@ def main(argv: list[str] | None = None) -> None:
     if any(a in ("-h", "--help") for a in rest):
         workspace = known.workspace or known.finetune_dir or ""
         if workspace:
-            _ensure_workspace_on_path(workspace)
+            ensure_workspace_on_path(workspace)
         try:
             plugin = load_use_case(known.use_case)
             parse = getattr(plugin, "parse_args", None)
@@ -123,13 +100,13 @@ def main(argv: list[str] | None = None) -> None:
                 parse(known.command, rest)
         except Exception:
             print(f"usage: python -m astratune.cli {known.command} [learner flags…]")
-            print("(install Ensemble use-case on PYTHONPATH for full --help)")
+            print("(install use-case on PYTHONPATH for full --help; see astra_plugin)")
             sys.exit(0)
 
     workspace = known.workspace or known.finetune_dir or ""
     if workspace:
         os.chdir(workspace)
-        _ensure_workspace_on_path(workspace)
+        ensure_workspace_on_path(workspace)
 
     plugin = load_use_case(known.use_case)
     parse = getattr(plugin, "parse_args", None)

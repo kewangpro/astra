@@ -130,10 +130,10 @@ class PreflightChecker:
         if not settings.sandbox_host:
             return [{"name": name, "passed": True,
                      "detail": "no sandbox_host configured — skipped"}]
-        # ``finetune`` package (repo root on PYTHONPATH) or flat ``usecase``.
+        # Train CLIs + astra_plugin + Ensemble finetune (or flat usecase).
         remote_cmd = (
             f"{python_bin} -c "
-            f"\"import astrarl.cli, astratune.cli\\n"
+            f"\"import astrarl.cli, astratune.cli, astra_plugin\\n"
             f"try:\\n import finetune\\n"
             f"except ImportError:\\n import usecase\""
         )
@@ -153,15 +153,16 @@ class PreflightChecker:
                      "detail": f"host unreachable, not blocking: {exc}"}]
         if r.returncode == 0:
             return [{"name": name, "passed": True,
-                     "detail": f"astrarl.cli+astratune.cli+finetune ok ({python_bin})"}]
+                     "detail": f"astrarl.cli+astratune.cli+astra_plugin+finetune ok ({python_bin})"}]
         err = (r.stderr or r.stdout or "").strip() or f"exit {r.returncode}"
         return [{
             "name": name,
             "passed": False,
             "detail": (
-                f"Astra train CLI / Ensemble finetune plugin missing on {settings.sandbox_host}. "
+                f"Astra train CLI / astra_plugin / Ensemble finetune missing on "
+                f"{settings.sandbox_host}. "
                 f"pip install -e ~/astra-pkg; PYTHONPATH must include Ensemble repo root "
-                f"or the finetune workspace (see finetune/VENDOR.md). Original: {err}"
+                f"(see finetune/VENDOR.md). Original: {err}"
             ),
         }]
 

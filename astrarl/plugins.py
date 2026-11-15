@@ -1,7 +1,8 @@
-"""Use-case plugin contracts for AstraRL online LM training.
+"""Legacy step-loop Protocols for AstraRL online LM training.
 
-Ensemble (and future products) implement these; the platform GRPO step loop
-calls them without importing product-specific scoring or prompts.
+Prefer :mod:`astra_plugin` for CLI / ``run_*`` contracts (``UseCasePlugin``,
+per-learner hook attribute sets). ``RewardPlugin`` / ``CaseSource`` remain for
+lower-level GRPO step helpers that take method-based scorers.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 @runtime_checkable
 class RewardPlugin(Protocol):
-    """Scores completions and builds prompts for a training case."""
+    """Scores completions and builds prompts for a training case (step-loop)."""
 
     def build_prompt(self, case: dict) -> str:
         """Full model-ready prompt string for ``case``."""

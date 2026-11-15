@@ -1,7 +1,8 @@
-"""Use-case plugin contracts for AstraTune offline LM post-training.
+"""Legacy data-source Protocols for AstraTune offline LM post-training.
 
-Ensemble (and future products) implement these; ``python -m astratune.cli``
-loads hooks via ``--use-case`` without duplicating platform math.
+Prefer :mod:`astra_plugin` for CLI / ``run_*`` contracts (``UseCasePlugin``,
+``DpoHooks`` / ``RlcdHooks`` attribute sets). These Protocols remain for
+optional data-only adapters that do not implement a full train-hook bag.
 """
 from __future__ import annotations
 
@@ -10,10 +11,10 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class DatasetPlugin(Protocol):
-    """Supervised (SFT / distill) prompt–completion examples."""
+    """Supervised (SFT / distill) prompt-completion examples."""
 
     def load_examples(self) -> list[dict[str, Any]]:
-        """Return training rows (use-case schema: prompt/completion, case metadata, …)."""
+        """Return training rows (use-case schema: prompt/completion, case metadata, ...)."""
         ...
 
 

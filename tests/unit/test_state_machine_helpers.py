@@ -2231,9 +2231,9 @@ def test_remote_train_cli_check_passes_when_imports_ok():
         out = _preflight()._check_remote_script("distill")
     assert out[0]["passed"] is True
     assert out[0]["name"] == "remote_train_cli"
-    assert "finetune" in out[0]["detail"]
+    assert "astra_plugin" in out[0]["detail"] and "finetune" in out[0]["detail"]
     cmd = run.call_args_list[-1].args[0][2]
-    assert "astrarl.cli" in cmd and "astratune.cli" in cmd
+    assert "astrarl.cli" in cmd and "astratune.cli" in cmd and "astra_plugin" in cmd
     assert "finetune" in cmd or "usecase" in cmd
 
 
@@ -2243,7 +2243,7 @@ def test_remote_train_cli_check_fails_with_vendor_hint():
         run.return_value = MagicMock(returncode=1, stdout="", stderr="No module named finetune")
         out = _preflight()._check_remote_script("dpo")
     assert out[0]["passed"] is False
-    assert "VENDOR.md" in out[0]["detail"] or "finetune" in out[0]["detail"]
+    assert "VENDOR.md" in out[0]["detail"] or "astra_plugin" in out[0]["detail"]
 
 
 def test_remote_script_check_does_not_block_on_unreachable_host():
