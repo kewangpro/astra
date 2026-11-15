@@ -188,12 +188,12 @@ const TASKS: Task[] = [
     id: "generative-recommendation",
     task: "Generative recommendation",
     summary:
-      "Sequential transduction on user–item histories. From-scratch PyTorch HSTU in Astra (LSTM-style train loop) — not Mini MLX.",
+      "Sequential transduction on user–item histories. From-scratch PyTorch HSTU in Astra (LSTM-style train loop) — not Mini MLX. Fuel is AstraData hstu_ml1m@rev; truth is AstraEval HstuHr10Suite (HR@10).",
     algorithms: [
       {
         name: "HSTU",
         taskType: "hstu",
-        body: "Next-item HSTU on MovieLens-1M (auto-download); goal metric is Hit Rate@10.",
+        body: "Next-item HSTU on MovieLens-1M via dataset_id@rev (hstu_ml1m_v1 recipe); suite-gated Hit Rate@10 (hstu_hr10@1).",
       },
     ],
   },
@@ -210,7 +210,8 @@ export default function DocsPage() {
         <p className="text-xs text-[#94a3b8] mt-2 max-w-2xl leading-relaxed">
           A task is the objective. An algorithm is the update rule under that task.
           The goal bar selects the algorithm; <span className="text-[#14b8a6]">task_type</span> is
-          the worker that runs it.
+          the worker that runs it. Gym-coupled RL is AstraGym × AstraRL; offline LM is
+          AstraTune; fuel/truth are AstraData + AstraEval (complete flywheel).
         </p>
       </div>
 

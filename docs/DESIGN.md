@@ -53,7 +53,7 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orch
 
 The planner. Cloud APIs are supported; production is **local MLX** on Apple Silicon (plan model + coder model). Inference shares unified memory with training, so the orchestrator must be able to evict models before a sandbox launch.
 
-Worth optimizing: context/KV discipline, structured (schema-constrained) generation, and not loading Metal at import time on hosts without a GPU. Core matmul and quantization are left to MLX/MPS.
+Inference practice: keep context/KV disciplined, prefer structured (schema-constrained) generation, and avoid loading Metal at import time on hosts without a GPU. Core matmul and quantization stay with MLX/MPS.
 
 **Deployed split (both machines 24 GB unified memory):**
 - **MacBook** — planning and codegen inference.
@@ -76,13 +76,13 @@ Plan → generate script → sandbox → evaluate → pivot or stop.
 - **Recipe library** — versioned YAML strategies, indexed for warm-start. Fine-tune dispatch uses canonical recipes only (no per-mission crystallization).
 - **Working memory** — live logs and telemetry in the planner context.
 
-Targets that exceed a recipe’s declared empirical ceiling are rejected at create time.
+Targets that exceed the **suite** ceiling (when `eval_suite` is set) or else the recipe’s `metric_ceiling` are rejected at create time.
 
 ### 2.4. Complete flywheel
 
 **Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev`) close the flywheel: fuel → train → truth → FailSlice → fuel. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades + Data/Eval). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
-**Flywheel** (target architecture — solid = forward; labeled edges = Eval feedback):
+**Flywheel** (current wiring — solid = forward path; labeled = Eval feedback):
 
 ```mermaid
 flowchart LR
@@ -155,7 +155,7 @@ Platform vs product split (train path / plugin boundary):
 
 **Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin` + `astradata` + `astraeval`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Products may ship branded plugin packages under `<workspace>/.astra_plugins/` (prepended by `ensure_workspace_on_path`) so `--use-case <brand>` imports cleanly. The product plugin module must be importable. Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set) plus local `astradata` / `astraeval`; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import. Recipes may declare `gym_id` + `learner_id` + `dataset_id`/`dataset_rev` + `eval_suite`/`suite_rev`; when omitted gym/learner are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Create rejects targets above the **suite** ceiling when `eval_suite` is set (else recipe `metric_ceiling`). Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
-**Flywheel bind axes (mission create):** `task_type` · `gym_id`×`learner_id` · `use_case` · `dataset_id@rev` · `suite_id@rev`. Orchestrator stamps Data/Eval from the recipe; HSTU and Ensemble routing are the first proving verticals (HstuHr10Suite / RoutingBareEvalSuite + FailSlice → `focus_cases`).
+**Flywheel bind axes (mission create):** `task_type` · `gym_id`×`learner_id` · `use_case` · `dataset_id@rev` · `suite_id@rev`. Orchestrator stamps Data/Eval from the recipe. Shipped proving verticals: HSTU (`HstuHr10Suite`) and Ensemble routing (`RoutingBareEvalSuite` + FailSlice → `focus_cases`).
 
 | Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
 |---|---|---|
@@ -280,7 +280,7 @@ Where training runs.
 
 ### 2.7. Evaluator and introspection
 
-**AstraEval** owns authoritative mission gates when `suite_id@rev` is stamped: `suite.run(ckpt) → {primary, case_ids}`, suite ceilings at create, FailSlice emit into AstraData, and tournament seeds (`2000 + ep`). Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. Legacy **benchmark / stress** helpers remain for arcade introspection. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
+**AstraEval** owns authoritative mission gates when `suite_id@rev` is stamped: `suite.run(ckpt) → {primary, case_ids}`, suite ceilings at create, FailSlice emit into AstraData, and tournament seeds (`2000 + ep`). Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. Arcade **benchmark / stress** helpers remain for introspection outside suite-gated missions. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
 
 ### 2.8. Resilience
 
@@ -374,7 +374,7 @@ Recipe hyperparameters supply paths and LoRA settings; they are not the place to
 
 ## 4. Security and autonomy
 
-One gate is live: **execute code**. A static pass auto-approves localhost telemetry and blocks obvious danger; ambiguous scripts go to an LLM classifier, then a human if needed. Resource and deploy gates are modeled, not wired.
+One gate is live: **execute code**. A static pass auto-approves localhost telemetry and blocks obvious danger; ambiguous scripts go to an LLM classifier, then a human if needed. Resource and deploy approval gates are schema-only today (not enforced in the loop).
 
 | Mode | Execute-code gate |
 |---|---|

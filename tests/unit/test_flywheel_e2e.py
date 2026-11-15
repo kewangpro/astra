@@ -1,4 +1,4 @@
-"""Hermetic E2E for Data → train → Eval → FailSlice → focus (plan Step 6)."""
+"""Hermetic E2E for Data → train → Eval → FailSlice → focus_cases."""
 from __future__ import annotations
 
 from pathlib import Path
