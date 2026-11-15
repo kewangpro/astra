@@ -2,6 +2,7 @@ name: ensemble_sft_dpo_v1
 version: "1.0.0"
 created_at: "2026-09-12"
 task_type: dpo
+learner_id: mlx_dpo
 domain: NLP
 description: >
   DPO (Direct Preference Optimization) preference tuning chained from the routing SFT adapter

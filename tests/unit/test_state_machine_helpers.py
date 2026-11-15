@@ -2092,7 +2092,7 @@ def test_finetune_pivot_safelist_is_task_scoped():
 
 @pytest.mark.parametrize("task_type", ["dpo", "grpo", "distill", "rft", "opd", "DPO", "GRPO", "Distill", "OPD"])
 async def test_crystallize_skipped_for_fixed_recipe_task_types(task_type, monkeypatch):
-    """dpo/grpo/distill/rft/opd dispatch from a hardcoded recipe (_ENV_RECIPE), so
+    """dpo/grpo/distill/rft/opd dispatch from a fixed product recipe (not crystallized), so
     crystallizing them only produces orphaned library entries — see dpo_dpo_v1/v2."""
     called = []
 

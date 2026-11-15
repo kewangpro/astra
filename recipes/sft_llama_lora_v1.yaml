@@ -1,7 +1,8 @@
 name: sft_llama_lora_v1
 version: "1.0.0"
 created_at: "2026-06-14"
-task_type: SFT
+task_type: sft
+learner_id: mlx_sft
 domain: NLP
 description: "Standard QLoRA fine-tuning recipe for Llama-3 class models with held-out validation and reasoning traces."
 

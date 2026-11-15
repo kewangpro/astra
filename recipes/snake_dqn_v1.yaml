@@ -1,10 +1,14 @@
 name: snake_dqn_v1
 version: "1.2.0"
 created_at: "2026-06-29"
-task_type: RL
+task_type: rl
 gym_id: gymnasium:Snake-v0
 learner_id: sb3_dqn
 domain: Snake
+target_metric:
+  food_eaten: 100
+metric_ceiling:
+  food_eaten: 100
 algorithm: DQN
 description: >
   DQN recipe for Snake-v0. Off-policy with a replay buffer — reuses past

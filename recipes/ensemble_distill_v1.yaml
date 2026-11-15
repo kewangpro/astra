@@ -2,6 +2,7 @@ name: ensemble_distill_v1
 version: "1.0.0"
 created_at: "2026-09-04"
 task_type: distill
+learner_id: mlx_distill
 domain: NLP
 description: >
   Knowledge distillation for the Ensemble routing model. A strong teacher
@@ -67,33 +68,10 @@ hyperparameters:
 metric_ceiling:
   pass_rate: 0.92
 
-# NOT YET RUNNABLE. ensemble/finetune/distill_train.py does not exist. astra's
-# distill task type is fully wired (Phase 42) and dispatches a
-# astratune.make("mlx_distill", use_execv=True) → distill_train.py — but a
-# distill mission fails at launch until that script is authored on the Mac Mini
-# side. It is a thin chain of functions that already exist:
-#   - prepare_finetune_data.generate_teacher_completions(cases, ollama_url) +
-#     build_routing_examples(...) → data_ft/{train,valid}.jsonl
-#   - mlx_lm.lora --train --data ~/finetune/data_ft --adapter-path <save-dir> ...
-#   - grpo_train.run_routing_eval(...) every --steps-per-eval, save <save-dir>/best/
-# Expected CLI + stdout contract (parsed by astra):
-#   args: --model --adapter --save-dir --prompt-template --teacher-model
-#         --ollama-url --num-layers --lora-rank --lora-scale --lora-dropout
-#         --iters --batch-size --learning-rate --steps-per-eval --save-every
-#         --max-seq-len --mask-prompt [--focus-cases id,id,...]
-#   stdout: "Baseline: X% (n/total)" once; "total_steps=N" once;
-#           "Step N/M loss=X.XXXX" per step; "Pass rate: X% (n/total)" per eval
-#           + final; "Best pass rate during training: X%" at the end
-#   writes: <save-dir>/adapters.safetensors and (on a new best) <save-dir>/best/
-#
-# No astra-managed dataset — the routing oracle is a hardcoded constant
-# (backend/core/eval_cases.yaml, relative to finetune_dir). Post-training
-# goal-metric eval reuses finetune/bare_eval.py --adapter <checkpoint_dir>/best,
-# same as dpo/grpo.
-
-# NOT THE ACTIVE DISTILL RECIPE as of 2026-09-05. _ENV_RECIPE["distill"] now
-# points at ensemble_distill_prerl_v1.yaml. This config — warm-starting from
-# retrain_best, which is byte-identical to grpo_v9_min/best (post-RL) — is a
-# measured negative: mission 594322b2 ran three scored iterations (0.833 ==
-# baseline, 0.667 floored, 0.750 below best) and never beat its own warm-start.
-# Kept for the record and to restore by swapping _ENV_RECIPE back.
+# RUNNABLE via AstraTune: astratune.make("mlx_distill", use_execv=True) →
+# python -m astratune.cli distill (product UseCasePlugin hooks + platform
+# train_distill). Prefer dispatch by explicit recipe name — there is no silent
+# generic task_type→Ensemble default. Historical note: warm-starting from
+# retrain_best / grpo_v9_min/best was a measured negative (mission 594322b2);
+# prefer ensemble_distill_prerl_v1 or ensemble_distill_gemma4b_v1 by name.
+# Post-training goal-metric eval uses product bare_eval on the adapter.

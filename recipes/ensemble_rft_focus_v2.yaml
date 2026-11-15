@@ -2,6 +2,7 @@ name: ensemble_rft_focus_v2
 version: "1.0.0"
 created_at: "2026-10-15"
 task_type: rft
+learner_id: mlx_rft
 domain: NLP
 description: >
   Second focused RFT pass after mission 94117302 crowned at 0.907 (49/54).

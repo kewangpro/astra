@@ -304,7 +304,7 @@ Both entry points share one pipeline: **`POST /missions`** (Command Center goal 
 ### 3.2. Two ways to start
 
 **A. Goal-first (Command Center)**  
-User types a prompt (and optional algorithm dropdown). Backend may infer `task_type` from keywords. If no recipe is attached, the Lead Agent chooses algorithm / `task_type` and may warm-start knobs from a close recipe-library match. For product fine-tunes, name the product in the prompt or write `use_case: <module>` so the plugin is bound before codegen.
+User types a prompt (and optional algorithm dropdown). Backend may infer `task_type` from keywords. If no recipe is attached, the Lead Agent chooses algorithm / `task_type` and may warm-start knobs from a close recipe-library match. When recipe is still omitted but `use_case` is bound, the default recipe stem is `{use_case}_{task}_v1` (e.g. `ensemble` + `dpo` → `ensemble_dpo_v1`); `distill` has no silent default (multiple product variants). For product fine-tunes, name the product in the prompt or write `use_case: <module>` so the plugin is bound before codegen.
 
 **B. Recipe-first (one-click dispatch)**  
 `dispatch` builds `MissionCreate(recipe=…, goal?=…, use_case?=…)`. Goal text is canonicalized from the recipe description + target when omitted. `current_plan` is seeded with the recipe name (and stage-0 HPs for multi-stage). Finetune recipes still need a product: pass `use_case` on the dispatch body, put a marker in `goal`, or let the Lead Agent set it when the goal names the product. Recipe YAML must not hardcode `use_case` as a training HP.

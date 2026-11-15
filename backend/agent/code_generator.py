@@ -2403,11 +2403,21 @@ _ENV_RECIPE: dict = {
     "MinAtar-Asterix-v0": "minatar_asterix_dqn_v1.yaml",
     "GridPacMan-v0": "grid_pacman_dqn_v1.yaml",
     "PacMan-v0": "grid_pacman_dqn_v1.yaml",
-            "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
+    "MultiTurnAgentGym-v0": "agent_gym_ppo_v1.yaml",
     "AgentGym-v0": "agent_gym_ppo_v1.yaml",
     "agent-gym": "agent_gym_ppo_v1.yaml",
     "MultiTurnAgentGymText-v0": "agent_gym_ppo_v1.yaml",
-    "sft": "ensemble_sft_v1.yaml",       # keyed by task_type for non-RL tasks
+    # Platform task_type defaults (no product name). Product LM defaults use
+    # default_recipe_for_task(task_type, use_case) → "{use_case}_{task}_v1".
+    "agrpo": "agent_gym_agrpo_v1.yaml",
+    "agent_gym_agrpo_v1": "agent_gym_agrpo_v1.yaml",
+    "agent_gym_agrpo_smoke_v1": "agent_gym_agrpo_smoke_v1.yaml",
+    "hstu_ml1m_v1": "hstu_ml1m_v1.yaml",
+    "hstu": "hstu_ml1m_v1.yaml",
+    "hstu/ml1m": "hstu_ml1m_v1.yaml",
+    "hstu/v1": "hstu_ml1m_v1.yaml",
+    "mlx_lora": "mlx_lora_v1.yaml",
+    # Explicit product recipe stems (plan.recipe already names the file).
     "ensemble_sft_v1": "ensemble_sft_v1.yaml",
     "ensemble_sft_1b_v5": "ensemble_sft_1b_v5.yaml",
     "sft/1b_v5": "ensemble_sft_1b_v5.yaml",
@@ -2416,64 +2426,35 @@ _ENV_RECIPE: dict = {
     "ensemble_sft_specialist_secretary_v1": "ensemble_sft_specialist_secretary_v1.yaml",
     "sft/specialist_secretary": "ensemble_sft_specialist_secretary_v1.yaml",
     "ensemble_embed_v1": "ensemble_embed_v1.yaml",
-    "embed": "ensemble_embed_v1.yaml",
     "embed/v1": "ensemble_embed_v1.yaml",
     "ensemble_rerank_v1": "ensemble_rerank_v1.yaml",
-    "rerank": "ensemble_rerank_v1.yaml",
     "rerank/v1": "ensemble_rerank_v1.yaml",
-    "hstu_ml1m_v1": "hstu_ml1m_v1.yaml",
-    "hstu": "hstu_ml1m_v1.yaml",
-    "hstu/ml1m": "hstu_ml1m_v1.yaml",
-    "hstu/v1": "hstu_ml1m_v1.yaml",
-    "mlx_lora": "mlx_lora_v1.yaml",
-    "dpo": "ensemble_dpo_v1.yaml",
     "dpo/sft_chained": "ensemble_sft_dpo_v1.yaml",
     "dpo/sft_dpo": "ensemble_sft_dpo_v1.yaml",
     "dpo/ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
     "ensemble_sft_dpo_v1": "ensemble_sft_dpo_v1.yaml",
-    "grpo": "ensemble_grpo_v1.yaml",
-    "agrpo": "agent_gym_agrpo_v1.yaml",
-    "agent_gym_agrpo_v1": "agent_gym_agrpo_v1.yaml",
-    "agent_gym_agrpo_smoke_v1": "agent_gym_agrpo_smoke_v1.yaml",
+    "ensemble_dpo_v1": "ensemble_dpo_v1.yaml",
+    "ensemble_dpo_astratune_smoke": "ensemble_dpo_astratune_smoke.yaml",
     "ensemble_agent_grpo_v1": "ensemble_agent_grpo_v1.yaml",
+    "ensemble_grpo_v1": "ensemble_grpo_v1.yaml",
     "ensemble_grpo_1b_v1": "ensemble_grpo_1b_v1.yaml",
     "grpo/1b": "ensemble_grpo_1b_v1.yaml",
     "grpo/1b_v1": "ensemble_grpo_1b_v1.yaml",
     "grpo/chained": "ensemble_sft_dpo_grpo_v1.yaml",
     "grpo/ensemble_sft_dpo_grpo_v1": "ensemble_sft_dpo_grpo_v1.yaml",
     "ensemble_sft_dpo_grpo_v1": "ensemble_sft_dpo_grpo_v1.yaml",
-    # 2026-09-06: pointed at the conductor_gemma.md 4B cold-start experiment.
-    # The pre-RL arm (ensemble_distill_prerl_v1.yaml) is also a measured
-    # negative now: mission 6470e2db scored 11/12 held-out but 61/78 on
-    # bare_eval, tying every other fine-tune and losing to the raw 4B's 62.
-    # 2026-09-05: pointed at the PRE-RL warm-start experiment. The post-RL
-    # config (ensemble_distill_v1.yaml, warm-starting from retrain_best =
-    # grpo_v9_min/best) is a measured negative — mission 594322b2 ran three
-    # scored iterations and never beat its own warm-start. astra maps one
-    # recipe per task_type and recipe_metric_ceiling() is called without an
-    # algorithm, so an algorithm-suffixed override cannot drive selection;
-    # repointing the default is the only mechanism that reliably picks the
-    # intended recipe. Restore by swapping this value back — both files are
-    # kept and both declare pass_rate 0.92.
-    "distill": "ensemble_distill_gemma4b_v1.yaml",
-    "rft": "ensemble_rft_v1.yaml",
-    # Focused RFT follow-up after OPD 7b6c78a6 stall — warm-start iter74/best
-    # on the 9 model-routed bare_eval fails. Prefer dispatch by recipe name.
+    "ensemble_distill_v1": "ensemble_distill_v1.yaml",
+    "ensemble_distill_prerl_v1": "ensemble_distill_prerl_v1.yaml",
+    "ensemble_distill_gemma4b_v1": "ensemble_distill_gemma4b_v1.yaml",
+    "ensemble_rft_v1": "ensemble_rft_v1.yaml",
     "ensemble_rft_focus_v1": "ensemble_rft_focus_v1.yaml",
-    # Second focus pass on the 5 remaining MR fails after 94117302 @ 0.907.
     "ensemble_rft_focus_v2": "ensemble_rft_focus_v2.yaml",
-    # Third focus pass: warm-start 6f4204c7 iter1/best on the 3 remaining MR fails.
     "ensemble_rft_focus_v3": "ensemble_rft_focus_v3.yaml",
-    # Fourth focus pass: warm-start 8ef08e64 iter0/best on the 2 MR regressions.
     "ensemble_rft_focus_v4": "ensemble_rft_focus_v4.yaml",
-    # Fifth focus pass: warm-start 2dab4f67 iter32/best on the 1 remaining MR miss.
     "ensemble_rft_focus_v5": "ensemble_rft_focus_v5.yaml",
-    # Sixth focus: gold-backed shell mix from 2dab4f67 iter32; invents skill "Git".
     "ensemble_rft_focus_v6": "ensemble_rft_focus_v6.yaml",
-    # Seventh: full-suite RFT + surgical --force-gold-cases for git only (v6 stall).
     "ensemble_rft_focus_v7": "ensemble_rft_focus_v7.yaml",
-    "opd": "ensemble_opd_v1.yaml",
-    "rlcd": "ensemble_rlcd_v1.yaml",
+    "ensemble_opd_v1": "ensemble_opd_v1.yaml",
     "ensemble_rlcd_v1": "ensemble_rlcd_v1.yaml",
     "ensemble_rlcd_focus_v1": "ensemble_rlcd_focus_v1.yaml",
     "ensemble_decision_foundation_v1": "ensemble_decision_foundation_v1.yaml",
@@ -2481,12 +2462,50 @@ _ENV_RECIPE: dict = {
     "ensemble_decision_specialize_v1": "ensemble_decision_specialize_v1.yaml",
     "ensemble_decision_specialize_focus_v1": "ensemble_decision_specialize_focus_v1.yaml",
     "ensemble_decision_from_scratch_v1": "ensemble_decision_from_scratch_v1.yaml",
-    "prompt": "ensemble_prompt_v1.yaml",
-    "post-training": "ensemble_post_training_v1.yaml",
+    "ensemble_prompt_v1": "ensemble_prompt_v1.yaml",
     "ensemble_post_training_v1": "ensemble_post_training_v1.yaml",
-    "star": "ensemble_star_v1.yaml",
     "ensemble_star_v1": "ensemble_star_v1.yaml",
 }
+
+# Product-neutral stem suffixes for default_recipe_for_task (no product name).
+# distill omitted — multiple product variants; require an explicit plan.recipe.
+_TASK_RECIPE_SUFFIX: dict[str, str] = {
+    "sft": "sft_v1",
+    "dpo": "dpo_v1",
+    "grpo": "grpo_v1",
+    "opd": "opd_v1",
+    "rft": "rft_v1",
+    "rlcd": "rlcd_v1",
+    "star": "star_v1",
+    "prompt": "prompt_v1",
+    "embed": "embed_v1",
+    "rerank": "rerank_v1",
+    "post-training": "post_training_v1",
+}
+
+
+def default_recipe_for_task(
+    task_type: str, use_case: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve a default recipe stem when plan.recipe is unset.
+
+    Platform workers (agrpo/hstu/mlx_lora) use _ENV_RECIPE. Product LM workers
+    need ``use_case`` and become ``{use_case}_{suffix}`` (e.g. ensemble + dpo
+    → ensemble_dpo_v1). distill returns None — multiple product variants; pick
+    a recipe by name. Never hardcodes a product brand into the platform.
+    """
+    tt = (task_type or "").strip().lower()
+    if not tt:
+        return None
+    # Platform defaults (filename without .yaml)
+    plat = _ENV_RECIPE.get(tt)
+    if plat and not plat.startswith("ensemble_"):
+        return plat.removesuffix(".yaml").removesuffix(".yml")
+    uc = (use_case or "").strip()
+    suffix = _TASK_RECIPE_SUFFIX.get(tt)
+    if not uc or not suffix:
+        return None
+    return f"{uc}_{suffix}"
 
 
 def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
@@ -2729,6 +2748,11 @@ def _resolve_hyperparams(
 ) -> dict:
     """Apply recipe hyperparameters as defaults for keys the LLM plan did not set."""
     recipe = _load_recipe_for_env(env_id, algorithm)
+    if not recipe:
+        _uc = str((plan_hp or {}).get("use_case") or "").strip()
+        _stem = default_recipe_for_task(env_id, _uc or None)
+        if _stem:
+            recipe = _load_recipe_for_env(_stem, algorithm)
     recipe_hp = recipe.get("hyperparameters", {})
     task_type = recipe.get("task_type", env_id)
     if env_id in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "ensemble_sft_v1", "ensemble_sft_1b_v5", "ensemble_grpo_1b_v1", "ensemble_sft_specialist_ds_v1", "ensemble_sft_specialist_secretary_v1", "ensemble_embed_v1", "embed", "ensemble_rerank_v1", "rerank", "hstu_ml1m_v1", "hstu", "star", "ensemble_star_v1", "ensemble_rlcd_v1", "ensemble_rlcd_focus_v1", "ensemble_decision_foundation_v1", "ensemble_decision_foundation_continue_v1", "ensemble_decision_specialize_v1", "ensemble_decision_specialize_focus_v1", "ensemble_decision_from_scratch_v1", "agent_gym_agrpo_v1", "agent_gym_agrpo_smoke_v1", "ensemble_agent_grpo_v1") or task_type in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "rlcd", "prompt", "star", "embed", "rerank", "hstu"):

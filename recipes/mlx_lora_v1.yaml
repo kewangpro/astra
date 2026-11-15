@@ -2,11 +2,17 @@ name: mlx_lora_v1
 version: "1.0.0"
 created_at: "2026-06-24"
 task_type: mlx_lora
+learner_id: mlx_sft
 domain: NLP
 description: >
   MLX LoRA fine-tuning recipe for Apple Silicon. Uses mlx_lm.lora CLI to
   fine-tune quantized models locally. Dataset must be prompt/completion JSONL.
   Designed for Gemma/Llama class models in 4-bit via mlx-community.
+
+target_metric:
+  eval_loss: 1.5
+metric_ceiling:
+  eval_loss: 1.5
 
 hyperparameters:
   base_model: mlx-community/gemma-3-12b-it-4bit

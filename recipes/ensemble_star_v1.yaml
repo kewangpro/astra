@@ -2,6 +2,7 @@ name: ensemble_star_v1
 version: "1.0.0"
 created_at: "2026-09-17"
 task_type: star
+learner_id: mlx_star
 domain: routing
 description: >
   Self-Taught Reasoner (STaR) fine-tuning flywheel for the Ensemble conductor routing model.

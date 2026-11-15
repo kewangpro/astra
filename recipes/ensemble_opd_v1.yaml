@@ -85,27 +85,9 @@ hyperparameters:
 metric_ceiling:
   pass_rate: 0.87
 
-# RUNNABLE once deployed to the Mini's finetune_dir. Source of truth:
-#   ensemble/finetune/opd_train.py  (implemented 2026-10-05)
-# Astra dispatches via astrarl.make("mlx_opd", use_execv=True); preflight warns until
-# that path exists on the remote host (rsync/scp from the ensemble checkout).
-# Shape:
-#   - Sample K=num_generations completions per case from the student (GRPO-like).
-#   - Teacher compute_logprobs on those trajectories → per-token reverse KL.
-#   - A = kl_coef * mean(log π_T − log π_S) + centered(outcome_bonus * reward)
-#     (PPO/PG; do NOT center the KL term; do NOT pathwise-diff stop-grad teacher).
-#   - Adam update on the LoRA student (grpo_loss_single).
-#   - Held-out routing eval + best/ checkpointing like distill_train.py.
-# Expected CLI: --model --adapter|--no-adapter --save-dir --prompt-template
-#   --teacher-model --num-generations --temp --max-tokens --kl-coef
-#   --outcome-bonus --num-layers --lora-rank --lora-scale --lora-dropout
-#   --iters --batch-size --learning-rate --steps-per-eval --save-every
-#   --max-seq-len --eval-max-tokens [--mask-prompt] [--routing-only]
-# Expected stdout (parsed by astra, same contract as distill_train.py):
-#   "Baseline: X% (n/total)" + indented static/dynamic-MCP/blended breakdown;
-#   "N examples ready for training"; "Case split: A train / B held-out valid";
-#   "Step N/M loss=X.XXXX"; "Pass rate: X% (n/total)" + breakdown per eval;
-#   "Best static pass rate during training: X%" and
-#   "Best blended pass rate during training: X% (n/total)".
+# RUNNABLE via AstraRL: astrarl.make("mlx_opd", use_execv=True) →
+# python -m astrarl.cli opd → platform train_opd + product UseCasePlugin hooks.
+# Shape: sample K completions from the student; teacher logprobs → reverse KL
+# advantage; Adam on LoRA; held-out routing eval + best/ checkpointing.
 # OPD-specific progress line (optional, tailed like RFT survivors):
 #   "[i/total] n rollouts (Ts)" during the on-policy sampling phase.

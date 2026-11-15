@@ -2,6 +2,7 @@ name: ensemble_rft_focus_v6
 version: "1.0.0"
 created_at: "2026-10-18"
 task_type: rft
+learner_id: mlx_rft
 domain: NLP
 description: >
   Sixth focused RFT pass. Warm-starts the verified harvest

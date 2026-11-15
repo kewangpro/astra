@@ -3,6 +3,7 @@ version: "1.9.6"
 created_at: "2026-11-03"
 updated_at: "2026-11-05"
 task_type: rlcd
+learner_id: mlx_rlcd
 domain: NLP
 description: >
   Choice-focus — PARKED. Gates cleared by v8 c7b78b5d (A/B 68/74) +

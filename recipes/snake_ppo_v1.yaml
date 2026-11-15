@@ -1,10 +1,14 @@
 name: snake_ppo_v1
 version: "2.0.0"
 created_at: "2026-06-22"
-task_type: RL
+task_type: rl
 gym_id: gymnasium:Snake-v0
 learner_id: sb3_ppo
 domain: Snake
+target_metric:
+  food_eaten: 100
+metric_ceiling:
+  food_eaten: 100
 description: >
   PPO recipe for Snake-v0 using the compact 28D feature observation (obs_type=features).
   The feature obs encodes immediate danger, 5-step path clearance, food direction/distance,

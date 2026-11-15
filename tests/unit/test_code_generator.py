@@ -411,6 +411,25 @@ def test_resolve_hyperparams_finetune_plan_use_case_wins():
     assert not bare.get("use_case")
 
 
+def test_default_recipe_for_task_is_product_neutral():
+    """Generic task_type keys must not bake Ensemble; use_case + suffix instead."""
+    from backend.agent.code_generator import _ENV_RECIPE, default_recipe_for_task
+
+    for key in ("dpo", "grpo", "sft", "distill", "opd", "rft", "rlcd", "star", "prompt", "embed", "rerank"):
+        assert key not in _ENV_RECIPE
+    assert default_recipe_for_task("dpo", None) is None
+    assert default_recipe_for_task("dpo", "ensemble") == "ensemble_dpo_v1"
+    assert default_recipe_for_task("grpo", "ensemble") == "ensemble_grpo_v1"
+    assert default_recipe_for_task("post-training", "ensemble") == "ensemble_post_training_v1"
+    assert default_recipe_for_task("distill", "ensemble") is None  # multi-variant
+    assert default_recipe_for_task("mlx_lora", None) == "mlx_lora_v1"
+    assert default_recipe_for_task("hstu", "ensemble") == "hstu_ml1m_v1"
+    # use_case in plan_hp resolves bare task_type
+    from backend.agent.code_generator import _resolve_hyperparams
+    hp = _resolve_hyperparams("dpo", {"use_case": "ensemble"})
+    assert hp.get("beta") == 0.1
+
+
 def test_build_user_prompt_rl_includes_warm_start_block(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
@@ -1511,6 +1530,7 @@ def test_build_user_prompt_dpo_wraps_existing_script_not_reimplemented(tmp_path,
     gen = CodeGenerator(_make_provider())
     plan = {
         "task_type": "dpo",
+        "recipe": "ensemble_dpo_v1",
         "hyperparameters": {},
         "target_metric": {"pass_rate": 0.9},
     }
@@ -1530,6 +1550,7 @@ def test_build_user_prompt_dpo_uses_recipe_defaults(tmp_path, monkeypatch):
     gen = CodeGenerator(_make_provider())
     plan = {
         "task_type": "dpo",
+        "recipe": "ensemble_dpo_v1",
         "hyperparameters": {},   # let recipe fill everything
         "target_metric": {"pass_rate": 0.9},
     }
@@ -1545,7 +1566,7 @@ def test_build_user_prompt_dpo_routing_only_flag_default_true(tmp_path, monkeypa
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "dpo", "recipe": "ensemble_dpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
     assert "routing_only=True" in prompt
 
@@ -1557,7 +1578,7 @@ def test_build_user_prompt_dpo_no_telemetry_network_calls(tmp_path, monkeypatch)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "dpo", "recipe": "ensemble_dpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
     assert "No network calls" in prompt or "no requests" in prompt.lower()
     assert "Telemetry URL" not in prompt
@@ -1571,7 +1592,7 @@ def test_build_user_prompt_dpo_uses_execv_not_subprocess(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "dpo", "recipe": "ensemble_dpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
     assert "use_execv=True" in prompt
     assert "astratune.make" in prompt
@@ -1587,7 +1608,7 @@ def test_build_user_prompt_dpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "dpo", "recipe": "ensemble_dpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id", plan, str(tmp_path / "ckpt"))
     assert 'os.chdir("/Users/kewang/finetune")' in prompt
 
@@ -1595,7 +1616,7 @@ def test_build_user_prompt_dpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
 def test_resolve_hyperparams_dpo_uses_recipe_beta():
     """dpo task gets beta=0.1 from ensemble_dpo_v1.yaml when plan omits it."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("dpo", {})
+    result = _resolve_hyperparams("ensemble_dpo_v1", {})
     assert result["beta"] == 0.1
 
 
@@ -1611,15 +1632,15 @@ def test_resolve_hyperparams_dpo_ignores_plan_override():
     changed — this test asserts against whatever the recipe says, not a
     hardcoded value, so it can't go stale the way the literal above did.)"""
     from backend.agent.code_generator import _resolve_hyperparams
-    recipe_lr = _resolve_hyperparams("dpo", {})["learning_rate"]
-    result = _resolve_hyperparams("dpo", {"learning_rate": 0.001, "num_layers": 5})
+    recipe_lr = _resolve_hyperparams("ensemble_dpo_v1", {})["learning_rate"]
+    result = _resolve_hyperparams("ensemble_dpo_v1", {"learning_rate": 0.001, "num_layers": 5})
     assert result["learning_rate"] == recipe_lr
     assert result["num_layers"] == 8
 
 
 def test_resolve_hyperparams_grpo_ignores_plan_override():
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {"learning_rate": 0.001})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {"learning_rate": 0.001})
     assert result["learning_rate"] != 0.001
 
 
@@ -1629,8 +1650,8 @@ def test_resolve_hyperparams_dpo_allows_sampling_diversity_within_bounds():
     between relaunches. temp/k_collect are safe to vary (affect what gets collected, not
     model/training stability) and must now pass through, unlike every other key."""
     from backend.agent.code_generator import _resolve_hyperparams
-    recipe_lr = _resolve_hyperparams("dpo", {})["learning_rate"]
-    result = _resolve_hyperparams("dpo", {"temp": 0.9, "k_collect": 12})
+    recipe_lr = _resolve_hyperparams("ensemble_dpo_v1", {})["learning_rate"]
+    result = _resolve_hyperparams("ensemble_dpo_v1", {"temp": 0.9, "k_collect": 12})
     assert result["temp"] == 0.9
     assert result["k_collect"] == 12
     # everything else stays recipe-locked
@@ -1639,14 +1660,14 @@ def test_resolve_hyperparams_dpo_allows_sampling_diversity_within_bounds():
 
 def test_resolve_hyperparams_dpo_clamps_sampling_diversity_out_of_range():
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("dpo", {"temp": 5.0, "k_collect": 1})
+    result = _resolve_hyperparams("ensemble_dpo_v1", {"temp": 5.0, "k_collect": 1})
     assert result["temp"] == 1.5
     assert result["k_collect"] == 4
 
 
 def test_resolve_hyperparams_grpo_allows_num_generations_within_bounds():
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {"num_generations": 4})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {"num_generations": 4})
     assert result["num_generations"] == 4
 
 
@@ -1654,7 +1675,7 @@ def test_resolve_hyperparams_grpo_clamps_num_generations_above_regression_ceilin
     """num_generations capped at 4 specifically because K=4 regressed in grpo_v10_min
     per ensemble_grpo_v1.yaml's own changelog — a pivot must not propose higher."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {"num_generations": 8})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {"num_generations": 8})
     assert result["num_generations"] == 4
 
 
@@ -1665,13 +1686,13 @@ def test_resolve_hyperparams_dpo_warm_start_adapter_overrides_recipe():
     other's own progress. warm_start_adapter must override the recipe's
     static `adapter` value when the mission has a prior-best checkpoint."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("dpo", {}, warm_start_adapter="adapters/astra_7fd88324")
+    result = _resolve_hyperparams("ensemble_dpo_v1", {}, warm_start_adapter="adapters/astra_7fd88324")
     assert result["adapter"] == "adapters/astra_7fd88324"
 
 
 def test_resolve_hyperparams_dpo_no_warm_start_adapter_falls_back_to_recipe():
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("dpo", {})
+    result = _resolve_hyperparams("ensemble_dpo_v1", {})
     assert result["adapter"] == "adapters/grpo_v9_min/best"
 
 
@@ -1681,7 +1702,7 @@ def test_resolve_hyperparams_dpo_warm_start_adapter_not_settable_via_plan_hp():
     and must not be able to redirect the warm-start adapter through the same
     generic-key channel the learning_rate incident above was about."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("dpo", {"adapter": "adapters/attacker_controlled"})
+    result = _resolve_hyperparams("ensemble_dpo_v1", {"adapter": "adapters/attacker_controlled"})
     assert result["adapter"] == "adapters/grpo_v9_min/best"
 
 
@@ -1702,7 +1723,9 @@ def test_finetune_checkpoint_dir_relative_points_at_best_subdir_not_bare_dir():
     equal to it."""
     from backend.agent.code_generator import finetune_checkpoint_dir, finetune_checkpoint_dir_relative
     mission_id = "7fd88324-9e19-4388-8d0c-fb3f482d0fd6"
-    absolute = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 7)
+    absolute = finetune_checkpoint_dir(
+        "dpo", {"recipe": "ensemble_dpo_v1", "hyperparameters": {}}, mission_id, 7,
+    )
     relative = finetune_checkpoint_dir_relative(mission_id, 7)
     absolute_suffix = absolute.split("adapters/")[-1]
     assert relative == f"adapters/{absolute_suffix}/best"
@@ -1740,6 +1763,7 @@ def test_build_user_prompt_grpo_wraps_existing_script_not_reimplemented(tmp_path
     gen = CodeGenerator(_make_provider())
     plan = {
         "task_type": "grpo",
+        "recipe": "ensemble_grpo_v1",
         "hyperparameters": {},
         "target_metric": {"pass_rate": 0.9},
     }
@@ -1757,6 +1781,7 @@ def test_build_user_prompt_grpo_uses_recipe_defaults(tmp_path, monkeypatch):
     gen = CodeGenerator(_make_provider())
     plan = {
         "task_type": "grpo",
+        "recipe": "ensemble_grpo_v1",
         "hyperparameters": {},
         "target_metric": {"pass_rate": 0.9},
     }
@@ -1768,7 +1793,7 @@ def test_build_user_prompt_grpo_uses_recipe_defaults(tmp_path, monkeypatch):
 def test_resolve_hyperparams_grpo_uses_recipe_clip_epsilon():
     """grpo task gets clip_epsilon=0.1 from ensemble_grpo_v1.yaml when plan omits it."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {})
     assert result["clip_epsilon"] == 0.1
 
 
@@ -1781,6 +1806,7 @@ def test_build_user_prompt_grpo_includes_dapo_rollout_flags(tmp_path, monkeypatc
     gen = CodeGenerator(_make_provider())
     plan = {
         "task_type": "grpo",
+        "recipe": "ensemble_grpo_v1",
         "hyperparameters": {
             "clip_epsilon_high": 0.28,
             "dynamic_sample_retries": 2,
@@ -1802,7 +1828,7 @@ def test_resolve_hyperparams_grpo_num_layers_matches_warm_start_adapter():
     all current warm-start adapters (grpo_v9_min/best, retrain_best) are 8-layer;
     a mismatch is a LoRA weight shape error at load time, not a soft warning."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {})
     assert result["num_layers"] == 8
 
 
@@ -1810,7 +1836,7 @@ def test_resolve_hyperparams_grpo_uses_current_best_warm_start_adapter():
     """Warm-start must be the documented current-best grpo_v9_min/best, not
     grpo_train.py's generic (and mutable) DEFAULT_ADAPTER constant."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {})
     assert result["adapter"] == "adapters/grpo_v9_min/best"
 
 
@@ -1818,7 +1844,7 @@ def test_resolve_hyperparams_grpo_uses_documented_iters_not_raw_default():
     """docs/FINETUNE.md: 'use 100 — gains are front-loaded', not the raw
     --iters default of 300."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {})
     assert result["iters"] == 100
 
 
@@ -1826,7 +1852,7 @@ def test_resolve_hyperparams_grpo_uses_documented_max_tokens_not_raw_default():
     """docs/FINETUNE.md: 'use 96 — skill name appears in first ~80 tokens,
     halves step time', not the raw --max-tokens default of 256."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {})
     assert result["max_tokens"] == 96
 
 
@@ -1834,7 +1860,7 @@ def test_resolve_hyperparams_grpo_email_weight_excludes_email_cases():
     """All runs since grpo_v8_min use --email-weight 0 ('GRPO-impenetrable'),
     not the raw --email-weight default of 3."""
     from backend.agent.code_generator import _resolve_hyperparams
-    result = _resolve_hyperparams("grpo", {})
+    result = _resolve_hyperparams("ensemble_grpo_v1", {})
     assert result["email_weight"] == 0
 
 
@@ -1855,7 +1881,7 @@ def test_build_user_prompt_dpo_includes_save_pairs(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "dpo", "recipe": "ensemble_dpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("dpo", "test-id12345", plan, str(tmp_path / "ckpt"))
     assert 'save_pairs="/Users/kewang/finetune/logs/astra_test-id1_pairs.jsonl"' in prompt
 
@@ -1867,7 +1893,7 @@ def test_build_user_prompt_grpo_no_telemetry_network_calls(tmp_path, monkeypatch
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "grpo", "recipe": "ensemble_grpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
     # Healer/docs template still bans network; live canned facade uses astrarl.make.
     assert (
@@ -1884,7 +1910,7 @@ def test_build_user_prompt_grpo_uses_execv_not_subprocess(tmp_path, monkeypatch)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "grpo", "recipe": "ensemble_grpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
     assert "use_execv=True" in prompt
     assert "astrarl.make" in prompt
@@ -1899,19 +1925,24 @@ def test_build_user_prompt_grpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "grpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "grpo", "recipe": "ensemble_grpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     prompt = gen._build_user_prompt("grpo", "test-id", plan, str(tmp_path / "ckpt"))
     assert 'os.chdir("/Users/kewang/finetune")' in prompt
 
 
 # ── distill template ──────────────────────────────────────────────────────────
 
-def _distill_prompt(tmp_path, monkeypatch):
+def _distill_prompt(tmp_path, monkeypatch, recipe: str = "ensemble_distill_prerl_v1"):
     monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "distill", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {
+        "task_type": "distill",
+        "recipe": recipe,
+        "hyperparameters": {},
+        "target_metric": {"pass_rate": 0.9},
+    }
     return gen._build_user_prompt("distill", "test-id", plan, str(tmp_path / "ckpt"))
 
 
@@ -1923,15 +1954,8 @@ def test_build_user_prompt_distill_wraps_existing_script_not_reimplemented(tmp_p
 
 
 def test_build_user_prompt_distill_uses_recipe_defaults(tmp_path, monkeypatch):
-    # Pin the pre-RL warm-start recipe. This test is about a WARM start's
-    # rendered adapter path; the active default is a cold start as of
-    # 2026-09-06, and letting the test follow _ENV_RECIPE would make it assert
-    # whatever is current rather than the behaviour it names.
-    monkeypatch.setitem(
-        __import__("backend.agent.code_generator", fromlist=["x"])._ENV_RECIPE,
-        "distill", "ensemble_distill_prerl_v1.yaml",
-    )
-    prompt = _distill_prompt(tmp_path, monkeypatch)
+    # Pin the pre-RL warm-start recipe by name (no task_type→Ensemble default).
+    prompt = _distill_prompt(tmp_path, monkeypatch, recipe="ensemble_distill_prerl_v1")
     assert "gemma-3-12b-it-4bit" in prompt
     # The active distill recipe (ensemble_distill_prerl_v1) warm-starts from the
     # PRE-RL ancestor. Named as a FILE, not a directory: retrain_v53_min/ also
@@ -1964,7 +1988,7 @@ def test_build_user_prompt_distill_no_network_calls(tmp_path, monkeypatch):
 
 def test_resolve_hyperparams_distill_recipe_authoritative(tmp_path, monkeypatch):
     from backend.agent.code_generator import _resolve_hyperparams
-    hp = _resolve_hyperparams("distill", {"learning_rate": 0.9, "num_layers": 99, "iters": 700})
+    hp = _resolve_hyperparams("ensemble_distill_prerl_v1", {"learning_rate": 0.9, "num_layers": 99, "iters": 700})
     assert hp["learning_rate"] == 1e-5      # recipe wins
     assert hp["num_layers"] == 8            # recipe wins
     assert hp["iters"] == 500               # recipe wins too — iters is pinned, no pivot lever
@@ -1974,9 +1998,9 @@ def test_resolve_hyperparams_distill_iters_is_pinned_to_recipe(tmp_path, monkeyp
     """No plan value can move iters while the pre-RL experiment runs — the
     recipe's 500 must survive any proposal, in range or out."""
     from backend.agent.code_generator import _resolve_hyperparams
-    assert _resolve_hyperparams("distill", {"iters": 5000})["iters"] == 500
-    assert _resolve_hyperparams("distill", {"iters": 10})["iters"] == 500
-    assert _resolve_hyperparams("distill", {"iters": 700})["iters"] == 500
+    assert _resolve_hyperparams("ensemble_distill_prerl_v1", {"iters": 5000})["iters"] == 500
+    assert _resolve_hyperparams("ensemble_distill_prerl_v1", {"iters": 10})["iters"] == 500
+    assert _resolve_hyperparams("ensemble_distill_prerl_v1", {"iters": 700})["iters"] == 500
 
 
 # ── manifest checkpoint patterns ──────────────────────────────────────────────
@@ -2027,7 +2051,7 @@ def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_ho
 
     provider = _make_provider("print('dpo wrapper')\n")
     gen = CodeGenerator(provider)
-    plan = {"task_type": "dpo", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "dpo", "recipe": "ensemble_dpo_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
 
     with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
         path = asyncio.get_event_loop().run_until_complete(
@@ -2046,7 +2070,12 @@ def test_generate_training_script_dpo_uses_finetune_adapters_dir_with_sandbox_ho
 
 def test_finetune_checkpoint_dir_uses_recipe_finetune_dir():
     from backend.agent.code_generator import finetune_checkpoint_dir
-    result = finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, "abc12345-full-uuid", 3)
+    result = finetune_checkpoint_dir(
+        "dpo",
+        {"recipe": "ensemble_dpo_v1", "hyperparameters": {}},
+        "abc12345-full-uuid",
+        3,
+    )
     assert result == "/Users/kewang/finetune/adapters/astra_abc12345_iter3"
 
 
@@ -2059,8 +2088,9 @@ def test_finetune_checkpoint_dir_iteration_scoped_never_collides():
     same mission must never resolve to the same directory."""
     from backend.agent.code_generator import finetune_checkpoint_dir, finetune_checkpoint_dir_relative
     mission_id = "abc12345-full-uuid"
-    assert finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 0) != \
-        finetune_checkpoint_dir("dpo", {"hyperparameters": {}}, mission_id, 1)
+    plan = {"recipe": "ensemble_dpo_v1", "hyperparameters": {}}
+    assert finetune_checkpoint_dir("dpo", plan, mission_id, 0) != \
+        finetune_checkpoint_dir("dpo", plan, mission_id, 1)
     assert finetune_checkpoint_dir_relative(mission_id, 0) != finetune_checkpoint_dir_relative(mission_id, 1)
 
 
@@ -2333,18 +2363,12 @@ def test_canonicalize_algorithm_aliases():
 
 # ── distill cold start ───────────────────────────────────────────────────────
 
-def _cold_recipe(monkeypatch):
-    """Point the distill task type at the cold-start 4B recipe."""
-    monkeypatch.setitem(
-        __import__("backend.agent.code_generator", fromlist=["x"])._ENV_RECIPE,
-        "distill", "ensemble_distill_gemma4b_v1.yaml",
-    )
+_COLD_DISTILL = "ensemble_distill_gemma4b_v1"
 
 
 def test_cold_start_recipe_emits_no_adapter_not_adapter(tmp_path, monkeypatch):
     """Facade cold start emits no_adapter=True, not adapter=..."""
-    _cold_recipe(monkeypatch)
-    prompt = _distill_prompt(tmp_path, monkeypatch)
+    prompt = _distill_prompt(tmp_path, monkeypatch, recipe=_COLD_DISTILL)
     assert "no_adapter=True" in prompt
     assert 'adapter="' not in prompt
 
@@ -2353,8 +2377,7 @@ def test_cold_start_recipe_passes_the_production_prompt_and_long_context(tmp_pat
     """conductor_gemma.md is 5,144 tokens. distill_train.py silently DROPS any
     example exceeding --max-seq-len, so the 2560 every conductor_min recipe uses
     would drop every example and report "0 examples ready for training"."""
-    _cold_recipe(monkeypatch)
-    prompt = _distill_prompt(tmp_path, monkeypatch)
+    prompt = _distill_prompt(tmp_path, monkeypatch, recipe=_COLD_DISTILL)
     assert "backend/prompts/conductor_gemma.md" in prompt
     assert "6144" in prompt
     assert "gemma-3-4b-it-4bit" in prompt
@@ -2366,13 +2389,12 @@ def test_chaining_clears_cold_start(tmp_path, monkeypatch):
     --no-adapter alongside a real adapter path would be rejected as mutually
     exclusive, and would discard every iteration's progress if it weren't."""
     from backend.agent.code_generator import _resolve_hyperparams
-    _cold_recipe(monkeypatch)
-    cold = _resolve_hyperparams("distill", {})
+    cold = _resolve_hyperparams(_COLD_DISTILL, {})
     assert cold["no_adapter"] is True
     assert not cold.get("adapter")
 
     warm = _resolve_hyperparams(
-        "distill", {}, warm_start_adapter="adapters/astra_abc12345_iter0/best")
+        _COLD_DISTILL, {}, warm_start_adapter="adapters/astra_abc12345_iter0/best")
     assert warm["no_adapter"] is False
     assert warm["adapter"] == "adapters/astra_abc12345_iter0/best"
 
@@ -2384,7 +2406,7 @@ def _rft_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "rft", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "rft", "recipe": "ensemble_rft_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     return gen._build_user_prompt("rft", "test-id", plan, str(tmp_path / "ckpt"))
 
 
@@ -2477,7 +2499,7 @@ def _opd_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "opd", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "opd", "recipe": "ensemble_opd_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     return gen._build_user_prompt("opd", "test-id", plan, str(tmp_path / "ckpt"))
 
 
@@ -2516,7 +2538,7 @@ def test_opd_pivot_lever_is_num_generations_and_temp():
 
 def test_opd_resolve_hyperparams_recipe_authoritative():
     from backend.agent.code_generator import _resolve_hyperparams
-    hp = _resolve_hyperparams("opd", {"learning_rate": 0.9, "num_layers": 99, "kl_coef": 9.0})
+    hp = _resolve_hyperparams("ensemble_opd_v1", {"learning_rate": 0.9, "num_layers": 99, "kl_coef": 9.0})
     assert hp["learning_rate"] == 0.000005
     assert hp["num_layers"] == 8
     assert hp["kl_coef"] == 0.15
@@ -2534,7 +2556,7 @@ def test_rlcd_wrapper_execs_the_trainer(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "rlcd", "hyperparameters": {}, "target_metric": {"pass_rate": 0.5}}
+    plan = {"task_type": "rlcd", "recipe": "ensemble_rlcd_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.5}}
     script = gen._build_user_prompt("rlcd", "test-id", plan, "/Users/kewang/finetune/adapters/astra_test_iter0")
     assert "astratune.make" in script
     assert "mlx_rlcd" in script
@@ -2580,7 +2602,7 @@ def test_rlcd_empty_rationale_pivot_lever_is_empty():
 
 def test_rlcd_resolve_hyperparams_recipe_authoritative():
     from backend.agent.code_generator import _resolve_hyperparams
-    hp = _resolve_hyperparams("rlcd", {"learning_rate": 0.9, "num_layers": 3, "sf_coef": 1.0})
+    hp = _resolve_hyperparams("ensemble_rlcd_v1", {"learning_rate": 0.9, "num_layers": 3, "sf_coef": 1.0})
     assert hp["learning_rate"] == 2e-6
     # v1.1: scale=20 / num_layers=-1 collapsed chat generation on bare_eval.
     assert hp["num_layers"] == 8
@@ -2656,7 +2678,7 @@ def _prompt_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.api_port", 8200)
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
     gen = CodeGenerator(_make_provider())
-    plan = {"task_type": "prompt", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
+    plan = {"task_type": "prompt", "recipe": "ensemble_prompt_v1", "hyperparameters": {}, "target_metric": {"pass_rate": 0.9}}
     return gen._build_user_prompt("prompt", "test-id", plan, str(tmp_path / "ckpt"))
 
 
@@ -2757,6 +2779,7 @@ def test_build_user_prompt_sft_defaults(tmp_path, monkeypatch):
     gen = CodeGenerator(_make_provider())
     plan = {
         "task_type": "sft",
+        "recipe": "ensemble_sft_v1",
         "target_metric": {"eval_loss": 1.2},
         "hyperparameters": {},
     }
@@ -2778,6 +2801,7 @@ def test_build_user_prompt_sft_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr("backend.config.settings.sandbox_host", None)
 
     gen = CodeGenerator(_make_provider())
+    # No recipe: plan HPs must win (named ensemble_sft_* stems are recipe-authoritative).
     plan = {
         "task_type": "sft",
         "target_metric": {"eval_loss": 0.8},
@@ -2827,6 +2851,9 @@ async def test_sft_generates_remote_wrapper_when_sandbox_host_configured(tmp_pat
             "dataset_path": "data/datasets/train.jsonl",
             "iters": 150,
             "batch_size": 4,
+            "finetune_dir": "/Users/kewang/finetune",
+            "python_bin": "/Users/kewang/finetune-env/bin/python",
+            "astra_pkg_root": "/Users/kewang/astra-pkg",
         },
     }
     script_path = await gen.generate_training_script("mission-sft-remote", plan)

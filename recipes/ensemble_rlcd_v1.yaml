@@ -3,6 +3,7 @@ version: "1.2.0"
 created_at: "2026-10-23"
 updated_at: "2026-10-31"
 task_type: rlcd
+learner_id: mlx_rlcd
 domain: NLP
 description: >
   RLCD (arXiv:2609.38850) for the Ensemble §167 routing decision. Live Choice

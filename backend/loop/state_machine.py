@@ -660,17 +660,29 @@ class LoopStateMachine:
                     await self._save_plan(mission_id, plan)
                     did_replan = False
                 elif mission.task_type == "post-training":
-                    rcp = _load_recipe_for_env("post-training")
+                    from backend.agent.code_generator import default_recipe_for_task
+                    _pt_hp = {}
+                    if isinstance(mission.current_plan, dict):
+                        _pt_hp = mission.current_plan.get("hyperparameters") or {}
+                    _pt_uc = str((_pt_hp or {}).get("use_case") or "").strip() if isinstance(_pt_hp, dict) else ""
+                    _pt_recipe = (
+                        (mission.current_plan or {}).get("recipe")
+                        if isinstance(mission.current_plan, dict)
+                        else None
+                    ) or default_recipe_for_task("post-training", _pt_uc or None)
+                    rcp = _load_recipe_for_env(_pt_recipe or "") if _pt_recipe else {}
                     stages = rcp.get("stages", [])
                     plan = {
-                        "recipe": "ensemble_post_training_v1",
+                        "recipe": _pt_recipe or "",
                         "task_type": "post-training",
                         "stages": stages,
                         "stage_index": 0,
                         "stage_checkpoints": {},
                         "active_task_type": stages[0].get("task", "sft") if stages else "sft",
-                        "hyperparameters": stages[0].get("hyperparameters", {}) if stages else {},
+                        "hyperparameters": dict(stages[0].get("hyperparameters", {})) if stages else {},
                     }
+                    if _pt_uc:
+                        plan.setdefault("hyperparameters", {})["use_case"] = _pt_uc
                     await emit_status(
                         mission_id, "Loaded post-training pipeline stages",
                         event_type="info",
@@ -778,18 +790,20 @@ class LoopStateMachine:
 
                 if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
                     plan["recipe"] = mission.current_plan["recipe"]
-                if mission.task_type == "sft" and not plan.get("recipe"):
-                    plan["recipe"] = "ensemble_sft_v1"
-                if mission.task_type == "embed" and not plan.get("recipe"):
-                    plan["recipe"] = "ensemble_embed_v1"
-                if mission.task_type == "rerank" and not plan.get("recipe"):
-                    plan["recipe"] = "ensemble_rerank_v1"
-                if mission.task_type == "hstu" and not plan.get("recipe"):
-                    plan["recipe"] = "hstu_ml1m_v1"
-                if mission.task_type == "grpo" and not plan.get("recipe"):
-                    plan["recipe"] = "ensemble_grpo_v1"
-                if mission.task_type == "dpo" and not plan.get("recipe"):
-                    plan["recipe"] = "ensemble_sft_dpo_v1"
+                if not plan.get("recipe"):
+                    from backend.agent.code_generator import default_recipe_for_task
+                    _uc = ""
+                    _hp = plan.get("hyperparameters") if isinstance(plan.get("hyperparameters"), dict) else {}
+                    _uc = str(_hp.get("use_case") or "").strip()
+                    if not _uc and isinstance(mission.current_plan, dict):
+                        _cp_hp = mission.current_plan.get("hyperparameters") or {}
+                        if isinstance(_cp_hp, dict):
+                            _uc = str(_cp_hp.get("use_case") or "").strip()
+                    _default_rcp = default_recipe_for_task(
+                        mission.task_type or plan.get("task_type") or "", _uc or None,
+                    )
+                    if _default_rcp:
+                        plan["recipe"] = _default_rcp
                 # Product UseCasePlugin: mission-create field / goal marker / Lead Agent.
                 # Prefer plan HP, else seed from prepare_mission_params, else goal markers.
                 self._ensure_plan_use_case(plan, mission)
@@ -1333,7 +1347,9 @@ class LoopStateMachine:
                     and (_prev_best is None or _raw_goal_val >= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
-                    _hp_for_chain = _resolve_hyperparams("prompt", plan.get("hyperparameters", {}))
+                    _hp_for_chain = _resolve_hyperparams(
+                        plan.get("recipe") or "prompt", plan.get("hyperparameters", {}),
+                    )
                     _last_checkpoint_path = (
                         f"{_hp_for_chain.get('finetune_dir', '')}/adapters/"
                         f"astra_{mission_id[:8]}_iter{current_iteration}/conductor_variant.md"
@@ -1349,7 +1365,9 @@ class LoopStateMachine:
                     and (_prev_best is None or current_metrics["eval_loss"] <= _prev_best)
                 ):
                     from backend.agent.code_generator import _resolve_hyperparams
-                    _hp_for_chain = _resolve_hyperparams("sft", plan.get("hyperparameters", {}))
+                    _hp_for_chain = _resolve_hyperparams(
+                        plan.get("recipe") or "sft", plan.get("hyperparameters", {}),
+                    )
                     _finetune_dir = _hp_for_chain.get("finetune_dir", "/Users/kewang/finetune")
                     if plan.get("task_type") == "post-training":
                         stage_idx = plan.get("stage_index", 0)

@@ -2,6 +2,7 @@ name: ensemble_rlcd_focus_v1
 version: "1.2.0"
 created_at: "2026-10-31"
 task_type: rlcd
+learner_id: mlx_rlcd
 domain: NLP
 description: >
   Empty-rationale RLCD focus on remaining live Choice misses after

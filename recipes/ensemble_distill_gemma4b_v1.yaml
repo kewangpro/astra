@@ -2,6 +2,7 @@ name: ensemble_distill_gemma4b_v1
 version: "1.0.0"
 created_at: "2026-09-06"
 task_type: distill
+learner_id: mlx_distill
 domain: NLP
 description: >
   Distillation for the Ensemble routing model against conductor_gemma.md — the
