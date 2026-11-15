@@ -34,6 +34,7 @@ at mission create — not recipe HP.
 | Training logic lived in Ensemble CLIs | Platform `train_grpo_routing` / `train_grpo_traj` / `train_opd` in `astrarl/` |
 | DPO/SFT mixed into the RL story | Sibling **AstraTune**; DESIGN boundary enforced |
 | Product hardcoding in train entrypoints | `astra_plugin` + mission-create `use_case` |
+| Ensemble YAML / defaults baked into Astra | Platform `recipes/` only; product packs via `ASTRA_PRODUCT_RECIPES`; `{uc}_{task}_v1` defaults |
 
 ### Remaining gaps (re-ranked)
 

@@ -130,7 +130,7 @@ astra/
 │   ├── routers/        # API route handlers
 │   ├── sandbox/        # SubprocessSandbox, ContainerSandbox, SSHSandbox, SandboxManager
 │   ├── schemas/        # Pydantic request/response models
-│   ├── services/       # Crystallizer, RecipeLibrary, Evolution, VectorMemory, MissionState, Preflight, StateRecovery
+│   ├── services/       # Crystallizer, RecipeLibrary, recipe_paths, Evolution, VectorMemory, MissionState, Preflight, StateRecovery
 │   └── trainers/       # RLTrainer, SFTTrainer, MLTrainer
 ├── frontend/           # Next.js 15 mission control dashboard (port 3200)
 ├── tests/
@@ -138,12 +138,17 @@ astra/
 │   └── integration/    # integration tests for the loop state machine and stress test suites
 ├── alembic/            # Database migrations
 ├── envs/               # Custom Gymnasium environments (Snake, Tetris, 2048, MinAtar suite, Grid Pac-Man, AgentGym)
-├── recipes/            # YAML training recipes (gym_id / learner_id on online-RL recipes)
+├── recipes/            # Platform YAML only (Snake/Tetris/MinAtar/…/hstu/mlx_lora). Product packs via ASTRA_PRODUCT_RECIPES
 ├── data/               # Runtime data: DB, weights, checkpoints, logs (gitignored)
 ├── docs/               # Architecture & design documents
 ├── .env.example
 └── requirements.txt
 ```
+
+Product fine-tune recipes (e.g. Ensemble `ensemble_*.yaml`) live in the product repo
+(`ensemble/astra_recipes/`). Point the Orchestrator at them with
+`ASTRA_PRODUCT_RECIPES=ensemble:/path/to/ensemble/astra_recipes` — see [DESIGN.md §2.4–§3](docs/DESIGN.md).
+
 
 ## API Overview
 

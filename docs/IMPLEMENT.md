@@ -2963,3 +2963,14 @@ Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` 
 - [x] Canned `_AGRPO_REMOTE_WRAPPER` + `generate_training_script` branch (`astrarl.make("mlx_grpo_traj", use_execv=True)`); heal `_AGRPO_TEMPLATE` facade-shaped.
 - [x] `astragym.e2e_stubs` owns `DEFAULT_E2E_STUBS` / `load_e2e_stub_cases`; Ensemble `trajectory_reward` re-exports; scoring stays Ensemble.
 - [x] Recipe triad (`astra_pkg_root`) on `agent_gym_agrpo_*` + `sft_llama_lora_v1`; Ensemble `sft_train` gets `_repo_paths` + `assert_platform_imports`.
+
+## Phase 121: Product-neutral recipes + Ensemble pack (2026-11-14)
+
+Recipe audit + product-agnostic defaults + pack cutover. Historical IMPLEMENT lines that cite `recipes/ensemble_*.yaml` refer to the pre-cutover tree; current product YAML is under Ensemble `astra_recipes/` (loaded via `ASTRA_PRODUCT_RECIPES`).
+
+- [x] YAML audit: `learner_id` on LM recipes; lowercase `task_type`; Snake `food_eaten: 100`; distill/opd comment refresh; `mlx_lora_v1` local target + `mlx_sft`.
+- [x] `default_recipe_for_task(task, use_case)` → `{uc}_{task}_v1`; remove generic `_ENV_RECIPE["dpo"|"grpo"|…]` Ensemble defaults; state_machine uses the helper (`distill` stays explicit).
+- [x] `ASTRA_PRODUCT_RECIPES` search path (`backend/services/recipe_paths.py`); wire `resolve_recipe` / `_load_recipe_for_env` / Recipes UI list.
+- [x] Move 35 `ensemble_*.yaml` → Ensemble `astra_recipes/`; Astra `recipes/` platform-only; crystallizer writes to product pack when `use_case` is configured.
+- [x] Create-time `use_case` wins over Lead Agent; reject `mlx_*` learner_id as `use_case` (e81bc959 / smoke `8000d1ac`).
+- [x] DESIGN §2.4–§3, PRD, UX, README, `.env.example`, Ensemble VENDOR/FINETUNE + pack README.

@@ -111,8 +111,9 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.17. Recipe Library, Lineage DAG Visualizer & Unified Mission Dispatch
 - Searchable gallery of canonical training blueprints across RL, Fine-tuning, and ML paradigms.
+- **Platform vs product packs**: Astra `recipes/` is platform-only (env RL, AgentGym, hstu, local `mlx_lora`). Product knobs (e.g. Ensemble `ensemble_*.yaml`) live in the product repo and are listed/loaded via `ASTRA_PRODUCT_RECIPES=use_case:/path` after the platform dir ([DESIGN.md §2.4–§3](DESIGN.md)).
 - Lineage tree DAG visualizer tracking genetic evolution, hyperparameter mutations, and generational wins.
-- **Converged Mission Creation & Dispatch**: Unified pipeline (`POST /missions` and `POST /recipes/{name}/dispatch` → same `MissionCreate`). Goal prompt carries intent (+ optional `use_case:` marker); recipe seeds `task_type` / training HPs / ceilings (not the product plugin); `use_case` binds at create (field, goal marker, or Lead Agent from the product named in the goal). Canonical goals (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`) are generated without mutating recipe YAML. Wiring: [DESIGN.md §3](DESIGN.md).
+- **Converged Mission Creation & Dispatch**: Unified pipeline (`POST /missions` and `POST /recipes/{name}/dispatch` → same `MissionCreate`). Goal prompt carries intent (+ optional `use_case:` marker); recipe seeds `task_type` / training HPs / ceilings (not the product plugin); `use_case` binds at create (field, goal marker, or Lead Agent from the product named in the goal — create/goal always wins; never `learner_id` as `use_case`). Canonical goals (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`) are generated without mutating recipe YAML. Wiring: [DESIGN.md §3](DESIGN.md).
 
 ### 4.18. SFT Post-Training with Strict Held-Out Splitting & Reasoning Preservation
 - End-to-end Supervised Fine-Tuning orchestrator via `SFTTrainer` supporting HuggingFace Transformers, PEFT (LoRA/QLoRA), and TRL.
@@ -123,7 +124,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.19. Remote MLX Fine-Tune on Apple Silicon Cluster
 - Apple Silicon Mac Mini compute offload for MLX workers (`sft` / `dpo` / `grpo` / …). Mini layout: product workspace (e.g. `~/finetune`, plugin on `PYTHONPATH`) + editable Astra packages at `~/astra-pkg` (`pip install -e`, train via `-m astrarl.cli` / `astratune.cli`) + `~/finetune-env` — not a full Orchestrator HUD/DB checkout.
-- **Platform split (Epoch 9–10)**: gym-coupled RL → **AstraGym × AstraRL**; offline LM (SFT/DPO/distill/RFT/STAR/RLCD) → **AstraTune**; products plug in via `astra_plugin` (mission-create `use_case` / goal marker / Lead Agent; `ASTRA_USE_CASE` env is bare-CLI fallback only). Shared `lora_io` lives in AstraTune and is used by AstraRL MLX trainers too.
+- **Platform split (Epoch 9–10)**: gym-coupled RL → **AstraGym × AstraRL**; offline LM (SFT/DPO/distill/RFT/STAR/RLCD) → **AstraTune**; products plug in via `astra_plugin` (mission-create `use_case` / goal marker / Lead Agent; `ASTRA_USE_CASE` env is bare-CLI fallback only). Product recipe YAML is discovered via `ASTRA_PRODUCT_RECIPES`, not baked into Astra `recipes/`. Shared `lora_io` lives in AstraTune and is used by AstraRL MLX trainers too.
 - **Facade dispatch**: canned `astratune.make` / `astrarl.make(..., use_execv=True)` wrappers bake `finetune_dir` / `python_bin` / `astra_pkg_root` / `use_case` and replace the process image with `python -m astrarl.cli` / `astratune.cli`.
 - **Zero-Orphan Process Execution**: `os.execv` keeps SSHSandbox PID tracking on the real trainer.
 - **Dynamic Validation Batch-Clamping**: Automatically adjusts validation batch sizes so `effective_batch_size <= min(train_size, val_size)`, preventing MLX batch underflow exceptions on small datasets.
