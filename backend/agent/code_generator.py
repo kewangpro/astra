@@ -2510,28 +2510,25 @@ def default_recipe_for_task(
 
 def _load_recipe_for_env(env_id: str, algorithm: str = "") -> dict:
     """Return the parsed recipe dict for env_id (+ optional algorithm), or {}."""
+    from backend.services.recipe_paths import find_recipe_file
+
     # Algorithm-specific override takes priority (e.g. Snake-v0/DQN)
     filename = (
         _ENV_RECIPE.get(f"{env_id}/{algorithm}")
         or _ENV_RECIPE.get(algorithm)
         or _ENV_RECIPE.get(env_id)
     )
-    if not filename:
-        if env_id and (
-            os.path.isfile(os.path.join(settings.recipes_path, f"{env_id}.yaml"))
-            or os.path.isfile(os.path.join(settings.recipes_path, env_id))
-        ):
-            filename = f"{env_id}.yaml" if not env_id.endswith(".yaml") else env_id
-        elif algorithm and (
-            os.path.isfile(os.path.join(settings.recipes_path, f"{algorithm}.yaml"))
-            or os.path.isfile(os.path.join(settings.recipes_path, algorithm))
-        ):
-            filename = f"{algorithm}.yaml" if not algorithm.endswith(".yaml") else algorithm
-        else:
-            return {}
+    path = None
+    if filename:
+        path = find_recipe_file(filename)
+    if not path and env_id:
+        path = find_recipe_file(env_id)
+    if not path and algorithm:
+        path = find_recipe_file(algorithm)
+    if not path:
+        return {}
     try:
         import yaml as _yaml
-        path = os.path.join(settings.recipes_path, filename)
         with open(path) as f:
             return _yaml.safe_load(f) or {}
     except Exception:

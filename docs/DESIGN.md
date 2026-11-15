@@ -262,7 +262,7 @@ Both entry points share one pipeline: **`POST /missions`** (Command Center goal 
 | Piece | Where it lives | Role at mission start |
 |---|---|---|
 | **Goal (mission prompt)** | `Mission.goal` (from create body or canonicalized from recipe description + target) | Human intent: env/product, algorithm, target. Lead Agent reads this. Explicit `use_case: <module>` / `--use-case <module>` markers bind the product without a separate field. |
-| **Recipe** | Disk YAML / DB record (`recipes/*.yaml`) | Known-good **training knobs** for a worker: `task_type`, adapter paths, LoRA, `finetune_dir` / `python_bin` / `astra_pkg_root`, epochs, ceilings. Optional multi-`stages`. Does **not** own the product plugin name. |
+| **Recipe** | Disk YAML / DB record | Known-good **training knobs** for a worker: `task_type`, adapter paths, LoRA, `finetune_dir` / `python_bin` / `astra_pkg_root`, epochs, ceilings. Optional multi-`stages`. Does **not** own the product plugin name. Platform recipes live in Astra `recipes/`; product packs (e.g. Ensemble `astra_recipes/`) are discovered via `ASTRA_PRODUCT_RECIPES=use_case:/path` after the platform dir. |
 | **`task_type`** | Create body, recipe, or inferred from goal keywords | Worker key (`rl`, `dpo`, `grpo`, …) → sandbox / preflight / which facade CLI. |
 | **`use_case` (product)** | Bound at **create** → `plan.hyperparameters.use_case` → baked `--use-case` | Importable `UseCasePlugin` module (e.g. Ensemble → `ensemble`). See resolution order below. |
 | **`current_plan`** | Seeded at create when a recipe is present; refreshed by Lead Agent / stages | What the loop executes: recipe name, algorithm, hyperparameters, stages. |
@@ -304,7 +304,7 @@ Both entry points share one pipeline: **`POST /missions`** (Command Center goal 
 ### 3.2. Two ways to start
 
 **A. Goal-first (Command Center)**  
-User types a prompt (and optional algorithm dropdown). Backend may infer `task_type` from keywords. If no recipe is attached, the Lead Agent chooses algorithm / `task_type` and may warm-start knobs from a close recipe-library match. When recipe is still omitted but `use_case` is bound, the default recipe stem is `{use_case}_{task}_v1` (e.g. `ensemble` + `dpo` → `ensemble_dpo_v1`); `distill` has no silent default (multiple product variants). For product fine-tunes, name the product in the prompt or write `use_case: <module>` so the plugin is bound before codegen.
+User types a prompt (and optional algorithm dropdown). Backend may infer `task_type` from keywords. If no recipe is attached, the Lead Agent chooses algorithm / `task_type` and may warm-start knobs from a close recipe-library match. When recipe is still omitted but `use_case` is bound, the default recipe stem is `{use_case}_{task}_v1` (e.g. `ensemble` + `dpo` → `ensemble_dpo_v1`); `distill` has no silent default (multiple product variants). Stem resolution walks `settings.recipes_path` then `ASTRA_PRODUCT_RECIPES` packs. For product fine-tunes, name the product in the prompt or write `use_case: <module>` so the plugin is bound before codegen.
 
 **B. Recipe-first (one-click dispatch)**  
 `dispatch` builds `MissionCreate(recipe=…, goal?=…, use_case?=…)`. Goal text is canonicalized from the recipe description + target when omitted. `current_plan` is seeded with the recipe name (and stage-0 HPs for multi-stage). Finetune recipes still need a product: pass `use_case` on the dispatch body, put a marker in `goal`, or let the Lead Agent set it when the goal names the product. Recipe YAML must not hardcode `use_case` as a training HP.

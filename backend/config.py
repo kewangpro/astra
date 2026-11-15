@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     chroma_path: str = "./data/chroma_db"
     data_path: str = "./data"
     recipes_path: str = "./recipes"
+    # Product recipe packs: "use_case:/path,other:/path" (ASTRA_PRODUCT_RECIPES).
+    # Searched after recipes_path — see backend.services.recipe_paths.
+    product_recipes: str = ""
     api_host: str = "0.0.0.0"
     api_port: int = 8200
     log_level: str = "INFO"

@@ -46,8 +46,9 @@ router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _load_disk_recipe(filename: str) -> RecipeRead:
-    path = os.path.join(settings.recipes_path, filename)
+def _load_disk_recipe(filename: str, directory: Optional[str] = None) -> RecipeRead:
+    base = directory or settings.recipes_path
+    path = os.path.join(base, filename)
     with open(path, "r") as f:
         data = yaml.safe_load(f)
     return RecipeRead(
@@ -70,12 +71,16 @@ def is_auto_crystallized(record: RecipeRecord) -> bool:
 
 
 def _yaml_path_for_recipe(name: str) -> Optional[str]:
-    recipes_dir = os.path.abspath(settings.recipes_path)
-    for ext in (".yaml", ".yml"):
-        path = os.path.abspath(os.path.join(recipes_dir, f"{name}{ext}"))
-        if path.startswith(recipes_dir + os.sep) or path == recipes_dir:
-            if os.path.isfile(path):
-                return path
+    from backend.services.recipe_paths import find_recipe_file, recipe_search_dirs
+
+    found = find_recipe_file(name)
+    if not found:
+        return None
+    abs_found = os.path.abspath(found)
+    for directory in recipe_search_dirs():
+        root = os.path.abspath(directory)
+        if abs_found == root or abs_found.startswith(root + os.sep):
+            return abs_found
     return None
 
 
@@ -84,15 +89,15 @@ def _yaml_path_for_recipe(name: str) -> Optional[str]:
 @router.get("", response_model=List[RecipeRead])
 async def list_recipes(db: AsyncSession = Depends(get_db)):
     """List all recipes: disk-based (hand-crafted) merged with DB records."""
+    from backend.services.recipe_paths import iter_disk_recipe_filenames
+
     disk_recipes: dict[str, RecipeRead] = {}
-    if os.path.isdir(settings.recipes_path):
-        for fname in sorted(os.listdir(settings.recipes_path)):
-            if fname.endswith((".yaml", ".yml")):
-                try:
-                    r = _load_disk_recipe(fname)
-                    disk_recipes[r.name] = r
-                except Exception:
-                    pass
+    for directory, fname in iter_disk_recipe_filenames():
+        try:
+            r = _load_disk_recipe(fname, directory=directory)
+            disk_recipes[r.name] = r
+        except Exception:
+            pass
 
     # DB records take priority on name collision
     result = await db.execute(select(RecipeRecord).order_by(RecipeRecord.created_at.desc()))
@@ -165,11 +170,12 @@ async def get_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
             content=record.full_content,
         )
 
-    # Fallback to disk
-    for ext in (".yaml", ".yml"):
-        fpath = os.path.join(settings.recipes_path, recipe_name + ext)
-        if os.path.isfile(fpath):
-            return _load_disk_recipe(recipe_name + ext)
+    # Fallback to disk (platform + product packs)
+    from backend.services.recipe_paths import find_recipe_file
+
+    fpath = find_recipe_file(recipe_name)
+    if fpath:
+        return _load_disk_recipe(os.path.basename(fpath), directory=os.path.dirname(fpath))
 
     raise HTTPException(status_code=404, detail=f"Recipe '{recipe_name}' not found")
 

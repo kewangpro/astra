@@ -45,19 +45,20 @@ async def resolve_recipe(recipe_name: str, db: AsyncSession) -> tuple[dict[str, 
             content["target_metric"] = record.target_metric
         return content, domain, task_type
 
-    # 2. Try disk
-    for ext in (".yaml", ".yml"):
-        fpath = os.path.join(settings.recipes_path, f"{clean_name}{ext}")
-        if os.path.exists(fpath):
-            with open(fpath, "r") as f:
-                content = yaml.safe_load(f) or {}
-            domain = content.get("domain", "rl")
-            raw_task = content.get("task_type")
-            if not raw_task:
-                task_type = "rl" if any(k in clean_name for k in ("env", "game", "snake", "tetris", "minatar")) else "rft"
-            else:
-                task_type = str(raw_task).lower()
-            return content, domain, task_type
+    # 2. Try disk (platform recipes/ then ASTRA_PRODUCT_RECIPES packs)
+    from backend.services.recipe_paths import find_recipe_file
+
+    fpath = find_recipe_file(clean_name)
+    if fpath:
+        with open(fpath, "r") as f:
+            content = yaml.safe_load(f) or {}
+        domain = content.get("domain", "rl")
+        raw_task = content.get("task_type")
+        if not raw_task:
+            task_type = "rl" if any(k in clean_name for k in ("env", "game", "snake", "tetris", "minatar")) else "rft"
+        else:
+            task_type = str(raw_task).lower()
+        return content, domain, task_type
 
     raise HTTPException(status_code=404, detail=f"Recipe '{clean_name}' not found in DB or disk")
 
