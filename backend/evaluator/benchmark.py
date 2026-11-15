@@ -500,6 +500,12 @@ def run_tournament_match(
     import numpy as np
     import gymnasium as gym
 
+    suite_id = "rl_tournament"
+    suite_rev = 1
+    if isinstance(env_kwargs, dict):
+        suite_id = str(env_kwargs.get("suite_id") or suite_id)
+        suite_rev = int(env_kwargs.get("suite_rev") or suite_rev)
+
     if env_id.lower() in ("nlp", "language", "text", "llm"):
         loaded_models = []
         for entry in checkpoint_entries:
@@ -561,8 +567,15 @@ def run_tournament_match(
                 "scores": [],
             })
 
+        # Suite-owned tournament seeds (AstraEval); record suite_rev for champions.
+        try:
+            from astraeval.registry import tournament_seed as _suite_tournament_seed
+        except Exception:  # pragma: no cover
+            def _suite_tournament_seed(ep, suite_id="rl_tournament", suite_rev=1):
+                return 2000 + ep
+
         for ep in range(n_episodes):
-            seed = 2000 + ep
+            seed = _suite_tournament_seed(ep, suite_id=suite_id, suite_rev=suite_rev)
             for m in loaded_models:
                 if m["model"] is None:
                     m["scores"].append(0.0)
@@ -650,5 +663,7 @@ def run_tournament_match(
         "episodes": n_episodes,
         "leaderboard": leaderboard,
         "champion_id": leaderboard[0]["model_id"] if leaderboard else None,
+        "suite_id": suite_id,
+        "suite_rev": suite_rev,
     }
 

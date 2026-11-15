@@ -11,11 +11,7 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import random
-import urllib.request
-import zipfile
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -111,23 +107,6 @@ class HSTUModel(nn.Module):
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
-def _download_ml1m(data_dir: Path) -> Path:
-    data_dir.mkdir(parents=True, exist_ok=True)
-    ratings = data_dir / "ml-1m" / "ratings.dat"
-    if ratings.is_file():
-        return ratings
-    zip_path = data_dir / "ml-1m.zip"
-    url = "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
-    print(f"Downloading MovieLens-1M from {url} …", flush=True)
-    urllib.request.urlretrieve(url, zip_path)
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(data_dir)
-    zip_path.unlink(missing_ok=True)
-    if not ratings.is_file():
-        raise FileNotFoundError(f"expected {ratings} after extract")
-    return ratings
-
-
 def _synthetic_sequences(n_users: int = 200, n_items: int = 50, seed: int = 0) -> Dict[int, List[int]]:
     rng = random.Random(seed)
     seqs: Dict[int, List[int]] = {}
@@ -140,26 +119,45 @@ def _synthetic_sequences(n_users: int = 200, n_items: int = 50, seed: int = 0) -
     return seqs
 
 
-def load_ml1m_sequences(data_dir: Path, min_len: int = 5) -> Tuple[Dict[int, List[int]], int]:
-    ratings = _download_ml1m(data_dir)
-    by_user: Dict[int, List[Tuple[int, int]]] = defaultdict(list)
-    with open(ratings, encoding="latin-1") as f:
-        for line in f:
-            uid, iid, _rating, ts = line.strip().split("::")
-            by_user[int(uid)].append((int(ts), int(iid)))
-    raw: Dict[int, List[int]] = {}
-    item_ids: set[int] = set()
-    for uid, events in by_user.items():
-        events.sort()
-        items = [iid for _, iid in events]
-        if len(items) < min_len:
-            continue
-        raw[uid] = items
-        item_ids.update(items)
-    # Remap to contiguous 1..N (0 = pad)
-    item_map = {old: i + 1 for i, old in enumerate(sorted(item_ids))}
-    seqs = {u: [item_map[i] for i in items] for u, items in raw.items()}
-    return seqs, len(item_map)
+def load_ml1m_sequences(
+    data_dir: Path,
+    min_len: int = 5,
+    *,
+    dataset_id: str = "hstu_ml1m",
+    dataset_rev: int = 1,
+) -> Tuple[Dict[int, List[int]], int, Dict[int, int]]:
+    """Load MovieLens via AstraData registry (frozen ``dataset_id@rev``).
+
+    Returns ``(seqs, n_items, item_map)``. Legacy ``data_dir`` is only used as
+    the download cache when materializing a new rev.
+    """
+    from astradata.hstu_ml1m import load_frozen_sequences
+    from astradata.registry import ensure_dataset
+
+    # data_dir parent → astradata root when path looks like …/hstu_ml1m/<rev>
+    data_root = Path(data_dir)
+    if data_root.name.isdigit() and data_root.parent.name == dataset_id:
+        astradata_root = data_root.parent.parent
+    elif data_root.name == dataset_id:
+        astradata_root = data_root.parent
+    else:
+        # Fall back: materialize under data/astradata next to legacy cache
+        astradata_root = data_root.parent / "astradata" if data_root.name == "hstu" else Path("data/astradata")
+
+    handle = ensure_dataset(
+        dataset_id,
+        dataset_rev,
+        data_root=astradata_root,
+        download_cache=Path(data_dir) / "_ml1m_download",
+        min_len=min_len,
+    )
+    seqs, n_items, item_map = load_frozen_sequences(handle.root)
+    print(
+        f"astradata {handle.ref} hash={handle.content_hash[:12]}… "
+        f"root={handle.root}",
+        flush=True,
+    )
+    return seqs, n_items, item_map
 
 
 class NextItemDataset(Dataset):
@@ -239,11 +237,17 @@ def train(args: argparse.Namespace) -> None:
     device = _device()
     print(f"device={device}", flush=True)
 
+    item_map: Dict[int, int] = {}
     if args.synthetic:
         seqs = _synthetic_sequences(n_users=args.synthetic_users, n_items=args.synthetic_items)
         n_items = args.synthetic_items
+        item_map = {i: i for i in range(1, n_items + 1)}
     else:
-        seqs, n_items = load_ml1m_sequences(data_dir)
+        seqs, n_items, item_map = load_ml1m_sequences(
+            data_dir,
+            dataset_id=args.dataset_id,
+            dataset_rev=args.dataset_rev,
+        )
     print(f"users={len(seqs)} items={n_items}", flush=True)
 
     train_ds = NextItemDataset(seqs, args.max_len, "train")
@@ -286,6 +290,9 @@ def train(args: argparse.Namespace) -> None:
         ckpt = {
             "model": model.state_dict(),
             "n_items": n_items,
+            "item_map": {str(k): v for k, v in item_map.items()},
+            "dataset_id": getattr(args, "dataset_id", "hstu_ml1m"),
+            "dataset_rev": getattr(args, "dataset_rev", 1),
             "args": vars(args),
             "hr_at_10": hr,
             "ndcg_at_10": ndcg,
@@ -302,7 +309,13 @@ def train(args: argparse.Namespace) -> None:
 
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train a small HSTU next-item recommender")
-    p.add_argument("--data-dir", default="data/hstu", help="MovieLens cache directory")
+    p.add_argument(
+        "--data-dir",
+        default="data/astradata/hstu_ml1m/1",
+        help="Legacy cache / astradata rev path hint",
+    )
+    p.add_argument("--dataset-id", default="hstu_ml1m", help="AstraData dataset_id")
+    p.add_argument("--dataset-rev", type=int, default=1, help="AstraData dataset rev")
     p.add_argument("--out", required=True, help="Checkpoint directory")
     p.add_argument("--epochs", type=int, default=5)
     p.add_argument("--batch-size", type=int, default=256)

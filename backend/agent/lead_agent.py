@@ -38,13 +38,17 @@ with "train" and "valid" JSONL paths. Hyperparameters: base_model, lora_rank, lo
 lora_dropout, num_layers, batch_size, learning_rate, iters, mask_prompt.
 
 For hstu tasks (from-scratch PyTorch HSTU next-item trainer on MovieLens via hstu_ml1m_v1.yaml):
-leave "hyperparameters" as {}. The recipe supplies epochs/batch_size/d_model/etc. Set task_type
-"hstu", algorithm "HSTU", and reasoning. Goal metric is hr_at_10. Same shape as training a small
-LSTM recommender — local Astra .venv, auto-downloads ML-1M. Prefer hstu for HSTU / MovieLens /
+leave "hyperparameters" as {}. The recipe supplies epochs/batch_size/d_model/etc. and AstraData
+dataset_id@rev / AstraEval suite_id@rev. Set task_type "hstu", algorithm "HSTU", and reasoning.
+Goal metric is hr_at_10 from HstuHr10Suite (not a log scrape). Prefer hstu for HSTU / MovieLens /
 sequential recommendation goals.
 
+Flywheel FailSlice (use_case=ensemble): when a prior RoutingBareEvalSuite FailSlice exists in
+AstraData, prefer a focused follow-on — set hyperparameters.focus_cases to that slice's case_ids
+(CSV) and keep the same suite_id@rev. Do not invent new case ids; do not bump suite_rev.
+
 For sft/dpo/grpo/agrpo/distill/rft/opd/rlcd/star/prompt tasks (product routing / agentic RL fine-tuning or prompt optimization via Astra train CLIs + product UseCasePlugin): leave "hyperparameters"
-nearly empty. Do NOT invent adapter paths, base model, finetune_dir, python_bin, LoRA ranks, or
+as an empty object {} (only ``use_case`` may be set). Do NOT invent adapter paths, base model, finetune_dir, python_bin, LoRA ranks, or
 other training/eval values — those come from the recipe YAML. The ONE hyperparameter you MUST set
 from the mission creation goal is "use_case": the importable UseCasePlugin module for the product
 named in the goal (e.g. goal mentions Ensemble / Ensemble routing → "ensemble"; goal says

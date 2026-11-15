@@ -794,6 +794,8 @@ class LoopStateMachine:
 
                 if mission.current_plan and "recipe" in mission.current_plan and "recipe" not in plan:
                     plan["recipe"] = mission.current_plan["recipe"]
+                # Keep AstraData / AstraEval bind axes across Lead Agent replan.
+                self._ensure_flywheel_axes(plan, mission.current_plan)
                 if not plan.get("recipe"):
                     from backend.agent.code_generator import default_recipe_for_task
                     _uc = ""
@@ -1061,14 +1063,45 @@ class LoopStateMachine:
                 # last_checkpoint_path never advances (ede50372 iter1).
                 _prev_best_for_chain = pivot_engine.best_metric_value_before(current_iteration)
                 if metric_name and metric_name != "mean_reward":
-                    if metric_name not in current_metrics:
+                    _mission_task_type_for_eval = (
+                        mission.task_type
+                        if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES
+                        else plan.get("task_type")
+                    )
+                    # Authoritative suite gates always run (even if telemetry already
+                    # scraped the same metric name during training).
+                    if _mission_task_type_for_eval == "hstu":
+                        await emit_status(
+                            mission_id, f"Evaluating {metric_name} via AstraEval…",
+                            event_type="info",
+                        )
+                        self._ensure_flywheel_axes(plan, mission.current_plan)
+                        goal_val = await asyncio.to_thread(
+                            self._run_hstu_suite, mission_id, plan, current_iteration
+                        )
+                        if goal_val is None:
+                            goal_val = current_metrics.get("hr_at_10")
+                        if goal_val is None:
+                            goal_val = self._hstu_hr_at_10_from_log(mission_id)
+                        if goal_val is not None:
+                            current_metrics[metric_name] = goal_val
+                    elif (
+                        _mission_task_type_for_eval == "rft"
+                        and (plan.get("suite_id") or plan.get("eval_suite"))
+                    ):
+                        await emit_status(
+                            mission_id, f"Evaluating {metric_name} via AstraEval…",
+                            event_type="info",
+                        )
+                        self._ensure_flywheel_axes(plan, mission.current_plan)
+                        goal_val = await asyncio.to_thread(
+                            self._run_routing_suite, mission_id, plan, current_iteration
+                        )
+                        if goal_val is not None:
+                            current_metrics[metric_name] = goal_val
+                    elif metric_name not in current_metrics:
                         await emit_status(
                             mission_id, f"Evaluating {metric_name}…", event_type="info"
-                        )
-                        _mission_task_type_for_eval = (
-                            mission.task_type
-                            if mission.task_type in _FINETUNE_REMOTE_TASK_TYPES
-                            else plan.get("task_type")
                         )
                         if _mission_task_type_for_eval == "embed":
                             # Prefer telemetry; fall back to sandbox.log scrape
@@ -1080,10 +1113,6 @@ class LoopStateMachine:
                             goal_val = current_metrics.get("rerank_acc")
                             if goal_val is None:
                                 goal_val = self._rerank_acc_from_log(mission_id)
-                        elif _mission_task_type_for_eval == "hstu":
-                            goal_val = current_metrics.get("hr_at_10")
-                            if goal_val is None:
-                                goal_val = self._hstu_hr_at_10_from_log(mission_id)
                         elif _mission_task_type_for_eval == "prompt":
                             # A prompt run IS the eval — the generated script
                             # writes a variant and execs bare_eval on it — so the
@@ -1126,6 +1155,18 @@ class LoopStateMachine:
                                 goal_val = await asyncio.to_thread(
                                     self._run_bare_eval, mission_id, plan, current_iteration
                                 )
+                                # Emit FailSlice when suite axes are stamped even if
+                                # we still used legacy bare_eval for non-rft workers.
+                                if plan.get("suite_id") or plan.get("eval_suite"):
+                                    try:
+                                        self._emit_fail_slice_from_bare(
+                                            mission_id, plan, goal_val
+                                        )
+                                    except Exception as _fs_exc:
+                                        logger.warning(
+                                            "FailSlice emit failed mission=%s: %s",
+                                            mission_id, _fs_exc,
+                                        )
                             if goal_val is None:
                                 # The official post-training eval failed/crashed
                                 # (e.g. missing checkpoint, transient SSH error) —
@@ -3782,6 +3823,234 @@ class LoopStateMachine:
     def _hstu_ndcg_at_10_from_log(self, mission_id: str) -> Optional[float]:
         """Best NDCG@10 scraped from the local sandbox.log (generative-recommenders)."""
         return self._local_acc_from_log(mission_id, _NDCG_AT_10_RE)
+
+    _FLYWHEEL_AXIS_KEYS = (
+        "dataset_id",
+        "dataset_rev",
+        "suite_id",
+        "suite_rev",
+        "eval_suite",
+        "last_fail_slice",
+        "last_fail_slice_case_ids",
+        "fail_slice_focus",
+    )
+
+    def _ensure_flywheel_axes(self, plan: dict, prior: Optional[dict] = None) -> None:
+        """Preserve / rehydrate dataset_* + suite_* after Lead Agent replan."""
+        if not isinstance(plan, dict):
+            return
+        if isinstance(prior, dict):
+            for key in self._FLYWHEEL_AXIS_KEYS:
+                if key in prior and key not in plan:
+                    plan[key] = prior[key]
+        if plan.get("dataset_id") and plan.get("suite_id"):
+            return
+        # Rehydrate from recipe YAML when axes were wiped.
+        recipe = str(plan.get("recipe") or "").removesuffix(".yaml").removesuffix(".yml")
+        if not recipe:
+            return
+        try:
+            from backend.services.recipe_paths import find_recipe_file
+            import yaml
+
+            fpath = find_recipe_file(recipe)
+            if not fpath:
+                return
+            with open(fpath) as f:
+                rc = yaml.safe_load(f) or {}
+            if "dataset_id" not in plan and rc.get("dataset_id"):
+                plan["dataset_id"] = str(rc["dataset_id"])
+                if rc.get("dataset_rev") is not None:
+                    plan["dataset_rev"] = int(rc["dataset_rev"])
+            sid = rc.get("eval_suite") or rc.get("suite_id")
+            if "suite_id" not in plan and sid:
+                plan["suite_id"] = str(sid)
+                if rc.get("suite_rev") is not None:
+                    plan["suite_rev"] = int(rc["suite_rev"])
+        except Exception as exc:
+            logger.warning("flywheel axis rehydrate failed recipe=%s: %s", recipe, exc)
+
+    def _suite_axes(self, plan: dict) -> tuple:
+        suite_id = str(plan.get("suite_id") or plan.get("eval_suite") or "").strip()
+        suite_rev = int(plan.get("suite_rev") or 1)
+        dataset_id = str(plan.get("dataset_id") or "").strip()
+        dataset_rev = plan.get("dataset_rev")
+        dataset_ref = (
+            f"{dataset_id}@{int(dataset_rev)}" if dataset_id and dataset_rev is not None
+            else (dataset_id or None)
+        )
+        return suite_id, suite_rev, dataset_ref
+
+    def _emit_fail_slice(
+        self,
+        mission_id: str,
+        plan: dict,
+        *,
+        primary: float,
+        primary_metric: str,
+        case_ids: list,
+        population_fingerprint: Optional[str] = None,
+        diagnostics: Optional[dict] = None,
+    ) -> Optional[str]:
+        """Write FailSlice into AstraData bank; return path or None."""
+        from astradata.fail_slice import FailSlice, FailSliceStore
+
+        suite_id, suite_rev, dataset_ref = self._suite_axes(plan)
+        if not suite_id:
+            suite_id = "unknown"
+        store = FailSliceStore(
+            bank_root=os.path.join(settings.data_path, "astradata", "fail_slices")
+        )
+        slice_ = FailSlice(
+            suite_id=suite_id,
+            suite_rev=suite_rev,
+            case_ids=list(case_ids or []),
+            primary=float(primary),
+            primary_metric=primary_metric,
+            mission_id=mission_id,
+            dataset_ref=dataset_ref,
+            population_fingerprint=population_fingerprint,
+            diagnostics=dict(diagnostics or {}),
+        )
+        path = store.write(slice_)
+        # Link on plan for HUD / follow-on focus_cases.
+        plan["last_fail_slice"] = str(path)
+        plan["last_fail_slice_case_ids"] = list(case_ids or [])
+        logger.info(
+            "FailSlice written mission=%s path=%s cases=%d",
+            mission_id, path, len(case_ids or []),
+        )
+        return str(path)
+
+    def _emit_fail_slice_from_bare(
+        self, mission_id: str, plan: dict, goal_val: Optional[float]
+    ) -> None:
+        if goal_val is None:
+            return
+        report = getattr(self, "_bare_eval_split", {}).get(mission_id)
+        case_ids: list = []
+        diagnostics: dict = {}
+        if report is not None:
+            diagnostics = {
+                "static": getattr(report, "static", None),
+                "mcp": getattr(report, "mcp", None),
+                "blended": getattr(report, "blended", None),
+            }
+        self._emit_fail_slice(
+            mission_id,
+            plan,
+            primary=float(goal_val),
+            primary_metric="pass_rate",
+            case_ids=case_ids,
+            diagnostics=diagnostics,
+        )
+
+    def _run_hstu_suite(
+        self, mission_id: str, plan: dict, current_iteration: int
+    ) -> Optional[float]:
+        """Authoritative HR@10 via AstraEval HstuHr10Suite."""
+        from astraeval.registry import get_suite
+
+        suite_id, suite_rev, _dataset_ref = self._suite_axes(plan)
+        if not suite_id:
+            suite_id, suite_rev = "hstu_hr10", 1
+        ckpt_dir = os.path.join(
+            settings.data_path, "missions", mission_id, "checkpoints"
+        )
+        # Prefer iteration-scoped then best.pt / last.pt
+        candidates = [
+            os.path.join(ckpt_dir, "best.pt"),
+            os.path.join(ckpt_dir, "last.pt"),
+            ckpt_dir,
+        ]
+        ckpt = next((c for c in candidates if os.path.exists(c)), ckpt_dir)
+        try:
+            suite = get_suite(suite_id if suite_id.startswith("hstu") else "hstu_hr10", suite_rev)
+            # Prefer checkpoint-embedded metric; fall back to log scrape as dict.
+            result = None
+            try:
+                result = suite.run(ckpt)
+            except Exception:
+                hr = self._hstu_hr_at_10_from_log(mission_id)
+                if hr is None:
+                    raise
+                result = suite.run({"hr_at_10": hr})
+            self._emit_fail_slice(
+                mission_id,
+                plan,
+                primary=result.primary,
+                primary_metric=result.primary_metric,
+                case_ids=result.case_ids,
+                population_fingerprint=result.population_fingerprint,
+                diagnostics=result.diagnostics,
+            )
+            return float(result.primary)
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: HstuHr10Suite failed mission=%s: %s", mission_id, exc
+            )
+            return None
+
+    def _run_routing_suite(
+        self, mission_id: str, plan: dict, current_iteration: int
+    ) -> Optional[float]:
+        """Authoritative pass_rate via AstraEval RoutingBareEvalSuite (rft vertical)."""
+        from astraeval.registry import get_suite
+
+        # Reuse legacy bare_eval execution, then wrap as suite report.
+        score = self._run_bare_eval(mission_id, plan, current_iteration)
+        if score is None:
+            return None
+        suite_id, suite_rev, _ = self._suite_axes(plan)
+        if not suite_id:
+            suite_id, suite_rev = "routing_bare", 1
+        report = getattr(self, "_bare_eval_split", {}).get(mission_id)
+        case_ids: list = []
+        diagnostics: dict = {"source": "bare_eval"}
+        if report is not None:
+            diagnostics.update({
+                "static": getattr(report, "static", None),
+                "mcp": getattr(report, "mcp", None),
+                "blended": getattr(report, "blended", None),
+            })
+        try:
+            suite = get_suite(
+                suite_id if "routing" in suite_id or suite_id == "routing_bare" else "routing_bare",
+                suite_rev,
+            )
+            result = suite.run(
+                None,
+                report={
+                    "primary": float(score),
+                    "case_ids": case_ids,
+                    "diagnostics": diagnostics,
+                    "frozen_clock": f"suite_rev={suite_rev}",
+                },
+            )
+            self._emit_fail_slice(
+                mission_id,
+                plan,
+                primary=result.primary,
+                primary_metric=result.primary_metric,
+                case_ids=result.case_ids,
+                population_fingerprint=result.population_fingerprint,
+                diagnostics=result.diagnostics,
+            )
+            return float(result.primary)
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: RoutingBareEvalSuite failed mission=%s: %s",
+                mission_id, exc,
+            )
+            self._emit_fail_slice(
+                mission_id,
+                plan,
+                primary=float(score),
+                primary_metric="pass_rate",
+                case_ids=case_ids,
+                diagnostics=diagnostics,
+            )
+            return float(score)
 
     def _read_telemetry_metrics(self, mission_id: str, offset: int = 0) -> dict:
         """Return {metric_name: peak_value} for metric events written to telemetry.jsonl since offset.

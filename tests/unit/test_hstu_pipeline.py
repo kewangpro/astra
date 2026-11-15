@@ -60,6 +60,9 @@ def test_hstu_ml1m_v1_recipe_structure():
         data = yaml.safe_load(f)
     assert data["task_type"] == "hstu"
     assert data["domain"] == "recsys"
+    assert data["dataset_id"] == "hstu_ml1m"
+    assert int(data["dataset_rev"]) == 1
+    assert data["eval_suite"] == "hstu_hr10"
     assert "hr_at_10" in data["target_metric"]
     hp = data["hyperparameters"]
     assert hp["epochs"] == 5
@@ -83,7 +86,9 @@ def test_hstu_wrapper_invokes_inrepo_module():
     code = _HSTU_LOCAL_WRAPPER.format(
         checkpoint_dir="/tmp/ckpt",
         python_bin="/tmp/.venv/bin/python",
-        data_dir="/tmp/data/hstu",
+        data_dir="/tmp/data/astradata/hstu_ml1m/1",
+        dataset_id="hstu_ml1m",
+        dataset_rev="1",
         epochs=5,
         batch_size=256,
         learning_rate=0.001,
@@ -96,6 +101,7 @@ def test_hstu_wrapper_invokes_inrepo_module():
         seed=42,
     )
     assert "backend.trainers.hstu_train" in code
+    assert "--dataset-id" in code
     assert "--out" in code
     assert "gin_config" not in code
     assert "generative-recommenders" not in code
@@ -147,7 +153,9 @@ def test_hstu_code_safety_auto_approves_module_execv():
     code = _HSTU_LOCAL_WRAPPER.format(
         checkpoint_dir="/tmp/ckpt",
         python_bin="/tmp/.venv/bin/python",
-        data_dir="/tmp/data/hstu",
+        data_dir="/tmp/data/astradata/hstu_ml1m/1",
+        dataset_id="hstu_ml1m",
+        dataset_rev="1",
         epochs=5,
         batch_size=256,
         learning_rate=0.001,

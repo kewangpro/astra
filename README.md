@@ -7,7 +7,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 ## Feature Highlights
 
 - **End-to-End Autonomous Loop** — Plan → Critique → Implement → Sandbox → Train → Evaluate → Refine. Integrates GAN-style plan critique, automatic error recovery, and convergence guards that prevent runaway compute.
-- **AstraGym × AstraRL × AstraTune (Epoch 9–10)** — **Gym-coupled** RL is **AstraGym** × **AstraRL** (SB3 + MLX GRPO/OPD). **Offline LM** post-training is **AstraTune** (SFT/DPO/distill/RFT/STAR/RLCD + shared LoRA I/O). Products plug in via [`astra_plugin`](astra_plugin/) (mission-create / plan `--use-case`; `ASTRA_USE_CASE` env is bare-CLI fallback only). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/), [`astratune/`](astratune/). See [DESIGN.md § 2.4](docs/DESIGN.md).
+- **AstraGym × AstraRL × AstraTune + AstraData × AstraEval (Epoch 9–11)** — **Gym-coupled** RL is **AstraGym** × **AstraRL** (SB3 + MLX GRPO/OPD). **Offline LM** post-training is **AstraTune**. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev` + FailSlice) complete fuel → train → truth → fuel. Products plug in via [`astra_plugin`](astra_plugin/). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/), [`astratune/`](astratune/), [`astradata/`](astradata/), [`astraeval/`](astraeval/). See [DESIGN.md § 2.4](docs/DESIGN.md).
 - **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts. Goals that name a trainer stay on it; unnamed "RL agent" goals seed the env recipe algorithm and, once plateaued, switch to a *different* trainer (`SB3 PPO` → `PPO` is not a switch).
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), each in its own `train_config` env (same table as `/models/{id}` play). Tracks score distributions and tie-split win rates; crowning a champion is exclusive per environment.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
@@ -62,8 +62,10 @@ A task is the objective. An algorithm is the update rule. `task_type` is the san
 | **AstraGym** | [`astragym/`](astragym/) | `gym_id` | Worlds: `reset` / `step`, rewards, eval |
 | **AstraRL** | [`astrarl/`](astrarl/) | `learner_id` | Gym-coupled learners + platform GRPO runtime (rollout / DAPO / loss) |
 | **AstraTune** | [`astratune/`](astratune/) | `learner_id` | Offline LM (SFT/DPO/…); shared `lora_io` (+ AstraRL MLX); preference/decision math |
+| **AstraData** | [`astradata/`](astradata/) | `dataset_id@rev` | Versioned fuel, FailSlice bank, HSTU builders |
+| **AstraEval** | [`astraeval/`](astraeval/) | `suite_id@rev` | Authoritative suites, ceilings, FailSlice emit, tournament seeds |
 | **astra_plugin** | [`astra_plugin/`](astra_plugin/) | `--use-case` | Product `UseCasePlugin` contract + loader |
-| **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD |
+| **Orchestrator** | Astra loop | `task_type` | Missions, pivots, recipes, sandbox, HUD; stamps Data/Eval axes |
 
 | Gym-coupled worker | Typical `gym_id` | Typical `learner_id` |
 |---|---|---|

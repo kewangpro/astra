@@ -49,20 +49,53 @@ def _reject_unreachable_target(
     ceiling = recipe_metric_ceiling(recipe) if recipe else {}
     if not ceiling:
         ceiling = recipe_metric_ceiling(task_type)
+
+    # Prefer AstraEval suite ceiling when recipe declares eval_suite / suite_id.
+    suite_ref = ""
+    try:
+        from backend.services.recipe_paths import find_recipe_file
+        import yaml
+
+        stem = (recipe or "").removesuffix(".yaml").removesuffix(".yml")
+        if stem:
+            fpath = find_recipe_file(stem)
+            if fpath:
+                with open(fpath) as f:
+                    rc = yaml.safe_load(f) or {}
+                sid = rc.get("eval_suite") or rc.get("suite_id")
+                srev = rc.get("suite_rev", 1)
+                if sid:
+                    suite_ref = f"{sid}@{srev}"
+                    from astraeval.gate import suite_ceiling
+
+                    suite_cap = suite_ceiling(
+                        suite_ref,
+                        override=rc.get("metric_ceiling")
+                        if isinstance(rc.get("metric_ceiling"), dict)
+                        else None,
+                    )
+                    if suite_cap:
+                        ceiling = suite_cap
+    except Exception:
+        pass
+
     for name, tgt in target_metric.items():
         cap = ceiling.get(name)
         if cap is None:
             continue
         try:
             if float(tgt) > float(cap) + _CEILING_TARGET_MARGIN:
+                where = f"suite {suite_ref}" if suite_ref else f"'{task_type}' recipe"
                 raise HTTPException(
                     status_code=422,
                     detail=(
                         f"target {name}={tgt} exceeds the empirically-observed ceiling for the "
-                        f"'{task_type}' recipe ({name}≈{cap}). Lower the target, or raise "
-                        f"metric_ceiling in the recipe if that ceiling has genuinely been beaten."
+                        f"{where} ({name}≈{cap}). Lower the target, or raise "
+                        f"metric_ceiling / suite ceiling if that ceiling has genuinely been beaten."
                     ),
                 )
+        except HTTPException:
+            raise
         except (TypeError, ValueError):
             continue
 

@@ -261,6 +261,36 @@ async def prepare_mission_params(payload: MissionCreate, db: AsyncSession) -> di
                     k: v for k, v in stage["hyperparameters"].items() if k != "use_case"
                 }
 
+    # AstraData / AstraEval bind axes (stamp from recipe when present).
+    if recipe_content and current_plan is not None:
+        ds_id = recipe_content.get("dataset_id")
+        ds_rev = recipe_content.get("dataset_rev")
+        suite_id = recipe_content.get("eval_suite") or recipe_content.get("suite_id")
+        suite_rev = recipe_content.get("suite_rev")
+        if ds_id:
+            current_plan["dataset_id"] = str(ds_id)
+            if ds_rev is not None:
+                current_plan["dataset_rev"] = int(ds_rev)
+        if suite_id:
+            current_plan["suite_id"] = str(suite_id)
+            if suite_rev is not None:
+                current_plan["suite_rev"] = int(suite_rev)
+
+        # Ensemble FailSlice → focus_cases when use_case bound and bank has a slice.
+        if use_case == "ensemble":
+            try:
+                from astradata.fail_slice import FailSliceStore
+
+                csv = FailSliceStore().focus_cases_csv(suite_id="routing_bare")
+                if csv:
+                    hp = dict(current_plan.get("hyperparameters") or {})
+                    if not hp.get("focus_cases"):
+                        hp["focus_cases"] = csv
+                        current_plan["hyperparameters"] = hp
+                        current_plan["fail_slice_focus"] = True
+            except Exception:
+                pass
+
     return {
         "goal": goal,
         "task_type": task_type,

@@ -1346,6 +1346,8 @@ os.makedirs("{checkpoint_dir}", exist_ok=True)
 argv = [
     "{python_bin}", "-m", "backend.trainers.hstu_train",
     "--data-dir", "{data_dir}",
+    "--dataset-id", "{dataset_id}",
+    "--dataset-rev", "{dataset_rev}",
     "--out", "{checkpoint_dir}",
     "--epochs", "{epochs}",
     "--batch-size", "{batch_size}",
@@ -1963,7 +1965,7 @@ def _format_rlcd_wrapper(hp: dict, checkpoint_dir: str) -> str:
     # Foundation / specialize recipes set cases; default routing-only when unset.
     routing_only = bool(hp["routing_only"]) if "routing_only" in hp else (not cases)
     empty_rationale = bool(hp["empty_rationale"]) if "empty_rationale" in hp else True
-    focus = _csv_cases(hp.get("focus_cases"))
+    focus = _resolve_focus_cases(hp)
     eval_max = int(hp.get("eval_max_cases") or 0)
     return _RLCD_REMOTE_WRAPPER.format(
         finetune_dir=hp.get("finetune_dir", "/Users/kewang/finetune"),
@@ -2696,9 +2698,41 @@ def _csv_cases(raw) -> str:
     return str(raw).strip()
 
 
+def _focus_cases_from_fail_slice() -> str:
+    """Latest AstraData FailSlice case_ids CSV (Eval → Data → train)."""
+    try:
+        from astradata.fail_slice import FailSliceStore
+        from backend.config import settings
+        import os
+
+        bank = os.path.join(settings.data_path, "astradata", "fail_slices")
+        return FailSliceStore(bank_root=bank).focus_cases_csv(suite_id="routing_bare")
+    except Exception:
+        return ""
+
+
+def _resolve_focus_cases(hp: dict) -> str:
+    """Recipe focus_cases, else FailSlice CSV when ensemble / explicitly opted in.
+
+    Mission create already stamps ``focus_cases`` for ensemble when a slice
+    exists. Auto-fallback here only when ``use_case=ensemble`` or
+    ``fail_slice_focus`` is set — never for a bare empty hp dict (keeps unit
+    tests and non-ensemble recipes from picking up a stale bank).
+    """
+    focus = _csv_cases(hp.get("focus_cases"))
+    if focus:
+        return focus
+    if hp.get("fail_slice_focus") or str(hp.get("use_case") or "").strip() == "ensemble":
+        return _focus_cases_from_fail_slice()
+    return ""
+
+
 def _focus_cases_flag(hp: dict) -> str:
     """Optional ``--focus-cases id,id,...`` argv fragment for Mini finetune CLIs."""
-    return _csv_cases_flag(hp, "focus_cases", "--focus-cases")
+    csv = _resolve_focus_cases(hp)
+    if not csv:
+        return ""
+    return f'"--focus-cases", "{csv}",'
 
 
 def _force_gold_cases_flag(hp: dict) -> str:
@@ -3194,7 +3228,17 @@ class CodeGenerator:
         hp = _resolve_hyperparams(recipe_key, plan.get("hyperparameters", {}))
         project_root = os.path.abspath(os.path.join(settings.data_path, ".."))
         venv_python = os.path.join(project_root, ".venv", "bin", "python")
-        data_dir = str(hp.get("data_dir", "data/hstu"))
+        dataset_id = str(
+            plan.get("dataset_id")
+            or hp.get("dataset_id")
+            or "hstu_ml1m"
+        )
+        dataset_rev = int(
+            plan.get("dataset_rev")
+            or hp.get("dataset_rev")
+            or 1
+        )
+        data_dir = str(hp.get("data_dir") or f"data/astradata/{dataset_id}/{dataset_rev}")
         if not os.path.isabs(data_dir):
             data_dir = os.path.join(project_root, data_dir)
         ckpt = os.path.abspath(checkpoint_dir)
@@ -3203,6 +3247,8 @@ class CodeGenerator:
             "checkpoint_dir": ckpt,
             "python_bin": str(hp.get("python_bin", venv_python if os.path.isfile(venv_python) else sys.executable)),
             "data_dir": data_dir,
+            "dataset_id": dataset_id,
+            "dataset_rev": str(dataset_rev),
             "epochs": int(hp.get("epochs", 5)),
             "batch_size": int(hp.get("batch_size", 256)),
             "learning_rate": float(hp.get("learning_rate", 1e-3)),
@@ -3338,7 +3384,7 @@ class CodeGenerator:
             hp["adapter"] = warm_start_adapter
             hp["no_adapter"] = False
         _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-        _focus = _csv_cases(hp.get("focus_cases"))
+        _focus = _resolve_focus_cases(hp)
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),
@@ -3390,7 +3436,7 @@ class CodeGenerator:
             hp["adapter"] = warm_start_adapter
             hp["no_adapter"] = False
         _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-        _focus = _csv_cases(hp.get("focus_cases"))
+        _focus = _resolve_focus_cases(hp)
         _force = _csv_cases(hp.get("force_gold_cases"))
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
@@ -3447,7 +3493,7 @@ class CodeGenerator:
             hp["adapter"] = warm_start_adapter
             hp["no_adapter"] = False
         _cold = bool(hp.get("no_adapter", False)) or not hp.get("adapter")
-        _focus = _csv_cases(hp.get("focus_cases"))
+        _focus = _resolve_focus_cases(hp)
         return {
             "finetune_dir": hp.get("finetune_dir", "/Users/kewang/finetune"),
             "python_bin": hp.get("python_bin", "/Users/kewang/finetune-env/bin/python"),

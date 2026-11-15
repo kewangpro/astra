@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "astra-rl-gym"
 version = "0.1.0"
-description = "AstraGym worlds, AstraRL/AstraTune train center, and astra_plugin use-case contract"
+description = "AstraGym/RL/Tune + astra_plugin + AstraData/AstraEval flywheel packages"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Proprietary" }
@@ -17,5 +17,13 @@ sb3 = ["stable-baselines3", "gymnasium"]
 [tool.setuptools.packages.find]
 # ``envs`` is the Gymnasium AgentToolGym / register surface used by astragym
 # agent_* makers and product agrpo facades (pip-only; no vendored gym in the product tree).
-include = ["astragym*", "astrarl*", "astratune*", "astra_plugin*", "envs*"]
+include = [
+    "astragym*",
+    "astrarl*",
+    "astratune*",
+    "astra_plugin*",
+    "astradata*",
+    "astraeval*",
+    "envs*",
+]
 exclude = ["backend*", "frontend*", "tests*", "recipes*", "docs*", "data*"]

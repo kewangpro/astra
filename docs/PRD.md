@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Epoch 10 (AstraTune) complete — see DESIGN § 2.4  
+**Status:** Epoch 11 (AstraData + AstraEval) — complete the flywheel; see DESIGN § 2.4  
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -169,3 +169,20 @@ To balance autonomy with safety, ASTRA implements a **Graduated Autonomy** syste
   - **Code Generation**: Reviewing scripts before execution.
   - **Resource Usage**: Approving training runs that exceed a specific cost/time budget.
 - **Silent Mode**: In **Supervised** mode only, once a specific sub-task strategy is "trusted" (high success rate in previous iterations), ASTRA can bypass approval gates for that sub-task automatically. Silent Mode does not apply in Guided mode (all gates remain active) and is redundant in Full Autonomy mode (all gates are already suppressed by user choice). See DESIGN §4.2 for the full gate-priority model.
+
+---
+
+## 6. Epoch 11 — AstraData + AstraEval (flywheel complete)
+
+**Goal.** Ship the two missing flywheel layers so fuel → train → truth → fuel matches the architecture canvas.
+
+| Package | Contract | First vertical |
+|---|---|---|
+| `astradata/` | `dataset_id@rev` registry, hash freeze, FailSlice bank | `hstu_ml1m@1` |
+| `astraeval/` | `suite.run(ckpt) → primary + case_ids`, ceilings, tournament seeds | `hstu_hr10@1`, `routing_bare@1` |
+
+**Orchestrator wiring.** Missions stamp `dataset_*` / `suite_*` from recipes. Create rejects over-suite-ceiling targets. Post-train: HSTU + RFT use authoritative suites; FailSlice lands in AstraData; Ensemble follow-ons inject `focus_cases` from the latest slice (same `suite_id@rev`). Tournament seeds = `astraeval.tournament_seed` (`2000 + ep`); champions record `suite_rev`.
+
+**Non-goals.** Datasets in recipe YAML blobs; Eval that trains; product `*_train.py` as platform entrypoint; moving distill/rft/star CE ownership this epoch.
+
+**E2E proof.** Hermetic unit + package tests for registry / suite / FailSlice; live Mini: HSTU suite-gated mission + Ensemble FailSlice → focus turn (see plan Step 6).

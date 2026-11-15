@@ -518,6 +518,23 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
         champ_id = result["champion_id"]
         champ_rec = await db.get(ModelRecord, champ_id)
         if champ_rec:
+            # Champions must record matching suite_rev (AstraEval tournament seeds).
+            suite_rev = result.get("suite_rev")
+            suite_id = result.get("suite_id") or "rl_tournament"
+            meta = dict(champ_rec.extra_metadata or {})
+            prior_rev = meta.get("suite_rev")
+            if prior_rev is not None and suite_rev is not None and int(prior_rev) != int(suite_rev):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"champion suite_rev mismatch: model has suite_rev={prior_rev}, "
+                        f"tournament used suite_rev={suite_rev} (suite_id={suite_id}). "
+                        f"Re-run on matching suite_rev or clear metadata."
+                    ),
+                )
+            meta["suite_id"] = suite_id
+            meta["suite_rev"] = suite_rev
+            champ_rec.extra_metadata = meta
             all_in_domain = await db.execute(
                 select(ModelRecord).where(ModelRecord.domain == champ_rec.domain)
             )

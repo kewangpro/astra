@@ -79,16 +79,48 @@ Plan → generate script → sandbox → evaluate → pivot or stop.
 
 Targets that exceed a recipe’s declared empirical ceiling are rejected at create time.
 
-### 2.4. AstraGym, AstraRL, AstraTune, and the Orchestrator (Epoch 9–10)
+### 2.4. AstraGym, AstraRL, AstraTune, AstraData, AstraEval, and the Orchestrator (Epoch 9–11)
 
-**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev`) close the flywheel: fuel → train → truth → FailSlice → fuel. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades + Data/Eval). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+
+**Flywheel** (target architecture — solid = forward; labeled edges = Eval feedback):
+
+```mermaid
+flowchart LR
+  Orch[Orchestrator]
+  Plugin[astra_plugin]
+  Packs[Product_packs]
+  Data[AstraData]
+  Gym[AstraGym]
+  RL[AstraRL]
+  Tune[AstraTune]
+  Eval[AstraEval]
+  Neither[Neither_hstu_embed]
+  Orch --> Gym
+  Orch --> RL
+  Orch --> Tune
+  Orch --> Neither
+  Orch --> Plugin
+  Packs --> Plugin
+  Data --> RL
+  Data --> Tune
+  Data --> Neither
+  Gym --> RL
+  RL --> Eval
+  Tune --> Eval
+  Neither --> Eval
+  Eval -->|"FailSlice"| Data
+  Eval -->|"suite_gate"| Orch
+```
+
+Platform vs product split (train path / plugin boundary):
 
 ```
 +----------------------------------+          +----------------------------------+
 |  Astra platform + training center |          |         Product use case         |
 +----------------------------------+          +----------------------------------+
 | Mission loop / recipes / sandbox |          | Use-case plugin (--use-case)     |
-|            |                     |  facade  |   score / case_pool / oracle     |
+| AstraData / AstraEval            |  facade  |   score / case_pool / oracle     |
 |   +--------+--------+            |  execv   |   prompts / eval cases           |
 |   v                 v            |  -m cli  |   adapters / bare_eval (product) |
 | AstraRL             AstraTune    |--------->|                                  |
@@ -105,9 +137,11 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 | **AstraGym** | `astragym/` | Worlds: `reset` / `step`, rewards, eval (`gym_id`) |
 | **AstraRL** | `astrarl/` | Online learners + **`python -m astrarl.cli`** train entrypoints; rollout, DAPO-lite, math |
 | **AstraTune** | `astratune/` | Offline LM + **`python -m astratune.cli`** train entrypoints; losses, `ce_loop`, shared `lora_io` |
+| **AstraData** | `astradata/` | Fuel: `dataset_id@rev` registry, hash/freeze, splits, FailSlice bank, HSTU builders |
+| **AstraEval** | `astraeval/` | Truth: `suite.run(ckpt) → {primary, case_ids}`, ceilings, FailSlice emit, tournament seeds |
 | **astra_plugin** | `astra_plugin/` | Use-case contract: `UseCasePlugin`, `load_use_case`, per-learner hook attrs, `validate_hooks` |
-| **Orchestrator** | Astra loop / platform `recipes/` + product packs / sandbox / HUD | Missions, pivots, `task_type` worker keys, telemetry, canned facade codegen |
-| **Product (use case)** | importable plugin module | Implements `UseCasePlugin`; oracle / cases / prompts / adapters / `bare_eval` — **no** train CLIs |
+| **Orchestrator** | Astra loop / platform `recipes/` + product packs / sandbox / HUD | Missions, pivots, `task_type` worker keys, stamp `dataset_*`/`suite_*`, suite gate, telemetry, canned facade codegen |
+| **Product (use case)** | importable plugin module | Implements `UseCasePlugin`; oracle / cases / prompts / adapters / `bare_eval` — **no** train CLIs; does **not** own suite IDs or dataset revs |
 
 | Concern | Astra owns | Product owns |
 |---|---|---|
@@ -120,7 +154,9 @@ Targets that exceed a recipe’s declared empirical ceiling are rejected at crea
 
 **Recipe packs.** Astra `recipes/` holds **platform** YAML only (Snake/Tetris/MinAtar/2048/Pac-Man/AgentGym/hstu/`mlx_lora`/…). Product training knobs (e.g. Ensemble `ensemble_*.yaml`) live in the product repo (`ensemble/astra_recipes/`) and are discovered by the Orchestrator via `ASTRA_PRODUCT_RECIPES=use_case:/abs/path` (comma-separated for multiple products). Search order: platform dir, then configured packs (`backend/services/recipe_paths.py`). List/detail APIs annotate each recipe with `source` (`platform` | `product`) and `product` (the config use_case key when from a pack). `GET /recipes/packs` returns the platform path plus configured product keys for the Recipes UI source checkboxes (dynamic — not a fixed brand list). When `plan.recipe` is omitted but `use_case` is bound, the default stem is `{use_case}_{task}_v1` (`default_recipe_for_task`); `distill` has no silent default. Generic LM `task_type` keys are **not** mapped to Ensemble filenames in `_ENV_RECIPE`.
 
-**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Products may ship branded plugin packages under `<workspace>/.astra_plugins/` (prepended by `ensure_workspace_on_path`) so `--use-case <brand>` imports cleanly. The product plugin module must be importable. Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set); mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import. Recipes may declare `gym_id` + `learner_id`; when omitted they are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
+**Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin` + `astradata` + `astraeval`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Products may ship branded plugin packages under `<workspace>/.astra_plugins/` (prepended by `ensure_workspace_on_path`) so `--use-case <brand>` imports cleanly. The product plugin module must be importable. Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set) plus local `astradata` / `astraeval`; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import. Recipes may declare `gym_id` + `learner_id` + `dataset_id`/`dataset_rev` + `eval_suite`/`suite_rev`; when omitted gym/learner are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Create rejects targets above the **suite** ceiling when `eval_suite` is set (else recipe `metric_ceiling`). Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
+
+**Flywheel bind axes (mission create):** `task_type` · `gym_id`×`learner_id` · `use_case` · `dataset_id@rev` · `suite_id@rev`. Orchestrator stamps Data/Eval from the recipe; HSTU and Ensemble routing are the first proving verticals (HstuHr10Suite / RoutingBareEvalSuite + FailSlice → `focus_cases`).
 
 | Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
 |---|---|---|

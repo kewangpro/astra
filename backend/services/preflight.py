@@ -23,8 +23,10 @@ _REQUIRED_PACKAGES: dict = {
     "ml":  ["sklearn", "joblib"],
     "rl":  ["stable_baselines3", "gymnasium"],
     "sft": ["transformers", "peft", "trl"],
-    "hstu": ["torch"],
+    "hstu": ["torch", "astradata", "astraeval"],
 }
+
+_FLYWHEEL_PACKAGES = ("astradata", "astraeval")
 
 
 @dataclass
@@ -45,6 +47,7 @@ class PreflightChecker:
 
         checks.append(self._check_data_dir_writable(mission_id))
         checks.append(self._check_sandbox_python())
+        checks += self._check_flywheel_packages()
         checks += self._check_packages(task_type)
         checks += self._check_remote_script(task_type)
         checks.append(self._check_remote_platform_imports(task_type))
@@ -197,7 +200,7 @@ class PreflightChecker:
         )
         remote_cmd = (
             f'{python_bin} -c '
-            f'"import astragym, astrarl, astratune"'
+            f'"import astragym, astrarl, astratune, astradata, astraeval"'
         )
         try:
             r = subprocess.run(
@@ -210,7 +213,7 @@ class PreflightChecker:
 
         if r.returncode == 0:
             return {"name": name, "passed": True,
-                    "detail": f"{python_bin}: astragym,astrarl,astratune ok"}
+                    "detail": f"{python_bin}: astragym,astrarl,astratune,astradata,astraeval ok"}
 
         err = (r.stderr or r.stdout or "").strip() or f"exit {r.returncode}"
         return {
@@ -275,12 +278,30 @@ class PreflightChecker:
         }
 
     @staticmethod
+    def _check_flywheel_packages() -> list:
+        """AstraData + AstraEval must import on the Orchestrator host."""
+        results = []
+        for pkg in _FLYWHEEL_PACKAGES:
+            try:
+                __import__(pkg)
+                results.append({"name": f"import_{pkg}", "passed": True, "detail": pkg})
+            except ImportError:
+                results.append({
+                    "name": f"import_{pkg}",
+                    "passed": False,
+                    "detail": f"{pkg} not importable — pip install -e . (flywheel packages)",
+                })
+        return results
+
+    @staticmethod
     def _check_packages(task_type: str) -> list:
         from backend.sandbox.manager import _FINETUNE_REMOTE_TASK_TYPES
         if task_type in _FINETUNE_REMOTE_TASK_TYPES:
             return []
         results = []
         for pkg in _REQUIRED_PACKAGES.get(task_type, []):
+            if pkg in _FLYWHEEL_PACKAGES:
+                continue  # already checked
             try:
                 __import__(pkg)
                 results.append({"name": f"import_{pkg}", "passed": True, "detail": pkg})
