@@ -2,99 +2,233 @@
 
 Proposed enhancements, architectural upgrades, and future directions for the astra system.
 
+Living doc for future work — not a ship log ([IMPLEMENT.md](IMPLEMENT.md) is
+the phase history). Capability matrix for learner runtimes: Cursor canvas
+`canvases/astrarl-vs-peers.canvas.tsx` (revisited 2026-11-14). Platform
+contracts: [DESIGN.md](DESIGN.md) §2.4–§3.
+
+---
+
+## AstraRL vs verl / NeMo-RL / peers
+
+### Category mismatch (keep this framing)
+
+AstraRL is a **gym-coupled learner runtime** inside ASTRA’s mission loop (Apple
+MLX + SB3), not a cluster LLM-RL engine. **verl**, **NeMo-RL**, and **OpenRLHF**
+are full distributed post-training systems (Ray / HybridFlow, vLLM/SGLang,
+Megatron/FSDP/DeepSpeed). **TRL** is a trainer library. Comparing feature counts
+without that split misleads; improvements below target the learner runtime and
+its seam into the Orchestrator — not a Ray rewrite of `astrarl/`.
+
+Offline LM (DPO/SFT/distill/RFT/STaR/RLCD) belongs in **AstraTune**, not AstraRL
+([DESIGN.md](DESIGN.md) §2.4). Products bind via **`astra_plugin.UseCasePlugin`**
+at mission create — not recipe HP.
+
+### Closed since the first peer review (Epoch 9–10)
+
+| Former gap | Resolution |
+|---|---|
+| Learner facade honesty (`mlx_*` was a dict/CLI shim) | `MLXLearnerFacade.learn()` → `os.execv` into `python -m astrarl.cli` |
+| No generation backend abstraction | `astrarl.rollout` — `mlx` \| `openai` (+ recipe flags) |
+| Thin algo surface (no DAPO) | DAPO-lite: `clip_epsilon_low`/`high`, `dynamic_sample_retries` on routing GRPO |
+| Training logic lived in Ensemble CLIs | Platform `train_grpo_routing` / `train_grpo_traj` / `train_opd` in `astrarl/` |
+| DPO/SFT mixed into the RL story | Sibling **AstraTune**; DESIGN boundary enforced |
+| Product hardcoding in train entrypoints | `astra_plugin` + mission-create `use_case` |
+
+### Remaining gaps (re-ranked)
+
+**P0 — async & latency.** Peers overlap generation with training (NeMo-RL’s async
+subsystem; verl experimental; OpenRLHF second path). Agent GRPO on Mini is still
+sync collect-then-train and latency-bound. **Next win:** overlap next-group
+generation with the update, or packed multi-trajectory batches — single-machine
+first, no Ray required.
+
+**P0 — agentic / multi-turn fidelity.** Peers race on TITO, R3, prefix reuse, and
+server-owned tokenization. `agrpo` scores trajectories but lacks a peer-grade
+episode schema and token-accurate credit for long tool traces. **Next win:**
+document and export AgentGym / `routing_prompt` trajectories
+(messages / tool calls / turn rewards) before wrapping an external verl/NeMo
+worker.
+
+**P1 — rollout depth.** `mlx|openai` is enough to A/B a remote vLLM URL; peers
+colocate generation (weight sync, prefix cache, continuous batching). **Gap:**
+adapter/weight hot-reload into the OpenAI-compat server; optional local
+SGLang/vLLM only when on CUDA — not on Mini MLX.
+
+**P1 — algorithm surface.** DAPO-lite is in; GSPO / RLOO / ReMax / CISPO / GDPO
+multi-reward are not. Add only variants that move routing or `agrpo` metrics —
+do not mirror verl’s full catalog.
+
+**P2 — scale path.** No FSDP / Megatron / multi-GPU story (intentional for
+Apple-first). If cloud NVIDIA is adopted: wrap **verl** or **NeMo-RL** as a
+remote `learner_id` (e.g. `cuda_grpo_verl`) with checkpoint sync — same SSH
+pattern as Mini — do **not** reimplement HybridFlow inside `astrarl/`.
+
+**P2 — experiment parity.** Mission HUD is strong for ops; peers publish
+Hydra-like configs + step curves for paper baselines. Emit a recipe dump + GRPO
+step-metrics artifact so Mini runs compare cleanly to published DAPO/GRPO
+numbers.
+
+### What not to copy
+
+- Don’t turn `astrarl/` into a Ray cluster for LLM RL — that fights the
+  Orchestrator and the Apple path. (Ray for **RL mission concurrency** across
+  LAN nodes is a separate idea below.)
+- Don’t pull offline DPO/SFT back into AstraRL.
+- Don’t chase 100B+ Megatron until a `cuda_*` remote learner exists.
+- Do keep Gym×RL + `astra_plugin` — clearer than most peers’ env story.
+
+### Suggested roadmap
+
+| Phase | Status | Work | Borrow from |
+|---|---|---|---|
+| A | Done | Real Learner facade + platform CLI | TRL Trainer simplicity |
+| B | Done | Pluggable rollout (MLX \| OpenAI-compat) | verl / NeMo backends |
+| C | Done | DAPO-lite on routing GRPO | verl / NeMo DAPO |
+| D | **Next** | Trajectory schema + async group overlap for `agrpo` | NeMo-Gym / async GRPO / TITO ideas |
+| E | Later | Optional `cuda_grpo_verl` remote worker | verl as engine, ASTRA as orchestrator |
+
 ---
 
 ## Ray Multi-Node Training Cluster
 
+Scoped to **LAN scheduling of classic env-RL sandboxes** across MacBook + Mini.
+This is **not** “adopt verl/NeMo-RL’s Ray stack for LLM GRPO” — that belongs under
+[AstraRL vs peers](#astrarl-vs-verl--nemo-rl--peers) phase E (`cuda_grpo_verl`).
+Do not conflate the two.
+
 ### What is Ray
 
-Ray is an open-source distributed computing framework built for Python-first ML workloads. It turns a group of machines into a single compute cluster with a shared task queue, fault tolerance, and a unified resource scheduler — without requiring Kubernetes or cloud infrastructure.
+Ray is an open-source distributed computing framework for Python-first ML
+workloads: a shared task queue, object store, and resource scheduler over a LAN
+(no Kubernetes required).
 
-Key components relevant to astra:
+Relevant pieces:
 
-- **Ray Core** — the foundation. Lets you annotate any Python function with `@ray.remote` and Ray will schedule it on any available node in the cluster. Results are stored in a distributed object store and retrieved asynchronously. This is what astra would use to dispatch training sandboxes.
-- **Ray Dashboard** — a built-in web UI (port 8265) showing live cluster state: which nodes are connected, CPU/memory usage per node, running tasks, and logs. No extra setup needed.
-- **Ray Tune** — distributed hyperparameter search. Runs many trials in parallel across the cluster. Relevant to astra's pivot engine — instead of trying one HP configuration per iteration, Tune could run 4–8 trials simultaneously across both machines and report the best result back.
-- **Ray Serve** — model serving framework for production APIs. Not relevant to astra's current use case (local training orchestration), but useful if astra's trained models ever need to be deployed as inference endpoints.
+- **Ray Core** — `@ray.remote` tasks scheduled onto free nodes. Candidate API for
+  a future `RaySandbox` that runs RL `train.py` where capacity exists.
+- **Ray Dashboard** — cluster UI (port 8265): nodes, CPU/memory, tasks, logs.
+- **Ray Tune** — optional later: multi-trial HP search across nodes (today’s
+  `PivotEngine` is sequential, one adjustment per mission iteration).
+- **Ray Serve** — out of scope (inference serving).
 
-Ray is designed to run on commodity hardware over a LAN — no special networking or GPUs required. The head node manages the scheduler and dashboard; worker nodes just need Python, Ray, and network access to the head.
+### Motivation (accurate as of 2026-11)
 
-### Motivation
+**What already works without Ray**
 
-Astra currently runs one mission at a time — the training sandbox is a local subprocess on the MacBook Air, or dispatched to a single statically-configured remote host via `SSHSandbox`. A second machine can sit idle while another mission runs because there's no concurrent dispatch: `SandboxManager` runs one sandbox at a time, and there's no scheduling logic to pick a least-loaded node (`sandbox_host` is a static config value). Ray would enable parallel RL mission dispatch across both machines without changing astra's planning/eval/manifest loop.
+| Path | Today |
+|---|---|
+| Orchestrator | MacBook FastAPI + mission loops (`_running_tasks` is multi-mission; loops can overlap) |
+| Classic env RL (`rl`, local `embed`/`rerank`/`hstu`/`ml`, …) | Default backend `_detect_backend()` → `subprocess` on Apple Silicon, else `container`. **Does not** follow `sandbox_host`. |
+| Remote LM / gym-coupled LM workers | Forced `SSHSandbox` to `settings.sandbox_host` (Mini) for `_FINETUNE_REMOTE_TASK_TYPES`: `dpo`, `grpo`, `agrpo`, `distill`, `rft`, `opd`, `rlcd`, `prompt`, `sft`, `post-training`, `star`. No local fallback if host unset. |
+| Mini layout | Triad: `~/astra-pkg` (editable astragym/astrarl/astratune/astra_plugin), `~/finetune` (workspace + product plugin), `~/finetune-env` (MLX Python). Not a full Orchestrator/HUD/DB checkout. |
+| Telemetry | Sandboxes POST to `settings.telemetry_host` (default `macbook.local:8200`). |
 
-Before building this, weigh it against the lighter alternative: extending `SSHSandbox` to round-robin across N configured hosts, which may get most of the concurrency benefit without a new dependency.
+**Real gap Ray would address**
 
-Note: this is scoped to **RL mission concurrency only**. Fine-tune task types (`dpo`, `grpo`) are already pinned to the Mac Mini via a task-type check in `SandboxManager.launch()` that forces the existing `SSHSandbox` backend — that's implemented (see `docs/IMPLEMENT.md` Phase 25) and doesn't need Ray. Ray's value-add here is purely "let a second machine pick up RL missions when the first is busy," not remote dispatch itself (which `SSHSandbox` already does).
+There is still **no least-loaded node scheduler for classic RL**. All remote LM
+work goes to one static `sandbox_host`. A second LAN machine can sit idle while
+the MacBook runs a heavy SB3 mission, because nothing picks “run this `rl`
+sandbox over there.” Ray (or a lighter round-robin across N SSH hosts) would
+fill that hole **without** changing planning / eval / manifest.
 
-### Environment prerequisites (checked 2026-07-03 — not yet satisfied)
+Weigh Ray against: extend `SSHSandbox` to round-robin N configured RL hosts —
+most of the concurrency benefit, no new dependency.
 
-Before implementing, note the current state of both machines:
+### Environment prerequisites (re-checked 2026-11-14 — still not done)
 
-- **`ray` is not installed** in astra's venv, nor in the Mac Mini's `~/finetune-env`. Needs installing in both places before any of this works.
-- **Full Astra Orchestrator repo is not required on the Mini for today's SSH fine-tune path** — Mini already uses `~/astra-pkg` (editable `astragym`/`astrarl`/`astratune`) + `~/finetune` for LM/GRPO missions. Free-scheduled **RL** dispatch via Ray is different: the remote worker must run `SubprocessSandbox`-equivalent scripts — either a fuller Astra tree / shared mission data, or a self-contained `ray.remote` payload (closures help, but scripts that `sys.path.insert` against `settings.data_path` still assume local layout).
-- Mission data (`data/missions/`) is not shared/mounted between machines — needed for RL missions' checkpoint/telemetry file access if they run on the Mac Mini (see Implementation Plan step 5 below).
+- **`ray` is not installed** in Astra’s MacBook `.venv` or Mini `~/finetune-env`.
+- **Mini does not need the Orchestrator repo** for today’s SSH LM path (triad
+  above). Free-scheduled **RL** via Ray is different: the worker must run
+  SB3/gym scripts that assume `settings.data_path` / mission dirs — either NFS /
+  rsync of `data/missions/`, a fuller tree on the worker, or a self-contained
+  `ray.remote` payload.
+- Mission checkpoints for RL still live under Orchestrator
+  `data/missions/<id>/`; SSH LM adapters live under Mini `finetune_dir/adapters/`
+  and sync back via `SSHSandbox` (not a live mount).
 
-### Architecture
+### Architecture (proposed)
 
 ```
-MacBook Air (head node)          Mac Mini (worker node)
-┌─────────────────────┐          ┌─────────────────────┐
-│  ray start --head   │◄────────►│  ray start --address │
-│  astra backend      │  LAN     │  training sandbox    │
-│  lead + code model  │          │  Mission B           │
-│  Mission A          │          │                      │
-└─────────────────────┘          └─────────────────────┘
+MacBook Air (head)                    Mac Mini (worker)
+┌──────────────────────────┐          ┌──────────────────────────┐
+│ ray start --head         │◄────────►│ ray start --address=…    │
+│ Astra Orchestrator       │   LAN    │ RL train.py sandboxes    │
+│ lead + code MLX models   │          │ (optional)               │
+│ local RL sandboxes       │          │                          │
+│ SSH → Mini for LM types  │──────────│ astra-pkg + finetune-env │
+└──────────────────────────┘          │ (unchanged LM path)      │
+                                      └──────────────────────────┘
 ```
 
-- **MacBook Air** — head node, runs astra backend, MLX inference (lead + code models), and local training sandboxes
-- **Mac Mini** — worker node, runs training sandboxes dispatched from the head node; no LLM inference needed
-- All telemetry from both nodes posts back to astra's backend on the MacBook (port 8200) — already works today via `settings.telemetry_host` (defaults `macbook.local`), no code change needed
-- Ray dashboard available at `http://macbook.local:8265`
+- **MacBook** — head: Orchestrator, lead/code MLX, local RL, and SSH dispatch of
+  LM workers to Mini (existing).
+- **Mini** — already the LM train host; under this proposal, also a Ray worker
+  for **classic RL** when the MacBook is saturated.
+- Ray dashboard: `http://macbook.local:8265` (if head runs there).
 
-### How It Works
+### How it would work
 
-**Cluster startup:**
 ```bash
 # MacBook (head)
 ray start --head --port=6379
 
-# Mac Mini (worker)
+# Mac Mini (worker) — only needed for Ray-scheduled RL, not for today's SSH LM
 ray start --address=macbook.local:6379
 ```
 
-**Ray dispatches training jobs as remote tasks:**
 ```python
 @ray.remote(num_cpus=4)
 def run_training(mission_id, script_path):
     subprocess.run(["python", script_path])
 ```
 
-Ray's scheduler routes each task to whichever node has free resources. If the MacBook is busy with Mission A, Mission B automatically lands on the Mac Mini.
+Scheduler places the task on a free node. LM task types keep today’s forced SSH
+path; Ray must not steal `dpo`/`grpo`/… away from the Mini triad.
 
-### What Changes in Astra
+### What would change
 
-| Component | Current | With Ray |
+| Component | Current (2026-11) | With Ray (proposed) |
 |---|---|---|
-| `SubprocessSandbox` / `SSHSandbox` | local subprocess, or one static remote host | `RaySandbox` submits task to cluster scheduler |
-| LLM inference | MacBook only | MacBook only (MLX is single-machine) |
-| Telemetry | already POSTs to `settings.telemetry_host` (defaults `macbook.local`) — no change needed | same |
-| RL concurrency | 1 mission at a time | 2+ missions simultaneously |
+| Default backend | Darwin arm64 → `subprocess`; else `container`. `_detect_backend()` **ignores** `sandbox_host`. | Add opt-in `ray` backend for **RL only** |
+| Remote LM types | Forced `backend="ssh"` + `settings.sandbox_host` | **Unchanged** — still Mini SSH / facades |
+| `sandbox_host` | Mini hostname for remote LM only | Still LM-only; do not reuse as Ray default |
+| Lead/code MLX | MacBook | MacBook |
+| Telemetry | POST `telemetry_host` | Same |
+| RL placement | Always local default (or explicit backend) | Schedule onto least-loaded Ray node |
 
-### Implementation Plan
+There is **no** `ASTRA_SANDBOX_BACKEND` setting today. Backends are selected in
+`SandboxManager.launch()` (`ssh` forced for remote types, else
+`backend or default_backend` ∈ {`subprocess`, `container`}). A Ray path needs a
+**new** opt-in (env or settings flag), not overload of `sandbox_host`.
 
-1. Install `ray` in astra's venv and the Mac Mini's environment (see Environment prerequisites above — not done yet)
-2. Add `backend/sandbox/ray_sandbox.py` — implements `SandboxBase`, submits training script as a `ray.remote` task
-3. Add `ASTRA_SANDBOX_BACKEND=ray` env var (default: `subprocess`, joining existing `subprocess`/`ssh` options)
-4. `SandboxManager` selects backend based on config (same pattern `_detect_backend()` already uses for `ssh`) — note `_detect_backend()` was deliberately changed to NOT check `settings.sandbox_host` (see Phase 25) since that setting is now scoped to fine-tune task-type pinning only; a `ray` default would need its own opt-in signal, not reuse `sandbox_host`
-5. Mission data (`data/missions/`) must be accessible on both nodes — either via NFS mount or rsync before sandbox launch. `SSHSandbox` currently gets away with rsync-back-on-exit instead of a live mount — checkpoints under `checkpoints/` are only synced post-hoc when the sandbox exits, never live during a run. Same limitation would apply to `RaySandbox` unless NFS is used.
-6. Confirm `SandboxBase` contract (launch, cancel, log streaming, exit status) can be satisfied by a Ray remote task — cancel/kill semantics differ between a local subprocess (`SIGTERM`/`SIGKILL`, matching `SubprocessSandbox` and now `SSHSandbox` — see Phase 24) and a Ray task (`ray.cancel`), so `RaySandbox.cancel()` needs its own implementation, not a passthrough.
-7. Telemetry already POSTs to `settings.telemetry_host` (defaults `macbook.local`) — no code change needed here.
-8. Verify `LoopStateMachine`/`PivotEngine` plateau and best-score tracking (currently reads/writes local files like `best_score.txt` under `data/missions/<id>/`) still works correctly when the sandbox executing the write is on the Mac Mini and the state machine reading it is on the MacBook — this requires the NFS mount from step 5 to be consistent, and should be tested explicitly before relying on pivot detection across nodes
+### Implementation plan
 
-### Practical Result
+1. Install `ray` in MacBook `.venv` and, if Mini is an RL worker, `~/finetune-env`
+   (or a separate RL venv with gym/SB3 — Mini’s finetune-env is MLX-centric).
+2. Add `backend/sandbox/ray_sandbox.py` implementing the same contract as
+   `SubprocessSandbox` / `SSHSandbox` (`launch`, `terminate`, log tail, exit).
+3. Add an explicit opt-in (e.g. `ASTRA_SANDBOX_BACKEND=ray` or
+   `settings.sandbox_backend`) — default stays `subprocess` on Apple Silicon.
+4. Wire `SandboxManager`: only offer Ray for non-remote task types; keep
+   `_FINETUNE_REMOTE_TASK_TYPES` → SSH. Never treat non-empty `sandbox_host` as
+   “default everything to Ray/SSH” (Phase 25 invariant).
+5. Share `data/missions/` for RL (NFS or rsync-before-launch). Today’s
+   `SSHSandbox` rsyncs logs/checkpoints **on exit**; live pivot files
+   (`best_score.txt`, etc.) need a consistent view if the state machine stays
+   on the MacBook while the sandbox writes on Mini.
+6. Map cancel: local `SIGTERM`→`SIGKILL` vs `ray.cancel` — implement
+   `RaySandbox.terminate()` explicitly (see Phase 24 SSH parity).
+7. Telemetry already targets `telemetry_host` — no change if workers can reach
+   the MacBook.
+8. Integration test: plateau / best-score detection with sandbox on Mini and
+   loop on MacBook before trusting cross-node pivots.
 
-- Two RL missions train in parallel — one per machine
-- If MacBook is busy, new missions queue to Mac Mini automatically
-- No changes to the planning/eval/manifest loop — only the sandbox layer changes
-- Ray handles fault tolerance: if Mac Mini goes offline, jobs requeue to MacBook
+### Practical result (if shipped)
+
+- Classic RL can use idle LAN capacity; MacBook stays Orchestrator + planner.
+- Remote LM missions stay on Mini via existing SSH + `astrarl`/`astratune`
+  facades — Ray does not replace that path.
+- Planning / eval / manifest loop unchanged; only sandbox placement changes.
+- Fault tolerance: Ray can requeue RL tasks if a worker drops (design goal;
+  must be verified).
