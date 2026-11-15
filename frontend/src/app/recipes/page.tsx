@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Recipe, RecipeRecord } from "@/lib/api";
 
+type SourceFilter = {
+  platform: boolean;
+  /** Enabled product use_case keys from ASTRA_PRODUCT_RECIPES */
+  products: Record<string, boolean>;
+};
+
 const TASK_TABS: { id: string; label: string; types?: string[] }[] = [
   { id: "all", label: "All Recipes" },
   { id: "environment-rl", label: "Environment RL", types: ["rl"] },
@@ -75,6 +81,11 @@ export default function RecipesPage() {
   const [goldenOnly, setGoldenOnly] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [dispatching, setDispatching] = useState<string | null>(null);
+  const [configuredProducts, setConfiguredProducts] = useState<string[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>({
+    platform: true,
+    products: {},
+  });
 
   // Modal states
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
@@ -85,12 +96,32 @@ export default function RecipesPage() {
   const fetchRecipes = async () => {
     try {
       setLoading(true);
-      const [allList, dbList] = await Promise.all([
-        api.getRecipes().catch(() => []),
-        api.getDbRecipes().catch(() => []),
+      const [allList, dbList, packs] = await Promise.all([
+        api.getRecipes().catch(() => [] as Recipe[]),
+        api.getDbRecipes().catch(() => [] as RecipeRecord[]),
+        api.getRecipePacks().catch(() => ({ platform_path: "", products: [] as string[] })),
       ]);
       setRecipes(allList);
       setDbRecipes(dbList);
+      // Prefer /recipes/packs; fall back to distinct recipe.product from the list
+      // so checkboxes still appear if packs endpoint is unavailable (old server).
+      const fromPacks = packs.products || [];
+      const fromRecipes = Array.from(
+        new Set(
+          allList
+            .filter((r) => r.source === "product" && r.product)
+            .map((r) => String(r.product)),
+        ),
+      ).sort();
+      const products = fromPacks.length > 0 ? fromPacks : fromRecipes;
+      setConfiguredProducts(products);
+      setSourceFilter((prev) => {
+        const nextProducts: Record<string, boolean> = {};
+        for (const p of products) {
+          nextProducts[p] = prev.products[p] ?? true;
+        }
+        return { platform: prev.platform, products: nextProducts };
+      });
     } catch (e) {
       console.error("Failed to load recipes:", e);
     } finally {
@@ -105,13 +136,15 @@ export default function RecipesPage() {
   const handleDispatch = async (recipeName: string, taskType?: string) => {
     try {
       setDispatching(recipeName);
-      const tt = (taskType || "").toLowerCase();
+      const recipe = recipes.find((r) => r.name === recipeName);
+      const tt = (taskType || String(recipe?.content?.task_type || "")).toLowerCase();
       const needsPlugin = tt && !["rl", "ml", "hstu", "embed", "rerank", "mlx_lora"].includes(tt);
       let opts: { use_case?: string } | undefined;
       if (needsPlugin) {
+        const defaultUc = (recipe?.product || "").trim();
         const uc = window.prompt(
-          "Product use-case plugin module for this mission (e.g. ensemble):",
-          "",
+          "Product use-case plugin module for this mission:",
+          defaultUc,
         );
         if (uc === null) {
           setDispatching(null);
@@ -154,6 +187,16 @@ export default function RecipesPage() {
     }
   };
 
+  const platformCount = recipes.filter(
+    (r) => (r.source || "platform") !== "product",
+  ).length;
+  const productCounts: Record<string, number> = {};
+  for (const r of recipes) {
+    if (r.source === "product" && r.product) {
+      productCounts[r.product] = (productCounts[r.product] || 0) + 1;
+    }
+  }
+
   // Filter recipes
   const filteredRecipes = recipes.filter((r) => {
     const q = searchQuery.toLowerCase();
@@ -164,6 +207,14 @@ export default function RecipesPage() {
       (r.domain && r.domain.toLowerCase().includes(q));
 
     if (!matchesSearch) return false;
+
+    const source = r.source || "platform";
+    const product = (r.product || "").trim();
+    if (source === "product") {
+      if (!product || sourceFilter.products[product] === false) return false;
+    } else if (!sourceFilter.platform) {
+      return false;
+    }
 
     if (activeTab === "all") return true;
     const taskType = String(r.content?.task_type ?? "").toLowerCase();
@@ -184,6 +235,54 @@ export default function RecipesPage() {
         <p className="text-xs text-[#94a3b8]">
           Browse canonical YAML training blueprints, inspect genetic mutation lineage, and dispatch 1-click missions.
         </p>
+      </div>
+
+      {/* Source origin checkboxes — products from ASTRA_PRODUCT_RECIPES, not hardcoded */}
+      <div className="flex flex-wrap items-center gap-4 text-xs text-[#94a3b8]">
+        <span className="text-[#64748b] uppercase tracking-wide text-[10px]">Source</span>
+        <label className="inline-flex items-center gap-2 cursor-pointer select-none hover:text-[#e2e8f0]">
+          <input
+            type="checkbox"
+            checked={sourceFilter.platform}
+            onChange={(e) =>
+              setSourceFilter((prev) => ({ ...prev, platform: e.target.checked }))
+            }
+            className="rounded border-[#334155] bg-[#0f172a] text-[#14b8a6] focus:ring-[#14b8a6]"
+          />
+          Astra built-in
+          <span className="text-[#64748b] tabular-nums">({platformCount})</span>
+        </label>
+        {configuredProducts.length === 0 ? (
+          <span className="text-[10px] text-[#64748b]">
+            No product packs (set ASTRA_PRODUCT_RECIPES)
+          </span>
+        ) : (
+          configuredProducts.map((uc) => (
+            <label
+              key={uc}
+              className="inline-flex items-center gap-2 cursor-pointer select-none hover:text-[#e2e8f0]"
+            >
+              <input
+                type="checkbox"
+                checked={sourceFilter.products[uc] !== false}
+                onChange={(e) =>
+                  setSourceFilter((prev) => ({
+                    ...prev,
+                    products: { ...prev.products, [uc]: e.target.checked },
+                  }))
+                }
+                className="rounded border-[#334155] bg-[#0f172a] text-[#14b8a6] focus:ring-[#14b8a6]"
+              />
+              {uc}
+              <span className="text-[#64748b] tabular-nums">
+                ({productCounts[uc] || 0})
+              </span>
+            </label>
+          ))
+        )}
+        <span className="text-[#64748b] tabular-nums ml-auto">
+          {filteredRecipes.length} shown
+        </span>
       </div>
 
       {/* Filter Tabs & Search Bar */}
@@ -266,6 +365,11 @@ export default function RecipesPage() {
                         Auto-crystallized
                       </span>
                     )}
+                    <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#64748b] px-2 py-0.5 rounded shrink-0">
+                      {r.source === "product" && r.product
+                        ? r.product
+                        : "Astra built-in"}
+                    </span>
                     <span className="text-[10px] bg-[#0f172a] border border-[#334155] text-[#14b8a6] px-2 py-0.5 rounded font-mono break-all max-w-full">
                       {recipeAlgorithm(r)}
                     </span>

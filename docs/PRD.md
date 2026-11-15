@@ -112,6 +112,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 ### 4.17. Recipe Library, Lineage DAG Visualizer & Unified Mission Dispatch
 - Searchable gallery of canonical training blueprints across RL, Fine-tuning, and ML paradigms.
 - **Platform vs product packs**: Astra `recipes/` is platform-only (env RL, AgentGym, hstu, local `mlx_lora`). Product knobs (e.g. Ensemble `ensemble_*.yaml`) live in the product repo and are listed/loaded via `ASTRA_PRODUCT_RECIPES=use_case:/path` after the platform dir ([DESIGN.md §2.4–§3](DESIGN.md)).
+- **Source filters (UI)**: Recipes page checkboxes for Astra built-in vs each configured product (keys from `GET /recipes/packs` / recipe `source`+`product` metadata — not hardcoded brands), with per-source and filtered counts ([UX_SPEC.md §2.3](UX_SPEC.md)).
 - Lineage tree DAG visualizer tracking genetic evolution, hyperparameter mutations, and generational wins.
 - **Converged Mission Creation & Dispatch**: Unified pipeline (`POST /missions` and `POST /recipes/{name}/dispatch` → same `MissionCreate`). Goal prompt carries intent (+ optional `use_case:` marker); recipe seeds `task_type` / training HPs / ceilings (not the product plugin); `use_case` binds at create (field, goal marker, or Lead Agent from the product named in the goal — create/goal always wins; never `learner_id` as `use_case`). Canonical goals (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`) are generated without mutating recipe YAML. Wiring: [DESIGN.md §3](DESIGN.md).
 

@@ -148,6 +148,8 @@ astra/
 Product fine-tune recipes (e.g. Ensemble `ensemble_*.yaml`) live in the product repo
 (`ensemble/astra_recipes/`). Point the Orchestrator at them with
 `ASTRA_PRODUCT_RECIPES=ensemble:/path/to/ensemble/astra_recipes` — see [DESIGN.md §2.4–§3](docs/DESIGN.md).
+The Recipes page (`/recipes`) filters by **Astra built-in** vs each configured product
+(from `GET /recipes/packs`, not a hardcoded list) and shows recipe counts per source.
 
 
 ## API Overview

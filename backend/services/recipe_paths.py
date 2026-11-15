@@ -99,3 +99,26 @@ def iter_disk_recipe_filenames(use_case: Optional[str] = None) -> Iterable[tuple
                 continue
             seen.add(stem)
             yield directory, fname
+
+
+def recipe_origin_for_dir(directory: str) -> tuple[str, Optional[str]]:
+    """Classify a recipe directory as platform or product pack.
+
+    Returns ``(source, product)`` where ``source`` is ``\"platform\"`` or
+    ``\"product\"``, and ``product`` is the ``ASTRA_PRODUCT_RECIPES`` use_case
+    key when ``source == \"product\"`` (never hardcodes a brand name).
+    """
+    abs_dir = os.path.abspath(directory)
+    plat = os.path.abspath(settings.recipes_path)
+    if abs_dir == plat or abs_dir.startswith(plat + os.sep):
+        return "platform", None
+    for uc, path in parse_product_recipes().items():
+        if abs_dir == path or abs_dir.startswith(path + os.sep):
+            return "product", uc
+    # Unknown dir (e.g. deleted pack) — treat as platform so UI still lists it
+    return "platform", None
+
+
+def configured_product_use_cases() -> list[str]:
+    """Sorted use_case keys from ``ASTRA_PRODUCT_RECIPES`` (may be empty)."""
+    return sorted(parse_product_recipes().keys())

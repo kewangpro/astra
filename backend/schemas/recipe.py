@@ -14,6 +14,17 @@ class RecipeRead(BaseModel):
     description: Optional[str] = None
     created_at: Optional[str] = None
     content: dict = Field(default_factory=dict)
+    #: ``platform`` (Astra recipes/) or ``product`` (ASTRA_PRODUCT_RECIPES pack).
+    source: str = "platform"
+    #: Product use_case key when ``source == \"product\"`` (from config, not hardcoded).
+    product: Optional[str] = None
+
+
+class RecipePacksRead(BaseModel):
+    """Configured recipe origins for the Recipes UI filter checkboxes."""
+    platform_path: str
+    #: use_case keys from ASTRA_PRODUCT_RECIPES (dynamic; not a fixed brand list).
+    products: list[str] = Field(default_factory=list)
 
 
 class RecipeRecordRead(BaseModel):

@@ -137,6 +137,15 @@ export interface Recipe {
   description?: string | null;
   created_at?: string | null;
   content: Record<string, unknown>;
+  /** platform = Astra recipes/; product = ASTRA_PRODUCT_RECIPES pack */
+  source?: "platform" | "product" | string;
+  /** use_case key from config when source is product (not hardcoded) */
+  product?: string | null;
+}
+
+export interface RecipePacks {
+  platform_path: string;
+  products: string[];
 }
 
 export interface RecipeRecord {
@@ -243,6 +252,7 @@ export const api = {
 
   // Recipes & Lineage
   getRecipes: () => req<Recipe[]>("/recipes"),
+  getRecipePacks: () => req<RecipePacks>("/recipes/packs"),
   getDbRecipes: (domain?: string, goldenOnly?: boolean) => {
     const params = new URLSearchParams();
     if (domain) params.set("domain", domain);

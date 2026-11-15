@@ -30,6 +30,7 @@ from backend.models.recipe import RecipeRecord
 from backend.schemas.recipe import (
     RecipeRead,
     RecipeRecordRead,
+    RecipePacksRead,
     CrystallizeResponse,
     EvolveResponse,
     RecipeSearchHit,
@@ -47,10 +48,13 @@ router = APIRouter(prefix="/recipes", tags=["recipes"])
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_disk_recipe(filename: str, directory: Optional[str] = None) -> RecipeRead:
+    from backend.services.recipe_paths import recipe_origin_for_dir
+
     base = directory or settings.recipes_path
     path = os.path.join(base, filename)
     with open(path, "r") as f:
         data = yaml.safe_load(f)
+    source, product = recipe_origin_for_dir(base)
     return RecipeRead(
         name=os.path.splitext(filename)[0],
         filename=filename,
@@ -59,6 +63,8 @@ def _load_disk_recipe(filename: str, directory: Optional[str] = None) -> RecipeR
         description=data.get("description"),
         created_at=data.get("created_at"),
         content=data,
+        source=source,
+        product=product,
     )
 
 
@@ -86,10 +92,25 @@ def _yaml_path_for_recipe(name: str) -> Optional[str]:
 
 # ── Disk + DB list ────────────────────────────────────────────────────────────
 
+@router.get("/packs", response_model=RecipePacksRead)
+async def list_recipe_packs():
+    """Platform path + configured product use_case keys (for UI filter checkboxes)."""
+    from backend.services.recipe_paths import configured_product_use_cases
+
+    return RecipePacksRead(
+        platform_path=os.path.abspath(settings.recipes_path),
+        products=configured_product_use_cases(),
+    )
+
+
 @router.get("", response_model=List[RecipeRead])
 async def list_recipes(db: AsyncSession = Depends(get_db)):
     """List all recipes: disk-based (hand-crafted) merged with DB records."""
-    from backend.services.recipe_paths import iter_disk_recipe_filenames
+    from backend.services.recipe_paths import (
+        find_recipe_file,
+        iter_disk_recipe_filenames,
+        recipe_origin_for_dir,
+    )
 
     disk_recipes: dict[str, RecipeRead] = {}
     for directory, fname in iter_disk_recipe_filenames():
@@ -107,6 +128,11 @@ async def list_recipes(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.warning("Failed to prune stale recipe search index: %s", e)
     for record in records:
+        # Prefer disk origin when the same stem still exists on a search path
+        source, product = "platform", None
+        fpath = find_recipe_file(record.name)
+        if fpath:
+            source, product = recipe_origin_for_dir(os.path.dirname(fpath))
         disk_recipes[record.name] = RecipeRead(
             name=record.name,
             filename=f"{record.name}.yaml",
@@ -115,6 +141,8 @@ async def list_recipes(db: AsyncSession = Depends(get_db)):
             description=record.description,
             created_at=record.created_at.strftime("%Y-%m-%d"),
             content=record.full_content,
+            source=source,
+            product=product,
         )
 
     return list(disk_recipes.values())
@@ -154,12 +182,18 @@ async def search_recipes(
 @router.get("/{recipe_name}", response_model=RecipeRead)
 async def get_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
     # Fixed-path sub-routes must be declared before this wildcard.
+    from backend.services.recipe_paths import find_recipe_file, recipe_origin_for_dir
+
     # Check DB first
     result = await db.execute(
         select(RecipeRecord).where(RecipeRecord.name == recipe_name)
     )
     record = result.scalars().first()
     if record:
+        source, product = "platform", None
+        fpath = find_recipe_file(record.name)
+        if fpath:
+            source, product = recipe_origin_for_dir(os.path.dirname(fpath))
         return RecipeRead(
             name=record.name,
             filename=f"{record.name}.yaml",
@@ -168,11 +202,11 @@ async def get_recipe(recipe_name: str, db: AsyncSession = Depends(get_db)):
             description=record.description,
             created_at=record.created_at.strftime("%Y-%m-%d"),
             content=record.full_content,
+            source=source,
+            product=product,
         )
 
     # Fallback to disk (platform + product packs)
-    from backend.services.recipe_paths import find_recipe_file
-
     fpath = find_recipe_file(recipe_name)
     if fpath:
         return _load_disk_recipe(os.path.basename(fpath), directory=os.path.dirname(fpath))

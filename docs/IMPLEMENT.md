@@ -2973,4 +2973,5 @@ Recipe audit + product-agnostic defaults + pack cutover. Historical IMPLEMENT li
 - [x] `ASTRA_PRODUCT_RECIPES` search path (`backend/services/recipe_paths.py`); wire `resolve_recipe` / `_load_recipe_for_env` / Recipes UI list.
 - [x] Move 35 `ensemble_*.yaml` → Ensemble `astra_recipes/`; Astra `recipes/` platform-only; crystallizer writes to product pack when `use_case` is configured.
 - [x] Create-time `use_case` wins over Lead Agent; reject `mlx_*` learner_id as `use_case` (e81bc959 / smoke `8000d1ac`).
+- [x] Recipes UI source filters: `RecipeRead.source`/`product`, `GET /recipes/packs`, checkboxes (Astra built-in + dynamic product keys) with per-source and filtered counts; dispatch prompt defaults `use_case` from `recipe.product`.
 - [x] DESIGN §2.4–§3, PRD, UX, README, `.env.example`, Ensemble VENDOR/FINETUNE + pack README.
