@@ -1,7 +1,7 @@
 # ASTRA: Product Requirements Document (PRD)
 
 **Project Name:** ASTRA (**A**utonomous **S**trategic **Tr**aining **A**gent)  
-**Status:** Epoch 11 (AstraData + AstraEval) — complete the flywheel; see DESIGN § 2.4  
+**Status:** Complete flywheel (Epoch 11: AstraData + AstraEval); see DESIGN § 2.4
 **Target:** Autonomous Machine Learning Orchestration
 
 ---
@@ -125,7 +125,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 
 ### 4.19. Remote MLX Fine-Tune on Apple Silicon Cluster
 - Apple Silicon Mac Mini compute offload for MLX workers (`sft` / `dpo` / `grpo` / …). Mini layout: product workspace (e.g. `~/finetune`, plugin on `PYTHONPATH`) + editable Astra packages at `~/astra-pkg` (`pip install -e`, train via `-m astrarl.cli` / `astratune.cli`) + `~/finetune-env` — not a full Orchestrator HUD/DB checkout.
-- **Platform split (Epoch 9–10)**: gym-coupled RL → **AstraGym × AstraRL**; offline LM (SFT/DPO/distill/RFT/STAR/RLCD) → **AstraTune**; products plug in via `astra_plugin` (mission-create `use_case` / goal marker / Lead Agent; `ASTRA_USE_CASE` env is bare-CLI fallback only). Product recipe YAML is discovered via `ASTRA_PRODUCT_RECIPES`, not baked into Astra `recipes/`. Shared `lora_io` lives in AstraTune and is used by AstraRL MLX trainers too.
+- **Platform split (Epoch 9–11)**: gym-coupled RL → **AstraGym × AstraRL**; offline LM (SFT/DPO/distill/RFT/STAR/RLCD) → **AstraTune**; fuel/truth → **AstraData** + **AstraEval** (complete flywheel). Products plug in via `astra_plugin` (mission-create `use_case` / goal marker / Lead Agent; `ASTRA_USE_CASE` env is bare-CLI fallback only). Product recipe YAML is discovered via `ASTRA_PRODUCT_RECIPES`, not baked into Astra `recipes/`. Shared `lora_io` lives in AstraTune and is used by AstraRL MLX trainers too.
 - **Facade dispatch**: canned `astratune.make` / `astrarl.make(..., use_execv=True)` wrappers bake `finetune_dir` / `python_bin` / `astra_pkg_root` / `use_case` and replace the process image with `python -m astrarl.cli` / `astratune.cli`.
 - **Zero-Orphan Process Execution**: `os.execv` keeps SSHSandbox PID tracking on the real trainer.
 - **Dynamic Validation Batch-Clamping**: Automatically adjusts validation batch sizes so `effective_batch_size <= min(train_size, val_size)`, preventing MLX batch underflow exceptions on small datasets.
@@ -172,17 +172,17 @@ To balance autonomy with safety, ASTRA implements a **Graduated Autonomy** syste
 
 ---
 
-## 6. Epoch 11 — AstraData + AstraEval (flywheel complete)
+## 6. Epoch 11 — Complete flywheel (AstraData + AstraEval)
 
-**Goal.** Ship the two missing flywheel layers so fuel → train → truth → fuel matches the architecture canvas.
+Shipped. Fuel → train → truth → FailSlice → fuel is closed in-platform; see [DESIGN.md § 2.4](DESIGN.md).
 
 | Package | Contract | First vertical |
 |---|---|---|
 | `astradata/` | `dataset_id@rev` registry, hash freeze, FailSlice bank | `hstu_ml1m@1` |
 | `astraeval/` | `suite.run(ckpt) → primary + case_ids`, ceilings, tournament seeds | `hstu_hr10@1`, `routing_bare@1` |
 
-**Orchestrator wiring.** Missions stamp `dataset_*` / `suite_*` from recipes. Create rejects over-suite-ceiling targets. Post-train: HSTU + RFT use authoritative suites; FailSlice lands in AstraData; Ensemble follow-ons inject `focus_cases` from the latest slice (same `suite_id@rev`). Tournament seeds = `astraeval.tournament_seed` (`2000 + ep`); champions record `suite_rev`.
+**Orchestrator wiring.** Missions stamp `dataset_*` / `suite_*` from recipes. Create rejects over-suite-ceiling targets. Post-train: HSTU (+ suite-gated workers) use authoritative suites; FailSlice lands in AstraData; Ensemble follow-ons inject `focus_cases` from the latest slice (same `suite_id@rev`). Tournament seeds = `astraeval.tournament_seed` (`2000 + ep`); champions record `suite_rev`.
 
-**Non-goals.** Datasets in recipe YAML blobs; Eval that trains; product `*_train.py` as platform entrypoint; moving distill/rft/star CE ownership this epoch.
+**Out of scope (kept).** Datasets as YAML blobs; Eval that trains; product `*_train.py` as platform entrypoint; relocating distill/rft/star CE ownership.
 
-**E2E proof.** Hermetic unit + package tests for registry / suite / FailSlice; live Mini: HSTU suite-gated mission + Ensemble FailSlice → focus turn (see plan Step 6).
+**Proof.** Hermetic registry / suite / FailSlice + flywheel E2E tests; live HSTU suite-gated mission (e.g. `a75a2ee0`, HR@10).

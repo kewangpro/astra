@@ -11,7 +11,7 @@ Phase-level incidents and code contracts live in [IMPLEMENT.md](IMPLEMENT.md).
 
 ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orchestrator**, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
 
-**Interactive / gym-coupled RL** uses **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) under that Orchestrator (§ 2.4). That includes off-policy SB3 (DQN/SAC/TD3 replay). **Offline / dataset LM post-training** (SFT, DPO, distill, RFT, STAR, RLCD) uses the sibling **AstraTune** package — not AstraRL.
+**Interactive / gym-coupled RL** uses **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) under that Orchestrator (§ 2.4). That includes off-policy SB3 (DQN/SAC/TD3 replay). **Offline / dataset LM post-training** (SFT, DPO, distill, RFT, STAR, RLCD) uses the sibling **AstraTune** package — not AstraRL. **AstraData** + **AstraEval** close the complete flywheel (fuel → train → truth → FailSlice → fuel).
 
 ```
                     +-----------------------+
@@ -35,15 +35,14 @@ ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orch
                                                         +-----------+-----------+
                                                                     |
                     platform pkgs (local .venv or Mini ~/astra-pkg)      v
-                    +-------------+------------------+------------------+
-                    |  AstraGym   |     AstraRL      |    AstraTune     |
-                    |  (gym_id)   |  (learner_id)    |  (learner_id)    |
-                    +------+------+--------+---------+--------+---------+
-                           |               |     ^            |
-                           v               v     | lora_io    v
-                    worlds/rewards   SB3 + GRPO/OPD  (shared)  SFT/DPO/…
-                                     (gym-coupled)             distill/RFT/
-                                                               STAR/RLCD
+          +--------+--------+----------+----------+----------+
+          | AstraGym | AstraRL | AstraTune | AstraData | AstraEval |
+          |  gym_id  | learner |  learner  | dataset@rev| suite@rev |
+          +----+-----+---+----+----+-----+-----+----+----+--+
+               |         |     ^     |           |
+               v         v     |lora |           v
+        worlds/rewards SB3/GRPO| I/O  SFT/DPO/…  suite gate +
+                       (gym)   |     distill/…   FailSlice bank
 ```
 
 ---
@@ -79,7 +78,7 @@ Plan → generate script → sandbox → evaluate → pivot or stop.
 
 Targets that exceed a recipe’s declared empirical ceiling are rejected at create time.
 
-### 2.4. AstraGym, AstraRL, AstraTune, AstraData, AstraEval, and the Orchestrator (Epoch 9–11)
+### 2.4. Complete flywheel
 
 **Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev`) close the flywheel: fuel → train → truth → FailSlice → fuel. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades + Data/Eval). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
 
@@ -281,7 +280,7 @@ Where training runs.
 
 ### 2.7. Evaluator and introspection
 
-A **benchmark suite** (golden challenges) and **stress** cases sit outside the training loop. Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
+**AstraEval** owns authoritative mission gates when `suite_id@rev` is stamped: `suite.run(ckpt) → {primary, case_ids}`, suite ceilings at create, FailSlice emit into AstraData, and tournament seeds (`2000 + ep`). Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. Legacy **benchmark / stress** helpers remain for arcade introspection. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
 
 ### 2.8. Resilience
 
@@ -300,11 +299,13 @@ Both entry points share one pipeline: **`POST /missions`** (Command Center goal 
 | Piece | Where it lives | Role at mission start |
 |---|---|---|
 | **Goal (mission prompt)** | `Mission.goal` (from create body or canonicalized from recipe description + target) | Human intent: env/product, algorithm, target. Lead Agent reads this. Explicit `use_case: <module>` / `--use-case <module>` markers bind the product without a separate field. |
-| **Recipe** | Disk YAML / DB record | Known-good **training knobs** for a worker: `task_type`, adapter paths, LoRA, `finetune_dir` / `python_bin` / `astra_pkg_root`, epochs, ceilings. Optional multi-`stages`. Does **not** own the product plugin name. Astra `recipes/` is **platform-only** (Snake/Tetris/MinAtar/…); product packs (e.g. Ensemble `astra_recipes/`) are discovered via `ASTRA_PRODUCT_RECIPES=use_case:/path` after the platform dir. |
+| **Recipe** | Disk YAML / DB record | Known-good **training knobs** for a worker: `task_type`, adapter paths, LoRA, `finetune_dir` / `python_bin` / `astra_pkg_root`, epochs, ceilings. Optional `dataset_id`/`dataset_rev`, `eval_suite`/`suite_rev`, multi-`stages`. Does **not** own the product plugin name. Astra `recipes/` is **platform-only** (Snake/Tetris/MinAtar/…); product packs (e.g. Ensemble `astra_recipes/`) are discovered via `ASTRA_PRODUCT_RECIPES=use_case:/path` after the platform dir. |
 | **`task_type`** | Create body, recipe, or inferred from goal keywords | Worker key (`rl`, `dpo`, `grpo`, …) → sandbox / preflight / which facade CLI. |
 | **`use_case` (product)** | Bound at **create** → `plan.hyperparameters.use_case` → baked `--use-case` | Importable `UseCasePlugin` module (e.g. Ensemble → `ensemble`). See resolution order below. |
-| **`current_plan`** | Seeded at create when a recipe is present; refreshed by Lead Agent / stages | What the loop executes: recipe name, algorithm, hyperparameters, stages. |
-| **Target metric** | Create override → recipe `target_metric` / `metric_ceiling` → parsed from goal | Completion gate for the HUD / evaluator. |
+| **`dataset_id@rev`** | Recipe → plan stamp (AstraData) | Versioned fuel; create/preflight bind paths (e.g. HSTU ML-1M). |
+| **`suite_id@rev`** | Recipe `eval_suite`/`suite_rev` → plan stamp (AstraEval) | Authoritative score + ceiling; FailSlice → optional `focus_cases`. |
+| **`current_plan`** | Seeded at create when a recipe is present; refreshed by Lead Agent / stages | What the loop executes: recipe name, algorithm, hyperparameters, stages, Data/Eval axes. |
+| **Target metric** | Create override → **suite ceiling** when suite stamped, else recipe `target_metric` / `metric_ceiling` → parsed from goal | Completion gate for the HUD / evaluator. |
 
 ```
   Command Center goal bar          Recipes "Dispatch"
@@ -365,9 +366,9 @@ Recipe hyperparameters supply paths and LoRA settings; they are not the place to
 2. Codegen writes the sandbox script (canned facade for remote LM workers).
 3. Autonomy gates may pause for execute-code approval.
 4. Sandbox trains; telemetry streams to the HUD.
-5. Evaluator scores the checkpoint against the goal metric.
-6. Loop pivots, completes, or stalls. Successful **RL** (and similar) runs may crystallize a recipe into the platform `recipes/` dir, or into the product pack when `plan.hyperparameters.use_case` maps to `ASTRA_PRODUCT_RECIPES`; fine-tune-remote types do not auto-crystallize.
-7. Registry and model page pick up the checkpoint for play and tournaments (same env table).
+5. When `suite_id@rev` is stamped, AstraEval suite-gates the checkpoint (primary metric + FailSlice into AstraData); otherwise the loop scores against the goal / recipe metric.
+6. Loop pivots, completes, or stalls. Ensemble follow-ons may inject `focus_cases` from the latest FailSlice (same suite). Successful **RL** (and similar) runs may crystallize a recipe into the platform `recipes/` dir, or into the product pack when `plan.hyperparameters.use_case` maps to `ASTRA_PRODUCT_RECIPES`; fine-tune-remote types do not auto-crystallize.
+7. Registry and model page pick up the checkpoint for play and tournaments (same env table; seeds via `astraeval.tournament_seed`).
 
 ---
 

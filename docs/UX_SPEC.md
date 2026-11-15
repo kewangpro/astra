@@ -57,7 +57,7 @@
 
 Nav item after Models. A task index on the left, one section per task. Each section states the objective, then one row per algorithm with its worker key (`task_type`) and what the update does. Copy distinguishes **online** (fresh policy rollouts during training) vs **offline** (fixed logged / preference / JSONL data). Task sections match the goal-bar groups, including **Agentic RL** (Agent GRPO / `agrpo` — multi-turn tool trajectories).
 
-Epoch 9–10: gym-coupled RL is **AstraGym** (`gym_id`) × **AstraRL** (`learner_id`); offline LM post-training is **AstraTune** (`mlx_sft` / `mlx_dpo` / …). Astra is Orchestrator. AstraRL owns the platform GRPO runtime (rollout / DAPO-lite / loss); AstraTune owns SFT/DPO/distill/RLCD math and **shared** `lora_io` (also imported by AstraRL MLX trainers). Products plug in via `astra_plugin` (routing reward, preference pairs, decision cases). Named in the relevant `/docs` task summaries.
+Complete flywheel: gym-coupled RL is **AstraGym** (`gym_id`) × **AstraRL** (`learner_id`); offline LM is **AstraTune** (`mlx_sft` / `mlx_dpo` / …); fuel/truth are **AstraData** (`dataset_id@rev`) + **AstraEval** (`suite_id@rev` + FailSlice). Astra is Orchestrator. AstraRL owns the platform GRPO runtime (rollout / DAPO-lite / loss); AstraTune owns SFT/DPO/distill/RLCD math and **shared** `lora_io` (also imported by AstraRL MLX trainers). Products plug in via `astra_plugin` (routing reward, preference pairs, decision cases). Named in the relevant `/docs` task summaries.
 
 
 

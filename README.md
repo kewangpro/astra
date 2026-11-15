@@ -7,7 +7,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 ## Feature Highlights
 
 - **End-to-End Autonomous Loop** — Plan → Critique → Implement → Sandbox → Train → Evaluate → Refine. Integrates GAN-style plan critique, automatic error recovery, and convergence guards that prevent runaway compute.
-- **AstraGym × AstraRL × AstraTune + AstraData × AstraEval (Epoch 9–11)** — **Gym-coupled** RL is **AstraGym** × **AstraRL** (SB3 + MLX GRPO/OPD). **Offline LM** post-training is **AstraTune**. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev` + FailSlice) complete fuel → train → truth → fuel. Products plug in via [`astra_plugin`](astra_plugin/). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/), [`astratune/`](astratune/), [`astradata/`](astradata/), [`astraeval/`](astraeval/). See [DESIGN.md § 2.4](docs/DESIGN.md).
+- **Complete flywheel** — **Gym-coupled** RL is **AstraGym** × **AstraRL** (SB3 + MLX GRPO/OPD). **Offline LM** post-training is **AstraTune**. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev` + FailSlice) close fuel → train → truth → fuel. Products plug in via [`astra_plugin`](astra_plugin/). Packages: [`astragym/`](astragym/), [`astrarl/`](astrarl/), [`astratune/`](astratune/), [`astradata/`](astradata/), [`astraeval/`](astraeval/). See [DESIGN.md § 2.4](docs/DESIGN.md).
 - **Adaptive Escalating Pivots** — Stalled missions systematically escalate across hyperparameter tuning, network architecture mutations, algorithm switches, and environment reward shaping, with progress persisted across restarts. Goals that name a trainer stay on it; unnamed "RL agent" goals seed the env recipe algorithm and, once plateaued, switch to a *different* trainer (`SB3 PPO` → `PPO` is not a switch).
 - **Model Registry & Tournament Arena** — Benchmark multiple models head-to-head on identical deterministic seeds (`2000 + ep`), each in its own `train_config` env (same table as `/models/{id}` play). Tracks score distributions and tie-split win rates; crowning a champion is exclusive per environment.
 - **Recipe Library & Lineage Evolution** — Reusable YAML training blueprints with genetic mutation tracking (Lineage DAG), "Golden" recipe distillation from successful runs, and unified mission creation & dispatch with automatic canonical goal formatting (`Train a <env_id> <algo> agent to achieve <target_value> <metric_name>`).
@@ -55,7 +55,7 @@ ASTRA is an AI agent system that orchestrates end-to-end ML/RL training autonomo
 
 A task is the objective. An algorithm is the update rule. `task_type` is the sandbox / preflight worker key.
 
-### AstraGym × AstraRL × AstraTune
+### Complete flywheel
 
 | Layer | Package | Id | Owns |
 |---|---|---|---|
@@ -121,7 +121,10 @@ astra/
 ├── astragym/            # AstraGym — gym-coupled worlds (gym_id): Gymnasium, AgentGym, e2e, routing
 ├── astrarl/             # AstraRL — gym-coupled learners + GRPO runtime
 ├── astratune/           # AstraTune — offline LM + shared LoRA I/O
-├── pyproject.toml       # installable astragym + astrarl + astratune (pip install -e .)
+├── astradata/           # AstraData — dataset_id@rev registry + FailSlice bank
+├── astraeval/           # AstraEval — suite_id@rev suites, ceilings, tournament seeds
+├── astra_plugin/        # UseCasePlugin contract + loader
+├── pyproject.toml       # installable platform pkgs (pip install -e .)
 ├── scripts/             # emergency_mirror_astra_packages.sh (mirrors only)
 ├── backend/
 │   ├── agent/          # LeadAgent, CriticAgent, CodeGenerator, ErrorAnalyzer, CodeSafetyClassifier, ModelManager, KVCache, inference providers
@@ -168,7 +171,7 @@ make ports  # show port status for all services
 
 ## Strategic Development Milestones
 
-ASTRA's architecture and capabilities are structured into ten thematic epochs (~10–18 phases each; Epochs 7, 9, and 10 are shorter architecture milestones). Phase numbers stay chronological; epoch membership is thematic — see [IMPLEMENT.md](docs/IMPLEMENT.md).
+ASTRA's architecture and capabilities are structured into eleven thematic epochs (~10–18 phases each; Epochs 7, 9, 10, and 11 are shorter architecture milestones). Phase numbers stay chronological; epoch membership is thematic — see [IMPLEMENT.md](docs/IMPLEMENT.md).
 
 | Epoch | Scope & Strategic Capabilities | Key Components | Status |
 |---|---|---|---|
@@ -181,7 +184,8 @@ ASTRA's architecture and capabilities are structured into ten thematic epochs (~
 | **Epoch 7: AgentGym & Agentic RL** (64, 98–100) | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs. | `AgentToolGym`, `agent_grpo_train.py`, `agrpo` | ✅ Complete |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** (87–97) | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78`. | `opd_train.py`, `rlcd_train.py`, decision recipes | ✅ Complete |
 | **Epoch 9: AstraGym + AstraRL** (101–113) | Gym×RL split; MLX facade + DAPO-lite; GRPO runtime extracted into AstraRL; products as reward-plugin use cases. | `astragym/`, `astrarl/`, `MLXLearnerFacade` | ✅ Complete |
-| **Epoch 10: AstraTune** (114+) | Offline LM platform sibling; shared LoRA I/O (also used by AstraRL MLX); SFT/DPO/distill/RFT/STAR/RLCD math + canned facades; pip-only Mini (`~/astra-pkg` + path triad); `astra_plugin` contract. | `astratune/`, `astra_plugin/` | ✅ Complete |
+| **Epoch 10: AstraTune** (114–122) | Offline LM platform sibling; shared LoRA I/O; canned facades; pip-only Mini; `astra_plugin`; product-neutral recipe packs (`ASTRA_PRODUCT_RECIPES`). | `astratune/`, `astra_plugin/`, `recipe_paths` | ✅ Complete |
+| **Epoch 11: Complete flywheel** (123) | AstraData + AstraEval; suite gate + FailSlice → focus_cases; tournament seeds owned by Eval. | `astradata/`, `astraeval/` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).
 

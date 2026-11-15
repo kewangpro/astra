@@ -1,6 +1,6 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA` in **ten thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
+This document outlines the architectural implementation roadmap for `ASTRA` in **eleven thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
 
 ## Strategic Epoch Roadmap
 
@@ -15,11 +15,12 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
 | **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split; MLX facade + DAPO-lite; platform GRPO runtime extracted from product trees | 101–113 | 13 | ✅ |
-| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini | 114–119 | 6 | ✅ |
+| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini; product-neutral packs | 114–122 | 9 | ✅ |
+| **Epoch 11: Complete flywheel** | AstraData + AstraEval; suite gate; FailSlice → focus_cases; Eval-owned tournament seeds | 123 | 1 | ✅ |
 
-Epochs 7, 9, and 10 are intentionally shorter **architecture** milestones (agent stack, Gym×RL split, then offline AstraTune); Epochs 3–6 absorb the former “continuity” band.
+Epochs 7, 9, 10, and 11 are intentionally shorter **architecture** milestones (agent stack, Gym×RL, AstraTune, then Data/Eval); Epochs 3–6 absorb the former “continuity” band.
 
-**Current ownership (post–training-center cleanup):** Astra is the **platform and training center** (`python -m astrarl.cli` / `astratune.cli`, `run_*` loops, facades, `astra_plugin`). Products are **use cases** (plugin module + prompts / eval cases / `bare_eval`). Historical phase notes below may still name a specific product or obsolete `*_train.py` execv targets — see `docs/DESIGN.md` §2.4.
+**Current ownership:** Astra is the **platform and training center** (`python -m astrarl.cli` / `astratune.cli`, `run_*` loops, facades, `astra_plugin`, `astradata`, `astraeval`). Products are **use cases** (plugin module + prompts / eval cases / `bare_eval`). Historical phase notes below may still name a specific product or obsolete `*_train.py` execv targets — see `docs/DESIGN.md` §2.4.
 
 ---
 
@@ -2984,3 +2985,16 @@ Phase 26 tailed `Pass rate:` and epoch `avg_loss` for DPO, but `dpo_train.py` al
 - [x] `MetricChart`: dual-series for fine-tunes (`loss` + `pass_rate`); empty/header surfaces collect/training status.
 - [x] `MetricGap`: while `running`, show live eval subtitle from latest WS `pass_rate` (arc still DB-only).
 - [x] `astratune/stdout_contract.py` notes DPO step/loss + `New best:`; unit tests in `test_remote_telemetry_tail.py`.
+
+# Epoch 11: Complete flywheel (Phase 123)
+
+## Phase 123: AstraData + AstraEval (2026-11-14)
+
+Close fuel → train → truth → FailSlice → fuel. Design contract: [DESIGN.md §2.4](DESIGN.md).
+
+- [x] `astradata/`: `dataset_id@rev` registry, hash/freeze, splits, FailSlice store; HSTU ML-1M builder (`hstu_ml1m@1`).
+- [x] `astraeval/`: Suite protocol + registry; `HstuHr10Suite`, `RoutingBareEvalSuite`; suite ceilings; `tournament_seed` (`2000 + ep`).
+- [x] Orchestrator: stamp `dataset_*` / `suite_*` from recipes; create rejects over-suite-ceiling; suite gate post-train; FailSlice emit; Ensemble `focus_cases` from latest slice (opt-in / `use_case=ensemble`).
+- [x] Recipe bind: `hstu_ml1m_v1` declares `dataset_id`/`eval_suite`; product packs keep Ensemble routing suites.
+- [x] Docs: DESIGN complete-flywheel §2.4; README / PRD / UX Epoch 11; unit + hermetic flywheel E2E; live HSTU suite-gated mission.
+- [x] Pack resolve: `_infer_use_case_for_task` only in `_resolve_hyperparams` so `default_recipe_for_task` stays product-neutral.

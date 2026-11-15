@@ -24,7 +24,7 @@ Offline LM (DPO/SFT/distill/RFT/STaR/RLCD) belongs in **AstraTune**, not AstraRL
 ([DESIGN.md](DESIGN.md) §2.4). Products bind via **`astra_plugin.UseCasePlugin`**
 at mission create — not recipe HP.
 
-### Closed since the first peer review (Epoch 9–10)
+### Closed since the first peer review (Epoch 9–11)
 
 | Former gap | Resolution |
 |---|---|
@@ -35,6 +35,7 @@ at mission create — not recipe HP.
 | DPO/SFT mixed into the RL story | Sibling **AstraTune**; DESIGN boundary enforced |
 | Product hardcoding in train entrypoints | `astra_plugin` + mission-create `use_case` |
 | Ensemble YAML / defaults baked into Astra | Platform `recipes/` only; product packs via `ASTRA_PRODUCT_RECIPES`; `{uc}_{task}_v1` defaults |
+| Missing Data / Eval flywheel layers | **Epoch 11:** `astradata/` + `astraeval/`; suite gate + FailSlice → `focus_cases` ([DESIGN.md](DESIGN.md) §2.4) |
 
 ### Remaining gaps (re-ranked)
 
@@ -122,7 +123,7 @@ Relevant pieces:
 | Orchestrator | MacBook FastAPI + mission loops (`_running_tasks` is multi-mission; loops can overlap) |
 | Classic env RL (`rl`, local `embed`/`rerank`/`hstu`/`ml`, …) | Default backend `_detect_backend()` → `subprocess` on Apple Silicon, else `container`. **Does not** follow `sandbox_host`. |
 | Remote LM / gym-coupled LM workers | Forced `SSHSandbox` to `settings.sandbox_host` (Mini) for `_FINETUNE_REMOTE_TASK_TYPES`: `dpo`, `grpo`, `agrpo`, `distill`, `rft`, `opd`, `rlcd`, `prompt`, `sft`, `post-training`, `star`. No local fallback if host unset. |
-| Mini layout | Triad: `~/astra-pkg` (editable astragym/astrarl/astratune/astra_plugin), `~/finetune` (workspace + product plugin), `~/finetune-env` (MLX Python). Not a full Orchestrator/HUD/DB checkout. |
+| Mini layout | Triad: `~/astra-pkg` (editable astragym/astrarl/astratune/astra_plugin/astradata/astraeval), `~/finetune` (workspace + product plugin), `~/finetune-env` (MLX Python). Not a full Orchestrator/HUD/DB checkout. |
 | Telemetry | Sandboxes POST to `settings.telemetry_host` (default `macbook.local:8200`). |
 
 **Real gap Ray would address**
