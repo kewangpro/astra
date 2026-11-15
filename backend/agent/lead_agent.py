@@ -50,7 +50,9 @@ from the mission creation goal is "use_case": the importable UseCasePlugin modul
 named in the goal (e.g. goal mentions Ensemble / Ensemble routing → "ensemble"; goal says
 "use_case: my_product" → "my_product"). If the goal already contains an explicit use_case /
 --use-case marker, copy that module name. Never leave use_case empty for these task types when
-the goal names a product. Set "task_type" (worker key), "algorithm" ("GRPO", "DPO", "SFT",
+the goal names a product. Never set use_case to a learner_id (mlx_dpo, mlx_grpo_routing,
+mlx_sft, …) or to an astratune.make / astrarl.make first argument — those are workers, not
+product plugins. Set "task_type" (worker key), "algorithm" ("GRPO", "DPO", "SFT",
 "MLX SFT", "Distill", "RFT", "STaR", "OPD", "RLCD", "Prompt Optimization", …), "reasoning", and
 hyperparameters.use_case only.
   - "sft": supervised fine-tuning on routing demonstrations. Learns schema and basic task assignment via MLX on Apple Silicon GPU.

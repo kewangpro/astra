@@ -2305,21 +2305,34 @@ class LoopStateMachine:
         return None
 
     @staticmethod
-    def _ensure_plan_use_case(plan: dict, mission) -> None:
+    def _looks_like_learner_id(use_case: str) -> bool:
+        """Lead Agent sometimes stamps learner_id (mlx_dpo) into use_case — reject."""
+        uc = (use_case or "").strip().lower()
+        if not uc:
+            return False
+        if uc.startswith("mlx_"):
+            return True
+        if uc in {
+            "sb3_ppo", "sb3_dqn", "sb3_sac", "sb3_td3",
+            "actor_critic", "hstu",
+        }:
+            return True
+        return False
+
+    @classmethod
+    def _ensure_plan_use_case(cls, plan: dict, mission) -> None:
         """Bind product plugin from create/goal onto plan.hyperparameters before codegen.
 
-        Order: existing plan HP → mission.current_plan (prepare_mission_params) →
-        explicit markers in mission.goal. Lead Agent should set use_case for
-        finetune goals; this backfills when the planner omitted it.
+        Create-time / goal markers always win over Lead Agent. Real incident:
+        smoke goal text mentions astratune.make(\"mlx_dpo\") and the planner
+        wrote use_case=mlx_dpo, which Mini then tried to import as a product
+        module (e81bc959).
         """
         from backend.services.mission_service import (
             infer_use_case_from_goal,
             _inject_use_case_into_plan,
         )
 
-        hp = plan.get("hyperparameters") if isinstance(plan.get("hyperparameters"), dict) else {}
-        if str(hp.get("use_case") or "").strip():
-            return
         seeded = None
         cp = mission.current_plan if isinstance(getattr(mission, "current_plan", None), dict) else None
         if cp:
@@ -2335,8 +2348,15 @@ class LoopStateMachine:
                         break
         if not seeded:
             seeded = infer_use_case_from_goal(getattr(mission, "goal", None) or "")
-        if seeded:
+        if seeded and not cls._looks_like_learner_id(seeded):
             _inject_use_case_into_plan(plan, seeded)
+            return
+        hp = plan.get("hyperparameters") if isinstance(plan.get("hyperparameters"), dict) else {}
+        planned = str(hp.get("use_case") or "").strip()
+        if planned and cls._looks_like_learner_id(planned):
+            hp = dict(hp)
+            hp.pop("use_case", None)
+            plan["hyperparameters"] = hp
 
     @classmethod
     def _seed_plan_algorithm(cls, plan: dict, goal: str) -> dict:

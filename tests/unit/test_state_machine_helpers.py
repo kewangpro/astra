@@ -341,6 +341,32 @@ _named = LoopStateMachine._named_algorithm_in_goal
 _seed = LoopStateMachine._seed_plan_algorithm
 
 
+def test_ensure_plan_use_case_create_binding_beats_learner_id_hallucination():
+    """e81bc959: Lead Agent set use_case=mlx_dpo from astratune.make(\"mlx_dpo\")."""
+    from types import SimpleNamespace
+
+    plan = {
+        "task_type": "dpo",
+        "recipe": "ensemble_dpo_astratune_smoke",
+        "hyperparameters": {"use_case": "mlx_dpo"},
+    }
+    mission = SimpleNamespace(
+        goal="smoke astratune.make(\"mlx_dpo\")",
+        current_plan={"hyperparameters": {"use_case": "ensemble"}},
+    )
+    LoopStateMachine._ensure_plan_use_case(plan, mission)
+    assert plan["hyperparameters"]["use_case"] == "ensemble"
+
+
+def test_ensure_plan_use_case_strips_orphan_learner_id():
+    from types import SimpleNamespace
+
+    plan = {"task_type": "dpo", "hyperparameters": {"use_case": "mlx_dpo"}}
+    mission = SimpleNamespace(goal="DPO smoke without product marker", current_plan=None)
+    LoopStateMachine._ensure_plan_use_case(plan, mission)
+    assert "use_case" not in plan["hyperparameters"]
+
+
 def test_named_algo_untitled_rl_agent_is_none():
     assert _named("Train a MinAtar-Seaquest-v0 RL agent to achieve 100 score") is None
 

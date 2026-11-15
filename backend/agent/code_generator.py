@@ -2841,6 +2841,14 @@ def _resolve_astra_pkg_root(hp: Optional[dict] = None) -> str:
 
 
 
+def _looks_like_learner_id_use_case(use_case: str) -> bool:
+    """``mlx_dpo`` etc. are learner_ids, not UseCasePlugin modules."""
+    uc = (use_case or "").strip().lower()
+    return bool(uc) and (uc.startswith("mlx_") or uc in {
+        "sb3_ppo", "sb3_dqn", "sb3_sac", "sb3_td3", "actor_critic", "hstu",
+    })
+
+
 def _resolve_use_case(hp: Optional[dict] = None) -> str:
     """Importable UseCasePlugin module for codegen facades.
 
@@ -2849,14 +2857,18 @@ def _resolve_use_case(hp: Optional[dict] = None) -> str:
     2. ``ASTRA_USE_CASE`` env — last-resort bare-CLI fallback only, not mission binding
 
     Empty string means facades omit ``--use-case`` and the CLI must get the
-    module from the environment on the train host.
+    module from the environment on the train host. Learner_id-shaped values
+    (``mlx_dpo``) are ignored — Lead Agent has hallucinated those into use_case.
     """
     import os
     if hp:
         raw = str(hp.get("use_case") or "").strip()
-        if raw:
+        if raw and not _looks_like_learner_id_use_case(raw):
             return raw
-    return os.environ.get("ASTRA_USE_CASE", "").strip()
+    env = os.environ.get("ASTRA_USE_CASE", "").strip()
+    if env and not _looks_like_learner_id_use_case(env):
+        return env
+    return ""
 
 
 def finetune_checkpoint_dir(task_type: str, plan: dict, mission_id: str, iteration: int) -> str:
