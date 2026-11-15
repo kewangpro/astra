@@ -11,7 +11,7 @@ Phase-level incidents and code contracts live in [IMPLEMENT.md](IMPLEMENT.md).
 
 ASTRA is a modular system: a **Lead Agent** plans, a **loop** executes as **Orchestrator**, **specialist trainers** run in a **sandbox**, and a **Next.js HUD** observes. Missions train; models play.
 
-**Interactive / gym-coupled RL** uses **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) under that Orchestrator (§ 2.4). That includes off-policy SB3 (DQN/SAC/TD3 replay). **Offline / dataset LM post-training** (SFT, DPO, distill, RFT, STAR, RLCD) uses the sibling **AstraTune** package — not AstraRL. **AstraData** + **AstraEval** close the complete flywheel (fuel → train → truth → FailSlice → fuel).
+**Interactive / gym-coupled RL** uses **AstraGym** (`gym_id` worlds) and **AstraRL** (`learner_id` learners) under that Orchestrator (§ 2.4–2.5). That includes off-policy SB3 (DQN/SAC/TD3 replay). **Offline / dataset LM post-training** (SFT, DPO, distill, RFT, STAR, RLCD) uses the sibling **AstraTune** package — not AstraRL. **AstraData** + **AstraEval** close the complete flywheel (fuel → train → truth → FailSlice → fuel).
 
 ```
                     +-----------------------+
@@ -80,9 +80,9 @@ Targets that exceed the **suite** ceiling (when `eval_suite` is set) or else the
 
 ### 2.4. Complete flywheel
 
-**Highlight.** Every **interactive / gym-coupled** RL path in ASTRA is AstraGym × AstraRL — including **off-policy** SB3 (DQN/SAC/TD3 with a replay buffer). Every **offline / dataset LM** path is **AstraTune** (`astratune.make(learner_id)`). Do not fold DPO/SFT into AstraRL. **AstraData** (`dataset_id@rev`) and **AstraEval** (`suite_id@rev`) close the flywheel: fuel → train → truth → FailSlice → fuel. **Astra = platform and training center** (contracts + math + train CLIs/loops + facades + Data/Eval). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers.
+Fuel → train → truth → FailSlice → fuel. **AstraData** versions fuel (`dataset_id@rev`); train packages produce checkpoints; **AstraEval** scores them (`suite_id@rev`) and emits FailSlices back into Data; the Orchestrator suite-gates completion and may inject `focus_cases` on the next turn.
 
-**Flywheel** (current wiring — solid = forward path; labeled = Eval feedback):
+**Wiring** (solid = forward path; labeled = Eval feedback):
 
 ```mermaid
 flowchart LR
@@ -112,7 +112,22 @@ flowchart LR
   Eval -->|"suite_gate"| Orch
 ```
 
-Platform vs product split (train path / plugin boundary):
+| Layer | Role on the flywheel |
+|---|---|
+| **AstraData** | Fuel + FailSlice bank (`dataset_id@rev`) |
+| **Train** | AstraGym × AstraRL, AstraTune, or Neither (`hstu` / `embed` / …) |
+| **AstraEval** | Truth: `suite.run(ckpt) → {primary, case_ids}`, ceilings, `tournament_seed` |
+| **Orchestrator** | Stamps `dataset_*` / `suite_*`, suite gate, FailSlice → optional `focus_cases` |
+
+**Bind axes (mission create):** `task_type` · `gym_id`×`learner_id` · `use_case` · `dataset_id@rev` · `suite_id@rev`. Orchestrator stamps Data/Eval from the recipe. Shipped proving verticals: HSTU (`HstuHr10Suite`) and Ensemble routing (`RoutingBareEvalSuite` + FailSlice → `focus_cases`).
+
+Platform packages, product plugins, and recipe packs are § 2.5 — not part of the flywheel loop itself.
+
+### 2.5. Platform and product
+
+**Astra = platform and training center** (contracts + math + train CLIs/loops + facades + Data/Eval). **Products = use cases** (plugins, prompts, eval data, live app) — not a second training host. Inspired by Gym×RL product splits; **not** NVIDIA NeMo / HTTP env servers. Every **interactive / gym-coupled** RL path is AstraGym × AstraRL (including off-policy SB3). Every **offline / dataset LM** path is AstraTune — do not fold DPO/SFT into AstraRL.
+
+Train path / plugin boundary:
 
 ```
 +----------------------------------+          +----------------------------------+
@@ -155,8 +170,6 @@ Platform vs product split (train path / plugin boundary):
 
 **Packaging (Mini):** `pip install -e` an Astra tree into Mini `finetune-env` covers `astragym` + `astrarl` + `astratune` + `astra_plugin` + `astradata` + `astraeval`. Typical layout is `~/astra-pkg` (rsync or clone of the Astra repo) — **not** a full Orchestrator HUD/DB checkout. A **workspace** directory (historically `finetune_dir`, e.g. `~/finetune`) is cwd for adapters/data — **not** the train-script home. Products may ship branded plugin packages under `<workspace>/.astra_plugins/` (prepended by `ensure_workspace_on_path`) so `--use-case <brand>` imports cleanly. The product plugin module must be importable. Preflight verifies `import astrarl.cli, astratune.cli, astra_plugin` (and the configured use-case module when set) plus local `astradata` / `astraeval`; mission wrappers may also `sys.path.insert` `astra_pkg_root` before the facade import. Recipes may declare `gym_id` + `learner_id` + `dataset_id`/`dataset_rev` + `eval_suite`/`suite_rev`; when omitted gym/learner are inferred from `task_type` / `env_id` / algorithm / `reward_mode`. `task_type` remains the sandbox and preflight worker key. AstraGym is required (or inferred) for AstraRL; AstraTune workers use recipe `task_type` / `learner_id` only. Create rejects targets above the **suite** ceiling when `eval_suite` is set (else recipe `metric_ceiling`). Recipes one-click dispatch defaults empty `target_metric` from recipe `metric_ceiling` / `target_metric`.
 
-**Flywheel bind axes (mission create):** `task_type` · `gym_id`×`learner_id` · `use_case` · `dataset_id@rev` · `suite_id@rev`. Orchestrator stamps Data/Eval from the recipe. Shipped proving verticals: HSTU (`HstuHr10Suite`) and Ensemble routing (`RoutingBareEvalSuite` + FailSlice → `focus_cases`).
-
 | Gym-coupled `task_type` | AstraGym `gym_id` | AstraRL `learner_id` |
 |---|---|---|
 | `rl` | `gymnasium:<env_id>`, `agent_gym_vector` | `sb3_{ppo,dqn,a2c,sac,td3}` |
@@ -188,7 +201,7 @@ Platform vs product split (train path / plugin boundary):
 | **AstraTune In** | Offline LM: `dpo`, `sft`, `mlx_lora`, `distill`, `rft`, `star`, `rlcd` |
 | **Neither** | Different stacks: `prompt`, `embed`, `rerank`, `hstu`, `ml` |
 
-### 2.5. Specialist trainers
+### 2.6. Specialist trainers
 
 A task is the objective. An algorithm is the update rule under that task. `task_type` is the worker key for the algorithm. LoRA is a mechanism, not a task. Only Environment RL switches algorithms during a mission. `prompt` changes no weights.
 
@@ -205,7 +218,7 @@ A task is the objective. An algorithm is the update rule under that task. `task_
 | Retrieval | embedding (`embed`), reranker (`rerank`) |
 | Generative recommendation | HSTU (`hstu`) |
 
-**Online vs offline (data collection).** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it). Package ownership is independent of that label (§ 2.4): gym-coupled → AstraRL; offline LM → AstraTune.
+**Online vs offline (data collection).** *Online* means training uses data the current policy collects during the run (act → reward → update → act again). *Offline* means training uses a fixed logged dataset only — no new env interaction or fresh rollouts in the optimizer loop. Hybrids exist (collect a batch online, then train offline on it). Package ownership is independent of that label (§ 2.5): gym-coupled → AstraRL; offline LM → AstraTune.
 
 | Mode | In ASTRA | Package | Notes |
 |---|---|---|---|
@@ -270,7 +283,7 @@ Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_R
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 
-### 2.6. Sandbox
+### 2.7. Sandbox
 
 Where training runs.
 
@@ -278,11 +291,11 @@ Where training runs.
 - **CUDA** — container with GPU toolkit.
 - **Isolation** — memory/compute caps; writes limited to mission data and the registry.
 
-### 2.7. Evaluator and introspection
+### 2.8. Evaluator and introspection
 
 **AstraEval** owns authoritative mission gates when `suite_id@rev` is stamped: `suite.run(ckpt) → {primary, case_ids}`, suite ceilings at create, FailSlice emit into AstraData, and tournament seeds (`2000 + ep`). Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. Arcade **benchmark / stress** helpers remain for introspection outside suite-gated missions. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
 
-### 2.8. Resilience
+### 2.9. Resilience
 
 - **Safety critic** — GAN-style review of the plan before execute.
 - **Mission manifest** — structured source of truth for the next iteration, not a growing chat log.

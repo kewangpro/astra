@@ -5,7 +5,7 @@ Proposed enhancements, architectural upgrades, and future directions for the ast
 Living doc for future work — not a ship log ([IMPLEMENT.md](IMPLEMENT.md) is
 the phase history). Capability matrix for learner runtimes: Cursor canvas
 `canvases/astrarl-vs-peers.canvas.tsx` (revisited 2026-11-14). Platform
-contracts: [DESIGN.md](DESIGN.md) §2.4–§3.
+contracts: [DESIGN.md](DESIGN.md) §2.4–§2.5, §3.
 
 ---
 
@@ -21,7 +21,7 @@ without that split misleads; improvements below target the learner runtime and
 its seam into the Orchestrator — not a Ray rewrite of `astrarl/`.
 
 Offline LM (DPO/SFT/distill/RFT/STaR/RLCD) belongs in **AstraTune**, not AstraRL
-([DESIGN.md](DESIGN.md) §2.4). Products bind via **`astra_plugin.UseCasePlugin`**
+([DESIGN.md](DESIGN.md) §2.5). Products bind via **`astra_plugin.UseCasePlugin`**
 at mission create — not recipe HP.
 
 ### Closed since the first peer review (Epoch 9–11)

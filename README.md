@@ -74,7 +74,7 @@ A task is the objective. An algorithm is the update rule. `task_type` is the san
 | Agent GRPO (`agrpo`) | `agent_gym_text`, `e2e_stubs` | `mlx_grpo_traj` |
 | OPD (`opd`) | `routing_prompt` | `mlx_opd` |
 
-Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. **AstraRL:** gym-coupled learners. **AstraTune:** `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. **Neither:** `prompt`, `embed`, `rerank`, `hstu`, `ml`. Full contract: [DESIGN.md § 2.4–2.5](docs/DESIGN.md).
+Recipes may set `gym_id` / `learner_id` explicitly; otherwise they are inferred. **AstraRL:** gym-coupled learners. **AstraTune:** `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. **Neither:** `prompt`, `embed`, `rerank`, `hstu`, `ml`. Full contract: [DESIGN.md § 2.4–2.6](docs/DESIGN.md).
 
 | Task | Algorithms |
 |---|---|
@@ -152,7 +152,7 @@ astra/
 
 Product fine-tune recipes (e.g. Ensemble `ensemble_*.yaml`) live in the product repo
 (`ensemble/astra_recipes/`). Point the Orchestrator at them with
-`ASTRA_PRODUCT_RECIPES=ensemble:/path/to/ensemble/astra_recipes` — see [DESIGN.md §2.4–§3](docs/DESIGN.md).
+`ASTRA_PRODUCT_RECIPES=ensemble:/path/to/ensemble/astra_recipes` — see [DESIGN.md §2.5–§3](docs/DESIGN.md).
 The Recipes page (`/recipes`) filters by **Astra built-in** vs each configured product
 (from `GET /recipes/packs`, not a hardcoded list) and shows recipe counts per source.
 
@@ -202,7 +202,7 @@ Training sandboxes run locally by default (subprocess using the project `.venv`)
 - `ASTRA_SANDBOX_PYTHON=/Users/kewang/finetune-env/bin/python` (required so facades can `import astrarl` / `astratune`)
 - `ASTRA_PKG_ROOT=/Users/kewang/astra-pkg` (editable Astra tree on Mini; recipe `astra_pkg_root` overrides)
 
-Recipes also set `finetune_dir` / `python_bin` / `astra_pkg_root` — see [DESIGN.md § 2.5 Remote fine-tune](docs/DESIGN.md).
+Recipes also set `finetune_dir` / `python_bin` / `astra_pkg_root` — see [DESIGN.md § 2.6 Remote fine-tune](docs/DESIGN.md).
 
 | Machine | Role | Models / Load |
 |---|---|---|
