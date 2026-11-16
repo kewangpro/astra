@@ -66,6 +66,14 @@ export function MetricChart({ events, targetMetric }: Props) {
     ) {
       return false;
     }
+    // Dual chart: only loss + goal rate (drop avg_loss / split rates).
+    if (
+      showGoalWithLoss &&
+      e.name !== "loss" &&
+      e.name !== goalMetricName
+    ) {
+      return false;
+    }
     const step = e.step ?? 0;
     if (
       showGoalWithLoss &&
@@ -163,9 +171,10 @@ export function MetricChart({ events, targetMetric }: Props) {
   // Displaying a separate training signal (mean_reward, loss) rather than the
   // goal metric itself means the goal's own <=1 target scale is irrelevant to
   // this chart — e.g. pass_rate's target of 0.85 says nothing about the range
-  // of "loss" values (which can exceed 1). Always treat as raw/adaptive in
-  // that case, regardless of whether the (unshown) goal target is <=1.
-  const displayRaw = excludeGoalMetric || isRaw;
+  // of "loss" values (which can exceed 1). Dual loss+pass_rate charts must
+  // also stay raw: labeling loss 0.70 as "70%" is wrong even though both
+  // series often sit in [0, 1].
+  const displayRaw = excludeGoalMetric || showGoalWithLoss || isRaw;
 
   // Scale Y-axis from all live data so the chart is never blank when metric names
   // don't exactly match target_metric (e.g. target=lines_cleared but data=mean_reward),
@@ -175,7 +184,13 @@ export function MetricChart({ events, targetMetric }: Props) {
     ...chartEvents.filter((e) => e.isLive).map((e) => e.value)
   );
   const yDomain: [number, number] = displayRaw
-    ? [0, Math.max(excludeGoalMetric ? 1 : targetValue * 1.1, maxObserved * 1.1)]
+    ? [
+        0,
+        Math.max(
+          showGoalWithLoss || excludeGoalMetric ? 1 : targetValue * 1.1,
+          maxObserved * 1.1,
+        ),
+      ]
     : [0, 1];
 
   const yFormatter = displayRaw
@@ -185,7 +200,13 @@ export function MetricChart({ events, targetMetric }: Props) {
   const tooltipFormatter = (v: unknown, name: unknown) => {
     const val = v as number;
     const label = String(name).replace(/_(live|hist)$/, "");
-    const formatted = displayRaw ? val.toFixed(val < 10 ? 3 : 1) : `${(val * 100).toFixed(2)}%`;
+    // Dual chart: format pass_rate as %; loss stays decimal.
+    const asRate = showGoalWithLoss && isFinetuneRateGoal(label);
+    const formatted = asRate
+      ? `${(val * 100).toFixed(2)}%`
+      : displayRaw
+        ? val.toFixed(val < 10 ? 3 : 1)
+        : `${(val * 100).toFixed(2)}%`;
     return [formatted, label] as [string, string];
   };
 
@@ -237,6 +258,15 @@ export function MetricChart({ events, targetMetric }: Props) {
               {progressStatus.name.replace(/^Training:\s*/i, "")}
             </span>
           )}
+          {names.map((name, i) => (
+            <div key={name} className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-3 h-px"
+                style={{ background: COLORS[i % COLORS.length] }}
+              />
+              <span className="text-[10px] text-[#94a3b8]">{name}</span>
+            </div>
+          ))}
           {hasLive && (
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-px" style={{ background: COLORS[0] }} />

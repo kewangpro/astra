@@ -4098,40 +4098,22 @@ class CodeGenerator:
             }
             return _DPO_TEMPLATE.format(**ctx)
         if effective_task_type == "grpo":
-            # Optional facade kwargs for DAPO-lite / rollout (omitted when default-off).
-            _facade_dapo: list[str] = []
-            if hp.get("clip_epsilon_low") is not None:
-                _facade_dapo.append(f'clip_epsilon_low={hp["clip_epsilon_low"]},')
-            if hp.get("clip_epsilon_high") is not None:
-                _facade_dapo.append(f'clip_epsilon_high={hp["clip_epsilon_high"]},')
-            if int(hp.get("dynamic_sample_retries") or 0) > 0:
-                _facade_dapo.append(
-                    f'dynamic_sample_retries={int(hp["dynamic_sample_retries"])},'
-                )
-            _rb = str(hp.get("rollout_backend") or "mlx").lower()
-            if _rb and _rb != "mlx":
-                _facade_dapo.append(f'rollout_backend="{_rb}",')
-                if hp.get("rollout_base_url"):
-                    _facade_dapo.append(f'rollout_base_url="{hp["rollout_base_url"]}",')
-                if hp.get("rollout_api_key"):
-                    _facade_dapo.append(f'rollout_api_key="{hp["rollout_api_key"]}",')
-                if hp.get("rollout_model"):
-                    _facade_dapo.append(f'rollout_model="{hp["rollout_model"]}",')
+            # Heal/docs prompt only — live codegen uses _GRPO_REMOTE_WRAPPER via
+            # _build_grpo_context (same defaults). Do not **hp alone: incomplete
+            # smoke recipes KeyError on reward_schema / max_zero_steps / etc.
             ctx = {
-                **hp,
-                "routing_only_bool": "True" if hp.get("routing_only", True) else "False",
-                "facade_dapo_kwargs": "\n           ".join(_facade_dapo),
+                **self._build_grpo_context(
+                    mission_id, plan, checkpoint_dir, current_iteration,
+                    warm_start_adapter=warm_start_adapter,
+                ),
                 "clip_epsilon_low": hp.get("clip_epsilon_low", ""),
                 "clip_epsilon_high": hp.get("clip_epsilon_high", ""),
                 "dynamic_sample_retries": hp.get("dynamic_sample_retries", 0),
                 "rollout_backend": hp.get("rollout_backend", "mlx"),
                 "rollout_base_url": hp.get("rollout_base_url", ""),
                 "routing_only": hp.get("routing_only", True),
-                "gym_id": hp.get("gym_id") or "routing_prompt",
-                "learner_id": hp.get("learner_id") or "mlx_grpo_routing",
+                "gym_id": hp.get("gym_id") or plan.get("gym_id") or "routing_prompt",
                 **base,
-                "astra_pkg_root": _resolve_astra_pkg_root(hp),
-            "use_case": _resolve_use_case(hp),
             }
             return _GRPO_TEMPLATE.format(**ctx)
         if effective_task_type == "agrpo":

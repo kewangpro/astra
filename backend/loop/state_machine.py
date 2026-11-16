@@ -61,7 +61,10 @@ logger = get_logger(__name__)
 # stdout — that stdout only lands in the remote log, so we tail it over SSH and
 # record the metric ourselves rather than requiring the remote script to POST
 # telemetry.
-_PASS_RATE_RE = re.compile(r"Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)")
+# GRPO baseline uses "Baseline pass rate:"; mid/final evals use "Pass rate:".
+_PASS_RATE_RE = re.compile(
+    r"(?i)(?:Baseline\s+)?Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)"
+)
 # Phase 6a train_embedding.py: "Triplet accuracy: 1.000 (17/17)"
 _TRIPLET_ACC_RE = re.compile(r"Triplet accuracy:\s*([\d.]+)\s*\((\d+)/(\d+)\)")
 # Phase 6b train_reranker.py: "Rerank accuracy: 0.941 (16/17)"
@@ -306,7 +309,8 @@ _DISTILL_CASE_SPLIT_RE = re.compile(r"Case split:\s*(\d+)\s+train\s*/\s*(\d+)\s+
 # --steps-per-report steps; dpo_train.py prints per-step
 # ``Step N/M  epoch=…  loss=…`` (same shape as distill/rft/opd) plus an epoch
 # ``avg_loss`` summary. SFT tracks train/val loss at ``--save-steps`` cadence.
-_GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=([\d.]+)")
+# Optional leading minus — GRPO can print clipped/sentinel losses like -1.0000.
+_GRPO_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s*\|\s*loss=(-?[\d.]+)")
 _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
 # Optional leading minus — OPD reverse-KL loss can be negative when the student
 # is sharper than the teacher on its own tokens. Distill/RFT/DPO stay non-negative.
