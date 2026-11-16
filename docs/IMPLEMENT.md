@@ -15,7 +15,7 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
 | **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split; MLX facade + DAPO-lite; platform GRPO runtime extracted from product trees | 101–113 | 13 | ✅ |
-| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini; product-neutral packs | 114–122 | 9 | ✅ |
+| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini; product-neutral packs; HUD metric accuracy | 114–122, 124 | 10 | ✅ |
 | **Epoch 11: Complete flywheel** | AstraData + AstraEval; suite gate; FailSlice → focus_cases; Eval-owned tournament seeds | 123 | 1 | ✅ |
 
 Epochs 7, 9, 10, and 11 are intentionally shorter **architecture** milestones (agent stack, Gym×RL, AstraTune, then Data/Eval); Epochs 3–6 absorb the former “continuity” band.
@@ -3011,7 +3011,7 @@ Stay Out of AstraRL: `dpo`, `sft`, `distill`, `rft`, `star`, `rlcd`. Keep `opd` 
 - [x] Delete transitional `finetune/astrarl` / `finetune/astragym` mirrors.
 - [x] `VENDOR.md` + `_platform_preflight.py`; sync script emergency-only (+ astratune).
 - [x] Path triad on canned wrappers: `finetune_dir` / `python_bin` / `astra_pkg_root` (recipe HP → `ASTRA_PKG_ROOT` → default).
-- [x] `recipes/ensemble_dpo_astratune_smoke.yaml` — load-pairs one-epoch Mini smoke for `astratune.make("mlx_dpo")`.
+- [x] Ensemble pack `astra_recipes/ensemble_dpo_astratune_smoke.yaml` — load-pairs one-epoch Mini smoke for `astratune.make("mlx_dpo")` (not under Astra `recipes/` after Phase 121).
 
 ## Phase 119: Docs + product surface
 
@@ -3043,7 +3043,7 @@ Recipe audit + product-agnostic defaults + pack cutover. Historical IMPLEMENT li
 Phase 26 tailed `Pass rate:` and epoch `avg_loss` for DPO, but `dpo_train.py` already prints per-step `Step N/M epoch=… loss=…` and mid-run evals — the HUD looked empty because the parser ignored step loss and MetricChart hid `pass_rate` whenever `loss` existed.
 
 - [x] `_tail_remote_metrics`: map `dpo` → `_DISTILL_LOSS_RE` (per-step) + keep `_DPO_LOSS_RE` epoch summaries; emit `Training: step N/M (loss=…)` and `New best pass rate: …%` status for LogStream (`_TRAIN_STEP_PROGRESS_RE`, `_DPO_NEW_BEST_RE`).
-- [x] `MetricChart`: dual-series for fine-tunes (`loss` + `pass_rate`); empty/header surfaces collect/training status.
+- [x] `MetricChart`: dual-series for fine-tunes (`loss` + `pass_rate`); empty/header surfaces collect/training status. (Y-axis / legend accuracy completed in Phase 124.)
 - [x] `MetricGap`: while `running`, show live eval subtitle from latest WS `pass_rate` (arc still DB-only).
 - [x] `astratune/stdout_contract.py` notes DPO step/loss + `New best:`; unit tests in `test_remote_telemetry_tail.py`.
 
@@ -3059,3 +3059,15 @@ Close fuel → train → truth → FailSlice → fuel. Design contract: [DESIGN.
 - [x] Recipe bind: `hstu_ml1m_v1` declares `dataset_id`/`eval_suite`; product packs keep Ensemble routing suites.
 - [x] Docs: DESIGN complete-flywheel §2.4; README / PRD / UX Epoch 11; unit + hermetic flywheel E2E; live HSTU suite-gated mission.
 - [x] Pack resolve: `_infer_use_case_for_task` only in `_resolve_hyperparams` so `default_recipe_for_task` stays product-neutral.
+
+## Phase 124: AstraRL GRPO smoke + HUD metric accuracy (2026-11-15)
+
+Live-verified after DPO smoke (`8000d1ac`) and GRPO smoke (`52f4fc8a`): dual Metric History still labeled loss as `%`; GRPO baseline/negative loss lines were dropped by the tail regex; incomplete smoke YAML KeyError'd on `reward_schema` before the canned facade ran; hitting `target_metric` still pivoted when the artifact requirement looked for local `checkpoints/best/`.
+
+- [x] **GRPO smoke recipe** — Ensemble `astra_recipes/ensemble_grpo_astrarl_smoke.yaml`: short `iters`, trivial `target_metric.pass_rate: 0.01` (not a promote chase), `astrarl.make("mlx_grpo_routing", use_case=ensemble, use_execv=True)`.
+- [x] **Codegen** — `_build_user_prompt` GRPO heal path uses `_build_grpo_context` defaults (no `**hp`-only KeyError on missing `reward_schema` / `max_zero_steps`).
+- [x] **Telemetry** — `_PASS_RATE_RE` accepts `Baseline pass rate:`; `_GRPO_LOSS_RE` allows optional leading minus (`loss=-1.0000`).
+- [x] **MetricChart** — dual charts use raw Y-axis + series legends; drop `avg_loss` / synthetic `pass_rate` at `step ≥ 500000`; `runOffset` by max step in the completed run (not last event step).
+- [x] **stdout_contract** — document GRPO `Baseline pass rate:` + pipe `Step | loss=` forms; UX_SPEC Metric History/Chart wording aligned.
+- [x] **Tests** — `test_remote_telemetry_tail.py` + `test_code_generator.py` smoke/incomplete-HP cases; `tests/unit` green.
+- [ ] **Open:** `ManifestGenerator` still requires `checkpoints/best/` for `dpo`/`grpo` under the *local* mission dir. Fine-tune adapters land on Mini under `adapters/astra_<id>_iterN/best`, so artifact `file_exists` fails after a successful target hit and the loop pivots (seen on `52f4fc8a` 2/3 requirements → iter 1). Fix separately: check remote adapter path or skip local artifact for finetune-remote types when `last_checkpoint_path` / Mini best exists.

@@ -1930,6 +1930,70 @@ def test_build_user_prompt_grpo_sets_cwd_to_finetune_dir(tmp_path, monkeypatch):
     assert 'os.chdir("/Users/kewang/finetune")' in prompt
 
 
+def test_build_user_prompt_grpo_smoke_hp_without_reward_schema_does_not_keyerror(tmp_path, monkeypatch):
+    """Incomplete smoke plans omit reward_schema; heal-prompt path must default it
+    (live incident: KeyError before _GRPO_REMOTE_WRAPPER ran)."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", None)
+
+    gen = CodeGenerator(_make_provider())
+    plan = {
+        "task_type": "grpo",
+        "recipe": "ensemble_grpo_astrarl_smoke",
+        "gym_id": "routing_prompt",
+        "learner_id": "mlx_grpo_routing",
+        "hyperparameters": {
+            "iters": 3,
+            "num_generations": 2,
+            "routing_only": True,
+            # deliberately omit reward_schema / max_zero_steps / max_one_steps
+        },
+        "target_metric": {"pass_rate": 0.01},
+    }
+    prompt = gen._build_user_prompt("grpo", "smoke-id", plan, str(tmp_path / "ckpt"))
+    assert 'reward_schema="v1"' in prompt
+    assert "astrarl.make" in prompt
+
+
+def test_generate_training_script_grpo_incomplete_smoke_writes_facade(tmp_path, monkeypatch):
+    """Canned GRPO wrapper must survive missing optional HP keys (smoke recipe)."""
+    monkeypatch.setattr("backend.config.settings.data_path", str(tmp_path))
+    monkeypatch.setattr("backend.config.settings.api_port", 8200)
+    monkeypatch.setattr("backend.config.settings.sandbox_host", "mac-mini.local")
+    monkeypatch.setattr("backend.config.settings.sandbox_data_path", "/tmp/astra")
+
+    provider = _make_provider("print('should not run')\n")
+    gen = CodeGenerator(provider)
+    plan = {
+        "task_type": "grpo",
+        "recipe": "ensemble_grpo_astrarl_smoke",
+        "learner_id": "mlx_grpo_routing",
+        "hyperparameters": {
+            "use_case": "ensemble",
+            "iters": 3,
+            "num_generations": 2,
+            "adapter": "adapters/grpo_v9_min/best",
+            "routing_only": True,
+        },
+        "target_metric": {"pass_rate": 0.01},
+    }
+
+    with patch.object(CodeGenerator, "_query_lessons", return_value=[]):
+        path = asyncio.get_event_loop().run_until_complete(
+            gen.generate_training_script("mission-grpo-smoke", plan)
+        )
+
+    text = Path(path).read_text()
+    assert "astrarl.make" in text
+    assert 'use_case="ensemble"' in text
+    assert "mlx_grpo_routing" in text
+    assert 'reward_schema="v1"' in text
+    assert "use_execv=True" in text
+    assert "iters=3" in text
+    provider.generate.assert_not_called()
+
+
 # ── distill template ──────────────────────────────────────────────────────────
 
 def _distill_prompt(tmp_path, monkeypatch, recipe: str = "ensemble_distill_prerl_v1"):

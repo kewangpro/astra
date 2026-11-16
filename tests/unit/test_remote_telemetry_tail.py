@@ -30,9 +30,18 @@ def test_pass_rate_regex_matches_standard_line():
     assert match.group(1) == "91.7"
 
 
-def test_pass_rate_regex_matches_baseline_line():
+def test_pass_rate_regex_matches_grpo_baseline_pass_rate_line():
+    """astrarl train_grpo_routing prints ``Baseline pass rate:`` (lowercase p)."""
+    match = _PASS_RATE_RE.search("Baseline pass rate: 85.3% (58/68)")
+    assert match is not None
+    assert match.group(1) == "85.3"
+    assert match.group(2) == "58"
+    assert match.group(3) == "68"
+
+
+def test_pass_rate_regex_ignores_bare_baseline_without_pass_rate():
     match = _PASS_RATE_RE.search("Baseline: 75.0% (15/20)")
-    assert match is None  # only matches the "Pass rate:" prefix, not "Baseline:"
+    assert match is None
 
 
 # ── _GRPO_LOSS_RE / _DPO_LOSS_RE ───────────────────────────────────────────────
@@ -43,6 +52,16 @@ def test_grpo_loss_regex_matches_step_line():
     assert match is not None
     assert match.group(1) == "25"
     assert match.group(2) == "0.6421"
+
+
+def test_grpo_loss_regex_matches_negative_sentinel_loss():
+    """Live Mini smoke printed ``loss=-1.0000``; unsigned ``[\\d.]+`` missed it."""
+    line = "Step    1/3 | loss=-1.0000 | baseline=0.100 | rewards=[1.0 1.0] | route_x | 40s"
+    match = _GRPO_LOSS_RE.search(line)
+    assert match is not None
+    assert match.group(1) == "1"
+    assert match.group(2) == "-1.0000"
+    assert _TRAIN_STEP_PROGRESS_RE.search(line) is not None
 
 
 def test_dpo_loss_regex_matches_epoch_line():
@@ -212,6 +231,31 @@ class TestTailRemoteMetrics:
         # "step" is the script's own reported step number (chart x-axis);
         # "iteration" is the real mission iteration, not the step number.
         mock_emit.assert_awaited_once_with("mission-1", "loss", 0.6421, step=25, iteration=3)
+
+    def test_grpo_baseline_pass_rate_and_negative_loss_emitted(self):
+        sm = _bare_state_machine()
+        sm._sandbox.tail_new_output.return_value = (
+            "--- Baseline eval (step 0) ---\n"
+            "Baseline pass rate: 85.3% (58/68)\n"
+            "Step    1/3 | loss=-1.0000 | baseline=0.100 | rewards=[1.0 1.0] | case | 40s\n"
+            "Step    2/3 | loss=-1.0000 | baseline=0.190 | rewards=[1.0 1.0] | case | 85s\n"
+        )
+
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            step = asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "grpo", 0, current_iteration=0)
+            )
+
+        assert step == 1
+        pr = [c for c in mock_emit.await_args_list if c.args[1] == "pass_rate"]
+        assert len(pr) == 1
+        assert pr[0].args[2] == pytest.approx(0.853)
+        losses = [(c.args[2], c.kwargs["step"]) for c in mock_emit.await_args_list if c.args[1] == "loss"]
+        assert (-1.0, 1) in losses
+        assert (-1.0, 2) in losses
+        status_msgs = [c.args[1] for c in mock_status.await_args_list]
+        assert any("Training: step 2/3" in m for m in status_msgs)
 
     def test_dpo_epoch_line_emits_avg_loss_not_loss(self):
         """Epoch avg must not reuse the ``loss`` series (would collide with
