@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections import Counter
 from datetime import datetime, timezone
 from enum import Enum
 from typing import NamedTuple, Optional
@@ -53,7 +54,7 @@ from backend.services.preflight import PreflightChecker
 from backend.services import mission_state, session_summary
 from backend.config import settings
 from backend.logging_config import get_logger
-from backend.services.telemetry_emitter import emit_status, emit_critique, emit_metric
+from backend.services.telemetry_emitter import emit_status, emit_critique, emit_metric, emit_log
 
 logger = get_logger(__name__)
 
@@ -317,40 +318,16 @@ _DPO_LOSS_RE = re.compile(r"Epoch\s+(\d+)/\d+\s+done\s+avg_loss=([\d.]+)")
 # is sharper than the teacher on its own tokens. Distill/RFT/DPO stay non-negative.
 # Also matches DPO ``Step N/M  epoch=…  loss=…`` (``.*?`` spans the epoch field).
 _DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=(-?[\d.]+)")
-# HUD progress status (LogStream): last Step N/M + loss in a tail chunk.
-# Covers distill/DPO spaced form and GRPO/RLCD ``| loss=`` form.
-_TRAIN_STEP_PROGRESS_RE = re.compile(r"Step\s+(\d+)/(\d+)\s+.*?loss=(-?[\d.]+)")
-_DPO_NEW_BEST_RE = re.compile(r"New best:\s*([\d.]+)%")
-# Flywheel phase banners → event stream (data → baseline eval → train → mid/final eval).
-_BASELINE_EVAL_PHASE_RE = re.compile(
-    r"---\s*Baseline eval\s*\(step\s+(\d+)\)\s*---", re.IGNORECASE,
-)
-_MID_EVAL_PHASE_RE = re.compile(
-    r"---\s*Eval at step\s+(\d+)\s*---", re.IGNORECASE,
-)
-_FINAL_EVAL_PHASE_RE = re.compile(r"=== Final Eval ===", re.IGNORECASE)
-_HELD_OUT_PASS_RATE_RE = re.compile(
-    r"Held-out pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)", re.IGNORECASE,
-)
-# Data / setup (GRPO + DPO) — without these the stream jumps from "Sandbox running"
-# straight to the first loss step.
-_LOADING_MODEL_RE = re.compile(r"(?m)^Loading model:\s*(.+)$")
-_WARM_START_RE = re.compile(r"(?m)^Warm-start from:\s*(.+)$")
-_CASE_POOL_RE = re.compile(
-    r"(?m)^Case pool:\s*(\d+)\s+entries\s*\((\d+)\s+unique routing cases\)"
-)
-_START_GRPO_RE = re.compile(r"(?m)^Starting GRPO training:\s*(.+)$")
-_FOCUSED_POOL_RE = re.compile(r"(?m)^Focused pool:\s*(.+)$")
-_LOADED_PAIRS_RE = re.compile(r"(?m)^Loaded (\d+) pairs\s*$")
-_PAIRS_READY_RE = re.compile(r"(?m)^(\d+) pairs ready for training\s*$")
-_DPO_TRAINING_RE = re.compile(r"(?m)^DPO training:\s*(.+)$")
-_TOKENISING_PAIRS_RE = re.compile(r"(?m)^Tokenising pairs\.\.\.\s*$")
-# DPO prints bare "Baseline: X% (n/total)" (not "Baseline pass rate").
-_DPO_BASELINE_STATUS_RE = re.compile(
-    r"(?m)^Baseline:\s*([\d.]+)%(?:\s*\((\d+)/(\d+)\))?"
-)
 _MLX_TRAIN_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Train loss\s+([\d.]+)")
 _MLX_VAL_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
+
+# Noise dropped when mirroring sandbox.log → type=log (HUD narrative).
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+_FETCHING_FILES_RE = re.compile(r"Fetching\s+\d+\s+files:", re.IGNORECASE)
+_TQDM_PROGRESS_RE = re.compile(
+    r"^\d+%\|"  # "45%|████|"
+    r"|it/s"    # huggingface / tqdm rate suffix
+)
 
 # dpo_train.py prints the warm-start adapter's own pass rate before training as
 # "Baseline: X% (n/total)", and the training plan as "... total_steps=N ...".
@@ -418,20 +395,38 @@ _FINETUNE_PIVOT_RANGES = {
     "max_turns": (4, 12),
 }
 
-# dpo_train.py's collect_pairs() phase (sampling K completions per case to build
-# preference pairs) runs before any epoch/loss line exists and is typically the
-# bulk of the wall-clock time (an hour+) — with nothing else to tail, the HUD
-# would otherwise sit on "NO METRICS YET" for that whole span with no sign of
-# life. Surface its "  [i/total]  n pairs  (Ts)" progress line as a status
-# event (not a metric — its 0..total scale has nothing to do with loss/pass_rate
-# and would distort those chart axes if mixed in).
-_COLLECT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+pairs\s+\((\d+)s\)")
-_RFT_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+survivors\s+\((\d+)s\)")
-_OPD_PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]\s+(\d+)\s+rollouts\s+\((\d+)s\)")
-
 MAX_RETRIES = 3          # max error-fix iterations before marking FAILED
 EVAL_POLL_INTERVAL = 10  # seconds between sandbox liveness checks
 ITER_CHECKPOINT_WINDOW = 10  # per-iteration checkpoints to keep (rolling)
+
+
+def filter_sandbox_log_lines(text: str) -> list[str]:
+    """Normalize remote trainer stdout for Event Stream mirroring.
+
+    Drops empty lines, CR/tqdm spam, HuggingFace fetch bars, and consecutive
+    exact duplicates. Kept lines are emitted as ``type=log`` — no status
+    regex whitelist; unknown banners stay visible.
+    """
+    if not text:
+        return []
+    out: list[str] = []
+    prev: Optional[str] = None
+    # Split on ``\n`` only — ``\r`` is in-line tqdm overwrite, not a row break.
+    for raw in text.split("\n"):
+        if "\r" in raw:
+            raw = raw.rsplit("\r", 1)[-1]
+        line = _ANSI_ESCAPE_RE.sub("", raw).strip()
+        if not line:
+            continue
+        if _FETCHING_FILES_RE.search(line):
+            continue
+        if _TQDM_PROGRESS_RE.search(line):
+            continue
+        if line == prev:
+            continue
+        out.append(line)
+        prev = line
+    return out
 
 
 def _threshold_met(name: str, thresh, current_metrics: dict, pivot_engine) -> bool:
@@ -953,10 +948,10 @@ class LoopStateMachine:
                         event_type="info",
                         value=f"sandbox_id={_s_id}",
                     )
-                    # Tail offset skips history; back-fill flywheel statuses so the
-                    # event stream still shows data → baseline → train → eval.
+                    # Tail offset skips history for live metrics; back-fill
+                    # unread sandbox.log lines as type=log for the Event Stream.
                     if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
-                        await self._catch_up_flywheel_event_stream(mission_id)
+                        await self._catch_up_sandbox_log_stream(mission_id)
                     _skip_launch = False
                 else:
                     await self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
@@ -4269,8 +4264,9 @@ class LoopStateMachine:
         self, mission_id: str, task_type: str, pass_rate_step: int, current_iteration: int = 0,
         plan: Optional[dict] = None,
     ) -> int:
-        """Fetch new remote log output (SSHSandbox.tail_new_output) and record
-        two kinds of metrics:
+        """Fetch new remote log output (SSHSandbox.tail_new_output), mirror
+        filtered lines as ``type=log`` for the Event Stream, and extract typed
+        metrics for charts / the goal loop:
           - "pass_rate": goal metric, from "Pass rate: X% (n/total)" lines,
             using a local incrementing step counter for "step" (chart x-axis,
             returned for the next call) but the REAL mission iteration for
@@ -4284,7 +4280,9 @@ class LoopStateMachine:
             --steps-per-report steps; DPO prints per-step loss (distill-shaped
             line) plus epoch avg_loss. "step" is the script's own reported
             step/epoch number (chart x-axis); "iteration" is the real mission
-            iteration. Also emits LogStream status for the latest Step N/M.
+            iteration.
+        Narrative visibility does **not** depend on status regexes — unknown
+        trainer banners still appear as ``log`` events.
         No-op (returns pass_rate_step unchanged) for backends that don't
         support live tailing, or if nothing new was written."""
         try:
@@ -4295,8 +4293,7 @@ class LoopStateMachine:
         if not new_output:
             return pass_rate_step
 
-        # Event-stream narrative (data → eval → train → eval) before metrics.
-        await self._emit_flywheel_log_statuses(mission_id, new_output)
+        await self._mirror_sandbox_log_lines(mission_id, new_output)
 
         # For distill and star, "Pass rate:" is the held-out/validation split rate, not the
         # full-suite goal metric evaluated by bare_eval.py. Emitting it as "pass_rate"
@@ -4388,12 +4385,27 @@ class LoopStateMachine:
 
         return pass_rate_step
 
-    def _flywheel_status_names_already_emitted(self, mission_id: str) -> set[str]:
-        """Status ``name`` values already in telemetry.jsonl (catch-up dedupe)."""
+    async def _mirror_sandbox_log_lines(
+        self,
+        mission_id: str,
+        text: str,
+        *,
+        skip_counts: Optional[Counter] = None,
+    ) -> None:
+        """Emit filtered sandbox.log lines as ``type=log`` (Event Stream narrative)."""
+        skip = skip_counts if skip_counts is not None else Counter()
+        for line in filter_sandbox_log_lines(text):
+            if skip[line] > 0:
+                skip[line] -= 1
+                continue
+            await emit_log(mission_id, line, source="sandbox")
+
+    def _sandbox_log_lines_already_emitted(self, mission_id: str) -> Counter:
+        """Multiset of ``type=log`` names already in telemetry.jsonl (catch-up dedupe)."""
         path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
-        names: set[str] = set()
+        counts: Counter = Counter()
         if not os.path.isfile(path):
-            return names
+            return counts
         try:
             with open(path, "r", errors="replace") as f:
                 for line in f:
@@ -4404,137 +4416,31 @@ class LoopStateMachine:
                         ev = json.loads(line)
                     except Exception:
                         continue
-                    if ev.get("type") in ("info", "success", "warn") and ev.get("name"):
-                        names.add(ev["name"])
+                    if ev.get("type") == "log" and ev.get("name"):
+                        counts[ev["name"]] += 1
         except OSError:
             pass
-        return names
+        return counts
 
-    async def _catch_up_flywheel_event_stream(self, mission_id: str) -> None:
-        """After reattach, emit any flywheel statuses already in the remote log
-        that never made it into the event stream (tail offset skipped them)."""
+    async def _catch_up_sandbox_log_stream(self, mission_id: str) -> None:
+        """After reattach, mirror sandbox.log lines the live tail offset skipped.
+
+        Metrics stay on ``tail_new_output`` (offset at EOF). Narrative catch-up
+        re-reads the full remote log and emits unread ``type=log`` rows.
+        """
         full = None
         try:
             full = self._sandbox.read_full_log(mission_id)
         except Exception as exc:
             logger.warning(
-                "LoopStateMachine: flywheel catch-up read_full_log failed mission=%s: %s",
+                "LoopStateMachine: sandbox log catch-up read_full_log failed mission=%s: %s",
                 mission_id, exc,
             )
             return
         if not full:
             return
-        skip = self._flywheel_status_names_already_emitted(mission_id)
-        await self._emit_flywheel_log_statuses(mission_id, full, skip_names=skip)
-
-    async def _emit_flywheel_log_statuses(
-        self,
-        mission_id: str,
-        text: str,
-        *,
-        skip_names: Optional[set] = None,
-    ) -> None:
-        """Parse trainer stdout into event-stream statuses (data / eval / train).
-
-        Metrics stay on ``emit_metric``; this is the LogStream narrative only.
-        Events are emitted in log order. ``skip_names`` dedupes catch-up against
-        statuses already in telemetry.
-        """
-        if not text:
-            return
-        skip = skip_names or set()
-
-        # (start, msg, event_type) — sort by position so catch-up keeps flywheel order
-        pending: list[tuple[int, str, str]] = []
-
-        def _add(pos: int, msg: str, event_type: str = "info") -> None:
-            pending.append((pos, msg, event_type))
-
-        for m in _LOADING_MODEL_RE.finditer(text):
-            _add(m.start(), f"Loading model: {m.group(1).strip()}")
-        for m in _WARM_START_RE.finditer(text):
-            _add(m.start(), f"Warm-start from: {m.group(1).strip()}")
-        for m in _CASE_POOL_RE.finditer(text):
-            _add(
-                m.start(),
-                f"Case pool: {m.group(1)} entries ({m.group(2)} unique routing cases)",
-            )
-        for m in _LOADED_PAIRS_RE.finditer(text):
-            _add(m.start(), f"Loaded {m.group(1)} preference pairs")
-        for m in _TOKENISING_PAIRS_RE.finditer(text):
-            _add(m.start(), "Tokenising preference pairs…")
-        for m in _PAIRS_READY_RE.finditer(text):
-            _add(m.start(), f"Data ready: {m.group(1)} pairs for training")
-        for m in _DPO_TRAINING_RE.finditer(text):
-            _add(m.start(), f"DPO training: {m.group(1).strip()}")
-        for m in _START_GRPO_RE.finditer(text):
-            _add(m.start(), f"Starting GRPO training: {m.group(1).strip()}")
-
-        for m in _COLLECT_PROGRESS_RE.finditer(text):
-            i, total, n_pairs, elapsed_s = m.groups()
-            _add(
-                m.start(),
-                f"Collecting preference pairs: {i}/{total} cases "
-                f"({n_pairs} pairs, {int(elapsed_s) // 60}m elapsed)",
-            )
-        for m in _RFT_PROGRESS_RE.finditer(text):
-            i, total, n_survivors, elapsed_s = m.groups()
-            _add(
-                m.start(),
-                f"Rejection sampling: {i}/{total} cases "
-                f"({n_survivors} survivors, {int(elapsed_s) // 60}m elapsed)",
-            )
-        for m in _OPD_PROGRESS_RE.finditer(text):
-            i, total, n_rollouts, elapsed_s = m.groups()
-            _add(
-                m.start(),
-                f"On-policy sampling: {i}/{total} cases "
-                f"({n_rollouts} rollouts, {int(elapsed_s) // 60}m elapsed)",
-            )
-
-        for m in _BASELINE_EVAL_PHASE_RE.finditer(text):
-            _add(m.start(), f"Baseline eval (step {m.group(1)})…")
-        for m in _PASS_RATE_RE.finditer(text):
-            pct = float(m.group(1))
-            raw_label = m.group(0).split(":", 1)[0].strip()
-            _add(
-                m.start(),
-                f"{raw_label}: {pct:g}% ({m.group(2)}/{m.group(3)})",
-                "success",
-            )
-        for m in _DPO_BASELINE_STATUS_RE.finditer(text):
-            if m.group(2) and m.group(3):
-                msg = f"Baseline: {m.group(1)}% ({m.group(2)}/{m.group(3)})"
-            else:
-                msg = f"Baseline: {m.group(1)}%"
-            _add(m.start(), msg, "success")
-        for m in _HELD_OUT_PASS_RATE_RE.finditer(text):
-            _add(
-                m.start(),
-                f"Held-out pass rate: {m.group(1)}% ({m.group(2)}/{m.group(3)})",
-            )
-        for m in _FOCUSED_POOL_RE.finditer(text):
-            _add(m.start(), f"Focused pool: {m.group(1).strip()}")
-        for m in _MID_EVAL_PHASE_RE.finditer(text):
-            _add(m.start(), f"Eval at step {m.group(1)}…")
-        for m in _FINAL_EVAL_PHASE_RE.finditer(text):
-            _add(m.start(), "Final eval…")
-
-        for m in _TRAIN_STEP_PROGRESS_RE.finditer(text):
-            step_i, step_total, step_loss = m.groups()
-            _add(
-                m.start(),
-                f"Training: step {step_i}/{step_total} (loss={float(step_loss):.2f})",
-            )
-        for m in _DPO_NEW_BEST_RE.finditer(text):
-            _add(m.start(), f"New best pass rate: {m.group(1)}%", "success")
-
-        pending.sort(key=lambda t: t[0])
-        for _, msg, event_type in pending:
-            if msg in skip:
-                continue
-            await emit_status(mission_id, msg, event_type=event_type)
-            skip.add(msg)
+        skip = self._sandbox_log_lines_already_emitted(mission_id)
+        await self._mirror_sandbox_log_lines(mission_id, full, skip_counts=skip)
 
     # ── Crystallization ────────────────────────────────────────────────────────
 

@@ -1,17 +1,22 @@
-"""Unit tests for LoopStateMachine._tail_remote_metrics — the astra-side
-remote log tailing that replaces telemetry POSTs for dpo/grpo missions,
-covering both the "pass_rate" goal metric and the "loss" training signal."""
+"""Unit tests for LoopStateMachine._tail_remote_metrics — mirror sandbox.log
+as type=log and extract typed metrics (pass_rate / loss) for charts."""
 from __future__ import annotations
 
 import asyncio
+import json
+from collections import Counter
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.loop.state_machine import (
-    LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE, _DISTILL_LOSS_RE,
-    _COLLECT_PROGRESS_RE, _TRAIN_STEP_PROGRESS_RE, _DPO_NEW_BEST_RE,
-    _BASELINE_EVAL_PHASE_RE, _MID_EVAL_PHASE_RE, _HELD_OUT_PASS_RATE_RE,
+    LoopStateMachine,
+    _PASS_RATE_RE,
+    _GRPO_LOSS_RE,
+    _DPO_LOSS_RE,
+    _DISTILL_LOSS_RE,
+    filter_sandbox_log_lines,
 )
 
 
@@ -68,7 +73,6 @@ def test_grpo_loss_regex_matches_negative_sentinel_loss():
     assert match is not None
     assert match.group(1) == "1"
     assert match.group(2) == "-1.0000"
-    assert _TRAIN_STEP_PROGRESS_RE.search(line) is not None
 
 
 def test_dpo_loss_regex_matches_epoch_line():
@@ -87,23 +91,6 @@ def test_distill_loss_regex_matches_step_line():
     assert match.group(2) == "0.4210"
 
 
-def test_train_step_progress_regex_captures_step_total_loss():
-    m = _TRAIN_STEP_PROGRESS_RE.search("Step   52/59  epoch=1  loss=0.4681  5083s")
-    assert m is not None
-    assert m.groups() == ("52", "59", "0.4681")
-    m2 = _TRAIN_STEP_PROGRESS_RE.search(
-        "Step   25/300 | loss=0.6421 | baseline=0.812 | rewards=[1.0] | case | 120s"
-    )
-    assert m2 is not None
-    assert m2.groups()[:2] == ("25", "300")
-
-
-def test_dpo_new_best_regex():
-    m = _DPO_NEW_BEST_RE.search("New best: 88.2% → saved to /tmp/best")
-    assert m is not None
-    assert m.group(1) == "88.2"
-
-
 def test_distill_loss_regex_matches_opd_negative_and_rkl():
     """OPD prints `loss=… rkl=…`; reverse KL can be negative."""
     line = "Step 12/200 loss=-0.3125 rkl=-0.3125  88s"
@@ -111,6 +98,38 @@ def test_distill_loss_regex_matches_opd_negative_and_rkl():
     assert match is not None
     assert match.group(1) == "12"
     assert match.group(2) == "-0.3125"
+
+
+# ── filter_sandbox_log_lines ───────────────────────────────────────────────────
+
+class TestFilterSandboxLogLines:
+    def test_keeps_unknown_banner(self):
+        lines = filter_sandbox_log_lines(
+            "Caching reference log-probs for 59 pairs...\n"
+            "  [20/59]  ref log-probs cached\n"
+        )
+        assert lines == [
+            "Caching reference log-probs for 59 pairs...",
+            "[20/59]  ref log-probs cached",
+        ]
+
+    def test_drops_empty_fetching_tqdm_and_consecutive_dupes(self):
+        text = (
+            "\n"
+            "Loading model: gemma\n"
+            "Loading model: gemma\n"
+            "Fetching 13 files: 100%|██████████| 13/13 [00:00<?, ?it/s]\n"
+            "45%|████| 45/100 [00:01<00:01, 12.0it/s]\n"
+            "Pass rate: 88.2% (60/68)\n"
+        )
+        assert filter_sandbox_log_lines(text) == [
+            "Loading model: gemma",
+            "Pass rate: 88.2% (60/68)",
+        ]
+
+    def test_cr_progress_keeps_last_segment(self):
+        lines = filter_sandbox_log_lines("foo\rbar\rbaz final\n")
+        assert lines == ["baz final"]
 
 
 # ── _tail_remote_metrics ───────────────────────────────────────────────────────
@@ -124,119 +143,91 @@ class TestTailRemoteMetrics:
         )
         assert step == 5
 
-    def test_single_pass_rate_line_emits_one_metric_and_increments_step(self):
+    def test_pass_rate_line_emits_metric_and_increments_step(self):
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = "Some log noise\nPass rate: 60.0% (12/20)\n"
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 91.7% (122/133)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             step = asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0)
             )
 
         assert step == 1
-        mock_emit.assert_awaited_once_with("mission-1", "pass_rate", 0.6, step=0, iteration=0)
+        mock_emit.assert_awaited_once_with("mission-1", "pass_rate", pytest.approx(0.917), step=0, iteration=0)
 
-    def test_multiple_pass_rate_lines_increment_step_each_time(self):
+    def test_pass_rate_tags_real_mission_iteration(self):
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = (
-            "Pass rate: 50.0% (10/20)\n"
-            "some other output\n"
-            "Pass rate: 55.0% (11/20)\n"
-        )
+        sm._sandbox.tail_new_output.return_value = "Pass rate: 80.0% (8/10)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
-            step = asyncio.get_event_loop().run_until_complete(
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
+            asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 3, current_iteration=7)
             )
 
-        assert step == 5   # started at 3, two matches
-        assert mock_emit.await_count == 2
-        first_call = mock_emit.await_args_list[0]
-        assert first_call.args == ("mission-1", "pass_rate", 0.5)
-        # "step" is the local within-run counter (chart x-axis); "iteration" is
-        # the real mission iteration passed in — these must NOT be conflated.
-        assert first_call.kwargs == {"step": 3, "iteration": 7}
+        mock_emit.assert_awaited_once_with("mission-1", "pass_rate", 0.8, step=3, iteration=7)
 
-    def test_pass_rate_iteration_tag_is_real_mission_iteration_not_local_step(self):
-        """Regression test: MetricGap's sparkline buckets pass_rate readings by
-        "iteration" and keeps the max per bucket. pass_rate_step resets to 0 at
-        the start of every sandbox attempt, so if it were used as "iteration",
-        a later iteration's first reading would collide with an earlier
-        iteration's own data and could be silently swallowed by max()."""
+    def test_dpo_epoch_avg_loss_emitted(self):
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = "Pass rate: 0.0% (0/66)\n"
+        sm._sandbox.tail_new_output.return_value = "\n=== Epoch 2/3 done  avg_loss=0.5891 ===\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
-            # pass_rate_step=0 (a fresh sandbox attempt's first reading), but
-            # this is genuinely iteration 1 of the mission.
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=1)
             )
 
-        mock_emit.assert_awaited_once_with("mission-1", "pass_rate", 0.0, step=0, iteration=1)
+        mock_emit.assert_awaited_once_with("mission-1", "avg_loss", 0.5891, step=2, iteration=1)
 
-    def test_pass_rate_line_tracked_in_memory_only_not_written_to_db(self):
-        """Metric Gap (Mission.best_metric_value/current_metric_value) must NOT
-        update mid-training — only _live_pass_rate_best (in-memory fallback,
-        consumed at iteration-completion time) is touched here."""
+    def test_dpo_epoch_then_another_chunk_increments_independently(self):
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = "Pass rate: 74.2% (46/62)\n"
+        sm._sandbox.tail_new_output.return_value = "\n=== Epoch 1/3 done  avg_loss=0.7 ===\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock):
-            asyncio.get_event_loop().run_until_complete(
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock), \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
+            step = asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
-
-        assert sm._live_pass_rate_best["mission-1"] == pytest.approx(0.742)
-
-    def test_pass_rate_in_memory_tracker_keeps_higher_value(self):
-        sm = _bare_state_machine()
-
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock):
-            sm._sandbox.tail_new_output.return_value = "Pass rate: 74.2% (46/62)\n"
-            asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "dpo", 0)
+            assert step == 0  # epoch avg does not bump pass_rate_step
+            sm._sandbox.tail_new_output.return_value = "Pass rate: 50.0% (1/2)\n"
+            step = asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "dpo", step)
             )
-            sm._sandbox.tail_new_output.return_value = "Pass rate: 71.2% (44/62)\n"
-            asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "dpo", 1)
-            )
+            assert step == 1
 
-        # the later, lower reading must not overwrite the higher earlier one
-        assert sm._live_pass_rate_best["mission-1"] == pytest.approx(0.742)
-
-    def test_tail_exception_returns_step_unchanged(self):
-        """A tail failure (e.g. transient SSH error) must not crash the poll loop."""
+    def test_exception_from_tail_returns_step_unchanged(self):
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.side_effect = RuntimeError("ssh timeout")
-
+        sm._sandbox.tail_new_output.side_effect = RuntimeError("ssh failed")
         step = asyncio.get_event_loop().run_until_complete(
             sm._tail_remote_metrics("mission-1", "grpo", 2)
         )
         assert step == 2
 
-    def test_unsupported_backend_returning_none_is_a_noop(self):
-        """tail_new_output() returns None for backends without live tailing."""
+    def test_no_matching_lines_returns_step_unchanged(self):
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = None
-        step = asyncio.get_event_loop().run_until_complete(
-            sm._tail_remote_metrics("mission-1", "grpo", 7)
-        )
-        assert step == 7
+        sm._sandbox.tail_new_output.return_value = "hello world\n"
 
-    def test_grpo_step_line_emits_loss_metric_with_own_step_number(self):
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
+            step = asyncio.get_event_loop().run_until_complete(
+                sm._tail_remote_metrics("mission-1", "grpo", 7)
+            )
+        assert step == 7
+        mock_emit.assert_not_awaited()
+
+    def test_grpo_loss_emitted_with_script_step_and_mission_iteration(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
             "Step   25/300 | loss=0.6421 | baseline=0.812 | rewards=[1.0] | case | 120s\n"
         )
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0, current_iteration=3)
             )
 
-        # "step" is the script's own reported step number (chart x-axis);
-        # "iteration" is the real mission iteration, not the step number.
         mock_emit.assert_awaited_once_with("mission-1", "loss", 0.6421, step=25, iteration=3)
 
     def test_grpo_baseline_pass_rate_and_negative_loss_emitted(self):
@@ -251,7 +242,7 @@ class TestTailRemoteMetrics:
         )
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log:
             step = asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0, current_iteration=0)
             )
@@ -263,64 +254,32 @@ class TestTailRemoteMetrics:
         losses = [(c.args[2], c.kwargs["step"]) for c in mock_emit.await_args_list if c.args[1] == "loss"]
         assert (-1.0, 1) in losses
         assert (-1.0, 2) in losses
-        status_msgs = [c.args[1] for c in mock_status.await_args_list]
-        assert any(m.startswith("Baseline eval (step 0)") for m in status_msgs)
-        assert any(m.startswith("Baseline pass rate: 85.3% (58/68)") for m in status_msgs)
-        assert any(m.startswith("Held-out pass rate: 80.0%") for m in status_msgs)
-        assert any("Training: step 1/3" in m for m in status_msgs)
-        assert any("Training: step 2/3" in m for m in status_msgs)
-        assert any(m.startswith("Eval at step 3") for m in status_msgs)
+        log_msgs = [c.args[1] for c in mock_log.await_args_list]
+        assert "--- Baseline eval (step 0) ---" in log_msgs
+        assert "Baseline pass rate: 85.3% (58/68)" in log_msgs
+        assert "Held-out pass rate: 80.0% (8/10)" in log_msgs
+        assert any(m.startswith("Step") for m in log_msgs)
 
-    def test_flywheel_phase_regexes(self):
-        assert _BASELINE_EVAL_PHASE_RE.search("--- Baseline eval (step 0) ---").group(1) == "0"
-        assert _MID_EVAL_PHASE_RE.search("--- Eval at step 3 ---").group(1) == "3"
-        h = _HELD_OUT_PASS_RATE_RE.search("Held-out pass rate: 80.0% (8/10)")
-        assert h is not None and h.groups() == ("80.0", "8", "10")
-
-    def test_grpo_flywheel_statuses_in_log_order(self):
-        """Data → baseline eval → train → mid-eval must all land in the event stream."""
-        from backend.loop.state_machine import (
-            _LOADING_MODEL_RE, _CASE_POOL_RE, _START_GRPO_RE, _FOCUSED_POOL_RE,
-        )
+    def test_unknown_banner_mirrored_without_status_regex(self):
+        """Ref-LP cache (and any future banner) must appear as type=log."""
         sm = _bare_state_machine()
-        log = (
-            "Loading model: mlx-community/gemma-3-12b-it-4bit\n"
-            "Warm-start from: adapters/grpo_v9_min/best/adapters.safetensors\n"
-            "Case pool: 57 entries (68 unique routing cases)\n"
-            "Starting GRPO training: iters=3 K=2 temp=1.2 lr=1e-06\n"
-            "--- Baseline eval (step 0) ---\n"
-            "Baseline pass rate: 85.3% (58/68)\n"
-            "Held-out pass rate: 80.0% (8/10)\n"
-            "Focused pool: 129 entries (10 failing cases × 10× weight)\n"
-            "Step    1/3 | loss=1.0000 | baseline=-0.050 | rewards=[-0.5 -0.5] | case | 37s\n"
-            "--- Eval at step 3 ---\n"
-            "Pass rate: 88.2% (60/68)\n"
+        sm._sandbox.tail_new_output.return_value = (
+            "Caching reference log-probs for 59 pairs...\n"
+            "  [40/59]  ref log-probs cached\n"
         )
-        assert _LOADING_MODEL_RE.search(log)
-        assert _CASE_POOL_RE.search(log)
-        assert _START_GRPO_RE.search(log)
-        assert _FOCUSED_POOL_RE.search(log)
 
-        with patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_metric, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log, \
+             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
             asyncio.get_event_loop().run_until_complete(
-                sm._emit_flywheel_log_statuses("mission-1", log)
+                sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
-        msgs = [c.args[1] for c in mock_status.await_args_list]
-        assert msgs[0].startswith("Loading model:")
-        assert any(m.startswith("Case pool:") for m in msgs)
-        assert any(m.startswith("Starting GRPO training:") for m in msgs)
-        assert any(m.startswith("Baseline eval") for m in msgs)
-        assert any(m.startswith("Baseline pass rate:") for m in msgs)
-        assert any(m.startswith("Held-out pass rate:") for m in msgs)
-        assert any(m.startswith("Focused pool:") for m in msgs)
-        assert any(m.startswith("Training: step 1/3") for m in msgs)
-        assert any(m.startswith("Eval at step 3") for m in msgs)
-        assert any(m.startswith("Pass rate: 88.2%") for m in msgs)
-        # chronological: baseline eval before train step before mid-eval
-        i_base = next(i for i, m in enumerate(msgs) if m.startswith("Baseline eval"))
-        i_train = next(i for i, m in enumerate(msgs) if m.startswith("Training: step"))
-        i_eval = next(i for i, m in enumerate(msgs) if m.startswith("Eval at step"))
-        assert i_base < i_train < i_eval
+
+        mock_metric.assert_not_awaited()
+        mock_status.assert_not_awaited()
+        msgs = [c.args[1] for c in mock_log.await_args_list]
+        assert "Caching reference log-probs for 59 pairs..." in msgs
+        assert "[40/59]  ref log-probs cached" in msgs
 
     def test_dpo_epoch_line_emits_avg_loss_not_loss(self):
         """Epoch avg must not reuse the ``loss`` series (would collide with
@@ -329,17 +288,14 @@ class TestTailRemoteMetrics:
         sm._sandbox.tail_new_output.return_value = "\n=== Epoch 2/3 done  avg_loss=0.5891 ===\n"
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock):
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=3)
             )
 
         mock_emit.assert_awaited_once_with("mission-1", "avg_loss", 0.5891, step=2, iteration=3)
 
-    def test_dpo_per_step_loss_lines_emit_multiple_loss_metrics_and_training_status(self):
-        """dpo_train.py prints Step N/M epoch=… loss=… every step — must be
-        tailed into MetricChart (not only epoch avg_loss) plus a LogStream
-        progress status from the latest step in the chunk."""
+    def test_dpo_per_step_loss_lines_emit_multiple_loss_metrics(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
             "Step   50/59  epoch=1  loss=0.5120  4800s\n"
@@ -351,7 +307,7 @@ class TestTailRemoteMetrics:
         )
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log:
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=1)
             )
@@ -363,12 +319,9 @@ class TestTailRemoteMetrics:
         pr_calls = [c for c in mock_emit.await_args_list if c.args[1] == "pass_rate"]
         assert len(pr_calls) == 1
         assert pr_calls[0].args[2] == pytest.approx(0.882)
-
-        status_msgs = [c.args[1] for c in mock_status.await_args_list]
-        assert any(m.startswith("Training: step 52/59") for m in status_msgs)
-        assert any(m.startswith("Eval at step 45") for m in status_msgs)
-        assert any(m.startswith("Pass rate: 88.2% (60/68)") for m in status_msgs)
-        assert any("New best pass rate: 88.2%" in m for m in status_msgs)
+        log_msgs = [c.args[1] for c in mock_log.await_args_list]
+        assert "New best: 88.2% → saved to /tmp/best" in log_msgs
+        assert "--- Eval at step 45 ---" in log_msgs
 
     def test_dpo_step_and_epoch_emit_distinct_metric_names(self):
         sm = _bare_state_machine()
@@ -378,7 +331,7 @@ class TestTailRemoteMetrics:
         )
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
-             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock):
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0, current_iteration=0)
             )
@@ -393,7 +346,8 @@ class TestTailRemoteMetrics:
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "\n=== Epoch 2/3 done  avg_loss=0.5891 ===\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0)
             )
@@ -407,7 +361,8 @@ class TestTailRemoteMetrics:
             "Pass rate: 78.0% (23/30)\n"
         )
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "grpo", 0)
             )
@@ -417,108 +372,85 @@ class TestTailRemoteMetrics:
         assert "pass_rate" in names
         assert "loss" in names
 
-
-# ── _COLLECT_PROGRESS_RE / pair-collection status ──────────────────────────────
-
-def test_collect_progress_regex_matches_dpo_collection_line():
-    match = _COLLECT_PROGRESS_RE.search("  [40/66]  37 pairs  (3310s)")
-    assert match is not None
-    assert match.groups() == ("40", "66", "37", "3310")
-
-
-class TestCollectProgressStatus:
-    def test_collection_line_emits_status_not_metric(self):
+    def test_collect_progress_mirrored_not_as_metric(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "  [40/66]  37 pairs  (3310s)\n"
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_metric, \
-             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log:
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
 
         mock_metric.assert_not_awaited()
-        mock_status.assert_awaited_once()
-        args, kwargs = mock_status.await_args
-        assert "40/66" in args[1]
-        assert "37 pairs" in args[1]
-        assert "55m" in args[1]
-        assert kwargs["event_type"] == "info"
+        mock_log.assert_awaited_once()
+        assert "[40/66]  37 pairs  (3310s)" in mock_log.await_args.args[1]
 
-    def test_multiple_collection_lines_all_emitted_for_event_stream(self):
-        """Data-phase progress belongs in the event stream — emit every line."""
+    def test_multiple_progress_lines_all_mirrored(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
             "  [10/66]  10 pairs  (834s)\n"
             "  [20/66]  19 pairs  (1675s)\n"
         )
 
-        with patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+        with patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log:
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
 
-        msgs = [c.args[1] for c in mock_status.await_args_list]
+        msgs = [c.args[1] for c in mock_log.await_args_list]
         assert len(msgs) == 2
         assert "10/66" in msgs[0]
         assert "20/66" in msgs[1]
 
 
-class TestOpdProgressStatus:
-    """opd_train.py's optional sampling-phase progress line — same HUD role as
-    DPO's pair-collection and RFT's survivor lines: status only, not a metric."""
+# ── catch-up ───────────────────────────────────────────────────────────────────
 
-    def test_rollouts_line_emits_status_not_metric(self):
+class TestSandboxLogCatchUp:
+    def test_catch_up_skips_already_emitted_log_lines(self, tmp_path, monkeypatch):
+        from backend.config import settings
+
+        mid = "mission-catchup"
+        mission_dir = Path(tmp_path) / "missions" / mid
+        mission_dir.mkdir(parents=True)
+        tel = mission_dir / "telemetry.jsonl"
+        tel.write_text(
+            json.dumps({"type": "log", "name": "Loading model: gemma", "source": "sandbox"}) + "\n"
+        )
+        monkeypatch.setattr(settings, "data_path", str(tmp_path))
+
         sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = "  [12/54]  48 rollouts  (920s)\n"
-
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_metric, \
-             patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
-            asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "opd", 0)
-            )
-
-        mock_metric.assert_not_awaited()
-        mock_status.assert_awaited_once()
-        args, kwargs = mock_status.await_args
-        assert "12/54" in args[1]
-        assert "48 rollouts" in args[1]
-        assert "15m" in args[1]
-        assert "On-policy sampling" in args[1]
-        assert kwargs["event_type"] == "info"
-
-    def test_multiple_rollout_lines_all_emitted_for_event_stream(self):
-        sm = _bare_state_machine()
-        sm._sandbox.tail_new_output.return_value = (
-            "  [4/54]  16 rollouts  (210s)\n"
-            "  [8/54]  32 rollouts  (455s)\n"
+        sm._sandbox.read_full_log.return_value = (
+            "Loading model: gemma\n"
+            "Caching reference log-probs for 59 pairs...\n"
         )
 
-        with patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+        with patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log:
             asyncio.get_event_loop().run_until_complete(
-                sm._tail_remote_metrics("mission-1", "opd", 0)
+                sm._catch_up_sandbox_log_stream(mid)
             )
 
-        msgs = [c.args[1] for c in mock_status.await_args_list]
-        assert len(msgs) == 2
-        assert "4/54" in msgs[0] and "16 rollouts" in msgs[0]
-        assert "8/54" in msgs[1] and "32 rollouts" in msgs[1]
+        msgs = [c.args[1] for c in mock_log.await_args_list]
+        assert "Loading model: gemma" not in msgs
+        assert "Caching reference log-probs for 59 pairs..." in msgs
 
-    def test_opd_progress_regex_matches_contract_line(self):
-        from backend.loop.state_machine import _OPD_PROGRESS_RE
-        m = _OPD_PROGRESS_RE.search("  [12/54]  48 rollouts  (920s)")
-        assert m is not None
-        assert m.groups() == ("12", "54", "48", "920")
+    def test_mirror_skip_counts_multiset(self):
+        sm = _bare_state_machine()
+        # Non-consecutive so the noise filter does not collapse the two hellos.
+        skip = Counter({"hello": 1})
+        with patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock) as mock_log:
+            asyncio.get_event_loop().run_until_complete(
+                sm._mirror_sandbox_log_lines(
+                    "m1", "hello\nmid\nhello\nworld\n", skip_counts=skip,
+                )
+            )
+        msgs = [c.args[1] for c in mock_log.await_args_list]
+        assert msgs == ["mid", "hello", "world"]
 
 
-# ── Metric Gap fallback: only used at iteration-completion, via .pop() ─────────
+# ── Metric Gap fallback ────────────────────────────────────────────────────────
 
 class TestLivePassRateFallbackConsumption:
-    """The in-memory _live_pass_rate_best tracker is only meant to be read once,
-    at the point run() falls back to it after _run_bare_eval fails — verified
-    here via the same pop()-based consumption used in state_machine.py, so a
-    stale value from one iteration can't silently leak into the next."""
-
     def test_pop_consumes_and_clears_the_tracked_value(self):
         sm = _bare_state_machine()
         sm._live_pass_rate_best = {"mission-1": 0.742}
@@ -529,9 +461,6 @@ class TestLivePassRateFallbackConsumption:
         assert "mission-1" not in sm._live_pass_rate_best
 
     def test_pop_returns_none_when_bare_eval_never_produced_a_reading(self):
-        """If bare_eval fails and no pass_rate line was ever tailed this
-        iteration (e.g. crashed before collection finished), the fallback
-        must be None, not a stale value from a previous mission's run."""
         sm = _bare_state_machine()
         sm._live_pass_rate_best = {}
 
@@ -540,15 +469,11 @@ class TestLivePassRateFallbackConsumption:
         assert consumed is None
 
     def test_fresh_iteration_clears_prior_iterations_tracked_value(self):
-        """_wait_for_sandbox must reset the tracker for this mission at the
-        start of each iteration, so a value already consumed (or superseded
-        by a successful bare_eval) in iteration N doesn't reappear as a false
-        fallback in iteration N+1."""
         sm = _bare_state_machine()
         sm._sandbox = MagicMock()
         sm._sandbox.is_alive.return_value = False
         sm._sandbox.get_log_path.return_value = "/nonexistent/path/for/this/test.log"
-        sm._live_pass_rate_best = {"mission-1": 0.988}  # leftover from a prior iteration
+        sm._live_pass_rate_best = {"mission-1": 0.988}
 
         asyncio.get_event_loop().run_until_complete(
             sm._wait_for_sandbox("mission-1", task_type="dpo")
@@ -557,17 +482,14 @@ class TestLivePassRateFallbackConsumption:
         assert "mission-1" not in sm._live_pass_rate_best
 
     def test_wait_for_sandbox_threads_current_iteration_into_tail(self):
-        """_wait_for_sandbox must forward its current_iteration argument into
-        _tail_remote_metrics so live-tailed pass_rate/loss events are tagged
-        with the real mission iteration, not left at the default 0."""
         sm = _bare_state_machine()
         sm._sandbox = MagicMock()
-        # is_alive() True once, then False, so the poll loop runs exactly once.
         sm._sandbox.is_alive.side_effect = [True, False]
         sm._sandbox.get_log_path.return_value = "/nonexistent/path/for/this/test.log"
         sm._sandbox.tail_new_output.return_value = "Pass rate: 90.0% (9/10)\n"
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._wait_for_sandbox("mission-1", task_type="dpo", current_iteration=4)
@@ -579,18 +501,12 @@ class TestLivePassRateFallbackConsumption:
 # ── distill: live tail is static-scale, goal metric is blended ───────────────
 
 class TestDistillLiveTailScale:
-    """distill_train.py's "Pass rate:" headline is the STATIC held-out rate,
-    while distill's goal metric, target_metric and metric_ceiling are all
-    blended. Observed live in mission 594322b2: the headline read 0.818 (9/11
-    static) against a blended denominator of 12. Emitting that under the name
-    "pass_rate" would put two populations on one HUD axis, and feeding it in as
-    a goal-metric fallback would record a static number as a blended result."""
-
     def test_distill_live_pass_rate_emitted_under_static_name(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "distill", 0)
             )
@@ -600,12 +516,11 @@ class TestDistillLiveTailScale:
         )
 
     def test_opd_live_pass_rate_emitted_under_static_name(self):
-        """OPD follows distill/rft: training-log Pass rate is held-out, not the
-        model-routed goal metric from bare_eval."""
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "opd", 0)
             )
@@ -615,12 +530,11 @@ class TestDistillLiveTailScale:
         )
 
     def test_dpo_live_pass_rate_keeps_the_plain_name(self):
-        """dpo/grpo score the full case set, so their headline IS the goal
-        population — this rename must stay distill/rft/opd-only."""
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = "Pass rate: 81.8% (9/11)\n"
 
-        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit:
+        with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
+             patch("backend.loop.state_machine.emit_log", new_callable=AsyncMock):
             asyncio.get_event_loop().run_until_complete(
                 sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
@@ -628,32 +542,3 @@ class TestDistillLiveTailScale:
         mock_emit.assert_awaited_once_with(
             "mission-1", "pass_rate", 0.818, step=0, iteration=0
         )
-
-
-# ── per-case eval failures are not fatal errors ──────────────────────────────
-
-class TestEvalCaseFailureNotFatal:
-    """A graded case that fails — including one whose generation times out —
-    carries an exception name, but it is a result, not a crash. Real incident:
-    mission 594322b2 iteration 0 ran 114.9 min to completion and printed its
-    full summary, then was discarded and relaunched because ONE baseline case
-    logged "FAILED (TimeoutError: timed out)" on line 6."""
-
-    def test_timeout_case_failure_is_not_fatal(self):
-        from backend.loop.state_machine import _EVAL_CASE_FAILURE_RE
-        line = "  [1/11] route_mcp_traxis_predict_visualize: FAILED (TimeoutError: timed out)"
-        assert _EVAL_CASE_FAILURE_RE.match(line)
-
-    def test_plain_case_failure_is_not_fatal(self):
-        from backend.loop.state_machine import _EVAL_CASE_FAILURE_RE
-        line = "[7/11] route_meta_what_schedule: FAILED (ValueError: bad skill)"
-        assert _EVAL_CASE_FAILURE_RE.match(line)
-
-    def test_real_traceback_line_is_still_fatal(self):
-        from backend.loop.state_machine import _EVAL_CASE_FAILURE_RE
-        for line in (
-            "Traceback (most recent call last):",
-            "RuntimeError: Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)",
-            "  File \"distill_train.py\", line 200, in report_eval",
-        ):
-            assert not _EVAL_CASE_FAILURE_RE.match(line), line

@@ -120,3 +120,34 @@ async def emit_status(
         logger.warning("telemetry_emitter: failed to persist event for %s: %s", mission_id, exc)
 
     await manager.broadcast(mission_id, payload)
+
+
+async def emit_log(
+    mission_id: str,
+    line: str,
+    *,
+    source: str = "sandbox",
+) -> None:
+    """Mirror a trainer stdout line into the event stream (not orchestrator status).
+
+    Remote Mini ``sandbox.log`` is the narrative source of truth. Unknown
+    banners must still appear — do not gate visibility on status regexes.
+    """
+    text = (line or "").rstrip("\n\r")
+    if not text:
+        return
+    payload: dict = {
+        "type": "log",
+        "mission_id": mission_id,
+        "name": text,
+        "source": source,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path = _telemetry_path(mission_id)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception as exc:
+        logger.warning("telemetry_emitter: failed to persist log for %s: %s", mission_id, exc)
+    await manager.broadcast(mission_id, payload)

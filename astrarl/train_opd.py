@@ -258,7 +258,7 @@ def run_opd_train(args, hooks) -> None:
                     adv = clip_advantage(kl_adv + float(out_adv), args.adv_clip)
                     triples.append((prompt_ids, comp_ids, adv, old_lp, rkl))
 
-        # Progress line for astra HUD (matches _OPD_PROGRESS_RE)
+        # Progress line mirrored into Astra Event Stream as type=log
         elapsed_s = time.time() - t_start
         print(f"  [{step}/{total_steps}]  {total_rollouts} rollouts  ({elapsed_s:.0f}s)")
 

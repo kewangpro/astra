@@ -1,30 +1,43 @@
 """Astra Orchestrator SSH-log contracts for Mini MLX trainers.
 
-``LoopStateMachine`` / HUD parsers expect these literal prefixes on stdout.
-Platform ``run_*`` loops (and use-case runners they call) must preserve them.
+``LoopStateMachine`` tails remote ``sandbox.log`` and:
 
-Contracts
----------
-* ``Baseline: X.X% (n/total)`` — DPO / distill-style pre-update static rate
+* **Mirrors** noise-filtered lines as ``type=log`` (Event Stream narrative).
+  Banners do **not** need a status regex to be visible in the HUD.
+* **Extracts typed metrics** (``emit_metric``) only where charts / the goal
+  loop need numbers — those prefixes must stay stable.
+
+Platform ``run_*`` loops (and use-case runners they call) must preserve the
+metric lines below. Recommended banners are still useful for humans reading
+raw logs; they are no longer a HUD visibility gate.
+
+Metric contracts (required for charts / goal)
+---------------------------------------------
 * ``Baseline pass rate: X.X% (n/total)`` — AstraRL GRPO routing baseline
   (``train_grpo_routing``; HUD ``_PASS_RATE_RE`` is line-anchored with optional
   ``Baseline `` — must not match ``Held-out pass rate:``)
 * ``Pass rate: X.X% (n/total)`` — mid-step / final static routing pass rate
-  (also emitted as an event-stream success status)
-* ``Held-out pass rate: X.X% (n/total)`` — informational split rate
-  (event-stream status only — never the goal ``pass_rate`` metric)
-* ``--- Baseline eval (step N) ---`` / ``--- Eval at step N ---`` /
-  ``=== Final Eval ===`` — flywheel eval phase banners (event stream)
-* ``Case pool:`` / ``Starting GRPO training:`` / ``Focused pool:`` /
-  ``DPO training:`` / ``N pairs ready for training`` — data/setup (event stream)
+  (goal / live ``pass_rate`` metric; also mirrored as ``log``)
 * ``Step {i}/{n} loss={float}`` — per-step CE / distill / rft / star / DPO loss
   (DPO may insert ``epoch=…`` between step and ``loss=``; HUD ``.*?loss=`` still matches;
   loss may be negative for OPD reverse-KL)
 * ``Step {i}/{n} | loss={float} | …`` — GRPO / RLCD / agrpo pipe form
   (``_GRPO_LOSS_RE``; loss may be negative sentinel, e.g. ``-1.0000``)
-* ``New best: X.X%`` — DPO/GRPO checkpoint improved (HUD status only)
-* ``Iter {i}: Train loss {float}`` — mlx_lm.lora / SFT style (`astratune.cli sft`)
-* ``Case split:`` — train/valid case counts (informational)
+* ``=== Epoch N/M done  avg_loss={float} ===`` — DPO epoch summary (``avg_loss`` series)
+* ``Iter {i}: Train loss {float}`` / ``Val loss`` — mlx_lm.lora / SFT style
+
+Recommended banners (mirrored as log; not a visibility gate)
+------------------------------------------------------------
+* ``Baseline: X.X% (n/total)`` — DPO / distill-style pre-update static rate
+* ``Held-out pass rate: X.X% (n/total)`` — informational split (never goal metric)
+* ``--- Baseline eval (step N) ---`` / ``--- Eval at step N ---`` /
+  ``=== Final Eval ===``
+* ``Case pool:`` / ``Starting GRPO training:`` / ``Focused pool:`` /
+  ``DPO training:`` / ``N pairs ready for training`` / ``Loading model:`` /
+  ``Warm-start from:`` / ``Warm-start (reference):`` /
+  ``Caching reference log-probs…`` / collect ``[i/n]  k pairs  (Ts)``
+* ``New best: X.X%`` — checkpoint improved
+* ``Case split:`` — train/valid case counts
 
 Blended / MCP breakdown lines are indented follow-ups and must not replace the
 primary ``Pass rate:`` / ``Baseline:`` / ``Baseline pass rate:`` line

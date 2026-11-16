@@ -81,7 +81,7 @@ export interface AutoApproveResult {
 }
 
 export interface TelemetryEvent {
-  type: string;           // "metric" | "backfill" | "backfill_complete" | "pivot"
+  type: string;           // "metric" | "log" | "backfill" | "backfill_complete" | "pivot" | …
   mission_id?: string;
   name?: string;
   value?: number;
@@ -89,6 +89,8 @@ export interface TelemetryEvent {
   iteration?: number;
   recorded_at?: string;
   reason?: string;
+  /** Present on type=log — e.g. "sandbox" for mirrored Mini stdout. */
+  source?: string;
 }
 
 export interface ModelRecord {

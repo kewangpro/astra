@@ -3083,3 +3083,15 @@ Remote LM fine-tunes print a full data → baseline eval → train → mid/final
 - [x] **MetricChart** — do **not** mirror train-step status in the chart header (event stream owns that); empty state may still show collect/training status when there are no points yet.
 - [x] **stdout_contract** — document data/setup + eval banners + held-out; UX_SPEC Event Stream section aligned.
 - [x] **Tests** — `test_remote_telemetry_tail.py` flywheel order / held-out exclusion / per-line collect+OPD; `test_sandbox_manager.py` `save_dir=` parse cases.
+
+## Phase 126: Event Stream = sandbox.log mirror (2026-11-15)
+
+Status-regex reconstruction of the HUD narrative (`_emit_flywheel_log_statuses`) caused silent gaps whenever trainers printed a new phase (e.g. DPO ref-LP cache). **Fix:** mirror filtered remote stdout as `type=log`; keep regexes only for typed metrics.
+
+- [x] **`emit_log`** (`telemetry_emitter.py`) — persist + WS-broadcast `{type: "log", name: line, source: "sandbox"}`.
+- [x] **`filter_sandbox_log_lines` + `_mirror_sandbox_log_lines`** — drop empty / CR-tqdm / Fetching-files spam and consecutive duplicates; emit every kept line.
+- [x] **`_tail_remote_metrics`** — mirror then metric extractors only; **deleted** `_emit_flywheel_log_statuses` and status-only regex farm.
+- [x] **Reattach catch-up** — `_catch_up_sandbox_log_stream` re-reads full remote log and emits unread `type=log` rows (multiset dedupe against existing telemetry); live tail offset still at EOF for metrics.
+- [x] **LogStream** — render `LOG` rows; collapse consecutive `[i/n]` / `Step N/M` progress with “+N similar”; MetricChart empty state uses latest `log` (or lifecycle status).
+- [x] **DESIGN / UX_SPEC / stdout_contract** — Remote Mini diagram is `tail → emit_log` + `metric extractors`; banners are recommended, not a HUD visibility gate.
+- [x] **Tests** — mirror unknown banners; filter cases; catch-up dedupe; metric extractors unchanged.

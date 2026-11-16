@@ -214,18 +214,14 @@ export function MetricChart({ events, targetMetric }: Props) {
     ? `target ${targetValue.toFixed(0)}`
     : `target ${(targetValue * 100).toFixed(0)}%`;
 
+  // Prefer latest mirrored sandbox.log line; fall back to lifecycle status.
   const progressStatus = [...events]
     .reverse()
-    .find(
-      (e) =>
-        (e.type === "info" || e.type === "success") &&
-        typeof e.name === "string" &&
-        (e.name.startsWith("Collecting preference pairs") ||
-          e.name.startsWith("Training: step") ||
-          e.name.startsWith("Rejection sampling") ||
-          e.name.startsWith("On-policy sampling") ||
-          e.name.startsWith("New best pass rate")),
-    );
+    .find((e) => {
+      if (typeof e.name !== "string" || !e.name.trim()) return false;
+      if (e.type === "log") return true;
+      return e.type === "info" || e.type === "success" || e.type === "warn";
+    });
 
   if (!data.length) {
     // No pass_rate/loss yet — collection or early train can run a long time.

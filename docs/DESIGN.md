@@ -199,7 +199,7 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 **Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or env construction, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. Gym-coupled SB3 scripts use `astragym.make(gym_id)` + `astrarl.make(learner_id, …)` (no bare `gym.make`); legacy `gym.make` is rewritten to AstraGym.
 
-**Remote fine-tune.** Mini holds a product **workspace** (e.g. `~/finetune`) plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen). Train stdout (`sandbox.log`) is SSH-tailed (catch-up on reattach) into `emit_status` / `emit_metric` → `telemetry.jsonl` → WS → HUD (`LogStream` = flywheel narrative; Metric History/Gap = curves). Contract: [`astratune/stdout_contract.py`](../astratune/stdout_contract.py); UX: [UX_SPEC §2.2](UX_SPEC.md).
+**Remote fine-tune.** Mini holds a product **workspace** (e.g. `~/finetune`) plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen). Train stdout (`sandbox.log`) is SSH-tailed (full-log catch-up on reattach): noise-filtered lines → **`emit_log`** (Event Stream narrative) and metric extractors → **`emit_metric`** (Metric History / Gap / goal). Orchestrator lifecycle stays **`emit_status`**. LogStream is **not** a regex-reconstructed status checklist — unknown trainer banners still appear as `type=log`. Metric-required lines: [`astratune/stdout_contract.py`](../astratune/stdout_contract.py); UX: [UX_SPEC §2.2](UX_SPEC.md).
 
 ```mermaid
 flowchart LR
@@ -207,11 +207,16 @@ flowchart LR
     Recipes[recipes_and_env]
     Paths["finetune_dir / python_bin / astra_pkg_root"]
     Tail["_tail_remote_metrics"]
-    Emit["emit_status + emit_metric"]
+    Mirror["filter + emit_log"]
+    Metrics["metric extractors + emit_metric"]
+    Life[orchestrator emit_status]
     JSONL[telemetry.jsonl]
     WS["WS /ws/missions/id/telemetry"]
     Recipes --- Paths
-    Tail --> Emit --> JSONL --> WS
+    Tail --> Mirror --> JSONL
+    Tail --> Metrics --> JSONL
+    Life --> JSONL
+    JSONL --> WS
   end
   subgraph mini [Mini_training_host]
     Layout["~/finetune · ~/astra-pkg · ~/finetune-env"]
@@ -220,7 +225,7 @@ flowchart LR
     Layout --- Steps --> Log
   end
   subgraph hud [Live_Training_HUD]
-    Stream[LogStream_event_view]
+    Stream[LogStream_log_plus_lifecycle]
     Charts[MetricHistory_plus_Gap]
   end
   Paths -->|"SSH_train.py"| Steps
