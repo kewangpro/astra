@@ -15,7 +15,7 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 7: AgentGym & Agentic RL** | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs | 64, 98–100 | 4 | ✅ |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78` | 87–97 | 11 | ✅ |
 | **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split; MLX facade + DAPO-lite; platform GRPO runtime extracted from product trees | 101–113 | 13 | ✅ |
-| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini; product-neutral packs; HUD metric accuracy | 114–122, 124 | 10 | ✅ |
+| **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini; product-neutral packs; HUD metric accuracy; flywheel event stream | 114–122, 124–125 | 11 | ✅ |
 | **Epoch 11: Complete flywheel** | AstraData + AstraEval; suite gate; FailSlice → focus_cases; Eval-owned tournament seeds | 123 | 1 | ✅ |
 
 Epochs 7, 9, 10, and 11 are intentionally shorter **architecture** milestones (agent stack, Gym×RL, AstraTune, then Data/Eval); Epochs 3–6 absorb the former “continuity” band.
@@ -291,7 +291,7 @@ AstraRL runtime: `train_grpo_routing` / `train_grpo_traj` / `train_opd`, rollout
     - `frontend/src/lib/api.ts`: added `target_metric: Record<string, number> | null` to `Mission` type (backed by existing `MissionRead` schema field).
     - `frontend/src/components/hud/MetricGap.tsx`: reads `target_metric` dict (`{"mean_reward": 475}`) to derive metric name and target value; raw display for RL (reward), percentage display for ML (accuracy); arc pct always `current / target * 100`.
     - `frontend/src/components/hud/MetricChart.tsx`: same `target_metric` logic; y-axis domain and tick formatter switch between raw and fraction modes; reference line label shows `"target 475"` (not `"target 92%"`).
-    - `frontend/src/components/hud/LogStream.tsx`: filters out `metric`-type events (shown in MetricHistory instead), eliminating per-step telemetry spam (hundreds of events per run).
+    - `frontend/src/components/hud/LogStream.tsx`: filters out `metric`-type events (shown in MetricHistory instead), eliminating per-step telemetry spam (hundreds of events per run). *(Superseded for remote LM flywheel metrics by Phase 125 — `pass_rate` / `loss` are shown in the event stream; high-frequency RL metrics stay filtered.)*
     - `backend/routers/missions.py` `_parse_target_metric`: already correctly extracts `{"mean_reward": 475}` from free-text goals — no change needed.
 
 - [x] **Run button navigation + CritiqueTrace height**
@@ -622,7 +622,7 @@ AstraRL runtime: `train_grpo_routing` / `train_grpo_traj` / `train_opd`, rollout
 
 - [x] **Event stream capped at last 100 non-metric events (Step 14.2)**
     - **Problem**: with 7000+ events backfilled, `LogStream` rendered all of them — slow initial paint and overwhelming scroll depth.
-    - `frontend/src/components/hud/LogStream.tsx`: `allVisible` filters out `metric` and `backfill_complete` events; `visible = allVisible.slice(-100)` caps the rendered list. The header badge shows the raw count up to 100, then "100+" — indicating more events exist without displaying a distracting total.
+    - `frontend/src/components/hud/LogStream.tsx`: `allVisible` filters out `metric` and `backfill_complete` events; `visible = allVisible.slice(-100)` caps the rendered list. The header badge shows the raw count up to 100, then "100+" — indicating more events exist without displaying a distracting total. *(Metric filter later relaxed for flywheel names in Phase 125; slice(-100) still applies.)*
 
 - [x] **Event stream height aligned to sidebar panels (Step 14.3)**
     - **Problem**: `LogStream` had a fixed `h-96` height regardless of whether the sidebar (CritiqueTrace + PivotTimeline) was taller or shorter, causing vertical misalignment and unwanted whitespace.
@@ -1124,7 +1124,7 @@ AstraRL runtime: `train_grpo_routing` / `train_grpo_traj` / `train_opd`, rollout
 
 Watching that same live mission end-to-end also surfaced two more friction points not caught by Phase 25/26's testing, fixed in the same pass: (1) `collect_pairs()` is typically the bulk of the mission's wall-clock time — over an hour for 66 cases × K=8 — and printed nothing `_tail_remote_metrics` understood, so the HUD showed "NO METRICS YET" the entire time with no way to tell a healthy run from a stuck one; (2) every dpo/grpo mission's generated dispatch wrapper needed a manual approval click on every single attempt — the static safety pre-filter has no rule for `os.execv`, so a script with zero dangerous patterns and no network calls still fell through to `static_ambiguous` and round-tripped to the LLM classifier, which inconsistently flagged legitimate `os.execv` process-image replacement as "could lead to arbitrary code execution."
 
-- [x] **Pair-collection progress surfaced as a status event, not a metric** (`state_machine.py`) — new `_COLLECT_PROGRESS_RE` matches `dpo_train.py`'s `"  [i/total]  n pairs  (Ts)"` line; `_tail_remote_metrics()` emits the latest match via `emit_status()` (the same INF/OK/WARN event-stream channel already used for "Sandbox running", "Generating training plan…", etc.) rather than `emit_metric()` — its 0..66 case-count scale has nothing to do with `loss`/`pass_rate` and would have distorted `MetricChart`'s y-axis if plotted as a series. 3 new tests in `test_remote_telemetry_tail.py`.
+- [x] **Pair-collection progress surfaced as a status event, not a metric** (`state_machine.py`) — new `_COLLECT_PROGRESS_RE` matches `dpo_train.py`'s `"  [i/total]  n pairs  (Ts)"` line; `_tail_remote_metrics()` emits via `emit_status()` (the same INF/OK/WARN event-stream channel already used for "Sandbox running", "Generating training plan…", etc.) rather than `emit_metric()` — its 0..66 case-count scale has nothing to do with `loss`/`pass_rate` and would have distorted `MetricChart`'s y-axis if plotted as a series. Originally only the latest line per tail chunk; Phase 125 emits **every** collect/rejection/on-policy line in the chunk so the event stream keeps the full data-phase trail. 3 new tests in `test_remote_telemetry_tail.py` (updated in 125).
 
 - [x] ~~Static auto-approve short-circuit for the dpo/grpo dispatch wrapper~~ **— documented here as done, but the actual check was never added to `_static_check()`; see Phase 30, where it was actually implemented after a live incident exposed the gap.** The intent was: alongside the existing "all requests target localhost" short-circuit, if the script has no `requests` calls *and* contains `os.execv(...)` targeting `dpo_train.py`/`grpo_train.py` by name, auto-approve statically without ever reaching the LLM classifier. This is exactly and only the shape `_DPO_TEMPLATE`/`_GRPO_TEMPLATE` produce — `os.execv` here is legitimate process-image replacement (see the orphan-proofing fix above), not arbitrary code execution. Only the LLM-prompt-clarification half of the fix (below) actually shipped in this phase.
 
@@ -3043,7 +3043,7 @@ Recipe audit + product-agnostic defaults + pack cutover. Historical IMPLEMENT li
 Phase 26 tailed `Pass rate:` and epoch `avg_loss` for DPO, but `dpo_train.py` already prints per-step `Step N/M epoch=… loss=…` and mid-run evals — the HUD looked empty because the parser ignored step loss and MetricChart hid `pass_rate` whenever `loss` existed.
 
 - [x] `_tail_remote_metrics`: map `dpo` → `_DISTILL_LOSS_RE` (per-step) + keep `_DPO_LOSS_RE` epoch summaries; emit `Training: step N/M (loss=…)` and `New best pass rate: …%` status for LogStream (`_TRAIN_STEP_PROGRESS_RE`, `_DPO_NEW_BEST_RE`).
-- [x] `MetricChart`: dual-series for fine-tunes (`loss` + `pass_rate`); empty/header surfaces collect/training status. (Y-axis / legend accuracy completed in Phase 124.)
+- [x] `MetricChart`: dual-series for fine-tunes (`loss` + `pass_rate`); empty state can surface collect/training status (Y-axis / legend accuracy completed in Phase 124). Train-step / eval narrative lives in the **event stream** (Phase 125) — not the chart header.
 - [x] `MetricGap`: while `running`, show live eval subtitle from latest WS `pass_rate` (arc still DB-only).
 - [x] `astratune/stdout_contract.py` notes DPO step/loss + `New best:`; unit tests in `test_remote_telemetry_tail.py`.
 
@@ -3062,7 +3062,7 @@ Close fuel → train → truth → FailSlice → fuel. Design contract: [DESIGN.
 
 ## Phase 124: AstraRL GRPO smoke + HUD metric accuracy (2026-11-15)
 
-Live-verified after DPO smoke (`8000d1ac`) and GRPO smoke (`52f4fc8a`): dual Metric History still labeled loss as `%`; GRPO baseline/negative loss lines were dropped by the tail regex; incomplete smoke YAML KeyError'd on `reward_schema` before the canned facade ran; hitting `target_metric` still pivoted when the artifact requirement looked for local `checkpoints/best/`.
+Observed on DPO smoke (`8000d1ac`, later cancelled) and GRPO smoke (`52f4fc8a`, cancelled after false artifact pivot): dual Metric History labeled loss as `%`; GRPO baseline/negative loss lines were dropped by the tail regex; incomplete smoke YAML KeyError'd on `reward_schema` before the canned facade ran; hitting `target_metric` still pivoted when local `checkpoints/best/` was empty after reattach.
 
 - [x] **GRPO smoke recipe** — Ensemble `astra_recipes/ensemble_grpo_astrarl_smoke.yaml`: short `iters`, trivial `target_metric.pass_rate: 0.01` (not a promote chase), `astrarl.make("mlx_grpo_routing", use_case=ensemble, use_execv=True)`.
 - [x] **Codegen** — `_build_user_prompt` GRPO heal path uses `_build_grpo_context` defaults (no `**hp`-only KeyError on missing `reward_schema` / `max_zero_steps`).
@@ -3070,4 +3070,16 @@ Live-verified after DPO smoke (`8000d1ac`) and GRPO smoke (`52f4fc8a`): dual Met
 - [x] **MetricChart** — dual charts use raw Y-axis + series legends; drop `avg_loss` / synthetic `pass_rate` at `step ≥ 500000`; `runOffset` by max step in the completed run (not last event step).
 - [x] **stdout_contract** — document GRPO `Baseline pass rate:` + pipe `Step | loss=` forms; UX_SPEC Metric History/Chart wording aligned.
 - [x] **Tests** — `test_remote_telemetry_tail.py` + `test_code_generator.py` smoke/incomplete-HP cases; `tests/unit` green.
-- [ ] **Open:** `ManifestGenerator` still requires `checkpoints/best/` for `dpo`/`grpo` under the *local* mission dir. Fine-tune adapters land on Mini under `adapters/astra_<id>_iterN/best`, so artifact `file_exists` fails after a successful target hit and the loop pivots (seen on `52f4fc8a` 2/3 requirements → iter 1). Fix separately: check remote adapter path or skip local artifact for finetune-remote types when `last_checkpoint_path` / Mini best exists.
+- [x] **Manifest artifact false-fail** — root cause: boot reattach only parsed `"--save-dir", "…"` argv, not facade `save_dir="…"`, so exit rsync pulled empty `/tmp/astra/missions/…/checkpoints/` and `file_exists` failed after a real Mini save (`52f4fc8a` 2/3 → pivot). Fixed: `parse_remote_checkpoint_dir_from_train_py` + `_ensure_finetune_artifacts_synced` before manifest evaluate. **Live-verified** on GRPO smoke `b197b8cf` (completed `pass_rate=0.882`, local `checkpoints/` synced, Goal achieved, no false pivot).
+
+## Phase 125: Flywheel narrative in the event stream (2026-11-15)
+
+Remote LM fine-tunes print a full data → baseline eval → train → mid/final eval log, but the HUD event stream only showed lifecycle statuses plus sparse `Training: step` / collect lines. Metric History is for curves; the **event stream** is the flywheel log.
+
+- [x] **`_emit_flywheel_log_statuses`** (`state_machine.py`) — parse trainer stdout in log order into `emit_status` events: loading / warm-start / case pool / starting GRPO|DPO / collect|rejection|on-policy progress (**every** line in the tail chunk, not only the latest) / baseline + mid + final eval banners / `Baseline pass rate`|`Pass rate`|DPO `Baseline:` / held-out / focused pool / every `Training: step N/M` / `New best`.
+- [x] **Reattach catch-up** — `SSHSandbox.read_full_log` + `SandboxManager.read_full_log`; on reattach, `_catch_up_flywheel_event_stream` back-fills statuses missing from `telemetry.jsonl` (tail offset would otherwise skip history).
+- [x] **`_PASS_RATE_RE` line-anchored** — `(?m)^(?:Baseline\s+)?Pass rate:` so `Held-out pass rate:` is **not** emitted as goal `pass_rate` (was charting held-out as a second pass_rate point on `b197b8cf`).
+- [x] **LogStream** — still hides high-frequency RL metrics (`mean_reward`, …); **includes** flywheel metrics `pass_rate` / `pass_rate_static_live` / `pass_rate_heldout` / `loss` / `avg_loss` / `train_loss` / `eval_loss` with readable formatting (`pass_rate` as `%`). Status events are the primary narrative.
+- [x] **MetricChart** — do **not** mirror train-step status in the chart header (event stream owns that); empty state may still show collect/training status when there are no points yet.
+- [x] **stdout_contract** — document data/setup + eval banners + held-out; UX_SPEC Event Stream section aligned.
+- [x] **Tests** — `test_remote_telemetry_tail.py` flywheel order / held-out exclusion / per-line collect+OPD; `test_sandbox_manager.py` `save_dir=` parse cases.

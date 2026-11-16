@@ -199,20 +199,34 @@ The remote wrapper passes `--cases` when the recipe sets `cases`, omits `--routi
 
 **Code generation.** The coder writes `train.py`. Mechanical post-patches exist because a 7B coder will omit imports, `register()`, or env construction, and a healer that treats every `NameError` as a missing import can swap in the wrong env. SFT falls back to a canonical runner when the AST is bad. Gym-coupled SB3 scripts use `astragym.make(gym_id)` + `astrarl.make(learner_id, …)` (no bare `gym.make`); legacy `gym.make` is rewritten to AstraGym.
 
-**Remote fine-tune.** Mini holds a product **workspace** (e.g. `~/finetune`) plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen — same style as each other):
+**Remote fine-tune.** Mini holds a product **workspace** (e.g. `~/finetune`) plus an editable Astra tree (`~/astra-pkg` by default) and runs trainers under `~/finetune-env`. Canned wrappers bake a **path triad** (absolute paths at codegen). Train stdout (`sandbox.log`) is SSH-tailed (catch-up on reattach) into `emit_status` / `emit_metric` → `telemetry.jsonl` → WS → HUD (`LogStream` = flywheel narrative; Metric History/Gap = curves). Contract: [`astratune/stdout_contract.py`](../astratune/stdout_contract.py); UX: [UX_SPEC §2.2](UX_SPEC.md).
 
 ```mermaid
 flowchart LR
-  subgraph macbook [MacBook_Orchestrator]
+  subgraph orch [MacBook_Orchestrator]
     Recipes[recipes_and_env]
     Paths["finetune_dir / python_bin / astra_pkg_root"]
+    Tail["_tail_remote_metrics"]
+    Emit["emit_status + emit_metric"]
+    JSONL[telemetry.jsonl]
+    WS["WS /ws/missions/id/telemetry"]
+    Recipes --- Paths
+    Tail --> Emit --> JSONL --> WS
   end
   subgraph mini [Mini_training_host]
-    Py["finetune-env python"]
+    Layout["~/finetune · ~/astra-pkg · ~/finetune-env"]
     Steps["chdir → path+= → make → os.execv -m cli"]
-    Layout["~/finetune workspace · ~/astra-pkg · ~/finetune-env"]
+    Log[sandbox.log]
+    Layout --- Steps --> Log
   end
-  macbook -->|"SSH_train.py"| mini
+  subgraph hud [Live_Training_HUD]
+    Stream[LogStream_event_view]
+    Charts[MetricHistory_plus_Gap]
+  end
+  Paths -->|"SSH_train.py"| Steps
+  Log -->|"SSH_tail_or_catch_up"| Tail
+  WS --> Stream
+  WS --> Charts
 ```
 
 | Knob | Typical Mini value | Role |
@@ -223,7 +237,7 @@ flowchart LR
 | `use_case` | importable module | Product `UseCasePlugin` — bound at **mission create** (`MissionCreate.use_case`, goal marker `use_case: …` / `--use-case …`, or Lead Agent from the product named in the goal). Not recipe HP. |
 | `ASTRA_USE_CASE` | env (optional) | Last-resort bare-CLI fallback when `--use-case` was omitted; **not** the mission product binding. |
 
-Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the product plugin via plan-baked `--use-case` (or `ASTRA_USE_CASE` only if unset). Batch size is clamped to the split. The loop tails the remote log for HUD metrics. Loss-like metrics are lower-is-better.
+Resolution for `astra_pkg_root`: recipe HP `astra_pkg_root` → env `ASTRA_PKG_ROOT` (`settings.pkg_root`) → `/Users/kewang/astra-pkg`. Facade call is `astratune.make` / `astrarl.make(..., use_execv=True).learn()` — the wrapper process image is replaced by `python -m astrarl.cli` / `astratune.cli` (same pid), which loads the product plugin via plan-baked `--use-case` (or `ASTRA_USE_CASE` only if unset). Batch size is clamped to the split. Loss-like metrics are lower-is-better.
 
 **Chaining.** SFT → DPO (and similar) is two missions. The second warm-starts the first’s adapter; trainers read LoRA shape from the adapter config rather than trusting the planner.
 

@@ -159,6 +159,14 @@ class SSHSandbox(BaseSandbox):
     def log_path(self) -> str:
         return self._local_log
 
+    def read_full_log(self) -> str:
+        """Entire remote sandbox.log (for event-stream catch-up after reattach)."""
+        result = subprocess.run(
+            ["ssh", self._host, f"cat {self._remote_log} 2>/dev/null"],
+            capture_output=True, text=True,
+        )
+        return result.stdout or ""
+
     def tail_new_output(self) -> str:
         """Return remote log bytes written since the last call, without waiting
         for the process to exit. Used for live progress on long fine-tune runs,

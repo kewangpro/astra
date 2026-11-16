@@ -184,7 +184,7 @@ ASTRA's architecture and capabilities are structured into eleven thematic epochs
 | **Epoch 7: AgentGym & Agentic RL** (64, 98–100) | MultiTurnAgentGym PPO env; AgentGym harden; Agent GRPO (`agrpo`) + e2e stubs. | `AgentToolGym`, `agent_grpo_train.py`, `agrpo` | ✅ Complete |
 | **Epoch 8: OPD, Focused RFT & Calibrated Decisions** (87–97) | OPD; focused RFT lineage; RLCD; decision foundation → product `c7b78`. | `opd_train.py`, `rlcd_train.py`, decision recipes | ✅ Complete |
 | **Epoch 9: AstraGym + AstraRL** (101–113) | Gym×RL split; MLX facade + DAPO-lite; GRPO runtime extracted into AstraRL; products as reward-plugin use cases. | `astragym/`, `astrarl/`, `MLXLearnerFacade` | ✅ Complete |
-| **Epoch 10: AstraTune** (114–122, 124) | Offline LM platform sibling; shared LoRA I/O; canned facades; pip-only Mini; `astra_plugin`; product-neutral recipe packs; GRPO smoke + HUD dual-metric accuracy. | `astratune/`, `astra_plugin/`, `recipe_paths` | ✅ Complete |
+| **Epoch 10: AstraTune** (114–122, 124–125) | Offline LM platform sibling; shared LoRA I/O; canned facades; pip-only Mini; `astra_plugin`; product-neutral recipe packs; GRPO smoke + HUD dual-metric accuracy; flywheel event-stream narrative. | `astratune/`, `astra_plugin/`, `recipe_paths` | ✅ Complete |
 | **Epoch 11: Complete flywheel** (123) | AstraData + AstraEval; suite gate + FailSlice → focus_cases; tournament seeds owned by Eval. | `astradata/`, `astraeval/` | ✅ Complete |
 
 > Full phase-by-phase implementation logs and technical changelogs are maintained in [IMPLEMENT.md](docs/IMPLEMENT.md).

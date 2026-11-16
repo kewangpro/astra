@@ -62,8 +62,9 @@ logger = get_logger(__name__)
 # record the metric ourselves rather than requiring the remote script to POST
 # telemetry.
 # GRPO baseline uses "Baseline pass rate:"; mid/final evals use "Pass rate:".
+# Line-anchored so "Held-out pass rate:" does not also match as pass_rate.
 _PASS_RATE_RE = re.compile(
-    r"(?i)(?:Baseline\s+)?Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)"
+    r"(?im)^(?:Baseline\s+)?Pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)"
 )
 # Phase 6a train_embedding.py: "Triplet accuracy: 1.000 (17/17)"
 _TRIPLET_ACC_RE = re.compile(r"Triplet accuracy:\s*([\d.]+)\s*\((\d+)/(\d+)\)")
@@ -320,6 +321,34 @@ _DISTILL_LOSS_RE = re.compile(r"Step\s+(\d+)/\d+\s+.*?loss=(-?[\d.]+)")
 # Covers distill/DPO spaced form and GRPO/RLCD ``| loss=`` form.
 _TRAIN_STEP_PROGRESS_RE = re.compile(r"Step\s+(\d+)/(\d+)\s+.*?loss=(-?[\d.]+)")
 _DPO_NEW_BEST_RE = re.compile(r"New best:\s*([\d.]+)%")
+# Flywheel phase banners → event stream (data → baseline eval → train → mid/final eval).
+_BASELINE_EVAL_PHASE_RE = re.compile(
+    r"---\s*Baseline eval\s*\(step\s+(\d+)\)\s*---", re.IGNORECASE,
+)
+_MID_EVAL_PHASE_RE = re.compile(
+    r"---\s*Eval at step\s+(\d+)\s*---", re.IGNORECASE,
+)
+_FINAL_EVAL_PHASE_RE = re.compile(r"=== Final Eval ===", re.IGNORECASE)
+_HELD_OUT_PASS_RATE_RE = re.compile(
+    r"Held-out pass rate:\s*([\d.]+)%\s*\((\d+)/(\d+)\)", re.IGNORECASE,
+)
+# Data / setup (GRPO + DPO) — without these the stream jumps from "Sandbox running"
+# straight to the first loss step.
+_LOADING_MODEL_RE = re.compile(r"(?m)^Loading model:\s*(.+)$")
+_WARM_START_RE = re.compile(r"(?m)^Warm-start from:\s*(.+)$")
+_CASE_POOL_RE = re.compile(
+    r"(?m)^Case pool:\s*(\d+)\s+entries\s*\((\d+)\s+unique routing cases\)"
+)
+_START_GRPO_RE = re.compile(r"(?m)^Starting GRPO training:\s*(.+)$")
+_FOCUSED_POOL_RE = re.compile(r"(?m)^Focused pool:\s*(.+)$")
+_LOADED_PAIRS_RE = re.compile(r"(?m)^Loaded (\d+) pairs\s*$")
+_PAIRS_READY_RE = re.compile(r"(?m)^(\d+) pairs ready for training\s*$")
+_DPO_TRAINING_RE = re.compile(r"(?m)^DPO training:\s*(.+)$")
+_TOKENISING_PAIRS_RE = re.compile(r"(?m)^Tokenising pairs\.\.\.\s*$")
+# DPO prints bare "Baseline: X% (n/total)" (not "Baseline pass rate").
+_DPO_BASELINE_STATUS_RE = re.compile(
+    r"(?m)^Baseline:\s*([\d.]+)%(?:\s*\((\d+)/(\d+)\))?"
+)
 _MLX_TRAIN_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Train loss\s+([\d.]+)")
 _MLX_VAL_LOSS_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
 
@@ -924,6 +953,10 @@ class LoopStateMachine:
                         event_type="info",
                         value=f"sandbox_id={_s_id}",
                     )
+                    # Tail offset skips history; back-fill flywheel statuses so the
+                    # event stream still shows data → baseline → train → eval.
+                    if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                        await self._catch_up_flywheel_event_stream(mission_id)
                     _skip_launch = False
                 else:
                     await self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
@@ -1469,6 +1502,16 @@ class LoopStateMachine:
                     await self._save_pivot_pre_best(mission_id, None)
 
                 # ── MANIFEST CHECK ────────────────────────────────────────
+                # Fine-tune adapters live under Mini finetune_dir/adapters/…;
+                # sync them into mission_dir/checkpoints/ so the generator's
+                # ``checkpoints/best/`` artifact glob can pass (empty local
+                # dir after reattach with a missed save_dir parse was the
+                # GRPO smoke false-pivot on 52f4fc8a).
+                if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                    await asyncio.to_thread(
+                        self._ensure_finetune_artifacts_synced,
+                        mission_id, plan, current_iteration, mission_dir,
+                    )
                 manifest = self._load_or_create_manifest(mission_id, mission, plan=plan)
                 manifest = self._manifest_evaluator.evaluate(
                     manifest, _metrics_for_manifest(current_metrics, pivot_engine),
@@ -3433,6 +3476,59 @@ class LoopStateMachine:
                 reliable = True
         return baseline, reliable
 
+    def _ensure_finetune_artifacts_synced(
+        self,
+        mission_id: str,
+        plan: dict,
+        current_iteration: int,
+        mission_dir: str,
+    ) -> None:
+        """Rsync Mini adapter dir → ``mission_dir/checkpoints/`` for manifest
+        ``file_exists`` (``checkpoints/best/``). No-op if already populated or
+        host/paths missing."""
+        local_best = os.path.join(mission_dir, "checkpoints", "best")
+        if os.path.isdir(local_best) and any(os.scandir(local_best)):
+            return
+        if not settings.sandbox_host:
+            return
+        from backend.agent.code_generator import _resolve_hyperparams
+
+        task_type = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
+        hp = _resolve_hyperparams(plan.get("recipe") or task_type or "", plan.get("hyperparameters") or {})
+        finetune_dir = hp.get("finetune_dir") or ""
+        if not finetune_dir:
+            return
+        if plan.get("task_type") == "post-training":
+            stage_idx = plan.get("stage_index", 0)
+            active_t = plan.get("active_task_type", "sft")
+            bare_rel = f"adapters/astra_{mission_id[:8]}_stage{stage_idx + 1}_{active_t}_iter{current_iteration}"
+        else:
+            bare_rel = f"adapters/astra_{mission_id[:8]}_iter{current_iteration}"
+        remote = f"{finetune_dir.rstrip('/')}/{bare_rel}/"
+        local_ckpt = os.path.join(mission_dir, "checkpoints")
+        os.makedirs(local_ckpt, exist_ok=True)
+        try:
+            result = subprocess.run(
+                ["rsync", "-az", f"{settings.sandbox_host}:{remote}", f"{local_ckpt}/"],
+                capture_output=True, text=True, timeout=120,
+            )
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: finetune artifact sync failed mission=%s: %s",
+                mission_id, exc,
+            )
+            return
+        if result.returncode != 0:
+            logger.warning(
+                "LoopStateMachine: finetune artifact rsync rc=%s mission=%s stderr=%s",
+                result.returncode, mission_id, (result.stderr or "")[:300],
+            )
+            return
+        logger.info(
+            "LoopStateMachine: synced finetune adapters %s → %s for mission=%s",
+            remote, local_ckpt, mission_id,
+        )
+
     def _resolve_adapter_or_bare(self, finetune_dir: str, bare_rel_dir: str) -> str:
         """Return bare_rel_dir + '/best' if dpo_train.py actually wrote a best/
         checkpoint for this run on the remote host, else bare_rel_dir itself.
@@ -4199,6 +4295,9 @@ class LoopStateMachine:
         if not new_output:
             return pass_rate_step
 
+        # Event-stream narrative (data → eval → train → eval) before metrics.
+        await self._emit_flywheel_log_statuses(mission_id, new_output)
+
         # For distill and star, "Pass rate:" is the held-out/validation split rate, not the
         # full-suite goal metric evaluated by bare_eval.py. Emitting it as "pass_rate"
         # would put a smaller-population sample series on the same HUD axis as the
@@ -4287,52 +4386,155 @@ class LoopStateMachine:
                         mission_id, "avg_loss", loss_val, step=step_num, iteration=current_iteration,
                     )
 
-        step_prog = list(_TRAIN_STEP_PROGRESS_RE.finditer(new_output))
-        if step_prog:
-            step_i, step_total, step_loss = step_prog[-1].groups()
-            await emit_status(
-                mission_id,
-                f"Training: step {step_i}/{step_total} (loss={float(step_loss):.2f})",
-                event_type="info",
-            )
-
-        new_best = list(_DPO_NEW_BEST_RE.finditer(new_output))
-        if new_best:
-            pct = new_best[-1].group(1)
-            await emit_status(
-                mission_id,
-                f"New best pass rate: {pct}%",
-                event_type="success",
-            )
-
-        collect_matches = list(_COLLECT_PROGRESS_RE.finditer(new_output))
-        if collect_matches:
-            i, total, n_pairs, elapsed_s = collect_matches[-1].groups()
-            await emit_status(
-                mission_id,
-                f"Collecting preference pairs: {i}/{total} cases ({n_pairs} pairs, {int(elapsed_s) // 60}m elapsed)",
-                event_type="info",
-            )
-
-        rft_matches = list(_RFT_PROGRESS_RE.finditer(new_output))
-        if rft_matches:
-            i, total, n_survivors, elapsed_s = rft_matches[-1].groups()
-            await emit_status(
-                mission_id,
-                f"Rejection sampling: {i}/{total} cases ({n_survivors} survivors, {int(elapsed_s) // 60}m elapsed)",
-                event_type="info",
-            )
-
-        opd_matches = list(_OPD_PROGRESS_RE.finditer(new_output))
-        if opd_matches:
-            i, total, n_rollouts, elapsed_s = opd_matches[-1].groups()
-            await emit_status(
-                mission_id,
-                f"On-policy sampling: {i}/{total} cases ({n_rollouts} rollouts, {int(elapsed_s) // 60}m elapsed)",
-                event_type="info",
-            )
-
         return pass_rate_step
+
+    def _flywheel_status_names_already_emitted(self, mission_id: str) -> set[str]:
+        """Status ``name`` values already in telemetry.jsonl (catch-up dedupe)."""
+        path = os.path.join(settings.data_path, "missions", mission_id, "telemetry.jsonl")
+        names: set[str] = set()
+        if not os.path.isfile(path):
+            return names
+        try:
+            with open(path, "r", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except Exception:
+                        continue
+                    if ev.get("type") in ("info", "success", "warn") and ev.get("name"):
+                        names.add(ev["name"])
+        except OSError:
+            pass
+        return names
+
+    async def _catch_up_flywheel_event_stream(self, mission_id: str) -> None:
+        """After reattach, emit any flywheel statuses already in the remote log
+        that never made it into the event stream (tail offset skipped them)."""
+        full = None
+        try:
+            full = self._sandbox.read_full_log(mission_id)
+        except Exception as exc:
+            logger.warning(
+                "LoopStateMachine: flywheel catch-up read_full_log failed mission=%s: %s",
+                mission_id, exc,
+            )
+            return
+        if not full:
+            return
+        skip = self._flywheel_status_names_already_emitted(mission_id)
+        await self._emit_flywheel_log_statuses(mission_id, full, skip_names=skip)
+
+    async def _emit_flywheel_log_statuses(
+        self,
+        mission_id: str,
+        text: str,
+        *,
+        skip_names: Optional[set] = None,
+    ) -> None:
+        """Parse trainer stdout into event-stream statuses (data / eval / train).
+
+        Metrics stay on ``emit_metric``; this is the LogStream narrative only.
+        Events are emitted in log order. ``skip_names`` dedupes catch-up against
+        statuses already in telemetry.
+        """
+        if not text:
+            return
+        skip = skip_names or set()
+
+        # (start, msg, event_type) — sort by position so catch-up keeps flywheel order
+        pending: list[tuple[int, str, str]] = []
+
+        def _add(pos: int, msg: str, event_type: str = "info") -> None:
+            pending.append((pos, msg, event_type))
+
+        for m in _LOADING_MODEL_RE.finditer(text):
+            _add(m.start(), f"Loading model: {m.group(1).strip()}")
+        for m in _WARM_START_RE.finditer(text):
+            _add(m.start(), f"Warm-start from: {m.group(1).strip()}")
+        for m in _CASE_POOL_RE.finditer(text):
+            _add(
+                m.start(),
+                f"Case pool: {m.group(1)} entries ({m.group(2)} unique routing cases)",
+            )
+        for m in _LOADED_PAIRS_RE.finditer(text):
+            _add(m.start(), f"Loaded {m.group(1)} preference pairs")
+        for m in _TOKENISING_PAIRS_RE.finditer(text):
+            _add(m.start(), "Tokenising preference pairs…")
+        for m in _PAIRS_READY_RE.finditer(text):
+            _add(m.start(), f"Data ready: {m.group(1)} pairs for training")
+        for m in _DPO_TRAINING_RE.finditer(text):
+            _add(m.start(), f"DPO training: {m.group(1).strip()}")
+        for m in _START_GRPO_RE.finditer(text):
+            _add(m.start(), f"Starting GRPO training: {m.group(1).strip()}")
+
+        for m in _COLLECT_PROGRESS_RE.finditer(text):
+            i, total, n_pairs, elapsed_s = m.groups()
+            _add(
+                m.start(),
+                f"Collecting preference pairs: {i}/{total} cases "
+                f"({n_pairs} pairs, {int(elapsed_s) // 60}m elapsed)",
+            )
+        for m in _RFT_PROGRESS_RE.finditer(text):
+            i, total, n_survivors, elapsed_s = m.groups()
+            _add(
+                m.start(),
+                f"Rejection sampling: {i}/{total} cases "
+                f"({n_survivors} survivors, {int(elapsed_s) // 60}m elapsed)",
+            )
+        for m in _OPD_PROGRESS_RE.finditer(text):
+            i, total, n_rollouts, elapsed_s = m.groups()
+            _add(
+                m.start(),
+                f"On-policy sampling: {i}/{total} cases "
+                f"({n_rollouts} rollouts, {int(elapsed_s) // 60}m elapsed)",
+            )
+
+        for m in _BASELINE_EVAL_PHASE_RE.finditer(text):
+            _add(m.start(), f"Baseline eval (step {m.group(1)})…")
+        for m in _PASS_RATE_RE.finditer(text):
+            pct = float(m.group(1))
+            raw_label = m.group(0).split(":", 1)[0].strip()
+            _add(
+                m.start(),
+                f"{raw_label}: {pct:g}% ({m.group(2)}/{m.group(3)})",
+                "success",
+            )
+        for m in _DPO_BASELINE_STATUS_RE.finditer(text):
+            if m.group(2) and m.group(3):
+                msg = f"Baseline: {m.group(1)}% ({m.group(2)}/{m.group(3)})"
+            else:
+                msg = f"Baseline: {m.group(1)}%"
+            _add(m.start(), msg, "success")
+        for m in _HELD_OUT_PASS_RATE_RE.finditer(text):
+            _add(
+                m.start(),
+                f"Held-out pass rate: {m.group(1)}% ({m.group(2)}/{m.group(3)})",
+            )
+        for m in _FOCUSED_POOL_RE.finditer(text):
+            _add(m.start(), f"Focused pool: {m.group(1).strip()}")
+        for m in _MID_EVAL_PHASE_RE.finditer(text):
+            _add(m.start(), f"Eval at step {m.group(1)}…")
+        for m in _FINAL_EVAL_PHASE_RE.finditer(text):
+            _add(m.start(), "Final eval…")
+
+        for m in _TRAIN_STEP_PROGRESS_RE.finditer(text):
+            step_i, step_total, step_loss = m.groups()
+            _add(
+                m.start(),
+                f"Training: step {step_i}/{step_total} (loss={float(step_loss):.2f})",
+            )
+        for m in _DPO_NEW_BEST_RE.finditer(text):
+            _add(m.start(), f"New best pass rate: {m.group(1)}%", "success")
+
+        pending.sort(key=lambda t: t[0])
+        for _, msg, event_type in pending:
+            if msg in skip:
+                continue
+            await emit_status(mission_id, msg, event_type=event_type)
+            skip.add(msg)
 
     # ── Crystallization ────────────────────────────────────────────────────────
 

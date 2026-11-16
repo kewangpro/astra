@@ -44,12 +44,52 @@ const STATUS_LABEL: Record<string, string> = {
   completed:  "MISSION COMPLETE",
 };
 
+/** High-frequency RL signals stay on Metric History; flywheel eval/train
+ *  metrics belong in the event stream so baseline → steps → eval read as a log. */
+const STREAM_METRIC_NAMES = new Set([
+  "pass_rate",
+  "pass_rate_static_live",
+  "pass_rate_heldout",
+  "loss",
+  "avg_loss",
+  "train_loss",
+  "eval_loss",
+]);
+
+function isStreamVisible(e: TelemetryEvent): boolean {
+  if (e.type === "backfill_complete" || e.type === "backfill") return false;
+  if (e.type === "metric") {
+    return !!e.name && STREAM_METRIC_NAMES.has(e.name);
+  }
+  return true;
+}
+
+function formatStreamMsg(e: TelemetryEvent): string {
+  if (e.type === "metric" && e.name != null && e.value != null) {
+    const n = e.name;
+    const v = e.value as number;
+    const step = e.step != null ? ` (step ${e.step})` : "";
+    if (
+      n === "pass_rate" ||
+      n === "pass_rate_static_live" ||
+      n === "pass_rate_heldout" ||
+      n.endsWith("_rate")
+    ) {
+      return `${n}: ${(v * 100).toFixed(1)}%${step}`;
+    }
+    return `${n}: ${typeof v === "number" ? v.toFixed(v < 10 ? 4 : 1) : v}${step}`;
+  }
+  if (e.name != null) {
+    return e.value != null
+      ? `${e.name}: ${e.value}${e.step != null ? ` (step ${e.step})` : ""}`
+      : e.name;
+  }
+  return e.type ?? "";
+}
+
 export function LogStream({ events, connected, missionStatus, className }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  // metric events are shown in MetricHistory — exclude them from the stream
-  const allVisible = events.filter(
-    (e) => e.type !== "backfill_complete" && e.type !== "metric"
-  );
+  const allVisible = events.filter(isStreamVisible);
   const visible = allVisible.slice(-100);
 
   useEffect(() => {
@@ -107,11 +147,7 @@ export function LogStream({ events, connected, missionStatus, className }: Props
             const level = classify(e.type, e.name);
             const style = LEVEL_STYLES[level];
             const ts = e.recorded_at ? parseTs(e.recorded_at) : null;
-            const msg = e.name != null
-              ? e.value != null
-                ? `${e.name}: ${e.value}${e.step != null ? ` (step ${e.step})` : ""}`
-                : e.name
-              : e.type;
+            const msg = formatStreamMsg(e);
 
             return (
               <div

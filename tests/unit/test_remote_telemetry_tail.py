@@ -11,6 +11,7 @@ import pytest
 from backend.loop.state_machine import (
     LoopStateMachine, _PASS_RATE_RE, _GRPO_LOSS_RE, _DPO_LOSS_RE, _DISTILL_LOSS_RE,
     _COLLECT_PROGRESS_RE, _TRAIN_STEP_PROGRESS_RE, _DPO_NEW_BEST_RE,
+    _BASELINE_EVAL_PHASE_RE, _MID_EVAL_PHASE_RE, _HELD_OUT_PASS_RATE_RE,
 )
 
 
@@ -42,6 +43,12 @@ def test_pass_rate_regex_matches_grpo_baseline_pass_rate_line():
 def test_pass_rate_regex_ignores_bare_baseline_without_pass_rate():
     match = _PASS_RATE_RE.search("Baseline: 75.0% (15/20)")
     assert match is None
+
+
+def test_pass_rate_regex_ignores_held_out_line():
+    """Held-out is informational; must not inflate the goal pass_rate series."""
+    assert _PASS_RATE_RE.search("Held-out pass rate: 80.0% (8/10)") is None
+    assert _PASS_RATE_RE.search("Baseline pass rate: 85.3% (58/68)") is not None
 
 
 # ── _GRPO_LOSS_RE / _DPO_LOSS_RE ───────────────────────────────────────────────
@@ -237,8 +244,10 @@ class TestTailRemoteMetrics:
         sm._sandbox.tail_new_output.return_value = (
             "--- Baseline eval (step 0) ---\n"
             "Baseline pass rate: 85.3% (58/68)\n"
+            "Held-out pass rate: 80.0% (8/10)\n"
             "Step    1/3 | loss=-1.0000 | baseline=0.100 | rewards=[1.0 1.0] | case | 40s\n"
             "Step    2/3 | loss=-1.0000 | baseline=0.190 | rewards=[1.0 1.0] | case | 85s\n"
+            "--- Eval at step 3 ---\n"
         )
 
         with patch("backend.loop.state_machine.emit_metric", new_callable=AsyncMock) as mock_emit, \
@@ -255,7 +264,63 @@ class TestTailRemoteMetrics:
         assert (-1.0, 1) in losses
         assert (-1.0, 2) in losses
         status_msgs = [c.args[1] for c in mock_status.await_args_list]
+        assert any(m.startswith("Baseline eval (step 0)") for m in status_msgs)
+        assert any(m.startswith("Baseline pass rate: 85.3% (58/68)") for m in status_msgs)
+        assert any(m.startswith("Held-out pass rate: 80.0%") for m in status_msgs)
+        assert any("Training: step 1/3" in m for m in status_msgs)
         assert any("Training: step 2/3" in m for m in status_msgs)
+        assert any(m.startswith("Eval at step 3") for m in status_msgs)
+
+    def test_flywheel_phase_regexes(self):
+        assert _BASELINE_EVAL_PHASE_RE.search("--- Baseline eval (step 0) ---").group(1) == "0"
+        assert _MID_EVAL_PHASE_RE.search("--- Eval at step 3 ---").group(1) == "3"
+        h = _HELD_OUT_PASS_RATE_RE.search("Held-out pass rate: 80.0% (8/10)")
+        assert h is not None and h.groups() == ("80.0", "8", "10")
+
+    def test_grpo_flywheel_statuses_in_log_order(self):
+        """Data → baseline eval → train → mid-eval must all land in the event stream."""
+        from backend.loop.state_machine import (
+            _LOADING_MODEL_RE, _CASE_POOL_RE, _START_GRPO_RE, _FOCUSED_POOL_RE,
+        )
+        sm = _bare_state_machine()
+        log = (
+            "Loading model: mlx-community/gemma-3-12b-it-4bit\n"
+            "Warm-start from: adapters/grpo_v9_min/best/adapters.safetensors\n"
+            "Case pool: 57 entries (68 unique routing cases)\n"
+            "Starting GRPO training: iters=3 K=2 temp=1.2 lr=1e-06\n"
+            "--- Baseline eval (step 0) ---\n"
+            "Baseline pass rate: 85.3% (58/68)\n"
+            "Held-out pass rate: 80.0% (8/10)\n"
+            "Focused pool: 129 entries (10 failing cases × 10× weight)\n"
+            "Step    1/3 | loss=1.0000 | baseline=-0.050 | rewards=[-0.5 -0.5] | case | 37s\n"
+            "--- Eval at step 3 ---\n"
+            "Pass rate: 88.2% (60/68)\n"
+        )
+        assert _LOADING_MODEL_RE.search(log)
+        assert _CASE_POOL_RE.search(log)
+        assert _START_GRPO_RE.search(log)
+        assert _FOCUSED_POOL_RE.search(log)
+
+        with patch("backend.loop.state_machine.emit_status", new_callable=AsyncMock) as mock_status:
+            asyncio.get_event_loop().run_until_complete(
+                sm._emit_flywheel_log_statuses("mission-1", log)
+            )
+        msgs = [c.args[1] for c in mock_status.await_args_list]
+        assert msgs[0].startswith("Loading model:")
+        assert any(m.startswith("Case pool:") for m in msgs)
+        assert any(m.startswith("Starting GRPO training:") for m in msgs)
+        assert any(m.startswith("Baseline eval") for m in msgs)
+        assert any(m.startswith("Baseline pass rate:") for m in msgs)
+        assert any(m.startswith("Held-out pass rate:") for m in msgs)
+        assert any(m.startswith("Focused pool:") for m in msgs)
+        assert any(m.startswith("Training: step 1/3") for m in msgs)
+        assert any(m.startswith("Eval at step 3") for m in msgs)
+        assert any(m.startswith("Pass rate: 88.2%") for m in msgs)
+        # chronological: baseline eval before train step before mid-eval
+        i_base = next(i for i, m in enumerate(msgs) if m.startswith("Baseline eval"))
+        i_train = next(i for i, m in enumerate(msgs) if m.startswith("Training: step"))
+        i_eval = next(i for i, m in enumerate(msgs) if m.startswith("Eval at step"))
+        assert i_base < i_train < i_eval
 
     def test_dpo_epoch_line_emits_avg_loss_not_loss(self):
         """Epoch avg must not reuse the ``loss`` series (would collide with
@@ -301,6 +366,8 @@ class TestTailRemoteMetrics:
 
         status_msgs = [c.args[1] for c in mock_status.await_args_list]
         assert any(m.startswith("Training: step 52/59") for m in status_msgs)
+        assert any(m.startswith("Eval at step 45") for m in status_msgs)
+        assert any(m.startswith("Pass rate: 88.2% (60/68)") for m in status_msgs)
         assert any("New best pass rate: 88.2%" in m for m in status_msgs)
 
     def test_dpo_step_and_epoch_emit_distinct_metric_names(self):
@@ -378,7 +445,8 @@ class TestCollectProgressStatus:
         assert "55m" in args[1]
         assert kwargs["event_type"] == "info"
 
-    def test_multiple_collection_lines_only_emit_latest(self):
+    def test_multiple_collection_lines_all_emitted_for_event_stream(self):
+        """Data-phase progress belongs in the event stream — emit every line."""
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
             "  [10/66]  10 pairs  (834s)\n"
@@ -390,8 +458,10 @@ class TestCollectProgressStatus:
                 sm._tail_remote_metrics("mission-1", "dpo", 0)
             )
 
-        mock_status.assert_awaited_once()
-        assert "20/66" in mock_status.await_args.args[1]
+        msgs = [c.args[1] for c in mock_status.await_args_list]
+        assert len(msgs) == 2
+        assert "10/66" in msgs[0]
+        assert "20/66" in msgs[1]
 
 
 class TestOpdProgressStatus:
@@ -417,7 +487,7 @@ class TestOpdProgressStatus:
         assert "On-policy sampling" in args[1]
         assert kwargs["event_type"] == "info"
 
-    def test_multiple_rollout_lines_only_emit_latest(self):
+    def test_multiple_rollout_lines_all_emitted_for_event_stream(self):
         sm = _bare_state_machine()
         sm._sandbox.tail_new_output.return_value = (
             "  [4/54]  16 rollouts  (210s)\n"
@@ -429,9 +499,10 @@ class TestOpdProgressStatus:
                 sm._tail_remote_metrics("mission-1", "opd", 0)
             )
 
-        mock_status.assert_awaited_once()
-        assert "8/54" in mock_status.await_args.args[1]
-        assert "32 rollouts" in mock_status.await_args.args[1]
+        msgs = [c.args[1] for c in mock_status.await_args_list]
+        assert len(msgs) == 2
+        assert "4/54" in msgs[0] and "16 rollouts" in msgs[0]
+        assert "8/54" in msgs[1] and "32 rollouts" in msgs[1]
 
     def test_opd_progress_regex_matches_contract_line(self):
         from backend.loop.state_machine import _OPD_PROGRESS_RE

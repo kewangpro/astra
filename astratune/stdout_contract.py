@@ -7,8 +7,16 @@ Contracts
 ---------
 * ``Baseline: X.X% (n/total)`` — DPO / distill-style pre-update static rate
 * ``Baseline pass rate: X.X% (n/total)`` — AstraRL GRPO routing baseline
-  (``train_grpo_routing``; HUD ``_PASS_RATE_RE`` accepts optional ``Baseline ``)
+  (``train_grpo_routing``; HUD ``_PASS_RATE_RE`` is line-anchored with optional
+  ``Baseline `` — must not match ``Held-out pass rate:``)
 * ``Pass rate: X.X% (n/total)`` — mid-step / final static routing pass rate
+  (also emitted as an event-stream success status)
+* ``Held-out pass rate: X.X% (n/total)`` — informational split rate
+  (event-stream status only — never the goal ``pass_rate`` metric)
+* ``--- Baseline eval (step N) ---`` / ``--- Eval at step N ---`` /
+  ``=== Final Eval ===`` — flywheel eval phase banners (event stream)
+* ``Case pool:`` / ``Starting GRPO training:`` / ``Focused pool:`` /
+  ``DPO training:`` / ``N pairs ready for training`` — data/setup (event stream)
 * ``Step {i}/{n} loss={float}`` — per-step CE / distill / rft / star / DPO loss
   (DPO may insert ``epoch=…`` between step and ``loss=``; HUD ``.*?loss=`` still matches;
   loss may be negative for OPD reverse-KL)

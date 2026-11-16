@@ -49,6 +49,28 @@ _FINETUNE_REMOTE_TASK_TYPES = {
 }
 
 
+def parse_remote_checkpoint_dir_from_train_py(source: str) -> Optional[str]:
+    """Extract Mini adapter save dir from a generated ``train.py``.
+
+    Legacy execv wrappers pass ``"--save-dir", "/path/..."`` argv pairs.
+    Canned astrarl/astratune facades use ``save_dir="/path/..."`` kwargs —
+    recover used to miss those, so post-exit rsync pulled the empty
+    ``/tmp/astra/missions/.../checkpoints/`` and the manifest
+    ``checkpoints/best/`` artifact check failed after a real Mini save
+    (GRPO smoke ``52f4fc8a``).
+    """
+    import re
+
+    m = re.search(r'["\']--save-dir["\'],\s*["\']([^"\']+)["\']', source)
+    if m:
+        return m.group(1)
+    m = re.search(r'\bsave_dir\s*=\s*["\']([^"\']+)["\']', source)
+    if m:
+        return m.group(1)
+    return None
+
+
+
 class GPUPool:
     """
     Tracks GPU assignment per mission.
@@ -264,6 +286,16 @@ class SandboxManager:
             return None
         return sandbox.tail_new_output()
 
+    def read_full_log(self, mission_id: str) -> Optional[str]:
+        """Full sandbox.log for flywheel event-stream catch-up (SSH only)."""
+        sandbox = self._sandboxes.get(mission_id)
+        if sandbox is None or not hasattr(sandbox, "read_full_log"):
+            return None
+        try:
+            return sandbox.read_full_log()
+        except Exception:
+            return None
+
     def recover(
         self,
         mission_id: str,
@@ -308,10 +340,7 @@ class SandboxManager:
                 if os.path.exists(train_py):
                     try:
                         with open(train_py, "r") as f:
-                            import re
-                            m = re.search(r'["\']--save-dir["\'],\s*["\']([^"\']+)["\']', f.read())
-                            if m:
-                                remote_ckpt_dir = m.group(1)
+                            remote_ckpt_dir = parse_remote_checkpoint_dir_from_train_py(f.read())
                     except Exception:
                         pass
                 config = SandboxConfig(

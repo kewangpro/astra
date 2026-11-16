@@ -253,11 +253,6 @@ export function MetricChart({ events, targetMetric }: Props) {
           Metric History
         </span>
         <div className="flex items-center gap-4">
-          {progressStatus?.name?.startsWith("Training: step") && (
-            <span className="text-[10px] text-[#64748b] tabular-nums">
-              {progressStatus.name.replace(/^Training:\s*/i, "")}
-            </span>
-          )}
           {names.map((name, i) => (
             <div key={name} className="flex items-center gap-1.5">
               <span

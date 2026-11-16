@@ -76,6 +76,34 @@ class TestRecover:
         assert "test-mission" not in mgr._sandboxes
 
 
+# ── parse_remote_checkpoint_dir_from_train_py ─────────────────────────────────
+
+class TestParseRemoteCheckpointDir:
+    def test_legacy_execv_argv_save_dir(self):
+        from backend.sandbox.manager import parse_remote_checkpoint_dir_from_train_py
+        src = 'os.execv(py, [py, "dpo_train.py", "--save-dir", "/Users/kewang/finetune/adapters/astra_abc_iter0"])\n'
+        assert parse_remote_checkpoint_dir_from_train_py(src) == (
+            "/Users/kewang/finetune/adapters/astra_abc_iter0"
+        )
+
+    def test_facade_save_dir_kwarg(self):
+        from backend.sandbox.manager import parse_remote_checkpoint_dir_from_train_py
+        src = (
+            'learner = astrarl.make(\n'
+            '    "mlx_grpo_routing",\n'
+            '    save_dir="/Users/kewang/finetune/adapters/astra_52f4fc8a_iter0",\n'
+            '    use_execv=True,\n'
+            ')\n'
+        )
+        assert parse_remote_checkpoint_dir_from_train_py(src) == (
+            "/Users/kewang/finetune/adapters/astra_52f4fc8a_iter0"
+        )
+
+    def test_missing_returns_none(self):
+        from backend.sandbox.manager import parse_remote_checkpoint_dir_from_train_py
+        assert parse_remote_checkpoint_dir_from_train_py("print('hi')\n") is None
+
+
 # ── SandboxManager.recover — remote_pid (SSH/dpo/grpo) ────────────────────────
 
 class TestRecoverRemotePid:
@@ -90,6 +118,38 @@ class TestRecoverRemotePid:
         sandbox = mgr._sandboxes.get("test-mission")
         assert sandbox is not None
         assert sandbox._remote_pid == 14516
+
+    def test_reattach_reads_facade_save_dir_for_rsync(self, tmp_path, monkeypatch):
+        """Canned astrarl wrappers use save_dir= — recover must seed
+        remote_checkpoint_dir so exit sync fills checkpoints/best/."""
+        from backend.sandbox.manager import SandboxManager
+
+        data = tmp_path / "missions" / "facade-mission"
+        data.mkdir(parents=True)
+        (data / "train.py").write_text(
+            'learner = astrarl.make("mlx_grpo_routing",\n'
+            '    save_dir="/Users/kewang/finetune/adapters/astra_facade_iter0",\n'
+            ')\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "backend.sandbox.manager.settings.data_path", str(tmp_path)
+        )
+        mgr = _make_manager()
+        with patch("backend.sandbox.manager.settings.sandbox_host", "mac-mini.local"), \
+             patch("backend.sandbox.manager.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(stdout="alive\n"),
+                MagicMock(stdout="100\n"),
+            ]
+            outcome = mgr.recover(
+                "facade-mission", subprocess_pid=None, container_id=None, remote_pid=99,
+            )
+        assert outcome == "reattached"
+        sb = mgr._sandboxes["facade-mission"]
+        assert sb.config.remote_checkpoint_dir == (
+            "/Users/kewang/finetune/adapters/astra_facade_iter0"
+        )
 
     def test_returns_dead_when_remote_process_gone(self):
         mgr = _make_manager()
