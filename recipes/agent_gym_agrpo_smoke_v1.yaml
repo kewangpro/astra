@@ -7,7 +7,8 @@ learner_id: mlx_grpo_traj
 domain: AgentGym
 description: >
   Short smoke recipe for Agent GRPO verification on Mac Mini (1B, 2 iters).
-  Not a promote target — use agent_gym_agrpo_v1 for real runs.
+  Not a promote target — use agent_gym_agrpo_v1 for real runs. Suite eval is
+  baseline + final only (steps_per_eval above iters).
 
 target_metric:
   pass_rate: 0.01
@@ -38,5 +39,6 @@ hyperparameters:
   clip_epsilon: 0.1
   max_grad_norm: 1.0
   steps_per_report: 1
-  steps_per_eval: 2
+  # iters=2; 999 ⇒ no mid-train suite eval (baseline + final only).
+  steps_per_eval: 999
   save_every: 2
