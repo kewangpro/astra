@@ -36,7 +36,11 @@ Recommended banners (mirrored as log; not a visibility gate)
   ``DPO training:`` / ``N pairs ready for training`` / ``Loading model:`` /
   ``Warm-start from:`` / ``Warm-start (reference):`` /
   ``Caching reference log-probs…`` / collect ``[i/n]  k pairs  (Ts)``
-* ``New best: X.X%`` — checkpoint improved
+* ``New best: X.X%`` — checkpoint improved mid-train
+* ``Best adapter ensured at {path}`` — DPO / GRPO final ensure of ``<save-dir>/best/``
+  (required for end-only ``steps_per_eval`` smokes that never hit mid-train eval)
+* ``Eval every N steps`` — authoritative SPE for Astra's reliability gate
+  (``_dpo_run_diagnostics`` prefers this over plan/recipe HP)
 * ``Case split:`` — train/valid case counts
 
 Blended / MCP breakdown lines are indented follow-ups and must not replace the

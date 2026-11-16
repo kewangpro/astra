@@ -334,6 +334,16 @@ _TQDM_PROGRESS_RE = re.compile(
 # Both are needed to sanity-check an iteration's result (see _dpo_run_diagnostics).
 _DPO_BASELINE_RE = re.compile(r"Baseline:\s*([\d.]+)%")
 _DPO_TOTAL_STEPS_RE = re.compile(r"total_steps=(\d+)")
+# Authoritative SPE from the live trainer (survives plan/recipe HP drift on reattach).
+_EVAL_EVERY_STEPS_RE = re.compile(r"Eval every (\d+) steps", re.IGNORECASE)
+# Smoke / path-verify recipes set SPE far above total_steps so mid-train suite
+# evals never run (baseline + final only). That is not the "pairs collapsed
+# below SPE" incident (e.g. 11 steps with SPE=15).
+_END_ONLY_EVAL_SPE = 100
+_FINAL_EVAL_PASS_RE = re.compile(
+    r"=== Final Eval ===.*?^(?:Baseline\s+)?Pass rate:\s*([\d.]+)%",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
 
 # A dpo/grpo iteration whose scored pass_rate lands this far below the run's own
 # warm-start baseline is treated as a regression, not progress: the warm-start
@@ -3365,6 +3375,13 @@ class LoopStateMachine:
           2026-08-02 steps_per_eval tightening silently stopped taking effect
           once pair counts dropped below it.
 
+          Prefer ``Eval every N steps`` from the train log over the plan/recipe
+          HP — reattach can rehydrate a newer smoke YAML (e.g. SPE=999) while the
+          live argv still used 15. Path-verify smokes set SPE ≥
+          ``_END_ONLY_EVAL_SPE`` so mid-train suite evals never run; that is
+          reliable when ``=== Final Eval ===`` printed a Pass rate (not the
+          pairs-collapsed incident).
+
           That step-count gate is meaningless for `distill`: distill_train.py
           samples batches with replacement for a fixed --iters, so it always
           reports total_steps=500 no matter how few teacher labels actually
@@ -3387,6 +3404,13 @@ class LoopStateMachine:
                 mission_id, exc,
             )
             return None, True
+        # Live trainer stdout wins over plan HP (recipe edits / reattach drift).
+        _spe_m = _EVAL_EVERY_STEPS_RE.search(text)
+        if _spe_m:
+            try:
+                steps_per_eval = int(_spe_m.group(1))
+            except ValueError:
+                pass
         baseline: Optional[float] = None
         m = _DPO_BASELINE_RE.search(text)
         if m:
@@ -3466,9 +3490,17 @@ class LoopStateMachine:
         m = _DPO_TOTAL_STEPS_RE.search(text)
         if m and steps_per_eval > 0:
             try:
-                reliable = int(m.group(1)) >= steps_per_eval
+                total_steps = int(m.group(1))
             except ValueError:
+                return baseline, True
+            if total_steps >= steps_per_eval:
                 reliable = True
+            elif steps_per_eval >= _END_ONLY_EVAL_SPE:
+                # Deliberate baseline+final-only smoke (SPE ≫ total_steps).
+                reliable = _FINAL_EVAL_PASS_RE.search(text) is not None
+            else:
+                # Classic: pairs collapsed below SPE — mid-train best never ran.
+                reliable = False
         return baseline, reliable
 
     def _ensure_finetune_artifacts_synced(
@@ -3523,6 +3555,23 @@ class LoopStateMachine:
             "LoopStateMachine: synced finetune adapters %s → %s for mission=%s",
             remote, local_ckpt, mission_id,
         )
+        # End-only SPE / GRPO can leave remote without best/; promote final adapters
+        # so manifest file_exists(checkpoints/best/) still passes after path-verify.
+        local_best = os.path.join(local_ckpt, "best")
+        final_adapters = os.path.join(local_ckpt, "adapters.safetensors")
+        if (
+            (not os.path.isdir(local_best) or not any(os.scandir(local_best)))
+            and os.path.isfile(final_adapters)
+        ):
+            os.makedirs(local_best, exist_ok=True)
+            for name in ("adapters.safetensors", "adapter_config.json", "checkpoint_metadata.json"):
+                src = os.path.join(local_ckpt, name)
+                if os.path.isfile(src):
+                    shutil.copy2(src, os.path.join(local_best, name))
+            logger.info(
+                "LoopStateMachine: promoted final adapters → %s for mission=%s",
+                local_best, mission_id,
+            )
 
     def _resolve_adapter_or_bare(self, finetune_dir: str, bare_rel_dir: str) -> str:
         """Return bare_rel_dir + '/best' if dpo_train.py actually wrote a best/

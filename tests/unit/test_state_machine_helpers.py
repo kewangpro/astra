@@ -1831,6 +1831,7 @@ Warm-start (reference): adapters/astra_x_iter134/adapters.safetensors
 --- Baseline eval (step 0) ---
 Baseline: 83.3% (55/66)
 DPO training: epochs=1  pairs=40  total_steps=40  beta=0.1  lr=2e-06
+Eval every 15 steps
 === Final Eval ===
 Pass rate: 84.8% (56/66)
 """
@@ -1839,9 +1840,20 @@ _DPO_LOG_TINY_BATCH = """\
 --- Baseline eval (step 0) ---
 Baseline: 83.3% (55/66)
 DPO training: epochs=1  pairs=11  total_steps=11  beta=0.1  lr=2e-06
+Eval every 15 steps
 === Final Eval ===
 Pass rate: 47.0% (31/66)
 Best pass rate during training: 0.0%
+"""
+
+_DPO_LOG_SMOKE_END_ONLY = """\
+--- Baseline eval (step 0) ---
+Baseline: 85.3% (58/68)
+DPO training: epochs=1  pairs=59  total_steps=59  beta=0.1  lr=3e-07
+Eval every 999 steps
+=== Final Eval ===
+Pass rate: 83.8% (57/68)
+Best pass rate during training: 83.8%
 """
 
 
@@ -1860,9 +1872,33 @@ def test_dpo_diagnostics_flags_tiny_batch_as_unreliable(tmp_path):
 
 
 def test_dpo_diagnostics_reliable_when_steps_meet_threshold(tmp_path):
-    sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
+    # Log SPE must match the gate under test (log wins over plan HP).
+    log = _DPO_LOG_TINY_BATCH.replace("Eval every 15 steps", "Eval every 11 steps")
+    sm = _sm_with_log(tmp_path, log)
     _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=11)
     assert reliable is True
+
+
+def test_dpo_diagnostics_log_spe_wins_over_stale_plan_hp(tmp_path):
+    """Reattach can rehydrate smoke SPE=999 while the live run printed Eval every 15."""
+    sm = _sm_with_log(tmp_path, _DPO_LOG_HEALTHY)
+    _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=999)
+    assert reliable is True  # log SPE=15, total_steps=40 ≥ 15
+
+
+def test_dpo_diagnostics_end_only_smoke_spe_is_reliable(tmp_path):
+    """SPE ≫ total_steps (path-verify smoke) + Final Eval Pass rate → reliable."""
+    sm = _sm_with_log(tmp_path, _DPO_LOG_SMOKE_END_ONLY)
+    baseline, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=999)
+    assert baseline == pytest.approx(0.853)
+    assert reliable is True
+
+
+def test_dpo_diagnostics_stale_plan_999_does_not_mask_tiny_batch(tmp_path):
+    """Log SPE=15 must still flag pairs-collapsed runs even if plan says 999."""
+    sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
+    _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=999)
+    assert reliable is False
 
 
 def test_dpo_diagnostics_missing_log(tmp_path):
@@ -1881,7 +1917,9 @@ def test_dpo_diagnostics_no_baseline_line(tmp_path):
 
 
 def test_dpo_diagnostics_steps_per_eval_zero_is_reliable(tmp_path):
-    sm = _sm_with_log(tmp_path, _DPO_LOG_TINY_BATCH)
+    # No "Eval every" line → plan SPE=0 skips the pairs-collapsed gate.
+    log = _DPO_LOG_TINY_BATCH.replace("Eval every 15 steps\n", "")
+    sm = _sm_with_log(tmp_path, log)
     _, reliable = sm._dpo_run_diagnostics("m", steps_per_eval=0)
     assert reliable is True
 

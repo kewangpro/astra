@@ -382,6 +382,13 @@ def run_grpo_routing_train(args, hooks) -> None:
         )
         n_ho_pass = round(held_out_pass_rate * len(held_out_cases))
         print(f"Held-out pass rate: {held_out_pass_rate:.1%} ({n_ho_pass}/{len(held_out_cases)})")
+    # End-only SPE (e.g. smoke steps_per_eval=999) never hits mid-train eval, so
+    # best/ would otherwise be missing and Astra's checkpoints/best/ manifest fails.
+    if pass_rate >= best_pass_rate or not (save_dir / "best").exists():
+        best_pass_rate = pass_rate
+        best_path = save_dir / "best"
+        hooks.save_final_adapter(model, best_path, args)
+        print(f"Best adapter ensured at {best_path}")
     print(f"Best pass rate during training: {best_pass_rate:.1%}")
     print(f"Dynamic resamples: {dynamic_resamples} | flat groups skipped: {flat_groups_skipped}")
     print(f"Total time: {(time.time() - t_start) / 60:.1f} min")
