@@ -25,5 +25,9 @@ include = [
     "astradata*",
     "astraeval*",
     "envs*",
+    "demo_reasoning*",
 ]
 exclude = ["backend*", "frontend*", "tests*", "recipes*", "docs*", "data*"]
+
+[tool.setuptools.package-data]
+demo_reasoning = ["cases.jsonl"]

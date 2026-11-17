@@ -3870,7 +3870,17 @@ class LoopStateMachine:
         host = (settings.sandbox_host or "").strip()
         if not local or not host or not finetune_dir:
             return
-        for name in ("bare_eval.py", "star.py"):
+        # Flat + nested: suite eval uses flat bare_eval.py; plugins use finetune/.
+        names = (
+            "bare_eval.py",
+            "star.py",
+            "grpo.py",
+            "_repo_paths.py",
+            "_platform_preflight.py",
+            "prepare_finetune_data.py",
+            "routing_oracle.py",
+        )
+        for name in names:
             src = os.path.join(local, name)
             if not os.path.isfile(src):
                 continue

@@ -3117,4 +3117,5 @@ Routing-first reasoning training, then a thin non-Ensemble general scaffold ([DE
 - [x] **StarHooks** — [`astratune/star_hooks.py`](../astratune/star_hooks.py) documents product harvest seam (no routing imports in AstraTune).
 - [x] **demo_reasoning** — platform demo use_case + `recipes/reasoning_star_v1.yaml` / `reasoning_star_smoke_v1.yaml`; bind `use_case=demo_reasoning` at create (not Ensemble pack).
 - [x] **Recipe focus beats LLM prose** — `_resolve_hyperparams` keeps recipe-pinned `focus_cases` (smoke `205b3021` path-verify after Lead Agent wrote `tiny_harvest, few_ce`).
-- [x] **Mini finetune script push** — pre-launch / pre-`bare_eval` scp of Ensemble `bare_eval.py`+`star.py` (stale flat `grpo_train` import left suite scores `None`); live Pass rate fallback when routing suite/bare_eval returns no score.
+- [x] **Mini finetune script push** — pre-launch / pre-`bare_eval` scp of Ensemble `bare_eval.py`+`star.py` (+ flat deps); live Pass rate fallback when routing suite/bare_eval returns no score.
+- [x] **Path-verify** — `ensemble_star_astratune_smoke` mission `710b7da4` **completed** (focus 3 cases, `Eval every 999` / `3 examples ready` / `Best adapter ensured`, suite `pass_rate=0.582` ≥ 0.01).
