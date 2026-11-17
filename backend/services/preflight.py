@@ -223,7 +223,7 @@ class PreflightChecker:
                 f"Astra platform packages missing on {settings.sandbox_host} "
                 f"({python_bin}). On Mini run: "
                 f"~/finetune-env/bin/pip install -e ~/astra-pkg "
-                f"(see product VENDOR.md). Original error: {err}"
+                f"(see product finetune/DESIGN.md). Original error: {err}"
             ),
         }
 
@@ -273,7 +273,7 @@ class PreflightChecker:
             "detail": (
                 f"{root} not found on {settings.sandbox_host} — "
                 f"check recipe astra_pkg_root / ASTRA_PKG_ROOT, or rsync the "
-                f"Astra tree to Mini (see product VENDOR.md)"
+                f"Astra tree to Mini (see product finetune/DESIGN.md)"
             ),
         }
 

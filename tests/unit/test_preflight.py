@@ -164,7 +164,7 @@ class TestCheckRemotePlatformImports:
             )()
             out = PreflightChecker._check_remote_platform_imports("grpo")
         assert out["passed"] is False
-        assert "VENDOR.md" in out["detail"]
+        assert "DESIGN.md" in out["detail"]
         assert "pip install -e" in out["detail"]
         assert "astratune" in out["detail"]
 
@@ -209,7 +209,7 @@ class TestCheckRemoteAstraPkgRoot:
             out = PreflightChecker._check_remote_astra_pkg_root("grpo")
         assert out["passed"] is False
         assert "astra_pkg_root" in out["detail"] or "ASTRA_PKG_ROOT" in out["detail"]
-        assert "rsync" in out["detail"] or "VENDOR.md" in out["detail"]
+        assert "rsync" in out["detail"] or "DESIGN.md" in out["detail"]
 
     def test_unreachable_host_does_not_block(self, monkeypatch):
         monkeypatch.setattr("backend.services.preflight.settings.sandbox_host", "mac-mini.local")
