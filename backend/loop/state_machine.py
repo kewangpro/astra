@@ -966,6 +966,22 @@ class LoopStateMachine:
                 else:
                     await self._model_manager.before_sandbox_launch(plan.get("sandbox_memory_gb", 8.0))
                     await emit_status(mission_id, "Launching training sandbox…", event_type="info")
+                    if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES:
+                        try:
+                            from backend.agent.code_generator import _resolve_hyperparams as _rhp
+                            _hp_push = _rhp(
+                                plan.get("recipe") or _mission_task_type,
+                                plan.get("hyperparameters") or {},
+                            )
+                            _fd_push = str(_hp_push.get("finetune_dir") or "").strip()
+                            if _fd_push:
+                                self._push_ensemble_finetune_scripts(_fd_push)
+                        except Exception as _push_exc:
+                            logger.warning(
+                                "LoopStateMachine: pre-launch finetune script push "
+                                "failed mission=%s: %s",
+                                mission_id, _push_exc,
+                            )
                     _remote_ckpt_dir = (
                         finetune_checkpoint_dir(_mission_task_type, plan, mission_id, current_iteration)
                         if _mission_task_type in _FINETUNE_REMOTE_TASK_TYPES
@@ -1128,7 +1144,7 @@ class LoopStateMachine:
                         if goal_val is not None:
                             current_metrics[metric_name] = goal_val
                     elif (
-                        _mission_task_type_for_eval == "rft"
+                        _mission_task_type_for_eval in ("rft", "star")
                         and (plan.get("suite_id") or plan.get("eval_suite"))
                     ):
                         await emit_status(
@@ -1139,6 +1155,21 @@ class LoopStateMachine:
                         goal_val = await asyncio.to_thread(
                             self._run_routing_suite, mission_id, plan, current_iteration
                         )
+                        if goal_val is None:
+                            # bare_eval crash / Mini script drift must not erase a
+                            # real in-training Pass rate (star smoke 205b3021 spun
+                            # forever with score=None while live hit 1.0).
+                            _live = getattr(self, "_live_pass_rate_best", {}).pop(
+                                mission_id, None
+                            )
+                            if _live is not None:
+                                logger.warning(
+                                    "LoopStateMachine: routing suite/bare_eval "
+                                    "returned no score mission=%s — falling back "
+                                    "to live Pass rate %.3f",
+                                    mission_id, _live,
+                                )
+                                goal_val = _live
                         if goal_val is not None:
                             current_metrics[metric_name] = goal_val
                     elif metric_name not in current_metrics:
@@ -1269,7 +1300,7 @@ class LoopStateMachine:
                             current_metrics[metric_name] = goal_val
                     goal_val = current_metrics.get(metric_name)
                     _active_t_for_floor = plan.get("active_task_type") if plan.get("task_type") == "post-training" else plan.get("task_type")
-                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "agrpo", "distill", "rft", "opd"):
+                    if goal_val is not None and _active_t_for_floor in ("dpo", "grpo", "agrpo", "distill", "rft", "opd", "star"):
                         # Record the true observed value to telemetry so the
                         # Metric History chart stays honest…
                         await self._append_telemetry_metric(
@@ -1288,7 +1319,7 @@ class LoopStateMachine:
                             task_type=plan.get("task_type", "dpo"),
                             focus_case_count=_focus_case_count(_eval_hp),
                         )
-                        if plan.get("task_type") in ("distill", "rft", "opd"):
+                        if plan.get("task_type") in ("distill", "rft", "opd", "star"):
                             # Same warm-start bare_eval path as distill/rft —
                             # OPD's goal metric is also model-routed bare_eval.
                             # Baseline from the warm-start's OWN bare_eval, same
@@ -1300,7 +1331,7 @@ class LoopStateMachine:
                                 self._warm_start_bare_eval, mission_id, plan
                             )
                         _raw_goal_val = goal_val
-                        if plan.get("task_type") in ("distill", "rft", "opd"):
+                        if plan.get("task_type") in ("distill", "rft", "opd", "star"):
                             _margin = self._distill_floor_margin(
                                 getattr(self, "_distill_blended_total", {}).get(mission_id)
                             )
@@ -1312,7 +1343,7 @@ class LoopStateMachine:
                         ):
                             _was_floored = True
                             if not _reliable:
-                                if plan.get("task_type") in ("distill", "rft", "opd"):
+                                if plan.get("task_type") in ("distill", "rft", "opd", "star"):
                                     _min_ex = _min_train_examples_for_run(
                                         _focus_case_count(_eval_hp)
                                     )
@@ -3387,7 +3418,7 @@ class LoopStateMachine:
           reports total_steps=500 no matter how few teacher labels actually
           succeeded — a run with 2 usable training examples looks identical to a
           healthy one, overfits them, and reports a fake-high held-out score.
-          For distill/rft/opd the gate is the training-example count instead
+          For distill/rft/opd/star the gate is the training-example count instead
           ("N examples ready for training"), floored via
           ``_min_train_examples_for_run(focus_case_count)`` — absolute 10 for
           full-suite runs, scaled down when the recipe sets ``focus_cases``.
@@ -3418,10 +3449,10 @@ class LoopStateMachine:
                 baseline = float(m.group(1)) / 100.0
             except ValueError:
                 baseline = None
-        if task_type in ("distill", "rft", "opd"):
+        if task_type in ("distill", "rft", "opd", "star"):
             # DEAD PATH as of 2026-09-06, kept only to serve the reliability
-            # gate below. distill/rft/opd goal metric is now bare_eval over all
-            # cases, so its floor baseline comes from _warm_start_bare_eval —
+            # gate below. distill/rft/opd/star goal metric is now bare_eval over
+            # all cases, so its floor baseline comes from _warm_start_bare_eval —
             # the same tool on the same population — not from this log at all.
             # The blended figure under the "Baseline:" anchor is the ~12-case
             # held-out number; flooring a 78-case goal against it would compare
@@ -3442,7 +3473,7 @@ class LoopStateMachine:
             # Never used as the baseline any more — see above.
             baseline = None
         reliable = True
-        if task_type in ("distill", "rft", "opd"):
+        if task_type in ("distill", "rft", "opd", "star"):
             # Suppress the baseline comparison if the underlying case list moved
             # since the last iteration — the held-out split reshuffles with it,
             # so this iteration's score and the stored baseline are no longer the
@@ -3476,7 +3507,7 @@ class LoopStateMachine:
                 reliable = _n_examples >= _min_examples
                 if not reliable:
                     logger.warning(
-                        "LoopStateMachine: distill/rft/opd run trained on only %d "
+                        "LoopStateMachine: distill/rft/opd/star run trained on only %d "
                         "example(s) (< %d%s) mission=%s — held-out score treated "
                         "as unreliable",
                         _n_examples, _min_examples,
@@ -3812,6 +3843,49 @@ class LoopStateMachine:
             )
         return score
 
+    @staticmethod
+    def _local_ensemble_finetune_dir() -> Optional[str]:
+        """Host path to Ensemble ``finetune/`` from ``ASTRA_PRODUCT_RECIPES``."""
+        try:
+            from backend.services.recipe_paths import parse_product_recipes
+            packs = parse_product_recipes()
+            recipes_dir = packs.get("ensemble") or ""
+            if not recipes_dir:
+                return None
+            # astra_recipes → repo root → finetune/
+            root = os.path.dirname(recipes_dir.rstrip(os.sep))
+            candidate = os.path.join(root, "finetune")
+            return candidate if os.path.isdir(candidate) else None
+        except Exception:
+            return None
+
+    def _push_ensemble_finetune_scripts(self, finetune_dir: str) -> None:
+        """Best-effort scp of local bare_eval/star onto Mini before remote eval/train.
+
+        ``sync_mini_training.sh`` lands files under ``~/finetune/finetune/``, but
+        bare_eval is invoked as ``cd ~/finetune && python bare_eval.py``. A stale
+        flat copy importing ``grpo_train`` makes every suite score ``None``.
+        """
+        local = self._local_ensemble_finetune_dir()
+        host = (settings.sandbox_host or "").strip()
+        if not local or not host or not finetune_dir:
+            return
+        for name in ("bare_eval.py", "star.py"):
+            src = os.path.join(local, name)
+            if not os.path.isfile(src):
+                continue
+            for remote_rel in (name, os.path.join("finetune", name)):
+                remote = f"{host}:{finetune_dir.rstrip('/')}/{remote_rel}"
+                try:
+                    subprocess.run(
+                        ["scp", "-q", src, remote],
+                        capture_output=True, text=True, timeout=60, check=False,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "LoopStateMachine: scp %s → %s failed: %s", name, remote, exc
+                    )
+
     def _run_bare_eval(
         self, mission_id: str, plan: dict, current_iteration: int,
         adapter_override: Optional[str] = None,
@@ -3864,6 +3938,9 @@ class LoopStateMachine:
                 "sandbox_host for bare_eval mission=%s", mission_id,
             )
             return None
+
+        # Refresh Mini copies so suite eval does not run a stale grpo_train import.
+        self._push_ensemble_finetune_scripts(str(finetune_dir))
 
         if adapter_override:
             adapter_rel = adapter_override

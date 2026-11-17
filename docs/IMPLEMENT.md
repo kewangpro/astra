@@ -3105,3 +3105,16 @@ Path-verify smokes (`ensemble_dpo_astratune_smoke`, `ensemble_grpo_astrarl_smoke
 - [x] **Sync fallback** — `_ensure_finetune_artifacts_synced` promotes rsynced top-level `adapters.safetensors` (+ config/metadata) into local `checkpoints/best/` when remote left `best/` empty, so `file_exists` still passes.
 - [x] **Smokes live-verified @ SPE 999** — DPO `60ddd92d` (mid-evals 0, 0.853, synced); GRPO `55843732` (mid-evals 0, ensure-best, completed). Recipes already ship `steps_per_eval: 999` + trivial `target_metric.pass_rate: 0.01`.
 - [x] **Docs** — DESIGN Remote fine-tune note; `astratune/stdout_contract.py` `Eval every` / `Best adapter ensured`; Phase 36 diagnostics bullet amended above.
+
+## Phase 128: STaR path-verify + StarHooks + demo_reasoning (2026-11-17)
+
+Routing-first reasoning training, then a thin non-Ensemble general scaffold ([DESIGN §2.5](DESIGN.md)).
+
+- [x] **Ensemble smoke** — `astra_recipes/ensemble_star_astratune_smoke.yaml` (SPE 999, trivial target, `eval_suite: routing_bare`).
+- [x] **Product runner → platform `ce_loop`** — Ensemble `finetune/star.py` harvest unchanged; CE/eval/save via `astratune.ce_loop`; stdout `Eval every` / `N examples ready` / `Best adapter ensured`; rationalization requires `<think>`.
+- [x] **Codegen** — `_STAR_REMOTE_WRAPPER` passes `focus_cases` + optional `cases`.
+- [x] **Flywheel** — `ensemble_star_v1` stamps `eval_suite`; orchestrator suite path + reliability/example-count floor include `star` (with distill/rft/opd).
+- [x] **StarHooks** — [`astratune/star_hooks.py`](../astratune/star_hooks.py) documents product harvest seam (no routing imports in AstraTune).
+- [x] **demo_reasoning** — platform demo use_case + `recipes/reasoning_star_v1.yaml` / `reasoning_star_smoke_v1.yaml`; bind `use_case=demo_reasoning` at create (not Ensemble pack).
+- [x] **Recipe focus beats LLM prose** — `_resolve_hyperparams` keeps recipe-pinned `focus_cases` (smoke `205b3021` path-verify after Lead Agent wrote `tiny_harvest, few_ce`).
+- [x] **Mini finetune script push** — pre-launch / pre-`bare_eval` scp of Ensemble `bare_eval.py`+`star.py` (stale flat `grpo_train` import left suite scores `None`); live Pass rate fallback when routing suite/bare_eval returns no score.

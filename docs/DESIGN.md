@@ -145,8 +145,11 @@ flowchart LR
 
 | Astra owns | Product owns |
 |---|---|
-| Train CLIs, `run_*`, math, `lora_io`, missions, suite/dataset stamps | `UseCasePlugin` hooks, prompts, eval cases, adapters, `bare_eval` |
+| Train CLIs, `run_*`, math, `lora_io`, `ce_loop`, missions, suite/dataset stamps | `UseCasePlugin` hooks / `get_runner`, prompts, eval cases, adapters, `bare_eval` |
 | Platform `recipes/` + pack discovery (`ASTRA_PRODUCT_RECIPES`) | Product recipe YAML under the product repo |
+| STaR worker (`task_type: star` / `mlx_star`) + [`astratune/star_hooks.py`](../astratune/star_hooks.py) contract | Harvest oracle (`load_cases` / `build_prompt` / `score_completion` / `rationalize_hint`) — Ensemble routing **or** `demo_reasoning`, never hard-coded in AstraTune |
+
+STaR: Ensemble Method C stays in the Ensemble pack (`ensemble_star_*`); general CoT demo uses platform recipes `reasoning_star_*` with **`use_case=demo_reasoning` at mission create** — not an Ensemble recipe family.
 
 Contracts, `gym_id`/`learner_id` maps, facade/`os.execv` wiring, Mini path triad, pack search order, and plugin bind rules: [IMPLEMENT.md — Platform and product](IMPLEMENT.md#platform-and-product-contracts).
 

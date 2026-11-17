@@ -1,0 +1,4 @@
+{"id": "arith_add_1", "prompt": "What is 17 + 25? Put the final answer after the reasoning.", "answer": "42"}
+{"id": "arith_mul_1", "prompt": "What is 6 * 7? Put the final answer after the reasoning.", "answer": "42"}
+{"id": "logic_larger_1", "prompt": "Which is larger, 19 or 21? Reply with the number only after reasoning.", "answer": "21"}
+{"id": "arith_sub_1", "prompt": "What is 100 - 37? Put the final answer after the reasoning.", "answer": "63"}

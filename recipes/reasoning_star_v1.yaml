@@ -1,0 +1,39 @@
+name: reasoning_star_v1
+version: "1.0.0"
+created_at: "2026-11-17"
+task_type: star
+learner_id: mlx_star
+domain: reasoning
+description: >
+  Platform demo STaR for general CoT (demo_reasoning use_case). Exact-match
+  arithmetic/logic JSONL cases. Bind use_case=demo_reasoning at mission create —
+  not an Ensemble routing recipe.
+
+target_metric:
+  pass_rate: 0.75
+
+metric_ceiling:
+  pass_rate: 1.0
+
+hyperparameters:
+  base_model: mlx-community/gemma-3-1b-it-4bit
+  finetune_dir: /Users/kewang/finetune
+  python_bin: /Users/kewang/finetune-env/bin/python
+  astra_pkg_root: /Users/kewang/astra-pkg
+  no_adapter: true
+  k_samples: 4
+  temp: 1.0
+  rationalize_temp: 0.8
+  max_tokens: 128
+  eval_max_tokens: 128
+  num_layers: 4
+  lora_rank: 8
+  lora_scale: 20.0
+  lora_dropout: 0.0
+  iters: 40
+  batch_size: 1
+  learning_rate: 0.0001
+  max_grad_norm: 1.0
+  steps_per_eval: 10
+  save_every: 10
+  max_seq_len: 1024

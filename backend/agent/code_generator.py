@@ -2042,6 +2042,8 @@ learner = astratune.make(
     val_split={val_split},
     reward_schema="{reward_schema}",
     routing_only={routing_only_bool},
+    {focus_cases_kwarg}
+    {cases_kwarg}
 )
 learner.learn()
 """
@@ -2857,6 +2859,15 @@ def _resolve_hyperparams(
         _plan_uc = str((plan_hp or {}).get("use_case") or "").strip()
         if _plan_uc:
             hp["use_case"] = _plan_uc
+        # Orchestrator-owned case lists (FailSlice / create-time stamps) are not
+        # pivot HPs. Prefer plan only when the recipe did not pin the key — a
+        # recipe focus_cases (smoke / deliberate subset) must beat Lead Agent
+        # prose that looks like CSV (e.g. "tiny_harvest, few_ce").
+        for _k in ("focus_cases", "force_gold_cases", "cases"):
+            if recipe_hp.get(_k):
+                continue
+            if _k in (plan_hp or {}) and plan_hp[_k]:
+                hp[_k] = plan_hp[_k]
         # DAPO-lite / rollout backend: recipe defaults + explicit plan overrides
         # (not in the temp/num_generations pivot safelist — they are opt-in experiment knobs).
         if (task_type or env_id) in ("grpo", "ensemble_grpo_1b_v1") or env_id in (
@@ -3850,6 +3861,8 @@ class CodeGenerator:
             adapter_arg = f'"--adapter", "{adapter_val}",'
             adapter_kwarg = f'adapter="{adapter_val}",'
         routing_only = bool(hp.get("routing_only", True))
+        _focus = _resolve_focus_cases(hp)
+        _cases = str(hp.get("cases") or "").strip()
 
         return {
             "base_model": base_model,
@@ -3882,6 +3895,11 @@ class CodeGenerator:
             **base,
             "astra_pkg_root": _resolve_astra_pkg_root(hp),
             "use_case": _resolve_use_case(hp),
+            # After **hp so recipe strings cannot clobber wrapper kwargs.
+            "focus_cases_kwarg": (
+                f'focus_cases="{_focus}",' if _focus else ""
+            ),
+            "cases_kwarg": (f'cases="{_cases}",' if _cases else ""),
         }
 
     def _build_user_prompt(

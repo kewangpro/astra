@@ -68,6 +68,7 @@ def test_ensemble_star_v1_recipe_structure():
     assert data["domain"] == "routing"
     assert data["target_metric"] == {"pass_rate": 0.85}
     assert data.get("metric_ceiling") == {"pass_rate": 0.95}
+    assert data.get("eval_suite") == "routing_bare"
 
     hp = data.get("hyperparameters", {})
     assert hp["base_model"] == "mlx-community/gemma-3-12b-it-4bit"
@@ -80,6 +81,42 @@ def test_ensemble_star_v1_recipe_structure():
     assert hp["lora_dropout"] == 0.1
     assert hp["iters"] == 100
     assert hp["val_split"] == 0.15
+
+
+def test_ensemble_star_smoke_recipe():
+    from backend.services.recipe_paths import find_recipe_file
+
+    recipe_path = find_recipe_file("ensemble_star_astratune_smoke")
+    assert recipe_path and os.path.isfile(recipe_path), "star smoke missing (ASTRA_PRODUCT_RECIPES)"
+    with open(recipe_path) as f:
+        data = yaml.safe_load(f)
+    assert data["task_type"] == "star"
+    assert data["target_metric"]["pass_rate"] == 0.01
+    assert data["hyperparameters"]["steps_per_eval"] == 999
+    assert data.get("eval_suite") == "routing_bare"
+
+
+def test_reasoning_star_platform_recipes():
+    """General CoT demo recipes live in platform recipes/, not Ensemble pack."""
+    from backend.services.recipe_paths import find_recipe_file
+
+    smoke = find_recipe_file("reasoning_star_smoke_v1")
+    full = find_recipe_file("reasoning_star_v1")
+    assert smoke and os.path.isfile(smoke)
+    assert full and os.path.isfile(full)
+    with open(smoke) as f:
+        data = yaml.safe_load(f)
+    assert data["domain"] == "reasoning"
+    assert data["hyperparameters"]["steps_per_eval"] == 999
+
+
+def test_star_hooks_contract_exported():
+    from astratune.star_hooks import STAR_HOOK_ATTRS, StarHooks
+
+    assert "load_cases" in STAR_HOOK_ATTRS
+    assert "score_completion" in STAR_HOOK_ATTRS
+    assert "rationalize_hint" in STAR_HOOK_ATTRS
+    assert callable(StarHooks)
 
 
 def test_star_pivot_ranges():
@@ -151,6 +188,91 @@ async def test_star_code_generation_remote_wrapper():
     assert "rationalize_temp=0.8" in code
     assert 'adapter="adapters/prior_best"' in code
     assert "routing_only=True" in code
+
+
+@pytest.mark.asyncio
+async def test_star_codegen_passes_focus_cases():
+    generator = CodeGenerator(provider=MagicMock())
+    plan = {
+        "task_type": "star",
+        "recipe": "ensemble_star_v1",
+        "hyperparameters": {
+            "base_model": "mlx-community/gemma-3-12b-it-4bit",
+            "finetune_dir": "/Users/kewang/finetune",
+            "python_bin": "/Users/kewang/finetune-env/bin/python",
+            "astra_pkg_root": "/Users/kewang/astra-pkg",
+            "adapter": "adapters/prior_best",
+            "focus_cases": "route_a,route_b",
+            "k_samples": 4,
+            "temp": 1.0,
+            "rationalize_temp": 0.8,
+            "max_tokens": 96,
+            "eval_max_tokens": 96,
+            "num_layers": 4,
+            "lora_rank": 8,
+            "lora_scale": 5.0,
+            "lora_dropout": 0.0,
+            "iters": 3,
+            "batch_size": 1,
+            "learning_rate": 1e-4,
+            "steps_per_eval": 999,
+            "save_every": 3,
+            "max_seq_len": 2048,
+            "val_split": 0.15,
+            "reward_schema": "v1",
+            "routing_only": True,
+        },
+        "target_metric": {"pass_rate": 0.01},
+    }
+    with patch.object(settings, "sandbox_host", "mac-mini.local"):
+        script_path = await generator.generate_training_script(
+            mission_id="focus-star-test",
+            plan=plan,
+            current_iteration=0,
+        )
+    with open(script_path) as f:
+        code = f.read()
+    assert 'focus_cases="route_a,route_b"' in code
+
+
+def test_star_smoke_recipe_focus_beats_llm_prose():
+    """Recipe-pinned focus_cases must win over Lead Agent prose in plan HP."""
+    from backend.agent.code_generator import _resolve_hyperparams
+
+    hp = _resolve_hyperparams(
+        "ensemble_star_astratune_smoke",
+        {
+            "use_case": "ensemble",
+            "focus_cases": "tiny_harvest, few_ce",
+        },
+    )
+    assert "route_shell_git_status" in str(hp.get("focus_cases") or "")
+    assert "tiny_harvest" not in str(hp.get("focus_cases") or "")
+
+
+@pytest.mark.asyncio
+async def test_star_smoke_codegen_emits_recipe_focus():
+    generator = CodeGenerator(provider=MagicMock())
+    plan = {
+        "task_type": "star",
+        "recipe": "ensemble_star_astratune_smoke",
+        "hyperparameters": {
+            "use_case": "ensemble",
+            "focus_cases": "tiny_harvest, few_ce",
+        },
+        "target_metric": {"pass_rate": 0.01},
+    }
+    with patch.object(settings, "sandbox_host", "mac-mini.local"):
+        script_path = await generator.generate_training_script(
+            mission_id="smoke-focus-star",
+            plan=plan,
+            current_iteration=0,
+        )
+    with open(script_path) as f:
+        code = f.read()
+    assert "tiny_harvest" not in code
+    assert "route_shell_git_status" in code
+    assert "steps_per_eval=999" in code
 
 
 def test_star_code_safety_classifier():
