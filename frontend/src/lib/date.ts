@@ -8,6 +8,7 @@ export function parseTs(iso: string): Date {
 
 export function fmtTs(iso: string): string {
   return parseTs(iso).toLocaleString([], {
+    year: "numeric",
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -27,7 +28,11 @@ export function formatRelativeTime(iso: string): string {
     if (diffHour < 24) return `${diffHour}h ago`;
     const diffDay = Math.floor(diffHour / 24);
     if (diffDay < 7) return `${diffDay}d ago`;
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return d.toLocaleDateString([], {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
   } catch {
     return iso;
   }

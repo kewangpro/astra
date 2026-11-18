@@ -163,9 +163,8 @@ export default function ModelDetailPage({
           {model.created_at && (
             <div>
               <div className="text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Trained</div>
-              <div className="text-[#e2e8f0]" title={fmtTs(model.created_at)}>
-                {formatRelativeTime(model.created_at)}
-                <span className="text-[#64748b]"> · {fmtTs(model.created_at)}</span>
+              <div className="text-[#e2e8f0]" title={formatRelativeTime(model.created_at)}>
+                {fmtTs(model.created_at)}
               </div>
             </div>
           )}
