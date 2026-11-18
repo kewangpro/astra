@@ -3873,6 +3873,7 @@ class LoopStateMachine:
         # Flat + nested: suite eval uses flat bare_eval.py; plugins use finetune/.
         names = (
             "bare_eval.py",
+            "generate_once.py",
             "star.py",
             "grpo.py",
             "_repo_paths.py",

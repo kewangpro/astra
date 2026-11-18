@@ -3119,3 +3119,13 @@ Routing-first reasoning training, then a thin non-Ensemble general scaffold ([DE
 - [x] **Recipe focus beats LLM prose** — `_resolve_hyperparams` keeps recipe-pinned `focus_cases` (smoke `205b3021` path-verify after Lead Agent wrote `tiny_harvest, few_ce`).
 - [x] **Mini finetune script push** — pre-launch / pre-`bare_eval` scp of Ensemble `bare_eval.py`+`star.py` (+ flat deps); live Pass rate fallback when routing suite/bare_eval returns no score.
 - [x] **Path-verify** — `ensemble_star_astratune_smoke` mission `710b7da4` **completed** (focus 3 cases, `Eval every 999` / `3 examples ready` / `Best adapter ensured`, suite `pass_rate=0.582` ≥ 0.01).
+
+## Phase 129: LoRA inference UX + LM Tournament Arena (2026-11-18)
+
+Non-game champions (`routing` / `nlp`) had a dashed “No live canvas” stub and could not enter Head-to-Head (Gym-only `ENV_OPTIONS` + local-zip `_add_entry`).
+
+- [x] **Mini `generate_once.py`** (Ensemble `finetune/`) — one-shot base+LoRA completion; optional conductor wrap; JSON stdout. Pushed with `_push_ensemble_finetune_scripts`.
+- [x] **`POST /registry/models/{id}/infer`** — `backend/services/lora_infer.py` resolves adapter/base/template from the record + mission plan; SSH to Mini (tilde paths unquoted). `LoraInferPanel` on `/models/{id}` for non-playable domains; list cards **Infer →**.
+- [x] **LM tournament** — arena targets `routing` / `nlp`; `_add_tournament_entry` accepts Mini `adapters/…` without a local file; `is_lm_tournament_env` + `lm_metric_to_score` rank by registered `pass_rate`×100 or `100/(1+eval_loss)` (`suite_id` `routing_bare` / `nlp_loss`). Gym fixed-seed path unchanged.
+- [x] **Docs** — UX_SPEC §2.4, PRD play/tournament, README registry bullets.
+- [x] **Tests** — `test_lora_infer.py`; routing pass_rate + Mini-path discovery in `test_model_registry.py`.

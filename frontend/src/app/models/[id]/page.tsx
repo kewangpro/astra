@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ModelRecord } from "@/lib/api";
 import { PolicyPlayer } from "@/components/hud/PolicyPlayer";
+import { LoraInferPanel } from "@/components/hud/LoraInferPanel";
 import { fmtTs, formatRelativeTime } from "@/lib/date";
 import { envIdFromDomain, isPlayableEnv } from "@/lib/playWs";
 
@@ -134,9 +135,7 @@ export default function ModelDetailPage({
           {playable ? (
             <PolicyPlayer modelId={model.id} envId={envId} />
           ) : (
-            <div className="border border-dashed border-[#334155] rounded-lg p-10 text-center text-xs text-[#64748b]">
-              No live canvas for {model.domain}.
-            </div>
+            <LoraInferPanel model={model} />
           )}
         </div>
         <aside className="space-y-3 bg-[#1e293b]/70 border border-[#334155] rounded-lg p-4 text-xs">

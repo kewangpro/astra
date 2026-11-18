@@ -487,6 +487,56 @@ class BenchmarkSuite:
         return {"passed": passed, "failed": failed, "results": results}
 
 
+_PASS_RATE_METRICS = frozenset({
+    "pass_rate",
+    "model_routed_pass_rate",
+    "static_pass_rate",
+    "pass_rate_model_routed",
+    "pass_rate_static",
+    "pass_rate_blended",
+})
+_LOSS_METRICS = frozenset({"eval_loss", "loss", "dpo_loss", "train_loss"})
+
+
+def is_lm_tournament_env(env_id: str) -> bool:
+    """True for routing / NLP / star arenas (not Gym env ids)."""
+    d = (env_id or "").lower().strip()
+    if not d:
+        return False
+    if d in ("routing", "star", "nlp", "language", "text", "llm"):
+        return True
+    if d.startswith("nlp"):
+        return True
+    if "routing" in d:
+        return True
+    return False
+
+
+def lm_metric_to_score(
+    metric_name: Optional[str],
+    metric_value: Optional[float],
+    *,
+    checkpoint_path: str = "",
+) -> tuple[float, str]:
+    """Map a registry metric to a tournament score (higher is better).
+
+    Returns ``(score, suite_id)``. Pass-rate metrics → ×100; loss →
+    ``100/(1+loss)``. Falls back to on-disk ``_nlp_loss_eval`` when needed.
+    """
+    name = (metric_name or "").strip().lower()
+    if metric_value is not None and name in _PASS_RATE_METRICS:
+        return round(float(metric_value) * 100.0, 2), "routing_bare"
+    if metric_value is not None and name in _LOSS_METRICS:
+        el = float(metric_value)
+        return round(max(0.0, 100.0 / (1.0 + el)), 2), "nlp_loss"
+    # Prefer pass_rate-shaped values in [0, 1] when name unknown but value set.
+    if metric_value is not None and name and 0.0 <= float(metric_value) <= 1.0:
+        return round(float(metric_value) * 100.0, 2), "routing_bare"
+    eval_res = _nlp_loss_eval(checkpoint_path) if checkpoint_path else {"eval_loss": 999.0}
+    el = float(eval_res.get("eval_loss", 999.0))
+    return round(max(0.0, 100.0 / (1.0 + el)), 2), "nlp_loss"
+
+
 def run_tournament_match(
     checkpoint_entries: List[dict],
     env_id: str = "Snake-v0",
@@ -506,21 +556,31 @@ def run_tournament_match(
         suite_id = str(env_kwargs.get("suite_id") or suite_id)
         suite_rev = int(env_kwargs.get("suite_rev") or suite_rev)
 
-    if env_id.lower() in ("nlp", "language", "text", "llm"):
+    if is_lm_tournament_env(env_id):
+        # LM arenas: rank from registered suite metrics (pass_rate / eval_loss).
+        # One synthetic "episode" — live Mini bare_eval is too slow for the arena button.
+        n_episodes = 1
         loaded_models = []
+        suite_votes: list[str] = []
         for entry in checkpoint_entries:
             path = entry["path"]
-            eval_res = _nlp_loss_eval(path)
-            el = eval_res.get("eval_loss", 999.0)
-            score = round(max(0.0, 100.0 / (1.0 + el)), 2)
+            score, sid = lm_metric_to_score(
+                entry.get("metric_name"),
+                entry.get("metric_value"),
+                checkpoint_path=path,
+            )
+            suite_votes.append(sid)
             loaded_models.append({
                 "id": entry["id"],
                 "name": entry.get("name", entry["id"]),
                 "path": path,
                 "is_ac": False,
                 "model": None,
-                "scores": [score] * n_episodes,
+                "scores": [score],
             })
+        if suite_votes:
+            # Prefer routing_bare when any entry used pass_rate.
+            suite_id = "routing_bare" if "routing_bare" in suite_votes else suite_votes[0]
     else:
         # Register custom environments
         from envs.register import register_for_env_id

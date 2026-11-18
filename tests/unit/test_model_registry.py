@@ -311,6 +311,85 @@ def test_run_tournament_match_nlp(tmp_path):
     assert res["leaderboard"][1]["rank"] == 2
     assert res["leaderboard"][1]["model_id"] == "m2"
     assert res["leaderboard"][1]["win_rate"] == 0.0
+    assert res["episodes"] == 1  # LM arenas collapse to one suite score
+    assert res["suite_id"] == "nlp_loss"
+
+
+def test_run_tournament_match_routing_pass_rate():
+    """Routing arena ranks by registered pass_rate (×100), Mini path OK."""
+    from backend.evaluator.benchmark import is_lm_tournament_env, lm_metric_to_score
+
+    assert is_lm_tournament_env("routing")
+    assert is_lm_tournament_env("NLP-1B")
+    assert not is_lm_tournament_env("Snake-v0")
+    score, sid = lm_metric_to_score("pass_rate", 0.889)
+    assert score == pytest.approx(88.9)
+    assert sid == "routing_bare"
+
+    entries = [
+        {
+            "id": "grpo",
+            "name": "grpo",
+            "path": "adapters/astra_bab0_iter0/best",
+            "metric_name": "pass_rate",
+            "metric_value": 0.889,
+        },
+        {
+            "id": "dpo",
+            "name": "dpo",
+            "path": "adapters/astra_4604_iter0/best",
+            "metric_name": "pass_rate",
+            "metric_value": 0.718,
+        },
+    ]
+    res = run_tournament_match(entries, env_id="routing", n_episodes=5)
+    assert res["champion_id"] == "grpo"
+    assert res["leaderboard"][0]["mean_score"] == pytest.approx(88.9)
+    assert res["suite_id"] == "routing_bare"
+    assert res["episodes"] == 1
+
+
+def test_add_tournament_entry_accepts_mini_adapter_without_local_file():
+    from backend.routers.registry import _add_tournament_entry
+
+    entries: list = []
+    seen: set = set()
+    _add_tournament_entry(
+        entries,
+        seen,
+        eid="a",
+        name="A",
+        path="adapters/astra_deadbeef_iter0/best",
+        lm_arena=True,
+        metric_name="pass_rate",
+        metric_value=0.9,
+    )
+    _add_tournament_entry(
+        entries,
+        seen,
+        eid="b",
+        name="B",
+        path="adapters/astra_cafebabe_iter0/best",
+        lm_arena=True,
+        metric_name="pass_rate",
+        metric_value=0.8,
+    )
+    assert len(entries) == 2
+    assert entries[0]["path"] == "adapters/astra_deadbeef_iter0/best"
+    assert entries[0]["metric_value"] == 0.9
+
+    # Gym path still requires a real local file
+    gym_entries: list = []
+    gym_seen: set = set()
+    _add_tournament_entry(
+        gym_entries,
+        gym_seen,
+        eid="g",
+        name="G",
+        path="adapters/astra_deadbeef_iter0/best",
+        lm_arena=False,
+    )
+    assert gym_entries == []
 
 
 @pytest.mark.asyncio

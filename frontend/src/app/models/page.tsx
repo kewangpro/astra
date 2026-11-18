@@ -19,7 +19,14 @@ const ENV_OPTIONS = [
   { id: "MinAtar-Seaquest-v0", label: "MinAtar Seaquest" },
   { id: "MinAtar-Asterix-v0", label: "MinAtar Asterix" },
   { id: "GridPacMan-v0", label: "Grid Pac-Man" },
+  { id: "routing", label: "Routing (LoRA)" },
+  { id: "nlp", label: "NLP / LM (LoRA)" },
 ];
+
+function isLmArena(envId: string): boolean {
+  const d = envId.toLowerCase();
+  return d === "routing" || d === "nlp" || d.startsWith("nlp") || d.includes("routing");
+}
 
 export default function ModelsPage() {
   const router = useRouter();
@@ -56,7 +63,7 @@ export default function ModelsPage() {
       const res = await api.runTournament(
         selectedEnv,
         selectedModelIds.length > 0 ? selectedModelIds : undefined,
-        episodes,
+        isLmArena(selectedEnv) ? 1 : episodes,
         true
       );
       setTournamentResult(res);
@@ -120,7 +127,9 @@ export default function ModelsPage() {
               Tournament Head-to-Head Arena
             </h2>
             <p className="text-xs text-[#94a3b8] mt-0.5">
-              Simulate identical fixed environment seeds across candidate policies.
+              {isLmArena(selectedEnv)
+                ? "Rank LoRA adapters by registered suite metrics (pass_rate / eval_loss)."
+                : "Simulate identical fixed environment seeds across candidate policies."}
             </p>
           </div>
           <button
@@ -166,24 +175,30 @@ export default function ModelsPage() {
 
           <div>
             <label className="block text-[11px] uppercase tracking-wider text-[#94a3b8] mb-1.5">
-              Evaluation Episodes (Fixed Seeds)
+              {isLmArena(selectedEnv) ? "Scoring" : "Evaluation Episodes (Fixed Seeds)"}
             </label>
-            <div className="flex items-center gap-2">
-              {[3, 5, 10, 20].map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => setEpisodes(num)}
-                  className={`flex-1 py-1.5 text-xs rounded border transition-colors ${
-                    episodes === num
-                      ? "bg-[#14b8a6]/20 border-[#14b8a6] text-[#14b8a6] font-medium"
-                      : "bg-[#0f172a] border-[#334155] text-[#94a3b8] hover:text-[#e2e8f0]"
-                  }`}
-                >
-                  {num} eps
-                </button>
-              ))}
-            </div>
+            {isLmArena(selectedEnv) ? (
+              <p className="text-xs text-[#64748b] pt-1">
+                One suite score per adapter from the registry (pass_rate×100 or 100/(1+eval_loss)).
+              </p>
+            ) : (
+              <div className="flex items-center gap-2">
+                {[3, 5, 10, 20].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setEpisodes(num)}
+                    className={`flex-1 py-1.5 text-xs rounded border transition-colors ${
+                      episodes === num
+                        ? "bg-[#14b8a6]/20 border-[#14b8a6] text-[#14b8a6] font-medium"
+                        : "bg-[#0f172a] border-[#334155] text-[#94a3b8] hover:text-[#e2e8f0]"
+                    }`}
+                  >
+                    {num} eps
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -191,7 +206,9 @@ export default function ModelsPage() {
               Candidate Selection
             </label>
             <p className="text-xs text-[#64748b] pt-1">
-              Auto-discovers checkpoints in <code className="text-[#14b8a6] font-mono">data/missions/</code> and registry.
+              {isLmArena(selectedEnv)
+                ? <>Auto-selects registry rows whose domain matches <code className="text-[#14b8a6] font-mono">{selectedEnv}</code> (Mini <code className="text-[#14b8a6] font-mono">adapters/</code> paths OK).</>
+                : <>Auto-discovers checkpoints in <code className="text-[#14b8a6] font-mono">data/missions/</code> and registry.</>}
             </p>
           </div>
         </div>
@@ -346,6 +363,8 @@ export default function ModelsPage() {
               <option value="Tetris">Tetris</option>
               <option value="2048">2048</option>
               <option value="MinAtar">MinAtar</option>
+              <option value="routing">Routing</option>
+              <option value="nlp">NLP</option>
             </select>
           </div>
         </div>
@@ -401,7 +420,7 @@ export default function ModelsPage() {
                       </span>
                     </div>
                     <span className="text-[10px] text-[#64748b] shrink-0">
-                      {playable ? "Play →" : "Open →"}
+                      {playable ? "Play →" : "Infer →"}
                     </span>
                   </div>
                   <div className="mt-3 flex items-end justify-between gap-2">

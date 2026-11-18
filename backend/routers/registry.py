@@ -16,13 +16,21 @@ from backend.models.mission import Mission
 from backend.models.model_registry import ModelRecord
 from backend.schemas.experiment import ExperimentCreate, ExperimentRead, ExperimentUpdate
 from backend.schemas.model_registry import (
+    ModelInferRequest,
+    ModelInferResponse,
     ModelRecordCreate,
     ModelRecordRead,
     ModelRecordUpdate,
     TournamentRequest,
     TournamentResponse,
 )
-from backend.evaluator.benchmark import run_tournament_match
+from backend.evaluator.benchmark import is_lm_tournament_env, run_tournament_match
+from backend.services.lora_infer import (
+    LoraInferError,
+    adapter_rel_from_path,
+    resolve_infer_config,
+    run_lora_infer,
+)
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/registry", tags=["registry"])
@@ -374,7 +382,123 @@ async def delete_model_record(model_id: str, db: AsyncSession = Depends(get_db))
     await db.commit()
 
 
+@router.post("/models/{model_id}/infer", response_model=ModelInferResponse)
+async def infer_model(
+    model_id: str,
+    payload: ModelInferRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """One-shot LoRA completion on Mini for non-game / routing champions."""
+    record = await db.get(ModelRecord, model_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Model record not found")
+
+    mission_plan = None
+    mission_last_ckpt = None
+    mid = mission_id_from_model(record)
+    if mid:
+        mission = await db.get(Mission, mid)
+        if mission:
+            mission_plan = mission.current_plan
+            mission_last_ckpt = mission.last_checkpoint_path
+
+    try:
+        cfg = resolve_infer_config(
+            checkpoint_path=record.checkpoint_path,
+            weights_path=record.weights_path,
+            extra_metadata=record.extra_metadata,
+            mission_plan=mission_plan,
+            mission_last_checkpoint=mission_last_ckpt,
+            domain=record.domain or "",
+        )
+        result = await asyncio.to_thread(
+            run_lora_infer,
+            model_id=record.id,
+            prompt=payload.prompt,
+            cfg=cfg,
+            max_tokens=payload.max_tokens,
+            temperature=payload.temperature,
+        )
+    except LoraInferError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    return ModelInferResponse(
+        completion=result.completion,
+        prompt_used=result.prompt_used,
+        model_id=result.model_id,
+        latency_ms=result.latency_ms,
+        adapter=result.adapter,
+        base_model=result.base_model,
+    )
+
+
 # ── Tournament Arena ───────────────────────────────────────────────────────────
+
+def _lm_adapter_path(record: ModelRecord) -> Optional[str]:
+    """Resolve a Mini-relative or local adapter path for LM tournament entries."""
+    meta = record.extra_metadata if isinstance(record.extra_metadata, dict) else {}
+    candidates = [
+        meta.get("remote_checkpoint_path"),
+        meta.get("adapter"),
+        meta.get("adapter_path"),
+        meta.get("adapter_rel"),
+        record.checkpoint_path,
+        record.weights_path,
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        s = str(c).strip()
+        rel = adapter_rel_from_path(s)
+        if rel:
+            return rel
+        # Absolute Mini home path without adapters/ substring edge cases
+        if "/finetune/adapters/" in s.replace("\\", "/"):
+            return s
+        if os.path.exists(s):
+            return s
+    return None
+
+
+def _add_tournament_entry(
+    entries: List[dict],
+    seen_paths: set,
+    *,
+    eid: str,
+    name: str,
+    path: Optional[str],
+    lm_arena: bool = False,
+    metric_name: Optional[str] = None,
+    metric_value: Optional[float] = None,
+) -> None:
+    """Append a tournament candidate. LM arenas accept Mini ``adapters/…`` paths."""
+    if not path:
+        return
+    raw = str(path).strip()
+    if lm_arena:
+        key = adapter_rel_from_path(raw) or raw
+        local_ok = os.path.exists(raw)
+        mini_ok = bool(adapter_rel_from_path(raw)) or "/finetune/adapters/" in raw.replace("\\", "/")
+        if not local_ok and not mini_ok:
+            return
+        if key in seen_paths:
+            return
+        seen_paths.add(key)
+        entries.append({
+            "id": eid,
+            "name": name,
+            "path": key if mini_ok and not local_ok else (canonical_checkpoint_path(raw) or raw),
+            "metric_name": metric_name,
+            "metric_value": metric_value,
+        })
+        return
+
+    key = canonical_checkpoint_path(raw)
+    if not key or not os.path.exists(key) or key in seen_paths:
+        return
+    seen_paths.add(key)
+    entries.append({"id": eid, "name": name, "path": key})
+
 
 @router.post("/tournament", response_model=TournamentResponse)
 async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(get_db)):
@@ -383,19 +507,30 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
     await _prune_duplicate_model_records(db)
     entries: List[dict] = []
     seen_paths: set = set()
+    lm_arena = is_lm_tournament_env(payload.env_id)
 
-    def _add_entry(eid: str, name: str, path: Optional[str]) -> None:
-        key = canonical_checkpoint_path(path)
-        if not key or not os.path.exists(key) or key in seen_paths:
-            return
-        seen_paths.add(key)
-        entries.append({"id": eid, "name": name, "path": key})
+    def _add_entry(eid: str, name: str, path: Optional[str], **kwargs) -> None:
+        _add_tournament_entry(
+            entries, seen_paths, eid=eid, name=name, path=path, lm_arena=lm_arena, **kwargs
+        )
+
+    def _add_record(rec: ModelRecord) -> None:
+        path = rec.checkpoint_path or rec.weights_path
+        if lm_arena:
+            path = _lm_adapter_path(rec) or path
+        _add_entry(
+            rec.id,
+            rec.name,
+            path,
+            metric_name=rec.best_metric_name,
+            metric_value=rec.best_metric_value,
+        )
 
     if payload.model_ids:
         for mid in payload.model_ids:
             rec = await db.get(ModelRecord, mid)
             if rec:
-                _add_entry(rec.id, rec.name, rec.checkpoint_path or rec.weights_path)
+                _add_record(rec)
     else:
         q = select(ModelRecord).where(
             (ModelRecord.domain == payload.env_id) | (ModelRecord.domain.ilike(f"%{payload.env_id}%"))
@@ -403,7 +538,7 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
         res = await db.execute(q)
         records = res.scalars().all()
         for rec in records:
-            _add_entry(rec.id, rec.name, rec.checkpoint_path or rec.weights_path)
+            _add_record(rec)
 
     # Fallback 1: auto-discover checkpoints from data/missions
     if len(entries) < 2:

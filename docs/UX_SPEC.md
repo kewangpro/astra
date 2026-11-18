@@ -37,14 +37,15 @@
 
 ### 2.4. Models (`/models`)
 - Missions train; models play / infer.
-- **Checkpoint cards**: Click to open `/models/{id}` for live play (`WS /ws/models/{id}/play`).
-- **Model page**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path). MinAtarPlayer covers Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man (mouth rotates with movement).
-- **Policy inspector**: confidence bars, Q-values, entropy, selected action.
+- **Checkpoint cards**: Click to open `/models/{id}` — Gym policies **Play →**; LoRA / non-game cards **Infer →**.
+- **Model page (Gym)**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path). MinAtarPlayer covers Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man (mouth rotates with movement).
+- **Model page (LoRA)**: Prompt playground (`LoraInferPanel`) → `POST /registry/models/{id}/infer` runs one-shot Mini SSH `generate_once.py` (base + adapter). Domain `routing` wraps the query in the Ensemble conductor template; other LM domains use a plain chat turn.
+- **Policy inspector**: confidence bars, Q-values, entropy, selected action (Gym only).
 - **Tournament Arena**:
-  - Environment and seed selector configuring fixed deterministic evaluation runs across 3 to 20 episodes.
-  - Side-by-side simulation evaluating SB3 and Lookahead PyTorch models on identical seeds.
-  - Dynamic Leaderboard displaying Gold 🥇, Silver 🥈, and Bronze 🥉 ranks, Mean Score $\pm$ Std, Min/Max range, Win Rate %, and per-episode score breakdowns.
-  - "Crown as Champion" action promoting top performers into production status.
+  - **Gym**: environment + fixed-seed episodes (3–20); SB3 / lookahead PyTorch on identical seeds.
+  - **LoRA**: target `routing` or `nlp` — ranks registry adapters by registered suite metrics (`pass_rate`×100 or `100/(1+eval_loss)`); Mini `adapters/…` paths are valid candidates (no local zip required).
+  - Dynamic Leaderboard (rank, Mean Score ± Std, Min/Max, Win Rate %, per-seed / suite scores).
+  - Crowning a champion is exclusive per domain.
 
 ### 2.5. The Completed Missions Archive (`/completed`)
 - **Gallery Layout**: Modeled after the Recipe Library (`/recipes`) with dark glass UI, KPI overview cards, and responsive 3-column card grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`).

@@ -53,7 +53,8 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 ### 4.5. Smart Visualizer
 - Automatically captures video of "Breakthrough Moments."
 - Generates CNN activation maps and feature plots.
-- **Play / inference**: Live canvas on `/models/{id}`. Missions train; models run the checkpoint. Snake, Tetris, 2048, MinAtar suite (Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest), Grid Pac-Man.
+- **Play / inference**: Live canvas on `/models/{id}` for Gym policies (Snake, Tetris, 2048, MinAtar suite, Grid Pac-Man, AgentGym). Non-game / routing LoRA champions use a prompt → completion panel backed by Mini SSH inference. Missions train; models run the checkpoint.
+- **Tournament**: Gym arenas stay fixed-seed rollouts. Routing / NLP arenas rank LoRA adapters from registered suite metrics and may crown a domain champion.
 
 ### 4.6. Autonomous Iteration Loop
 - Continuous "Plan-Train-Evaluate-Refine" cycle.

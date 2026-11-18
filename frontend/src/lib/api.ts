@@ -131,6 +131,21 @@ export interface TournamentResponse {
   champion_id: string | null;
 }
 
+export interface ModelInferRequest {
+  prompt: string;
+  max_tokens?: number;
+  temperature?: number;
+}
+
+export interface ModelInferResponse {
+  completion: string;
+  prompt_used: string;
+  model_id: string;
+  latency_ms: number;
+  adapter?: string | null;
+  base_model?: string | null;
+}
+
 export interface Recipe {
   name: string;
   filename: string;
@@ -241,6 +256,11 @@ export const api = {
     }),
   deleteModel: (id: string) =>
     req<void>(`/registry/models/${id}`, { method: "DELETE" }),
+  inferModel: (id: string, body: ModelInferRequest) =>
+    req<ModelInferResponse>(`/registry/models/${id}/infer`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   runTournament: (envId: string, modelIds?: string[], nEpisodes = 5, updateChampion = true) =>
     req<TournamentResponse>("/registry/tournament", {
       method: "POST",
