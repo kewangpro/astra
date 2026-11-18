@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ModelRecord, TournamentResponse, TournamentEntry } from "@/lib/api";
+import { fmtTs, formatRelativeTime } from "@/lib/date";
 import { envIdFromDomain, isPlayableEnv } from "@/lib/playWs";
 
 const ENV_OPTIONS = [
@@ -414,6 +415,14 @@ export default function ModelsPage() {
                         </div>
                       ) : (
                         <div className="text-[#64748b] text-xs mt-0.5">No metric yet</div>
+                      )}
+                      {m.created_at && (
+                        <div
+                          className="text-[10px] text-[#64748b] mt-1"
+                          title={`Trained ${fmtTs(m.created_at)}`}
+                        >
+                          Trained {formatRelativeTime(m.created_at)}
+                        </div>
                       )}
                     </div>
                     <div className="flex gap-2">

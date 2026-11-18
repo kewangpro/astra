@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ModelRecord } from "@/lib/api";
 import { PolicyPlayer } from "@/components/hud/PolicyPlayer";
+import { fmtTs, formatRelativeTime } from "@/lib/date";
 import { envIdFromDomain, isPlayableEnv } from "@/lib/playWs";
 
 function missionIdFromModel(m: ModelRecord): string | null {
@@ -159,6 +160,15 @@ export default function ModelDetailPage({
               <div className="text-[#64748b]">—</div>
             )}
           </div>
+          {model.created_at && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Trained</div>
+              <div className="text-[#e2e8f0]" title={fmtTs(model.created_at)}>
+                {formatRelativeTime(model.created_at)}
+                <span className="text-[#64748b]"> · {fmtTs(model.created_at)}</span>
+              </div>
+            </div>
+          )}
           {missionId && (
             <div>
               <div className="text-[10px] uppercase tracking-wider text-[#64748b] mb-1">Trained by</div>
