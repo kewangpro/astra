@@ -259,7 +259,7 @@ Where training runs.
 
 ### 2.8. Evaluator and introspection
 
-**AstraEval** owns authoritative mission gates when `suite_id@rev` is stamped: `suite.run(ckpt) → {primary, case_ids}`, suite ceilings at create, FailSlice emit into AstraData, and tournament seeds (`2000 + ep`). Play on `/models/{id}` and the tournament both load that checkpoint's `train_config` env so the leaderboard matches the player. Arcade **benchmark / stress** helpers remain for introspection outside suite-gated missions. **Saliency** and a **policy auditor** (action distribution, entropy) explain the same play page.
+**AstraEval** owns authoritative mission gates when `suite_id@rev` is stamped: `suite.run(ckpt) → {primary, case_ids}`, suite ceilings at create, FailSlice emit into AstraData, and **Gym** tournament seeds (`2000 + ep`). On `/models/{id}`, Gym policies play from that checkpoint's `train_config` env (same table the Gym tournament uses). Routing / NLP LoRA cards use a Mini-backed prompt playground (`POST /registry/models/{id}/infer`); their Head-to-Head arena ranks registered suite metrics (`pass_rate` / `eval_loss`), not live rollouts. Arcade **benchmark / stress** helpers remain for introspection outside suite-gated missions. **Saliency** and a **policy auditor** (action distribution, entropy) explain Gym play pages.
 
 ### 2.9. Resilience
 
@@ -335,7 +335,7 @@ Recipe hyperparameters supply paths and LoRA settings; they are not the place to
 4. Sandbox trains; telemetry streams to the HUD.
 5. When `suite_id@rev` is stamped, AstraEval suite-gates the checkpoint (primary metric + FailSlice into AstraData); otherwise the loop scores against the goal / recipe metric.
 6. Loop pivots, completes, or stalls. Ensemble follow-ons may inject `focus_cases` from the latest FailSlice (same suite). Successful **RL** (and similar) runs may crystallize a recipe into the platform `recipes/` dir, or into the product pack when `plan.hyperparameters.use_case` maps to `ASTRA_PRODUCT_RECIPES`; fine-tune-remote types do not auto-crystallize.
-7. Registry and model page pick up the checkpoint for play and tournaments (same env table; seeds via `astraeval.tournament_seed`).
+7. Registry and model page pick up the checkpoint: Gym → play + fixed-seed tournament (`astraeval.tournament_seed`); LoRA → Mini infer playground + metric-ranked `routing` / `nlp` arenas.
 
 ---
 

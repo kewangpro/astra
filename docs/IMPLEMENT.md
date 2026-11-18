@@ -1,6 +1,6 @@
 # ASTRA: Implementation Roadmap
 
-This document outlines the architectural implementation roadmap for `ASTRA` in **eleven thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
+This document outlines the architectural implementation roadmap for `ASTRA` in **twelve thematic epochs**. Phase numbers are **monotonic** (historical order); epoch membership is **thematic** (a later phase can extend an earlier epoch). Roughly ~10–18 phases per epoch.
 
 ## Strategic Epoch Roadmap
 
@@ -17,8 +17,9 @@ This document outlines the architectural implementation roadmap for `ASTRA` in *
 | **Epoch 9: AstraGym + AstraRL** | Gym-coupled RL split; MLX facade + DAPO-lite; platform GRPO runtime extracted from product trees | 101–113 | 13 | ✅ |
 | **Epoch 10: AstraTune** | Offline LM platform sibling; LoRA I/O + SFT/DPO math; canned facades; pip-only Mini; product-neutral packs; HUD metric accuracy; flywheel event stream | 114–122, 124–125 | 11 | ✅ |
 | **Epoch 11: Complete flywheel** | AstraData + AstraEval; suite gate; FailSlice → focus_cases; Eval-owned tournament seeds | 123 | 1 | ✅ |
+| **Epoch 12: LoRA Champion UX** | Mini prompt infer on `/models/{id}`; LM tournament arenas (`routing` / `nlp`); operator logging | 129 | 1 | ✅ |
 
-Epochs 7, 9, 10, and 11 are intentionally shorter **architecture** milestones (agent stack, Gym×RL, AstraTune, then Data/Eval); Epochs 3–6 absorb the former “continuity” band.
+Epochs 7, 9, 10, 11, and 12 are intentionally shorter **architecture / product-surface** milestones; Epochs 3–6 absorb the former “continuity” band.
 
 **Current ownership:** Astra is the **platform and training center** (`python -m astrarl.cli` / `astratune.cli`, `run_*` loops, facades, `astra_plugin`, `astradata`, `astraeval`). Products are **use cases** (plugin module + prompts / eval cases / `bare_eval`). Historical phase notes below may still name a specific product or obsolete `*_train.py` execv targets — architecture overview: [DESIGN.md §2.4–§2.5](DESIGN.md).
 
@@ -3127,5 +3128,6 @@ Non-game champions (`routing` / `nlp`) had a dashed “No live canvas” stub an
 - [x] **Mini `generate_once.py`** (Ensemble `finetune/`) — one-shot base+LoRA completion; optional conductor wrap; JSON stdout. Pushed with `_push_ensemble_finetune_scripts`.
 - [x] **`POST /registry/models/{id}/infer`** — `backend/services/lora_infer.py` resolves adapter/base/template from the record + mission plan; SSH to Mini (tilde paths unquoted). `LoraInferPanel` on `/models/{id}` for non-playable domains; list cards **Infer →**.
 - [x] **LM tournament** — arena targets `routing` / `nlp`; `_add_tournament_entry` accepts Mini `adapters/…` without a local file; `is_lm_tournament_env` + `lm_metric_to_score` rank by registered `pass_rate`×100 or `100/(1+eval_loss)` (`suite_id` `routing_bare` / `nlp_loss`). Gym fixed-seed path unchanged.
-- [x] **Docs** — UX_SPEC §2.4, PRD play/tournament, README registry bullets.
+- [x] **Docs** — UX_SPEC §2.4, PRD §4.5/§4.16/§4.20, DESIGN §2.8/§3, README registry/play bullets (Gym vs LoRA split).
+- [x] **Operator logging** — `registry.infer` / `lora_infer` (and tournament start/done) lines in `logs/backend.log` (adapter, SSH cmd with redacted prompt, latency, completion preview).
 - [x] **Tests** — `test_lora_infer.py`; routing pass_rate + Mini-path discovery in `test_model_registry.py`.

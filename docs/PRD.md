@@ -105,10 +105,9 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Grid Pac-Man is a discrete 5-action Gym env (PPO/DQN/A2C). The shipped recipe `grid_pacman_dqn_v1` still seeds unnamed goals as DQN. Named PPO: `ea4abb36` eval'd 270 against a 50 target; the 400-score follow-up `9b49aa78` (shaped `pellet_reward=10`) completed at 529 and plays ~530.
 
 ### 4.16. Model Registry & Tournament Leaderboard
-- Head-to-head multi-model tournaments across fixed deterministic seeds (`2000 + ep`).
-- Each checkpoint is scored in its own `train_config` env — the same table the model player loads — not a shared env from the first zip. Reward-shaped Pac-Man (`pellet_reward=10`) therefore ranks near play (~530), not on default 1-point dots.
-- Computes mean, std, min, max, per-seed score arrays, and tie-split win rates. Leaderboard rows show `env_kwargs` when they differ from defaults.
-- Registry `best_metric_value` tracks `checkpoints/best_score.txt` after the first insert. Crowning a model is exclusive per environment.
+- **Gym arenas**: head-to-head across fixed deterministic seeds (`2000 + ep`). Each checkpoint is scored in its own `train_config` env — the same table the model player loads — not a shared env from the first zip. Reward-shaped Pac-Man (`pellet_reward=10`) therefore ranks near play (~530), not on default 1-point dots. Computes mean, std, min, max, per-seed scores, and tie-split win rates; leaderboard rows show `env_kwargs` when they differ from defaults.
+- **LoRA arenas** (`routing`, `nlp`): rank registry adapters by registered suite metrics (`pass_rate`×100 or `100/(1+eval_loss)`, with checkpoint/telemetry fallback). Mini `adapters/…` paths are valid candidates; no live `bare_eval` on the arena button.
+- Registry `best_metric_value` tracks mission scores / `checkpoints/best_score.txt` after insert. Crowning a model is exclusive per **domain** (`Snake-v0`, `routing`, `nlp`, …).
 
 ### 4.17. Recipe Library, Lineage DAG Visualizer & Unified Mission Dispatch
 - Searchable gallery of canonical training blueprints across RL, Fine-tuning, and ML paradigms.
@@ -136,7 +135,7 @@ Manual ML training is repetitive and error-prone. Engineers often spend hours:
 - Multi-stage post-training pipeline connecting SFT syntax learning directly to DPO preference alignment across discrete mission stages.
 - **LoRA Auto-Detection**: Standalone trainers dynamically detect LoRA rank, scale, dropout, and layer count from `adapter_config.json` inside warm-start adapter checkpoints.
 - **Accelerated Preference Optimization**: Support for `--load-pairs` to bypass redundant on-policy pair generation and directly optimize against verified contrastive datasets.
-- **NLP Model Registry Tournament Arena**: Head-to-head language model evaluation with tournament leaderboards and automatic champion crowning.
+- **NLP / routing Model Registry arenas**: metric leaderboards from registered `pass_rate` / `eval_loss` (and automatic champion crowning per domain), not live pairwise generation.
 
 ### 4.21. Pure Routing Post-Training & Recipe Hyperparameter Enforcement
 - **Pure Routing Demonstrations**: Specialized dataset architecture (`data_routing`) standardizing on compact `conductor_min.md` prompt headers (~175 tokens) and verified routing schema plans, preventing prompt overflow and token truncation.
@@ -182,7 +181,7 @@ Shipped. Fuel → train → truth → FailSlice → fuel is closed in-platform; 
 | `astradata/` | `dataset_id@rev` registry, hash freeze, FailSlice bank | `hstu_ml1m@1` |
 | `astraeval/` | `suite.run(ckpt) → primary + case_ids`, ceilings, tournament seeds | `hstu_hr10@1`, `routing_bare@1` |
 
-**Orchestrator wiring.** Missions stamp `dataset_*` / `suite_*` from recipes. Create rejects over-suite-ceiling targets. Post-train: HSTU (+ suite-gated workers) use authoritative suites; FailSlice lands in AstraData; Ensemble follow-ons inject `focus_cases` from the latest slice (same `suite_id@rev`). Tournament seeds = `astraeval.tournament_seed` (`2000 + ep`); champions record `suite_rev`.
+**Orchestrator wiring.** Missions stamp `dataset_*` / `suite_*` from recipes. Create rejects over-suite-ceiling targets. Post-train: HSTU (+ suite-gated workers) use authoritative suites; FailSlice lands in AstraData; Ensemble follow-ons inject `focus_cases` from the latest slice (same `suite_id@rev`). **Gym** tournament seeds = `astraeval.tournament_seed` (`2000 + ep`); champions record `suite_rev`. **LoRA** arenas stamp `suite_id` `routing_bare` / `nlp_loss` from registry-metric ranking (not live suite re-runs).
 
 **Out of scope (kept).** Datasets as YAML blobs; Eval that trains; product `*_train.py` as platform entrypoint; relocating distill/rft/star CE ownership.
 

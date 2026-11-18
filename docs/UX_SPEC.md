@@ -39,12 +39,12 @@
 - Missions train; models play / infer.
 - **Checkpoint cards**: Click to open `/models/{id}` — Gym policies **Play →**; LoRA / non-game cards **Infer →**.
 - **Model page (Gym)**: Canvas + policy inspector + checkpoint dossier (metric, training mission link, path). MinAtarPlayer covers Breakout, Space Invaders, Asteroids, Asterix, Freeway, Seaquest, and Grid Pac-Man (mouth rotates with movement).
-- **Model page (LoRA)**: Prompt playground (`LoraInferPanel`) → `POST /registry/models/{id}/infer` runs one-shot Mini SSH `generate_once.py` (base + adapter). Domain `routing` wraps the query in the Ensemble conductor template; other LM domains use a plain chat turn.
+- **Model page (LoRA)**: Prompt playground (`LoraInferPanel`) → `POST /registry/models/{id}/infer` runs one-shot Mini SSH `generate_once.py` (base + adapter). Requires `ASTRA_SANDBOX_HOST`. Domain `routing` wraps the query in the Ensemble conductor template; other LM domains use a plain chat turn. Operators diagnose via `logs/backend.log` (`registry.infer`, `lora_infer`: resolve, SSH cmd, latency, completion preview).
 - **Policy inspector**: confidence bars, Q-values, entropy, selected action (Gym only).
 - **Tournament Arena**:
-  - **Gym**: environment + fixed-seed episodes (3–20); SB3 / lookahead PyTorch on identical seeds.
-  - **LoRA**: target `routing` or `nlp` — ranks registry adapters by registered suite metrics (`pass_rate`×100 or `100/(1+eval_loss)`); Mini `adapters/…` paths are valid candidates (no local zip required).
-  - Dynamic Leaderboard (rank, Mean Score ± Std, Min/Max, Win Rate %, per-seed / suite scores).
+  - **Gym**: environment + fixed-seed episodes (3–20); SB3 / lookahead PyTorch on identical seeds; per-seed scores and tie-split win rates.
+  - **LoRA**: target `routing` or `nlp` — one suite score per adapter from registered metrics (`pass_rate`×100 or `100/(1+eval_loss)`); Mini `adapters/…` paths are valid candidates (no local zip required). Episode chips hidden.
+  - Dynamic Leaderboard (rank, Mean Score ± Std, Min/Max; Gym also Win Rate % and per-seed bars).
   - Crowning a champion is exclusive per domain.
 
 ### 2.5. The Completed Missions Archive (`/completed`)
