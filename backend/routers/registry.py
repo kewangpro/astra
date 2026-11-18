@@ -402,6 +402,14 @@ async def infer_model(
             mission_plan = mission.current_plan
             mission_last_ckpt = mission.last_checkpoint_path
 
+    logger.info(
+        "registry.infer: request id=%s name=%s domain=%s mission=%s prompt_len=%s",
+        record.id[:8],
+        record.name,
+        record.domain,
+        (mid[:8] if mid else None),
+        len(payload.prompt or ""),
+    )
     try:
         cfg = resolve_infer_config(
             checkpoint_path=record.checkpoint_path,
@@ -410,6 +418,14 @@ async def infer_model(
             mission_plan=mission_plan,
             mission_last_checkpoint=mission_last_ckpt,
             domain=record.domain or "",
+        )
+        logger.info(
+            "registry.infer: resolved adapter=%s base=%s template=%s wrap=%s finetune_dir=%s",
+            cfg.adapter_rel,
+            cfg.base_model,
+            cfg.prompt_template or "-",
+            cfg.wrap_routing,
+            cfg.finetune_dir,
         )
         result = await asyncio.to_thread(
             run_lora_infer,
@@ -420,8 +436,20 @@ async def infer_model(
             temperature=payload.temperature,
         )
     except LoraInferError as exc:
+        logger.warning(
+            "registry.infer: failed id=%s status=%s detail=%s",
+            record.id[:8],
+            exc.status_code,
+            str(exc)[:300],
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
+    logger.info(
+        "registry.infer: done id=%s latency_ms=%s completion_len=%s",
+        record.id[:8],
+        result.latency_ms,
+        len(result.completion or ""),
+    )
     return ModelInferResponse(
         completion=result.completion,
         prompt_used=result.prompt_used,
@@ -629,6 +657,12 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
                     break
 
     if len(entries) < 2:
+        logger.warning(
+            "registry.tournament: insufficient entries env=%s lm=%s found=%s",
+            payload.env_id,
+            lm_arena,
+            len(entries),
+        )
         raise HTTPException(
             status_code=400,
             detail=f"At least 2 valid model checkpoints are required to run a tournament for '{payload.env_id}'. Found {len(entries)}."
@@ -641,12 +675,30 @@ async def run_tournament(payload: TournamentRequest, db: AsyncSession = Depends(
     if payload.env_id == "Tetris-v0":
         overlay["max_steps"] = 500
 
+    logger.info(
+        "registry.tournament: start env=%s lm=%s n=%s episodes=%s candidates=%s",
+        payload.env_id,
+        lm_arena,
+        len(entries),
+        payload.n_episodes,
+        [(e["id"][:8], e.get("name"), e.get("metric_name"), e.get("metric_value")) for e in entries],
+    )
     result = await asyncio.to_thread(
         run_tournament_match,
         checkpoint_entries=entries,
         env_id=payload.env_id,
         n_episodes=payload.n_episodes,
         env_kwargs=overlay or None,
+    )
+    logger.info(
+        "registry.tournament: done env=%s champion=%s suite=%s top=%s",
+        payload.env_id,
+        (result.get("champion_id") or "")[:8],
+        result.get("suite_id"),
+        [
+            (row.get("rank"), (row.get("model_id") or "")[:8], row.get("mean_score"))
+            for row in (result.get("leaderboard") or [])[:3]
+        ],
     )
 
     if payload.update_champion and result.get("champion_id"):

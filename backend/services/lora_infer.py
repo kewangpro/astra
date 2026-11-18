@@ -327,10 +327,34 @@ def run_lora_infer(
     if not (prompt or "").strip():
         raise LoraInferError("prompt is required", status_code=400)
 
+    prompt_preview = prompt.strip().replace("\n", " ")[:120]
+    logger.info(
+        "lora_infer: start model=%s host=%s adapter=%s base=%s wrap_routing=%s "
+        "max_tokens=%s temp=%s prompt=%r",
+        model_id[:8],
+        host,
+        cfg.adapter_rel,
+        cfg.base_model,
+        cfg.wrap_routing,
+        max_tokens,
+        temperature,
+        prompt_preview,
+    )
     push_generate_once(cfg.finetune_dir)
     cmd = build_generate_cmd(
         cfg, prompt.strip(), max_tokens=max_tokens, temperature=temperature
     )
+    # Log command without the quoted user prompt (already logged above).
+    cmd_for_log = cmd
+    try:
+        marker = " --prompt "
+        if marker in cmd_for_log:
+            head, _rest = cmd_for_log.split(marker, 1)
+            cmd_for_log = head + " --prompt <redacted>"
+    except Exception:
+        pass
+    logger.info("lora_infer: ssh %s %s", host, cmd_for_log)
+
     t0 = time.monotonic()
     try:
         result = subprocess.run(
@@ -341,27 +365,52 @@ def run_lora_infer(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
+        logger.warning(
+            "lora_infer: timeout model=%s after %ss adapter=%s",
+            model_id[:8],
+            INFER_TIMEOUT_S,
+            cfg.adapter_rel,
+        )
         raise LoraInferError(
             f"Mini generate timed out after {INFER_TIMEOUT_S}s",
             status_code=504,
         ) from exc
     except Exception as exc:
+        logger.warning("lora_infer: ssh failed model=%s: %s", model_id[:8], exc)
         raise LoraInferError(f"SSH generate failed: {exc}", status_code=502) from exc
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     if result.returncode != 0:
         tail = ((result.stderr or "") + "\n" + (result.stdout or ""))[-800:]
+        logger.warning(
+            "lora_infer: generate_once rc=%s model=%s latency_ms=%s stderr/stdout_tail=%r",
+            result.returncode,
+            model_id[:8],
+            latency_ms,
+            tail[-400:],
+        )
         raise LoraInferError(
             f"generate_once exited {result.returncode}: {tail}",
             status_code=502,
         )
 
     payload = _parse_generate_stdout(result.stdout)
+    completion = str(payload.get("completion") or "")
+    adapter = str(payload.get("adapter") or cfg.adapter_rel)
+    base_model = str(payload.get("model") or cfg.base_model)
+    logger.info(
+        "lora_infer: ok model=%s adapter=%s base=%s latency_ms=%s completion=%r",
+        model_id[:8],
+        adapter,
+        base_model,
+        latency_ms,
+        completion.replace("\n", " ")[:200],
+    )
     return InferResult(
-        completion=str(payload.get("completion") or ""),
+        completion=completion,
         prompt_used=str(payload.get("prompt") or prompt),
         model_id=model_id,
         latency_ms=latency_ms,
-        adapter=str(payload.get("adapter") or cfg.adapter_rel),
-        base_model=str(payload.get("model") or cfg.base_model),
+        adapter=adapter,
+        base_model=base_model,
     )
