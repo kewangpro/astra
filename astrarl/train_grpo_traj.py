@@ -44,6 +44,13 @@ def run_grpo_traj_train(args, hooks) -> None:
     else:
         print(f"AgentGym scenarios: {len(hooks.SCENARIOS)}")
 
+    from astrarl.rollout import resolve_clip_epsilons
+
+    eps_low, eps_high = resolve_clip_epsilons(
+        args.clip_epsilon,
+        getattr(args, "clip_epsilon_low", None),
+        getattr(args, "clip_epsilon_high", None),
+    )
     optimizer = optim.Adam(learning_rate=args.learning_rate)
     loss_and_grad_fn = nn.value_and_grad(model, grpo_loss_single)
 
@@ -132,7 +139,7 @@ def run_grpo_traj_train(args, hooks) -> None:
                     continue
                 (loss_i, _ntoks), grads_i = loss_and_grad_fn(
                     model, turn["prompt_ids"], turn["comp_ids"],
-                    float(adv), old_lp, args.clip_epsilon,
+                    float(adv), old_lp, eps_low, eps_high,
                 )
                 mx.eval(loss_i, grads_i)
                 total_loss_float += float(loss_i)

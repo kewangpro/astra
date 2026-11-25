@@ -186,8 +186,15 @@ def run_opd_train(args, hooks) -> None:
     hooks.save_final_adapter(model, save_dir, args)
     hooks.save_final_adapter(model, save_dir / "best", args)
 
+    from astrarl.rollout import resolve_clip_epsilons
+
+    eps_low, eps_high = resolve_clip_epsilons(
+        args.clip_epsilon,
+        getattr(args, "clip_epsilon_low", None),
+        getattr(args, "clip_epsilon_high", None),
+    )
     optimizer = optim.Adam(learning_rate=args.learning_rate)
-    loss_and_grad_fn = nn.value_and_grad(model, grpo_loss_single)
+    loss_and_grad_fn = nn.value_and_grad(model, hooks.grpo_loss_single)
 
     total_steps = args.iters
     print(f"total_steps={total_steps}")
@@ -233,8 +240,8 @@ def run_opd_train(args, hooks) -> None:
                     continue
 
                 reward = hooks.score_completion(text, case, schema=args.reward_schema)
-                t_lps = teacher_completion_logps(teacher, prompt_ids, comp_ids)
-                s_lps = student_completion_logps_detached(model, prompt_ids, comp_ids)
+                t_lps = hooks.teacher_completion_logps(teacher, prompt_ids, comp_ids)
+                s_lps = hooks.student_completion_logps_detached(model, prompt_ids, comp_ids)
                 rkl = mean_reverse_kl(t_lps, s_lps)
                 if rkl is None:
                     continue
@@ -275,7 +282,7 @@ def run_opd_train(args, hooks) -> None:
         step_adv = 0.0
         for prompt_ids, comp_ids, adv, old_lp, rkl in triples:
             (loss_i, _ntoks), grads_i = loss_and_grad_fn(
-                model, prompt_ids, comp_ids, float(adv), float(old_lp), args.clip_epsilon
+                model, prompt_ids, comp_ids, float(adv), float(old_lp), eps_low, eps_high
             )
             mx.eval(loss_i, grads_i)
             step_loss += float(loss_i) / K

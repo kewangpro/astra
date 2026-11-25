@@ -45,7 +45,8 @@ def _astrarl_map_timesteps(learner_id: str, merged: dict[str, Any], total_timest
 
 
 _ASTRARL_FACADE_ONLY = frozenset({
-    "reward_mode",
+    # reward_mode is both gym resolver input and agrpo --reward-mode CLI flag
+    # (must NOT be facade-only or e2e recipes silently fall back to agent_gym).
     "finetune_dir",  # aliased to --workspace before kwargs_to_argv
     "python_bin",
     "extra_argv",
