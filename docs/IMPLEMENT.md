@@ -70,7 +70,17 @@ Living detail for DESIGN §2.5. Phase history below may still cite pre-cutover p
 
 ### Plugin bind (`astra_plugin`)
 
-Products do not own train entrypoints. They export `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE distill/rft/star). Bind at **mission create**: `MissionCreate.use_case`, goal marker `use_case: …` / `--use-case …`, or Lead Agent from the product named in the goal — **not** recipe HP. Create/goal **always wins** over Lead Agent; reject `learner_id`-shaped strings (`mlx_dpo`, …) as `use_case`. CLIs load via `--use-case`; `ASTRA_USE_CASE` is bare-CLI fallback only. If the top-level package lacks hooks, `load_use_case` tries `{name}.usecase`. Before `run_*`, `validate_hooks(command, hooks)` against `GRPO_HOOK_ATTRS` / `DpoHooks` / …. Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop helpers — not the CLI contract.
+Products do not own train entrypoints. They export `UseCasePlugin` (`make_hooks`, `parse_args`; optional `get_runner` for CE `distill`/`rft`/`star`, optional `fill_defaults`). Bind at **mission create**: `MissionCreate.use_case`, goal marker `use_case: …` / `--use-case …`, or Lead Agent from the product named in the goal — **not** recipe HP. Create/goal **always wins** over Lead Agent; reject `learner_id`-shaped strings (`mlx_dpo`, …) as `use_case`. CLIs load via `--use-case`; `ASTRA_USE_CASE` is bare-CLI fallback only.
+
+**Discovery & dispatch:**
+1. `ensure_workspace_on_path(workspace)` adds `<workspace>/.astra_plugins`, `<parent>/.astra_plugins`, `<parent>`, and `<workspace>` to `sys.path`. Products whose repo root has a conflicting `<brand>.py` (e.g. Ensemble’s `ensemble.py`) ship `.astra_plugins/<brand>/__init__.py` and put `.astra_plugins` first on `PYTHONPATH`.
+2. `load_use_case(name)` imports `{name}`; if it lacks `make_hooks` + `parse_args`, it falls back to `{name}.usecase`.
+3. CLI delegates remaining argv to `plugin.parse_args(command, rest)` (or `fill_defaults`), then dispatches by pattern:
+   - **Hook bag (`grpo`, `agrpo`, `opd`, `dpo`, `rlcd`):** `validate_hooks(command, plugin.make_hooks(command))` against `HOOK_ATTRS_BY_COMMAND` → platform `run_*` loop.
+   - **Harvest runner (`distill`, `rft`, `star`):** `plugin.get_runner(command)(args)` → product harvest → `astratune.ce_loop.run_ce_lora_steps`.
+   - **Pure SFT (`sft`):** `astratune.train_sft.run_sft_train(args)` directly over dataset JSONL.
+
+Legacy `astrarl.plugins.RewardPlugin` / `astratune.plugins.DatasetPlugin` are step-loop helpers — not the CLI contract. Full call-chain diagram: [DESIGN.md §2.5](DESIGN.md#plugin-call-chain-astra_plugin).
 
 ### Recipe packs
 

@@ -147,9 +147,40 @@ flowchart LR
 |---|---|
 | Train CLIs, `run_*`, math, `lora_io`, `ce_loop`, missions, suite/dataset stamps | `UseCasePlugin` hooks / `get_runner`, prompts, eval cases, adapters, `bare_eval` |
 | Platform `recipes/` + pack discovery (`ASTRA_PRODUCT_RECIPES`) | Product recipe YAML under the product repo |
-| STaR worker (`task_type: star` / `mlx_star`) + [`astratune/star_hooks.py`](../astratune/star_hooks.py) contract | Harvest oracle (`load_cases` / `build_prompt` / `score_completion` / `rationalize_hint`) — Ensemble routing **or** `demo_reasoning`, never hard-coded in AstraTune |
+| STaR worker (`task_type: star` / `mlx_star`), `ce_loop`, and [`astratune/star_hooks.py`](../astratune/star_hooks.py) | Harvest runner (`get_runner("star")` → `ce_loop`) or `star_hooks` oracle (`load_cases` / `build_prompt` / `score_completion` / `rationalize_hint`) — never hard-coded in AstraTune |
 
-STaR: Ensemble Method C stays in the Ensemble pack (`ensemble_star_*`); general CoT demo uses platform recipes `reasoning_star_*` with **`use_case=demo_reasoning` at mission create** — not an Ensemble recipe family.
+#### Plugin call chain (`astra_plugin`)
+
+Product learner files are plugins, not standalone CLIs. Once `astrarl.make` / `astratune.make(..., use_execv=True).learn()` execs `python -m astrarl.cli|astratune.cli <cmd> --use-case <name> --workspace <dir>`, control flows through `astra_plugin` in three steps:
+
+```text
+python -m astrarl.cli | astratune.cli <cmd> --use-case <name> --workspace <dir> [learner flags]
+  │  1. os.chdir(workspace) + ensure_workspace_on_path(workspace)
+  │     (adds <workspace>/.astra_plugins & <parent>/.astra_plugins so branded names
+  │      like `ensemble` do not collide with top-level files like repo-root ensemble.py)
+  │  2. load_use_case(name) → import `<name>` (or `<name>.usecase`)
+  │     must expose make_hooks + parse_args (UseCasePlugin)
+  │  3. plugin.parse_args(cmd, rest)  (or fill_defaults fallback) → Namespace
+  │
+  ├── Pattern A — Hook bag (make_hooks + validate_hooks)   [grpo, agrpo, opd, dpo, rlcd]
+  │     └─► Astra drives loop (run_grpo_routing_train / run_grpo_traj_train /
+  │         run_opd_train / run_dpo_train / run_rlcd_train), calling product hooks.*
+  │
+  ├── Pattern B — Harvest runner (get_runner)              [distill, rft, star]
+  │     └─► Product runner(args) performs domain harvest/filtering, then calls back
+  │         into Astra's astratune.ce_loop.run_ce_lora_steps(...)
+  │
+  └── Pattern C — Pure SFT (parse_args only)               [sft]
+        └─► astratune.train_sft.run_sft_train(args) trains directly over dataset JSONL
+```
+
+| Pattern | CLI & commands | Control flow |
+|---|---|---|
+| **A. Hook bag (`make_hooks`)** | `astrarl.cli`: `grpo`, `agrpo`, `opd`; `astratune.cli`: `dpo`, `rlcd` | Astra validates `plugin.make_hooks(cmd)` via `validate_hooks(cmd, hooks)` and runs the platform loop (`run_*`), calling into `hooks.*` for product data, prompts, reward/oracle, eval, and checkpoint wrappers (`astratune.lora_io`). |
+| **B. Harvest runner (`get_runner`)** | `astratune.cli`: `distill`, `rft`, `star` | Astra invokes `plugin.get_runner(cmd)(args)`; the product runs teacher/rejection/STaR harvest and hands tokenized survivors back to `astratune.ce_loop.run_ce_lora_steps(...)`. |
+| **C. Pure SFT (`parse_args` only)** | `astratune.cli`: `sft` | Plugin supplies CLI defaults/paths via `parse_args`; AstraTune runs `run_sft_train(args)` directly over pre-built JSONL. |
+
+STaR: Ensemble Method C stays in the Ensemble pack (`ensemble_star_*`, Pattern B via `get_runner("star")` → `ce_loop`); general CoT demo uses platform recipes `reasoning_star_*` with **`use_case=demo_reasoning` at mission create** — not an Ensemble recipe family.
 
 Contracts, `gym_id`/`learner_id` maps, facade/`os.execv` wiring, Mini path triad, pack search order, and plugin bind rules: [IMPLEMENT.md — Platform and product](IMPLEMENT.md#platform-and-product-contracts).
 
