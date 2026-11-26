@@ -250,6 +250,19 @@ def test_star_smoke_recipe_focus_beats_llm_prose():
     assert "tiny_harvest" not in str(hp.get("focus_cases") or "")
 
 
+def test_rft_v7_empty_focus_pin_beats_mission_id_prose():
+    """Full-suite RFT: explicit focus_cases=[] must beat a prior-run hex in plan HP."""
+    from backend.agent.code_generator import _resolve_focus_cases, _resolve_hyperparams
+
+    hp = _resolve_hyperparams(
+        "ensemble_rft_focus_v7",
+        {"use_case": "ensemble", "focus_cases": "7cc3beb4"},
+    )
+    assert hp.get("focus_cases") == []
+    assert _resolve_focus_cases(hp) == ""
+    assert "route_shell_git_status" in str(hp.get("force_gold_cases") or "")
+
+
 @pytest.mark.asyncio
 async def test_star_smoke_codegen_emits_recipe_focus():
     generator = CodeGenerator(provider=MagicMock())

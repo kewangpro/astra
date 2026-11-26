@@ -65,8 +65,10 @@ def run_grpo_traj_train(args, hooks) -> None:
 
     print("--- Baseline eval (step 0) ---")
     model.eval()
+    eval_n = len(e2e_cases) if e2e_cases else len(hooks.SCENARIOS)
     base_rate, n_pass, n_total = hooks.eval_task_success(
-        model, tokenizer, len(hooks.SCENARIOS), args.max_turns, args.max_tokens,
+        model, tokenizer, eval_n, args.max_turns, args.max_tokens,
+        e2e_cases=e2e_cases or None,
     )
     print(f"Pass rate: {base_rate:.1%} ({n_pass}/{n_total})")
     print(
@@ -180,7 +182,8 @@ def run_grpo_traj_train(args, hooks) -> None:
             print(f"\n--- Eval at step {step} ---")
             model.eval()
             pass_rate, n_pass, n_total = hooks.eval_task_success(
-                model, tokenizer, len(hooks.SCENARIOS), args.max_turns, args.max_tokens,
+                model, tokenizer, eval_n, args.max_turns, args.max_tokens,
+                e2e_cases=e2e_cases or None,
             )
             print(f"Pass rate: {pass_rate:.1%} ({n_pass}/{n_total})")
             if pass_rate > best_pass_rate:
@@ -196,7 +199,8 @@ def run_grpo_traj_train(args, hooks) -> None:
     # Final pass-rate line for Astra telemetry parsers
     model.eval()
     pass_rate, n_pass, n_total = hooks.eval_task_success(
-        model, tokenizer, len(hooks.SCENARIOS), args.max_turns, args.max_tokens,
+        model, tokenizer, eval_n, args.max_turns, args.max_tokens,
+        e2e_cases=e2e_cases or None,
     )
     print(f"Pass rate: {pass_rate:.1%} ({n_pass}/{n_total})")
 

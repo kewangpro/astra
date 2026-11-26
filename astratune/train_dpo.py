@@ -195,6 +195,9 @@ def run_dpo_train(args, hooks) -> None:
         held_out_pass_rate, _ = hooks.run_routing_eval(model, tokenizer, held_out_cases, args.eval_max_tokens)
         n_ho_pass = round(held_out_pass_rate * len(held_out_cases))
         print(f"Held-out pass rate: {held_out_pass_rate:.1%} ({n_ho_pass}/{len(held_out_cases)})")
+    # Seed best/ from baseline so regressions cannot overwrite a warm-start.
+    best_pass_rate = float(base_pass_rate)
+    hooks.save_final_adapter(model, save_dir / "best", args)
     print()
     model.train()
 

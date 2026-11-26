@@ -204,7 +204,8 @@ def run_opd_train(args, hooks) -> None:
           f"adv_clip={args.adv_clip}")
     print(f"Eval every {args.steps_per_eval} steps, save every {args.save_every} steps\n")
 
-    best_pass_rate = 0.0
+    # Seed from baseline so mid-run regressions cannot overwrite best/.
+    best_pass_rate = float(base_pass_rate)
     best_blended: tuple[int, int] | None = None
     t_start = time.time()
     total_rollouts = 0

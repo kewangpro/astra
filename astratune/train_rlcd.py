@@ -119,6 +119,9 @@ def run_rlcd_train(args, hooks) -> None:
         model, tokenizer, eval_cases, args, "baseline",
     )
     print(f"Baseline readout accuracy {base_acc:.1%}, Brier {base_brier:.4f}")
+    # Seed best/ from baseline Brier so regressions cannot overwrite warm-start.
+    best["brier"] = float(base_brier)
+    hooks.save_final_adapter(model, save_dir / "best", args)
 
     stages = [1, 2] if args.stage == "both" else [int(args.stage)]
     ref_snap = None

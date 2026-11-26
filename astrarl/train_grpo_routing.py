@@ -159,6 +159,9 @@ def run_grpo_routing_train(args, hooks) -> None:
     n_routing = len(routing_cases)
     n_pass    = round(base_pass_rate * n_routing)
     print(f"Baseline pass rate: {base_pass_rate:.1%} ({n_pass}/{n_routing})")
+    # Seed best/ from baseline so regressions cannot overwrite a warm-start.
+    best_pass_rate = float(base_pass_rate)
+    hooks.save_final_adapter(model, save_dir / "best", args)
     print(
         "Note: trainer pass rate is routing-oracle on this pool "
         "(≠ live hermetic suite / docs promotion bars)."

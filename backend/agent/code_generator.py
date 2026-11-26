@@ -2763,10 +2763,14 @@ def _resolve_focus_cases(hp: dict) -> str:
     exists. Auto-fallback here only when ``use_case=ensemble`` or
     ``fail_slice_focus`` is set — never for a bare empty hp dict (keeps unit
     tests and non-ensemble recipes from picking up a stale bank).
+
+    An explicit ``focus_cases`` key (including ``[]`` / ``""``) means the
+    author pinned full-suite / no-focus — do not FailSlice-fill over it.
+    Lead Agent prose that looks like a mission id (e.g. ``7cc3beb4`` from a
+    goal mentioning a prior run) must not shrink a full-suite RFT recipe.
     """
-    focus = _csv_cases(hp.get("focus_cases"))
-    if focus:
-        return focus
+    if "focus_cases" in hp:
+        return _csv_cases(hp.get("focus_cases"))
     if hp.get("fail_slice_focus") or str(hp.get("use_case") or "").strip() == "ensemble":
         return _focus_cases_from_fail_slice()
     return ""
@@ -2861,10 +2865,12 @@ def _resolve_hyperparams(
             hp["use_case"] = _plan_uc
         # Orchestrator-owned case lists (FailSlice / create-time stamps) are not
         # pivot HPs. Prefer plan only when the recipe did not pin the key — a
-        # recipe focus_cases (smoke / deliberate subset) must beat Lead Agent
-        # prose that looks like CSV (e.g. "tiny_harvest, few_ce").
+        # recipe focus_cases (smoke / deliberate subset / explicit empty full-suite)
+        # must beat Lead Agent prose that looks like CSV (e.g. "tiny_harvest, few_ce"
+        # or a prior mission id pasted into the goal).
+        # Key presence matters: ``focus_cases: []`` is an intentional pin.
         for _k in ("focus_cases", "force_gold_cases", "cases"):
-            if recipe_hp.get(_k):
+            if _k in recipe_hp:
                 continue
             if _k in (plan_hp or {}) and plan_hp[_k]:
                 hp[_k] = plan_hp[_k]
